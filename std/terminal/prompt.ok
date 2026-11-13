@@ -1,21 +1,31 @@
 module terminal/prompt v1.0.0;
 
+// Asking for a line or a secret.
+//
+//     let name = await PromptedLine(origin: session, prompt: "Name: ", limit: 256).string();
+//     let password = await PromptedSecret(origin: session, prompt: "Password: ", limit: 1024).string();
+//
+// A secret is read without echo; the mode is restored afterwards.
+
 import "terminal/session" take TerminalSession;
 import "terminal/mode" take TerminalMode;
 import "terminal/error" take TerminalUnavailable, TerminalInputLimit;
 import "async/event" take Event;
 
+// A line read after a prompt.
 object PromptedLine {
     has origin is TerminalSession;
     has prompt is string;
     has limit is int;
 
+    // Writes prompt to origin and reads at most limit bytes.
     PromptedLine(origin is TerminalSession, prompt is string, limit is int) {
         self.origin = origin;
         self.prompt = prompt;
         self.limit = limit;
     }
 
+    // The line, without its newline.
     async string() is string {
         confirm limit > 0 && limit <= 1048576 else throw TerminalInputLimit.exceeded;
         origin.output().write(prompt);
@@ -24,17 +34,20 @@ object PromptedLine {
     }
 }
 
+// A line read after a prompt, without echo.
 object PromptedSecret {
     has origin is TerminalSession;
     has prompt is string;
     has limit is int;
 
+    // Writes prompt to origin and reads at most limit bytes without echo.
     PromptedSecret(origin is TerminalSession, prompt is string, limit is int) {
         self.origin = origin;
         self.prompt = prompt;
         self.limit = limit;
     }
 
+    // The line, without its newline.
     async string() is string {
         confirm limit > 0 && limit <= 1048576 else throw TerminalInputLimit.exceeded;
         confirm origin.controlling() && origin.capabilities()::Support::input_interactive

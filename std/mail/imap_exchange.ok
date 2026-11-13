@@ -1,5 +1,12 @@
 module mail/imap_exchange v1.0.0;
 
+// The command channel of an IMAP connection: tags, literals, responses in
+// order. ImapSession uses it.
+//
+// One command runs at a time; its tag is chosen when it starts. A tagged NO or
+// BAD comes back for the caller to handle; a transport or protocol failure
+// closes the connection.
+
 import "mail/imap_command" take ImapCommand, ImapSimpleCommand;
 import "mail/imap_command_reading" take ImapTag, ImapCommandLimits, ImapCommandRead,
     ImapCommandInput, ImapReplyMode, ImapContinuationWriting, ImapNoContinuation,
@@ -13,11 +20,7 @@ import "numbers/bigint" take BigInt;
 import "encoding/utf" take Utf8Encoded;
 import "error" take InvalidState;
 
-// Owns a connected protocol transport, not authentication or TLS negotiation.
-// The application-facing session will own this channel. Serialized operations
-// assign tags only after acquiring the lock and carry unread bytes forward.
-// A started transport/protocol failure poisons and closes the connection.
-// Tagged NO/BAD keep alignment and are returned for operation-specific handling.
+// Sends commands on a connection and reads their responses.
 object ImapCommandChannel does Closing {
     has input is AsyncReading;
     has output is AsyncWriting;
@@ -28,6 +31,8 @@ object ImapCommandChannel does Closing {
     has states is Channel<ImapExchangeState>;
     has initial is Future<Sending<ImapExchangeState>>;
 
+    // Takes over input and output (closing owner), with the bytes already read,
+    // within limits.
     ImapCommandChannel(
         input is AsyncReading,
         output is AsyncWriting,
@@ -51,18 +56,22 @@ object ImapCommandChannel does Closing {
         initial = channel.sending().send(ImapExchangeState(prefix: prefix, serial: BigInt(1)));
     }
 
+    // A pending exchange of command.
     request(command is ImapCommand) is ImapCommandExchange {
         ImapCommandExchange(origin: self, command: command);
     }
 
+    // Its limits.
     limits() is ImapCommandLimits {
         limits;
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready() || owner.closed();
     }
 
+    // Closes the connection.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -71,6 +80,7 @@ object ImapCommandChannel does Closing {
         }
     }
 
+    // Closes the connection, ignoring errors.
     abort() is void {
         try {
             self.close();
@@ -79,6 +89,7 @@ object ImapCommandChannel does Closing {
         catch failure is NativeFailure {}
     }
 
+    // Sends command and reads every response through its tagged completion.
     async perform(command is ImapCommand) is ImapCommandRead {
         confirm !self.closed() else throw ImapChannelClosed.closed;
         await initial;
@@ -117,6 +128,7 @@ object ImapCommandChannel does Closing {
         result;
     }
 
+    // IDLE until stop fires, giving untagged responses to observer.
     async idle(stop is Event, observer is ImapResponseObserving) is @ImapCommandRead {
         confirm !self.closed() else throw ImapChannelClosed.closed;
         await initial;
@@ -155,13 +167,16 @@ object ImapCommandChannel does Closing {
     }
 }
 
+// One command and its responses.
 object ImapCommandExchange {
     has pending is Future<ImapCommandRead>;
 
+    // command on origin.
     ImapCommandExchange(origin is ImapCommandChannel, command is ImapCommand) {
         pending = origin.perform(command);
     }
 
+    // The responses through completion; the same future on every call.
     read() is Future<ImapCommandRead> {
         pending;
     }
@@ -201,21 +216,25 @@ hidden object ImapExchangeCleanup {
     }
 }
 
+// Sends the literals of a command as the server asks for them.
 object ImapLiteralWriting does ImapContinuationWriting {
     has output is AsyncWriting;
     has command is ImapCommand;
 
+    // Writes command's literals to output.
     ImapLiteralWriting(output is AsyncWriting, command is ImapCommand) {
         self.output = output;
         self.command = command;
     }
 
+    // Writes the next piece; the number of pieces written.
     async write() is int {
         await output.write(command.literal_bytes());
         1;
     }
 }
 
+// The channel was used after it closed.
 enum ImapChannelClosed is Error = (closed);
 
 hidden object ImapIdleWireInput {
@@ -269,11 +288,13 @@ hidden object ImapIdleWireInput {
     }
 }
 
+// Sends DONE to end IDLE.
 object ImapIdleContinuation does ImapContinuationWriting {
     has output is AsyncWriting;
     has stop, sent is Event;
     has group is Supervising<int>;
 
+    // Writes DONE to output once stop fires.
     ImapIdleContinuation(
         output is AsyncWriting,
         stop is Event,
@@ -286,6 +307,7 @@ object ImapIdleContinuation does ImapContinuationWriting {
         self.group = group;
     }
 
+    // Waits for stop and writes DONE.
     async write() is int {
         group.start(ImapDoneWriting(output: output, stop: stop, sent: sent).write());
         1;

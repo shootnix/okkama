@@ -23,12 +23,14 @@ import "strings/parse" take Number, InvalidInteger;
 // accepts RFC 3339 `-00:00` as a zero displacement with unknown local-offset
 // provenance; formatting canonicalizes every zero displacement to `Z`.
 
+// An instant as RFC 3339 text at an offset: `2026-11-13T10:00:00Z`.
 object Rfc3339 {
     has origin is Instant;
     has offset is Duration;
     has source is string;
     has reading is bool;
 
+    // origin at offset from UTC, a whole number of minutes below 24 hours.
     Rfc3339(origin is Instant, offset is Duration) {
         confirm offset::Span::seconds.denominator() == "1"
             else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole seconds");
@@ -53,6 +55,7 @@ object Rfc3339 {
         reading = true;
     }
 
+    // The instant.
     instant() is Instant {
         if reading {
             self.parsed().instant();
@@ -62,6 +65,7 @@ object Rfc3339 {
         }
     }
 
+    // The text, with nanoseconds when there are any.
     string() is string {
         if reading {
             return self.parsed().string();
@@ -158,8 +162,10 @@ object Rfc3339 {
     }
 }
 
+// Text that is not an RFC 3339 timestamp.
 enum InvalidRfc3339 is Error = (origin(origin is string));
 
+// An offset RFC 3339 cannot write.
 enum InvalidRfc3339Offset is Error = (because(message is string));
 
 test "RFC 3339 text reads an instant and keeps its offset" {

@@ -45,11 +45,18 @@ import "size" take Sizing;
 // Set is conceptually the conjunction of Iterating<T> and Sizing. Until role
 // composition exists, concrete sets explicitly implement all three roles.
 
+// Distinct values with a fixed walking order; adding or removing gives a new
+// set.
 role Set<T> {
+    // Walks the values in the set's order.
     cursor() is Cursor<T>;
+    // How many values.
     size() is int;
+    // Whether value is in the set.
     membership(value is T) is bool;
+    // This set with value added.
     addition(value is T) is Set<T>;
+    // This set without value.
     difference(value is T) is Set<T>;
 }
 
@@ -61,6 +68,7 @@ role Set<T> {
 object KeyedSet<T> does Set<T>, Iterating<T>, Sizing {
     has entries is %T:bool;
 
+    // The distinct values, kept as map keys in key order.
     KeyedSet(values is Iterating<T>) {
         let empty is %T:bool = [:];
         entries = values.reduce(empty) -> found, value {
@@ -68,24 +76,30 @@ object KeyedSet<T> does Set<T>, Iterating<T>, Sizing {
         };
     }
 
+    // A set over a map of entries; KeyedSet(values) makes it.
     KeyedSet(:entries);
 
+    // Walks the values in key order.
     cursor() is Cursor<T> {
         entries.keys().cursor();
     }
 
+    // How many values.
     size() is int {
         entries.size();
     }
 
+    // Whether value is in the set, in O(log n).
     membership(value is T) is bool {
         entries.has(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         KeyedSet(entries: entries + [value: true]);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         KeyedSet(entries: entries - [value: true]);
     }
@@ -101,21 +115,26 @@ object KeyedSet<T> does Set<T>, Iterating<T>, Sizing {
     }
 }
 
+// The distinct values in first-appearance order, for any value with equality.
 object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
     has origin is Iterating<T>;
 
+    // The distinct values of values.
     OrderedSet(values is Iterating<T>) {
         origin = values;
     }
 
+    // Walks in first-appearance order.
     cursor() is Cursor<T> {
         self.distinct().cursor();
     }
 
+    // How many values.
     size() is int {
         self.distinct().size();
     }
 
+    // Whether value is in the set.
     membership(value is T) is bool {
         for self.distinct() -> item {
             if item == value {
@@ -131,21 +150,26 @@ object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
         kept;
     }
 
+    // This set with value added at the end.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// The values of either set: left's first, then right's that left lacks.
 object Union<T> does Set<T>, Iterating<T>, Sizing {
     has left is Set<T>;
     has right is Set<T>;
 
+    // left or right.
     Union(:left, :right);
 
+    // Walks left's values, then right's new ones.
     cursor() is Cursor<T> {
         ConcatenatedSetCursor(
             left: left.cursor(),
@@ -156,31 +180,38 @@ object Union<T> does Set<T>, Iterating<T>, Sizing {
         );
     }
 
+    // How many values.
     size() is int {
         self.reduce(0) -> amount, item {
             amount + 1;
         };
     }
 
+    // Whether either set has value.
     membership(value is T) is bool {
         left.membership(value) || right.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// The values both sets have, in left's order.
 object Intersection<T> does Set<T>, Iterating<T>, Sizing {
     has left is Set<T>;
     has right is Set<T>;
 
+    // left and right.
     Intersection(:left, :right);
 
+    // Walks in left's order.
     cursor() is Cursor<T> {
         Filtered(
             origin: left,
@@ -188,31 +219,38 @@ object Intersection<T> does Set<T>, Iterating<T>, Sizing {
         ).cursor();
     }
 
+    // How many values.
     size() is int {
         self.reduce(0) -> amount, item {
             amount + 1;
         };
     }
 
+    // Whether both sets have value.
     membership(value is T) is bool {
         left.membership(value) && right.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// The values of left that right lacks, in left's order.
 object Difference<T> does Set<T>, Iterating<T>, Sizing {
     has left is Set<T>;
     has right is Set<T>;
 
+    // left without right.
     Difference(:left, :right);
 
+    // Walks in left's order.
     cursor() is Cursor<T> {
         Filtered(
             origin: left,
@@ -220,31 +258,38 @@ object Difference<T> does Set<T>, Iterating<T>, Sizing {
         ).cursor();
     }
 
+    // How many values.
     size() is int {
         self.reduce(0) -> amount, item {
             amount + 1;
         };
     }
 
+    // Whether left has value and right does not.
     membership(value is T) is bool {
         left.membership(value) && !right.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// The values exactly one of the sets has: left's, then right's.
 object SymmetricDifference<T> does Set<T>, Iterating<T>, Sizing {
     has left is Set<T>;
     has right is Set<T>;
 
+    // left or right but not both.
     SymmetricDifference(:left, :right);
 
+    // Walks left's values, then right's.
     cursor() is Cursor<T> {
         ConcatenatedSetCursor(
             left: Filtered(
@@ -258,34 +303,41 @@ object SymmetricDifference<T> does Set<T>, Iterating<T>, Sizing {
         );
     }
 
+    // How many values.
     size() is int {
         self.reduce(0) -> amount, item {
             amount + 1;
         };
     }
 
+    // Whether exactly one set has value.
     membership(value is T) is bool {
         left.membership(value) != right.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// A set with one more value, as Set.addition() gives it.
 object SetWith<T> does Set<T>, Iterating<T>, Sizing {
     has origin is Set<T>;
     has value is T;
 
+    // origin with value.
     SetWith(origin is Set<T>, value is T) {
         self.origin = origin;
         self.value = value;
     }
 
+    // Walks origin, then value when it is new.
     cursor() is Cursor<T> {
         if origin.membership(value) {
             origin.cursor();
@@ -295,6 +347,7 @@ object SetWith<T> does Set<T>, Iterating<T>, Sizing {
         }
     }
 
+    // How many values.
     size() is int {
         origin.size() + if origin.membership(value) {
             0;
@@ -304,28 +357,34 @@ object SetWith<T> does Set<T>, Iterating<T>, Sizing {
         };
     }
 
+    // Whether value is value or in origin.
     membership(value is T) is bool {
         self.value == value || origin.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
 }
 
+// A set with one value less, as Set.difference() gives it.
 object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
     has origin is Set<T>;
     has value is T;
 
+    // origin without value.
     SetWithout(origin is Set<T>, value is T) {
         self.origin = origin;
         self.value = value;
     }
 
+    // Walks origin, skipping value.
     cursor() is Cursor<T> {
         Filtered(
             origin: origin,
@@ -333,6 +392,7 @@ object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
         ).cursor();
     }
 
+    // How many values.
     size() is int {
         origin.size() - if origin.membership(value) {
             1;
@@ -342,14 +402,17 @@ object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
         };
     }
 
+    // Whether origin has value and it is not the one removed.
     membership(value is T) is bool {
         self.value != value && origin.membership(value);
     }
 
+    // This set with value added.
     addition(value is T) is Set<T> {
         SetWith(origin: self, value: value);
     }
 
+    // This set without value.
     difference(value is T) is Set<T> {
         SetWithout(origin: self, value: value);
     }
@@ -418,33 +481,42 @@ hidden object ConcatenatedSetCursor<T> does Cursor<T> {
     }
 }
 
+// A condition true for values a set does not have, for Filtered.
 object AbsentFrom<T> {
     has origin is Set<T>;
 
+    // Values absent from origin.
     AbsentFrom(:origin);
 
+    // Whether origin lacks value.
     membership(value is T) is bool {
         !origin.membership(value);
     }
 }
 
+// A condition true for values other than one, for Filtered.
 object DifferentFrom<T> {
     has origin is T;
 
+    // Values other than origin.
     DifferentFrom(:origin);
 
+    // Whether value differs from origin.
     comparison(value is T) is bool {
         origin != value;
     }
 }
 
+// The distinct values as a List, in first-appearance order.
 object DistinctList<T> {
     has origin is Iterating<T>;
 
+    // The distinct values of values.
     DistinctList(values is Iterating<T>) {
         origin = values;
     }
 
+    // The list.
     list() is List<T> {
         let reversed is List<T> = origin.reduce(EmptyList()) -> items, item {
             if self.contains(items, item) {

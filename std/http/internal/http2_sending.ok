@@ -1,5 +1,10 @@
 module http/internal/http2_sending v1.0.0;
 
+// The send side of HTTP/2 flow control: DATA cut to the windows and frame size,
+// with credit reserved before a frame is queued and spent when it is written.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_output" take Http2ConnectionOutput, Http2OutputStarting,
     Http2OutputTicket, Http2OutputCancelled, Http2OutputLimit;
 import "http/internal/http2_settings" take Http2PeerSettings;
@@ -21,6 +26,7 @@ object Http2DataScheduler {
     has maximum, chunk is int;
     has stopped is Event;
 
+    // Sends on output under peer's settings, at most maximum streams.
     Http2DataScheduler(output is Http2ConnectionOutput, peer is Http2PeerSettings, maximum is int) {
         confirm maximum > 0 && maximum <= 256 && output.maximum_bytes() > 9
             else throw Http2OutputLimit.exceeded;
@@ -39,6 +45,7 @@ object Http2DataScheduler {
         stopped = Event();
     }
 
+    // The same, chunk bytes per frame at most.
     Http2DataScheduler(
         output is Http2ConnectionOutput,
         peer is Http2PeerSettings,
@@ -66,6 +73,7 @@ object Http2DataScheduler {
         stopped = Event();
     }
 
+    // Opens stream.
     open(stream is int) is void {
         confirm !stopped.ready() else throw Http2SendingClosed.closed;
         confirm stream > 0 && stream <= 2147483647 && stream % 2 == 1
@@ -89,6 +97,7 @@ object Http2DataScheduler {
         highest.replace(stream);
     }
 
+    // The slot of stream; Http2SendingClosed when it is closed.
     slot(stream is int) is Http2SendingSlot {
         for slots.value() -> slot {
             if slot.stream() == stream {
@@ -101,23 +110,29 @@ object Http2DataScheduler {
         throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "unknown sending stream");
     }
 
+    // The connection window.
     connection_remaining() is int {
         connection.value().remaining();
     }
 
+    // The window of stream.
     stream_remaining(stream is int) is int {
         self.slot(stream).window().value().remaining();
     }
 
+    // Fires when credit changes.
     signal() is Event {
         changed.value();
     }
 
+    // Fires signal.
     wake() is void {
         changed.value().set();
         changed.replace(Event());
     }
 
+    // Sends bytes on stream as credit allows; the future is true once all is
+    // written.
     data(stream is int, bytes is @byte, end_stream is bool) is Future<bool> {
         confirm bytes.size() <= 1048576 && (bytes.size() > 0 || end_stream)
             else throw Http2OutputLimit.exceeded;
@@ -130,6 +145,7 @@ object Http2DataScheduler {
         operation.delivered();
     }
 
+    // Reserves credit for slot, up to remaining bytes.
     reserve(slot is Http2SendingSlot, remaining is int) is @Http2DataGrant {
         confirm !slot.closed() else throw Http2SendingClosed.closed;
         let first = connection.value().remaining() - reserved.value();
@@ -176,14 +192,17 @@ object Http2DataScheduler {
         [grant];
     }
 
+    // Queues frame under grant.
     enqueue(frame is Http2Frame, grant is Http2DataGrant) is Http2OutputTicket {
         output.submit([frame], grant);
     }
 
+    // Fires when the output has room.
     space() is Event {
         output.space();
     }
 
+    // Spends size bytes of slot's reservation.
     commit(slot is Http2SendingSlot, size is int) is void {
         let first = connection.value();
         let second = slot.window().value();
@@ -194,6 +213,7 @@ object Http2DataScheduler {
         self.release(slot, size);
     }
 
+    // Returns size bytes of slot's reservation.
     release(slot is Http2SendingSlot, size is int) is void {
         reserved.replace(reserved.value() - size);
         slot.reserved().replace(slot.reserved().value() - size);
@@ -201,6 +221,7 @@ object Http2DataScheduler {
         self.wake();
     }
 
+    // Applies a WINDOW_UPDATE.
     window(update is Http2WindowIncrement) is void {
         if update.stream() == 0 {
             connection.replace(connection.value().credited(update.amount()));
@@ -220,6 +241,7 @@ object Http2DataScheduler {
         self.wake();
     }
 
+    // Applies a change of the peer's initial window.
     settings(previous is Http2PeerSettings, current is Http2PeerSettings) is void {
         let delta = current.initial_window() - previous.initial_window();
         let old = slots.value();
@@ -241,6 +263,7 @@ object Http2DataScheduler {
         self.wake();
     }
 
+    // Closes stream.
     close(stream is int) is void {
         let matched is @Http2SendingSlot = try {
             [self.slot(stream)];
@@ -261,6 +284,7 @@ object Http2DataScheduler {
         self.wake();
     }
 
+    // Stops every stream.
     stop() is void {
         stopped.set();
         for slots.value() -> slot {
@@ -274,6 +298,7 @@ object Http2DataScheduler {
     }
 }
 
+// The send state of one stream.
 object Http2SendingSlot {
     has stream is int;
     has window is Atomic<Http2FlowWindow>;
@@ -282,6 +307,7 @@ object Http2SendingSlot {
     has stopped is Event;
     has busy is Atomic<bool>;
 
+    // stream with an initial window.
     Http2SendingSlot(stream is int, initial is int) {
         self.stream = stream;
         window = Atomic(
@@ -294,35 +320,43 @@ object Http2SendingSlot {
         busy = Atomic(false);
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // Its window.
     window() is Atomic<Http2FlowWindow> {
         window;
     }
 
+    // The credit reserved for queued frames.
     reserved() is Atomic<int> {
         reserved;
     }
 
+    // The current grant, if any.
     grant() is Atomic<@Http2DataGrant> {
         grant;
     }
 
+    // Whether a send is running.
     busy() is Atomic<bool> {
         busy;
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // Closes it.
     close() is void {
         stopped.set();
     }
 }
 
+// Credit reserved for one queued DATA frame.
 object Http2DataGrant does Http2OutputStarting {
     has owner is Http2DataScheduler;
     has slot is Http2SendingSlot;
@@ -330,6 +364,7 @@ object Http2DataGrant does Http2OutputStarting {
     has settled is Event;
     has ticket is Atomic<@Http2OutputTicket>;
 
+    // amount bytes of slot's credit from owner.
     Http2DataGrant(owner is Http2DataScheduler, slot is Http2SendingSlot, amount is int) {
         self.owner = owner;
         self.slot = slot;
@@ -339,20 +374,24 @@ object Http2DataGrant does Http2OutputStarting {
         ticket = Atomic(empty);
     }
 
+    // The bytes reserved.
     size() is int {
         amount;
     }
 
+    // Ties it to value.
     attach(value is Http2OutputTicket) is void {
         ticket.replace([value]);
     }
 
+    // Spends the credit as the frame starts.
     start() is void {
         confirm !slot.closed() && !settled.ready() else throw Http2SendingClosed.closed;
         owner.commit(slot, amount);
         settled.set();
     }
 
+    // Returns the credit.
     cancel() is void {
         for ticket.value() -> pending {
             pending.cancel();
@@ -466,4 +505,5 @@ hidden object Http2ProducerRelease {
     }
 }
 
+// The stream was closed for sending.
 enum Http2SendingClosed is Error = (closed);

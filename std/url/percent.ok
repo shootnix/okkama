@@ -1,5 +1,12 @@
 module url/percent v1.0.0;
 
+// Percent-encoding of URL parts (RFC 3986).
+//
+//     PercentEncoded("a b/c", UrlComponent.path_segment).string();   // "a%20b%2Fc"
+//     PercentDecoded("a%20b").string();                               // "a b"
+//
+// What is kept as it is depends on the component the text goes in.
+
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/hex" take HexDecoded, InvalidHex;
 import "io/buffer" take ByteBuffer;
@@ -14,11 +21,13 @@ object PercentEncoded {
     has origin is string;
     has component is UrlComponent;
 
+    // Encodes origin for component.
     PercentEncoded(origin is string, component is UrlComponent) {
         self.origin = origin;
         self.component = component;
     }
 
+    // The encoded text.
     string() is string {
         // Text with nothing to escape stays as it is (#503).
         let plain = origin.characters().reduce(true) -> clean, character {
@@ -91,6 +100,7 @@ object PercentEncoded {
 object PercentDecoded {
     has origin is string;
 
+    // Decodes origin.
     PercentDecoded(origin is string) {
         self.origin = origin;
     }
@@ -124,6 +134,8 @@ object PercentDecoded {
         output.content().bytes();
     }
 
+    // The decoded text; InvalidPercentEncoding for a bad escape or bytes that
+    // are not UTF-8.
     string() is string {
         if !origin.contains("%") {
             return origin;
@@ -132,6 +144,7 @@ object PercentDecoded {
     }
 }
 
+// A bad `%` escape, or bytes that are not UTF-8; offset says where.
 enum InvalidPercentEncoding is Error = (at(offset is int));
 
 test "query data does not inject separators" {

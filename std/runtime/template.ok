@@ -1,5 +1,9 @@
 module runtime/template v1.0.0;
 
+// The native layer under template/compile, template/json, template/sections:
+// the calls those modules make into the host runtime. Programs use those
+// modules instead; these declarations may change with the runtime.
+//
 // Private bounded plain-template program. Construction binds source/input/node
 // budgets only. First observation caches a complete immutable instruction array
 // or diagnostic; no callbacks, files, environment or partial program escapes.
@@ -8,24 +12,35 @@ module runtime/template v1.0.0;
 // Offset is zero-based scalar; line/column one-based, CRLF is one line.
 // Invalid program access -> invalid_data; invalid index -> invalid_input.
 // Registry owns memory until teardown; stale handles fail, no external resource.
+
+// A compiled template and its diagnostics.
 native object TemplateCompileState;
 
+// Compiles origin within the limits.
 native template_compile_state(origin is string, maximum_input is int, maximum_nodes is int) is TemplateCompileState;
 
+// Whether compiling succeeded.
 native template_compile_valid(origin is TemplateCompileState) is bool;
 
+// Where it failed, as a character offset.
 native template_compile_offset(origin is TemplateCompileState) is int;
 
+// The line where it failed, from 1.
 native template_compile_line(origin is TemplateCompileState) is int;
 
+// The column where it failed, from 1.
 native template_compile_column(origin is TemplateCompileState) is int;
 
+// Why it failed.
 native template_compile_message(origin is TemplateCompileState) is string;
 
+// How many nodes.
 native template_node_count(origin is TemplateCompileState) is int;
 
+// The kind of node index.
 native template_node_kind(origin is TemplateCompileState, index is int) is int;
 
+// The text of node index.
 native template_node_text(origin is TemplateCompileState, index is int) is string;
 
 test "template instructions preserve original text and paths" {

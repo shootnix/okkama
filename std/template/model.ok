@@ -1,30 +1,21 @@
 module template/model v1.0.0;
 
+// The strings a text template is filled with.
+//
+//     TemplateBindings(["user.name": "Ada"]);
+//     TemplateBindings(TemplateBinding(path: TemplatePath("user", "name"), value: "Ada"));
+//
+// A value is looked up by its exact path; MissingTemplateValue when absent.
+// Values are plain strings: no objects, no reflection.
+
 import "template/path" take TemplatePath, TemplatePathFromString;
 
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
 
-// Explicit immutable string data for plain template interpolation. No arbitrary
-// application objects, reflection, implicit JSON traversal, HTML trust or I/O.
-// TemplateBinding(TemplatePath("user","name"), "Ada") binds exact coordinates.
-// Its path()/string() expose those coordinates without parsing or escaping.
-//
-// TemplateBindings snapshots a Sequencing<TemplateBinding>; optional nonnegative
-// maximum_bindings defaults to 1024. Empty/zero is valid. size() is read once;
-// negative size/excess count fails before item access; then ascending items are
-// read exactly once. Duplicate validation observes the completed snapshot.
-// Path identity compares segment sequences: ["a.b"] differs from ["a","b"].
-// Borrowed sources are never closed. Source exceptions propagate unchanged.
-//
-// string(path) returns a present value, including "", or MissingTemplateValue.
-// Repeated queries never revisit the source. Returned strings/paths outlive this
-// snapshot. Duplicate checking O(n²), lookup O(n), within the explicit item bound.
-// Values are retained strings, not copied buffers; count does not bound text
-// lengths. Compile/render objects supply independent source/output limits.
-// No native handles/external resources or destroy.
-// Run: okkama run -t std/template/model.ok
+// Something a text template takes its values from.
 role TemplateStrings {
+    // The value at path; MissingTemplateValue when absent.
     string(path is TemplatePath) is string;
 
     fake {
@@ -35,27 +26,33 @@ role TemplateStrings {
     }
 }
 
+// One value at a path.
 object TemplateBinding {
     has key is TemplatePath;
     has value is string;
 
+    // value at path.
     TemplateBinding(path is TemplatePath, value is string) {
         key = path;
         self.value = value;
     }
 
+    // The path.
     path() is TemplatePath {
         key;
     }
 
+    // The value.
     string() is string {
         value;
     }
 }
 
+// Values given by path.
 object TemplateBindings does TemplateStrings {
     has origin is @TemplateBinding;
 
+    // The values, at most 1024; DuplicateTemplateValue for a repeated path.
     TemplateBindings(values is Sequencing<TemplateBinding>) {
         origin = TemplateBindingSnapshot(source: values, maximum: 1024).items();
     }
@@ -77,10 +74,12 @@ object TemplateBindings does TemplateStrings {
         origin = TemplateBindingSnapshot(source: listed, maximum: 1024).items();
     }
 
+    // The values, at most maximum_bindings.
     TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
         origin = TemplateBindingSnapshot(source: values, maximum: maximum_bindings).items();
     }
 
+    // The value at path; MissingTemplateValue when absent.
     string(path is TemplatePath) is string {
         let found = (0..origin.size()).reduce(-1) -> previous, index {
             if origin[index].path().order(path) == Order.equal {
@@ -122,14 +121,19 @@ hidden object TemplateBindingSnapshot {
     }
 }
 
+// No value at the path.
 enum MissingTemplateValue is Error = (path(path is string));
 
+// Two values at one path.
 enum DuplicateTemplateValue is Error = (path(path is string));
 
+// A negative limit.
 enum InvalidTemplateBindingLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidTemplateBindingSize is Error = (invalid);
 
+// More values than the limit.
 enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {
@@ -161,7 +165,10 @@ test "template binding errors retain path and budget contracts" {
         true;
     });
     test.ok(try {
-        TemplateBindings(values: [TemplateBinding(path: TemplatePath("a"), value: "")], maximum_bindings: 0);
+        TemplateBindings(
+            values: [TemplateBinding(path: TemplatePath("a"), value: "")],
+            maximum_bindings: 0
+        );
         false;
     }
     catch error is TemplateBindingLimitExceeded {

@@ -1,13 +1,24 @@
 module testing/property v1.0.0;
 
+// Property tests: a condition checked on many generated values, the failing one
+// shrunk to a small example.
+//
+//     Property(origin: IntegerGeneration(minimum: 0, maximum: 1000), seed: 42, cases: 200,
+//         maximum_size: 100, shrink_limit: 100,
+//         condition: (n is int) is bool { n + 0 == n; }).check();
+//
+// A failure names the seed, case and value, so it can be run again.
+
 import "testing/check" take Checking, AsyncChecking, CheckContext;
 import "testing/generation" take Generation, Generated, InvalidGeneration, IntegerGeneration;
 import "random/source" take PcgRandom;
 
+// What reproduces a failing case.
 object PropertyReproduction {
     has seed, case_index, size is int;
     has value is string;
 
+    // As given.
     PropertyReproduction(seed is int, case_index is int, size is int, value is string) {
         self.seed = seed;
         self.case_index = case_index;
@@ -15,22 +26,27 @@ object PropertyReproduction {
         self.value = value;
     }
 
+    // The seed.
     seed() is int {
         seed;
     }
 
+    // The case.
     case_index() is int {
         case_index;
     }
 
+    // The size.
     size() is int {
         size;
     }
 
+    // The shrunk value, as text.
     value() is string {
         value;
     }
 
+    // All of it as text.
     string() is string {
         "seed=" + seed.string() + " case=" + case_index.string() + " size=" + size.string() + " value=" + value;
     }
@@ -59,13 +75,18 @@ hidden object PropertyObservation {
     }
 }
 
+// A property that cannot run as given; reason says why.
 enum InvalidProperty is Error = (because(reason is string));
 
+// A property to check.
 object Property<T> does Checking {
     has origin is Generation<T>;
     has seed, cases, maximum_size, shrink_limit is int;
     has condition is (T) is bool;
 
+    // condition over cases values of origin from seed, at most maximum_size,
+    // shrinking up to shrink_limit steps; InvalidProperty outside cases
+    // 1..10000, size 0..65536, shrink 0..128.
     Property(
         origin is Generation<T>,
         seed is int,
@@ -91,6 +112,7 @@ object Property<T> does Checking {
         self.condition = condition;
     }
 
+    // Fails with the shrunk counterexample.
     check() is void {
         CheckContext().verify();
         let random = PcgRandom(seed);
@@ -111,7 +133,12 @@ object Property<T> does Checking {
                     self.shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(
+                        seed: seed,
+                        case_index: index,
+                        size: size,
+                        value: reduced.string()
+                    ).string() + " " + observation.description()
                 );
                 return;
             }
@@ -132,7 +159,11 @@ object Property<T> does Checking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
+            PropertyObservation(
+                passed: false,
+                typed_error: true,
+                description: "typed error: " + error.text()
+            );
         }
     }
 
@@ -166,11 +197,13 @@ object Property<T> does Checking {
     }
 }
 
+// The same with an async condition.
 object AsyncProperty<T> does AsyncChecking {
     has origin is Generation<T>;
     has seed, cases, maximum_size, shrink_limit is int;
     has condition is async (T) is bool;
 
+    // condition over cases values of origin from seed.
     AsyncProperty(
         origin is Generation<T>,
         seed is int,
@@ -196,6 +229,7 @@ object AsyncProperty<T> does AsyncChecking {
         self.condition = condition;
     }
 
+    // Fails with the shrunk counterexample.
     async check() is void {
         CheckContext().verify();
         let random = PcgRandom(seed);
@@ -222,7 +256,12 @@ object AsyncProperty<T> does AsyncChecking {
                     await shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(
+                        seed: seed,
+                        case_index: index,
+                        size: size,
+                        value: reduced.string()
+                    ).string() + " " + observation.description()
                 );
                 return;
             }
@@ -243,7 +282,11 @@ object AsyncProperty<T> does AsyncChecking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
+            PropertyObservation(
+                passed: false,
+                typed_error: true,
+                description: "typed error: " + error.text()
+            );
         }
     }
 

@@ -1,5 +1,8 @@
 module http/http2_session v1.0.0;
 
+// The client side of one HTTP/2 connection: many requests at once on one
+// socket, after the preface and settings.
+
 import "http/method" take Method;
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/message" take Request, Response, InvalidHttpMessage;
@@ -39,6 +42,8 @@ import "error" take InvalidState;
 object Http2Session does Closing {
     has state is Http2SessionState;
 
+    // A session on input and output, closing owner, with local settings, the
+    // peer's settings and limits.
     Http2Session(
         input is AsyncReading,
         output is AsyncWriting,
@@ -57,22 +62,27 @@ object Http2Session does Closing {
         );
     }
 
+    // Whether it was closed.
     closed() is bool {
         state.closed();
     }
 
+    // Whether it takes another stream now.
     accepting() is bool {
         state.accepting();
     }
 
+    // Closes the connection.
     close() is void {
         state.close();
     }
 
+    // Waits until every stream has finished.
     async settled() is bool {
         await state.settled();
     }
 
+    // Sends request on a new stream and reads the response head.
     async exchange(request is Request) is Http2Exchange {
         let operation = Http2SessionExchange(owner: state, request: request);
         let pending = operation.run();
@@ -88,12 +98,14 @@ object Http2Session does Closing {
     }
 }
 
+// One request on a session and its response.
 object Http2Exchange does Closing {
     has request is Request;
     has response is Response;
     has information is @Response;
     has leases is @Closing;
 
+    // request answered by response after information.
     Http2Exchange(request is Request, response is Response, information is @Response) {
         self.request = request;
         self.response = response;
@@ -101,6 +113,7 @@ object Http2Exchange does Closing {
         leases = [];
     }
 
+    // The same, holding lease until closed.
     Http2Exchange(
         request is Request,
         response is Response,
@@ -113,24 +126,29 @@ object Http2Exchange does Closing {
         leases = [lease];
     }
 
+    // Whether it was closed.
     closed() is bool {
         leases.size() == 1 && leases[0].closed();
     }
 
+    // Releases the stream.
     close() is void {
         for leases -> lease {
             lease.close();
         }
     }
 
+    // The request.
     request() is Request {
         request;
     }
 
+    // The final response.
     response() is Response {
         response;
     }
 
+    // The 1xx responses before it.
     informational() is Sequencing<Response> {
         information;
     }
@@ -1273,6 +1291,9 @@ hidden object Http2SessionSettlement<T> {
     }
 }
 
+// The session was used after it closed.
 enum Http2SessionClosed is Error = (closed);
 
+// The stream was not processed: the connection was going away (GOAWAY) before
+// it; it is safe to send again.
 enum Http2Unprocessed is Error = (stream(stream is int));

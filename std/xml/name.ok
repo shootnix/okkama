@@ -1,11 +1,19 @@
 module xml/name v1.0.0;
 
+// XML names with namespaces.
+//
+//     let name = XmlName(namespace: "http://www.w3.org/2005/Atom", local: "feed", prefix: "");
+//     name.local_name();          // "feed"
+//     name.lexical();             // "feed", or "atom:feed" with a prefix
+
 import "regex/pattern" take Regex, RegexMatchObservation, RegexQuery;
 import "regex/range" take RegexRange;
 
+// An element or attribute name: a namespace, a local name and a prefix.
 object XmlName {
     has namespace, local, prefix is string;
 
+    // A name in no namespace.
     XmlName(local is string) {
         XmlNCName(local);
         namespace = "";
@@ -13,6 +21,7 @@ object XmlName {
         prefix = "";
     }
 
+    // A name in namespace, written with prefix ("" for none).
     XmlName(namespace is string, local is string, prefix is string) {
         XmlNCName(local);
         if prefix != "" {
@@ -29,18 +38,22 @@ object XmlName {
         self.prefix = prefix;
     }
 
+    // The namespace, "" for none.
     namespace() is string {
         namespace;
     }
 
+    // The local name.
     local_name() is string {
         local;
     }
 
+    // The prefix it is written with.
     prefix() is string {
         prefix;
     }
 
+    // `prefix:local`, or `local`.
     lexical() is string {
         if prefix == "" {
             local;
@@ -51,7 +64,9 @@ object XmlName {
     }
 }
 
+// A name without a colon, checked.
 object XmlNCName {
+    // Checks origin; InvalidXml otherwise.
     XmlNCName(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 256
             else throw InvalidXml.located(0, "XML name length must be 1..256");
@@ -69,6 +84,7 @@ object XmlNCName {
     }
 }
 
+// Text that is not XML; offset and reason say where and why.
 enum InvalidXml is Error = (located(offset is int, reason is string));
 
 test "a name is local, or bound to a namespace through a prefix" {
@@ -99,5 +115,8 @@ test "bad names and reserved bindings are refused" {
     test.throws(InvalidXml) {
         XmlName(namespace: "urn:x", local: "x", prefix: "xml");
     };
-    test.is(XmlName(namespace: "http://www.w3.org/XML/1998/namespace", local: "lang", prefix: "xml").lexical(), "xml:lang");
+    test.is(
+        XmlName(namespace: "http://www.w3.org/XML/1998/namespace", local: "lang", prefix: "xml").lexical(),
+        "xml:lang"
+    );
 }

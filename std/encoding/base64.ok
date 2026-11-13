@@ -21,22 +21,27 @@ import "runtime/base64" take base64_encode, base64_invalid_offset, base64_decode
 // Empty input is valid. InvalidBase64.offset() is a Unicode-scalar offset; a
 // structurally incomplete final quantum reports origin.length().
 
+// standard uses `+` and `/`; url uses `-` and `_`.
 enum Base64Alphabet = (standard, url);
 
+// Bytes as RFC 4648 Base64 text, padded.
 object Base64Encoded {
     has origin is @byte;
     has alphabet is Base64Alphabet;
 
+    // Encodes origin with the standard alphabet.
     Base64Encoded(origin is @byte) {
         self.origin = origin;
         alphabet = Base64Alphabet.standard;
     }
 
+    // Encodes origin with alphabet.
     Base64Encoded(origin is @byte, alphabet is Base64Alphabet) {
         self.origin = origin;
         self.alphabet = alphabet;
     }
 
+    // The text.
     string() is string {
         base64_encode(origin, self.alphabet_name());
     }
@@ -51,20 +56,24 @@ object Base64Encoded {
     }
 }
 
+// RFC 4648 Base64 text back to bytes; anything else is InvalidBase64.
 object Base64Decoded {
     has origin is string;
     has alphabet is Base64Alphabet;
 
+    // Decodes the standard alphabet.
     Base64Decoded(origin is string) {
         self.origin = origin;
         alphabet = Base64Alphabet.standard;
     }
 
+    // Decodes alphabet.
     Base64Decoded(origin is string, alphabet is Base64Alphabet) {
         self.origin = origin;
         self.alphabet = alphabet;
     }
 
+    // The bytes.
     bytes() is @byte {
         let name is string = self.alphabet_name();
         let offset is int = base64_invalid_offset(origin, name);
@@ -82,6 +91,7 @@ object Base64Decoded {
     }
 }
 
+// Text that is not strict Base64; offset says where.
 enum InvalidBase64 is Error = (at(offset is int));
 
 test "base64 round-trips in both alphabets" {

@@ -46,17 +46,23 @@ import "runtime/input_state" take Utf8InputState, input_state_create, input_stat
 // close() is idempotent, clears the decoder buffer and does not close the
 // wrapped Reading. Reading after close throws ClosedInput.
 
+// The process's standard input: lines for `for` and line(), bytes for bytes()
+// and chunks().
 object Stdin does Reading, Batching<string> {
     has decoding is InputDecoding;
 
+    // Standard input with strict UTF-8 lines.
     Stdin() {
         decoding = InputDecoding.strict;
     }
 
+    // Standard input with lines decoded as told: `Stdin(decoding:
+    // InputDecoding.lenient)`.
     Stdin(decoding is InputDecoding) {
         self.decoding = decoding;
     }
 
+    // At most limit bytes as they come (limit > 0); [] at the end.
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         stdin_read(limit);
@@ -93,11 +99,13 @@ enum InputDecoding = (strict, lenient);
 object StdinChunks does Batching<@byte> {
     has size is int;
 
+    // Pieces of at most size bytes; size must be positive.
     StdinChunks(size is int) {
         confirm size > 0 else throw InvalidReadLimit.limit(size);
         self.size = size;
     }
 
+    // The next piece for `for`, or none at the end.
     batch() is @@byte {
         let chunk = stdin_read(size);
         if chunk.size() == 0 {
@@ -226,15 +234,18 @@ hidden object LenientUtf8 {
     }
 }
 
+// Lines and text of any Reading, decoded as strict UTF-8, with its own buffer.
 object Utf8Input does ReadingText, Closing {
     has origin is Reading;
     has state is Utf8InputState;
 
+    // Decodes origin, which stays the caller's: close() does not close it.
     Utf8Input(origin is Reading) {
         self.origin = origin;
         state = input_state_create();
     }
 
+    // The next line without its LF and one CR before it; EndOfInput at the end.
     line() is string {
         self.open();
         self.fill_line();
@@ -256,6 +267,7 @@ object Utf8Input does ReadingText, Closing {
         }
     }
 
+    // Everything that is left, unchanged; EndOfInput when nothing is.
     content() is string {
         self.open();
         self.fill_text();
@@ -264,10 +276,12 @@ object Utf8Input does ReadingText, Closing {
         Utf8Decoded(origin: input_state_take(state, size)).string();
     }
 
+    // Whether this input is closed.
     closed() is bool {
         input_state_closed(state);
     }
 
+    // Drops the buffer; origin stays open.
     close() is void {
         input_state_close(state);
     }
@@ -302,8 +316,10 @@ object Utf8Input does ReadingText, Closing {
     }
 }
 
+// There is no more input to read.
 enum EndOfInput is Error = (reached);
 
+// The input was closed.
 enum ClosedInput is Error = (closed);
 
 test "utf-8 input splits lines on LF and drops one CR" {

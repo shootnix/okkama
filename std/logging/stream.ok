@@ -1,5 +1,11 @@
 module logging/stream v1.0.0;
 
+// Writing records as lines to a stream or a terminal.
+//
+//     TextStreamLogs(Stderr());
+//     JsonStreamLogs(Stdout());
+//     TextTerminalLogs(origin: session.output(), zone: utc, styles: [LogStyle(level: LogLevel.error, style: red)]);
+
 import "logging/write" take LogWriting;
 import "logging/record" take LogRecord, LogContext;
 import "logging/level" take LogLevel;
@@ -17,27 +23,33 @@ import "logging/name" take LogName;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
+// The style of one level's lines on a terminal.
 object LogStyle {
     has level is LogLevel;
     has style is TextStyle;
 
+    // style for level.
     LogStyle(level is LogLevel, style is TextStyle) {
         self.level = level;
         self.style = style;
     }
 
+    // The level.
     level() is LogLevel {
         level;
     }
 
+    // The style.
     style() is TextStyle {
         style;
     }
 }
 
+// Styles by level.
 object LogStyles {
     has origin is @LogStyle;
 
+    // The styles, at most 5; InvalidLogStyles beyond.
     LogStyles(styles is Sequencing<LogStyle>) {
         confirm styles.size() >= 0 && styles.size() <= 5 else throw InvalidLogStyles.invalid;
         let snapshot is @LogStyle = (0..styles.size()).map() -> index {
@@ -68,6 +80,7 @@ object LogStyles {
         origin = snapshot;
     }
 
+    // The style of level; the plain style when none is given.
     style(level is LogLevel) is TextStyle {
         origin.reduce(
             TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [])
@@ -82,8 +95,10 @@ object LogStyles {
     }
 }
 
+// Styles that cannot be used.
 enum InvalidLogStyles is Error = (invalid);
 
+// Records as text lines on a stream.
 object TextStreamLogs does LogWriting {
     has origin is Writing;
     has zone is TimeZone;
@@ -97,44 +112,53 @@ object TextStreamLogs does LogWriting {
         self.zone = zone;
     }
 
+    // Writes record as a text line.
     write(record is LogRecord) is void {
         let line = TextLogLine(origin: record, zone: zone).string();
         origin.write(Utf8Encoded(line + "\n").bytes());
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         true;
     }
 }
 
+// Records as JSON lines on a stream.
 object JsonStreamLogs does LogWriting {
     has origin is Writing;
 
+    // Writes JSON lines to origin.
     JsonStreamLogs(origin is Writing) {
         self.origin = origin;
     }
 
+    // Writes record as a JSON line.
     write(record is LogRecord) is void {
         let line = JsonLogLine(record).string();
         origin.write(Utf8Encoded(line + "\n").bytes());
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         true;
     }
 }
 
+// Records as styled text lines on a terminal.
 object TextTerminalLogs does LogWriting {
     has origin is TerminalOutput;
     has zone is TimeZone;
     has styles is LogStyles;
 
+    // Writes styled text lines to origin, times in zone.
     TextTerminalLogs(origin is TerminalOutput, zone is TimeZone, styles is Sequencing<LogStyle>) {
         self.origin = origin;
         self.zone = zone;
         self.styles = LogStyles(styles);
     }
 
+    // Writes record as a styled line.
     write(record is LogRecord) is void {
         origin.writeln(
             StyledText(
@@ -144,20 +168,24 @@ object TextTerminalLogs does LogWriting {
         );
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         true;
     }
 }
 
+// Records as styled JSON lines on a terminal.
 object JsonTerminalLogs does LogWriting {
     has origin is TerminalOutput;
     has styles is LogStyles;
 
+    // Writes styled JSON lines to origin.
     JsonTerminalLogs(origin is TerminalOutput, styles is Sequencing<LogStyle>) {
         self.origin = origin;
         self.styles = LogStyles(styles);
     }
 
+    // Writes record as a styled JSON line.
     write(record is LogRecord) is void {
         origin.writeln(
             StyledText(
@@ -167,6 +195,7 @@ object JsonTerminalLogs does LogWriting {
         );
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         true;
     }

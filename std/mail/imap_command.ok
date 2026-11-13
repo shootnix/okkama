@@ -1,5 +1,18 @@
 module mail/imap_command v1.0.0;
 
+// IMAP commands as values: a closed set, built from typed arguments and never
+// from raw text.
+//
+//     ImapCommand(simple: ImapSimpleCommand.noop);
+//     ImapCommand(operation: ImapMailboxCommand.select, mailbox: ImapMailboxName("INBOX"));
+//     ImapCommand(uids: set, data: [ImapDatum.flags, ImapDatum.headers]);              // UID FETCH
+//     ImapCommand(uids: set, flags: MailFlags(SystemFlag(SystemMailFlag.seen)), change: FlagChange.add);   // UID STORE
+//     ImapCommand(uids: set, destination: ImapMailboxName("Archive"), move: true);    // UID MOVE
+//
+// Every message operation goes by UID. APPEND sends the message as one
+// synchronizing literal after the server's continuation. ImapSession builds and
+// sends these for you.
+
 import "encoding/utf" take Utf8Decoded;
 
 import "mail/imap_command_reading" take ImapTag;
@@ -15,12 +28,16 @@ import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument, InvalidState;
 
+// Commands without arguments.
 enum ImapSimpleCommand = (capability, noop, logout, check, close, unselect, idle);
 
+// Commands that take one mailbox.
 enum ImapMailboxCommand = (select, examine, create, delete, subscribe, unsubscribe, status);
 
+// What UID FETCH asks for.
 enum ImapDatum = (uid, flags, headers, body, message);
 
+// How UID STORE changes flags: replace them, add or remove.
 enum FlagChange = (replace, add, remove);
 
 // Closed command representations. Constructor calls use named arguments when
@@ -31,6 +48,7 @@ object ImapCommand {
     has text is ImapCommandText;
     has payload is @ByteSnapshot;
 
+    // CAPABILITY, NOOP, LOGOUT, CHECK, CLOSE, UNSELECT or IDLE.
     ImapCommand(simple is ImapSimpleCommand) {
         let name = match simple {
             case ImapSimpleCommand.capability {
@@ -59,6 +77,8 @@ object ImapCommand {
         payload = [];
     }
 
+    // SELECT, EXAMINE, CREATE, DELETE, SUBSCRIBE, UNSUBSCRIBE or STATUS of
+    // mailbox.
     ImapCommand(operation is ImapMailboxCommand, mailbox is ImapMailboxName) {
         let name = match operation {
             case ImapMailboxCommand.select {
@@ -93,11 +113,13 @@ object ImapCommand {
         payload = [];
     }
 
+    // RENAME source to destination.
     ImapCommand(source is ImapMailboxName, destination is ImapMailboxName) {
         text = ImapCommandText("RENAME " + source.quoted() + " " + destination.quoted());
         payload = [];
     }
 
+    // LIST, or LSUB when subscribed, of pattern under reference.
     ImapCommand(reference is ImapMailboxName, pattern is ImapMailboxName, subscribed is bool) {
         // Pattern is quoted as a string; its '*'/'%' retain IMAP wildcard meaning.
         let name = if subscribed {
@@ -110,11 +132,13 @@ object ImapCommand {
         payload = [];
     }
 
+    // UID SEARCH by matching.
     ImapCommand(matching is MailMatching) {
         text = ImapCommandText("UID SEARCH " + matching.key().string());
         payload = [];
     }
 
+    // UID FETCH of data for uids.
     ImapCommand(uids is ImapUidSet, data is Sequencing<ImapDatum>) {
         text = ImapCommandText(
             "UID FETCH " + uids.argument() + " (" + ImapFetchData(data).string() + ")"
@@ -122,6 +146,7 @@ object ImapCommand {
         payload = [];
     }
 
+    // UID STORE of flags on uids, as change says.
     ImapCommand(uids is ImapUidSet, flags is MailFlags, change is FlagChange) {
         let action = match change {
             case FlagChange.replace {
@@ -140,6 +165,7 @@ object ImapCommand {
         payload = [];
     }
 
+    // UID MOVE, or UID COPY unless move, of uids to destination.
     ImapCommand(uids is ImapUidSet, destination is ImapMailboxName, move is bool) {
         let name = if move {
             "UID MOVE";
@@ -151,11 +177,13 @@ object ImapCommand {
         payload = [];
     }
 
+    // UID EXPUNGE of expunged.
     ImapCommand(expunged is ImapUidSet) {
         text = ImapCommandText("UID EXPUNGE " + expunged.argument());
         payload = [];
     }
 
+    // APPEND message to mailbox with flags.
     ImapCommand(mailbox is ImapMailboxName, message is MailMessage, flags is MailFlags) {
         let bytes = message.bytes();
         confirm bytes.size() <= 16777216
@@ -170,14 +198,17 @@ object ImapCommand {
         payload = [ByteSnapshot(bytes)];
     }
 
+    // The command line with tag, up to its literal if any.
     bytes(tag is ImapTag) is @byte {
         Utf8Encoded(tag.string() + " " + text.string() + "\r\n").bytes();
     }
 
+    // Whether it sends a literal.
     literal() is bool {
         payload.size() > 0;
     }
 
+    // The literal, to send after the continuation.
     literal_bytes() is @byte {
         confirm self.literal()
             else throw InvalidState.because("IMAP command has no continuation payload");
@@ -187,10 +218,12 @@ object ImapCommand {
         buffer.content().bytes();
     }
 
+    // Its first word, such as UID or SELECT.
     name() is string {
         text.string().split(" ")[0];
     }
 
+    // The word after UID; InvalidState for a command that is not a UID command.
     uid_operation() is string {
         confirm self.name() == "UID" else throw InvalidState.because("not an IMAP UID command");
         text.string().split(" ")[1];

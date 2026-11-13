@@ -1,34 +1,51 @@
 module terminal/mode v1.0.0;
 
+// Terminal input modes, applied for a while and then restored.
+//
+//     let lease = session.apply(TerminalMode.raw);
+//     defer lease.close();                          // restores the previous mode
+//
+// cooked is line editing with echo; cbreak gives each key at once, without
+// echo, while Ctrl-C still signals; raw gives every byte at once, untranslated,
+// without echo or signals; secret is cooked without echo, for passwords.
+
 import "runtime/application" take TerminalState, TerminalModeState, terminal_mode_open,
     terminal_mode_closed, terminal_mode_close, terminal_mode_drop;
 import "terminal/error" take TerminalProblem;
 import "io/stream" take Closing;
 
+// Cooked, cbreak, raw or secret.
 enum TerminalMode = (cooked, cbreak, raw, secret);
 
+// Something that applies modes.
 role TerminalModeApplying {
+    // Applies mode until the lease closes.
     apply(mode is TerminalMode) is TerminalModeLease;
 }
 
+// A mode to apply.
 object AppliedTerminalMode {
     has origin is TerminalModeApplying;
     has mode is TerminalMode;
 
+    // mode on origin.
     AppliedTerminalMode(origin is TerminalModeApplying, mode is TerminalMode) {
         self.origin = origin;
         self.mode = mode;
     }
 
+    // Applies it.
     lease() is TerminalModeLease {
         origin.apply(mode);
     }
 }
 
+// A mode in effect.
 object TerminalModeLease does Closing {
     has state is TerminalModeState;
     has mode is TerminalMode;
 
+    // mode on origin.
     TerminalModeLease(origin is TerminalState, mode is TerminalMode) {
         let code = match mode {
             case TerminalMode.cooked {
@@ -53,14 +70,17 @@ object TerminalModeLease does Closing {
         self.mode = mode;
     }
 
+    // The mode.
     mode() is TerminalMode {
         mode;
     }
 
+    // Whether it was closed.
     closed() is bool {
         terminal_mode_closed(state);
     }
 
+    // Restores the previous mode.
     close() is void {
         try {
             terminal_mode_close(state);

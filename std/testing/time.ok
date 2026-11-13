@@ -1,5 +1,13 @@
 module testing/time v1.0.0;
 
+// A clock for tests that moves only when told.
+//
+//     let clock = ManualClock(Instant(Duration(seconds: 1700000000)));
+//     let waiting = cache.expire_later(clock);
+//     clock.advance(Duration(minutes: 5));        // wakes what waited up to then
+//
+// It works only inside a test.
+
 import "testing/check" take CheckContext;
 import "time/clock" take Timing, Instant, MonotonicInstant;
 import "time/duration" take Duration, DurationUnit;
@@ -15,6 +23,7 @@ object ManualClock does Timing {
     has cell is Atomic<ManualClockFrame>;
     has domain is string;
 
+    // A clock at start; only inside a test.
     ManualClock(start is Instant) {
         CheckContext().verify();
         domain = clock_domain(true);
@@ -30,16 +39,19 @@ object ManualClock does Timing {
         );
     }
 
+    // The wall time now.
     instant() is Instant {
         CheckContext().verify();
         self.open().wall();
     }
 
+    // The monotonic time now.
     monotonic_instant() is MonotonicInstant {
         CheckContext().verify();
         MonotonicInstant(origin: self.open().elapsed(), domain: domain);
     }
 
+    // Sets the wall time; the monotonic time stays.
     set_wall(value is Instant) is void {
         CheckContext().verify();
         let old = self.open();
@@ -55,16 +67,19 @@ object ManualClock does Timing {
         );
     }
 
+    // How many waits are pending.
     pending() is int {
         CheckContext().verify();
         cell.value().waiters().size();
     }
 
+    // Whether it was closed.
     closed() is bool {
         CheckContext().verify();
         cell.value().closed();
     }
 
+    // Moves both times forward, waking the waits that are due.
     advance(duration is Duration) is void {
         CheckContext().verify();
         confirm duration::Span::seconds >= 0.rat()
@@ -102,6 +117,7 @@ object ManualClock does Timing {
         }
     }
 
+    // Waits until the clock is advanced past duration.
     async wait(duration is Duration) is void {
         CheckContext().verify();
         confirm duration::Span::seconds >= 0.rat()
@@ -133,6 +149,7 @@ object ManualClock does Timing {
         self.open();
     }
 
+    // Closes it and drops its waits; ManualClockClosed after.
     close() is void {
         CheckContext().verify();
         let old = cell.value();
@@ -268,8 +285,10 @@ hidden object ManualClockFrame {
     }
 }
 
+// The clock was used after close().
 enum ManualClockClosed is Error = (closed);
 
+// A clock used wrongly; reason says why.
 enum InvalidManualClock is Error = (because(reason is string));
 
 test "manual clock changes no host clock" {

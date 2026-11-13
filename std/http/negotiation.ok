@@ -1,5 +1,21 @@
 module http/negotiation v1.0.0;
 
+// Content negotiation (RFC 9110 §12): Accept, Accept-Encoding, Accept-Charset
+// and Accept-Language.
+//
+//     let accepted = AcceptedMediaTypes(request::Head::headers.text("Accept"));
+//     let type = accepted.preference([HttpMediaType("application/json"), HttpMediaType("text/html")]);
+//
+//     AcceptedContentCodings("gzip;q=0.8, br").preference([ContentCoding("gzip"), ContentCoding("br")]);  // br
+//     AcceptedLanguages("de-CH, de;q=0.9, en;q=0.5").preference(locales);
+//     Quality(0.5.rat()).string();                                                                    // "0.5"
+//
+// An absent field accepts everything; a field sent empty accepts nothing (but
+// `identity` for codings). The most specific media range decides the quality of
+// a type; ties go to what the client listed first. Nothing here knows which
+// codecs or charsets exist: the caller says what is available. Fields are
+// bounded (8192 bytes and 128 entries by default).
+
 import "compare" take Comparing, Order;
 import "encoding/utf" take Utf8Encoded;
 import "http/token" take HttpToken, InvalidToken;
@@ -20,6 +36,7 @@ import "locale/match" take BasicLanguageRange, LanguagePrefixes, InvalidLanguage
 object Quality does Comparing<Quality> {
     has thousandths is int;
 
+    // origin; InvalidQuality outside 0..1 or with more than three decimals.
     Quality(origin is rat) {
         confirm origin >= 0.rat() && origin <= 1.rat()
             else throw InvalidQuality.because("outside 0..1");
@@ -30,18 +47,22 @@ object Quality does Comparing<Quality> {
         thousandths = whole;
     }
 
+    // The value.
     weight() is rat {
         thousandths.rat() / 1000.rat();
     }
 
+    // Whether it is above 0.
     acceptable() is bool {
         thousandths > 0;
     }
 
+    // Lower qualities first.
     order(other is Quality) is Order {
         self.weight().order(other.weight());
     }
 
+    // The shortest q-value text: `1`, `0.5`, `0.125`.
     string() is string {
         if thousandths == 0 {
             return "0";
@@ -69,10 +90,12 @@ object Quality does Comparing<Quality> {
 object ParsedQuality {
     has origin is string;
 
+    // The text after `q=`.
     ParsedQuality(origin is string) {
         self.origin = origin;
     }
 
+    // The quality; InvalidQuality for text that is not one.
     quality() is Quality {
         confirm origin.length() >= 1 && origin.length() <= 5
             else throw InvalidQuality.because("qvalue length");
@@ -108,6 +131,7 @@ object WeightedValue {
     has token is string;
     has quality is Quality;
 
+    // value at quality 1.
     WeightedValue(value is string) {
         token = try {
             HttpToken(value).string();
@@ -118,6 +142,7 @@ object WeightedValue {
         quality = Quality(1.rat());
     }
 
+    // value at quality; InvalidWeightedValue when value is not a token.
     WeightedValue(value is string, quality is Quality) {
         token = try {
             HttpToken(value).string();
@@ -128,28 +153,34 @@ object WeightedValue {
         self.quality = quality;
     }
 
+    // The token, as spelled.
     value() is string {
         token;
     }
 
+    // The quality.
     quality() is Quality {
         quality;
     }
 
+    // `value` or `value;q=…`.
     string() is string {
         token + ";q=" + quality.string();
     }
 }
 
+// How large a negotiation field may be.
 object NegotiationLimits {
     has bytes, entries, available is int;
 
+    // 8192 bytes, 128 entries and 128 available choices.
     NegotiationLimits() {
         bytes = 8192;
         entries = 128;
         available = 128;
     }
 
+    // The limits as given.
     NegotiationLimits(bytes is int, entries is int, available is int) {
         confirm bytes >= 0 && entries >= 0 && available >= 0
             else throw InvalidArgument.because("negotiation budgets must be nonnegative");
@@ -158,6 +189,7 @@ object NegotiationLimits {
         self.available = available;
     }
 
+    // The bytes, entries and available choices.
     cap Limits {
         bytes is int {
             bytes;
@@ -181,6 +213,7 @@ object AcceptedContentCodings {
     has limits is NegotiationLimits;
     has present is bool;
 
+    // No Accept-Encoding field: every coding is acceptable.
     AcceptedContentCodings() {
         let empty is @CodingPreference = [];
         origin = empty;
@@ -189,6 +222,8 @@ object AcceptedContentCodings {
         present = false;
     }
 
+    // Reads origin within the default limits; InvalidNegotiation for text that
+    // is not the field.
     AcceptedContentCodings(origin is string) {
         let budget = NegotiationLimits();
         let entries = CodingField(origin: origin, limits: budget).values();
@@ -198,6 +233,7 @@ object AcceptedContentCodings {
         present = true;
     }
 
+    // Reads origin within limits.
     AcceptedContentCodings(origin is string, limits is NegotiationLimits) {
         let entries = CodingField(origin: origin, limits: limits).values();
         self.limits = limits;
@@ -206,10 +242,12 @@ object AcceptedContentCodings {
         present = true;
     }
 
+    // Whether the field was sent.
     present() is bool {
         present;
     }
 
+    // The entries, in order.
     values() is Sequencing<WeightedValue> {
         let values is @WeightedValue = origin.map() -> entry {
             WeightedValue(value: entry.token(), quality: entry.quality());
@@ -217,6 +255,7 @@ object AcceptedContentCodings {
         values;
     }
 
+    // The field as it would be written.
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
@@ -225,15 +264,20 @@ object AcceptedContentCodings {
         parts.join(", ");
     }
 
+    // How much the client wants this coding; 0 when it is not acceptable.
+    // `identity` stays acceptable unless excluded.
     quality(coding is ContentCoding) is Quality {
         self.match(coding).quality();
     }
 
+    // The coding of available the client prefers most, earlier entries winning
+    // ties; NoAcceptableValue when none is acceptable.
     preference(available is Sequencing<ContentCoding>) is ContentCoding {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative coding choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @ContentCoding = (0..count).map() -> index {
             available.item(index);
         };
@@ -359,7 +403,8 @@ hidden object CodingField {
     }
 
     values() is @CodingPreference {
-        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(name: HeaderName("Accept-Encoding"), value: origin).value();
         }
@@ -455,6 +500,7 @@ hidden object CodingChoice {
 object CharsetName does Comparing<CharsetName> {
     has origin is string;
 
+    // Checks origin as a token; InvalidNegotiation otherwise.
     CharsetName(origin is string) {
         let token = try {
             HttpToken(origin).string();
@@ -467,10 +513,12 @@ object CharsetName does Comparing<CharsetName> {
         self.origin = HttpAsciiLowercase(token).string();
     }
 
+    // The name, as spelled.
     string() is string {
         origin;
     }
 
+    // Orders by the lowercase name.
     order(other is CharsetName) is Order {
         origin.order(other.string());
     }
@@ -484,6 +532,7 @@ object AcceptedCharsets {
     has limits is NegotiationLimits;
     has present is bool;
 
+    // No Accept-Charset field: every charset is acceptable.
     AcceptedCharsets() {
         let empty is @CodingPreference = [];
         origin = empty;
@@ -492,6 +541,8 @@ object AcceptedCharsets {
         present = false;
     }
 
+    // Reads origin within the default limits; InvalidNegotiation for text that
+    // is not the field.
     AcceptedCharsets(origin is string) {
         let budget = NegotiationLimits();
         let entries = CodingField(origin: origin, limits: budget).values();
@@ -501,6 +552,7 @@ object AcceptedCharsets {
         present = true;
     }
 
+    // Reads origin within limits.
     AcceptedCharsets(origin is string, limits is NegotiationLimits) {
         let entries = CodingField(origin: origin, limits: limits).values();
         self.limits = limits;
@@ -509,10 +561,12 @@ object AcceptedCharsets {
         present = true;
     }
 
+    // Whether the field was sent.
     present() is bool {
         present;
     }
 
+    // The entries, in order.
     values() is Sequencing<WeightedValue> {
         let values is @WeightedValue = origin.map() -> entry {
             WeightedValue(value: entry.token(), quality: entry.quality());
@@ -520,6 +574,7 @@ object AcceptedCharsets {
         values;
     }
 
+    // The field as it would be written.
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
@@ -528,15 +583,20 @@ object AcceptedCharsets {
         parts.join(", ");
     }
 
+    // How much the client wants this charset; 0 when it is not acceptable. An
+    // empty field accepts none.
     quality(charset is CharsetName) is Quality {
         self.lookup_match(charset).quality();
     }
 
+    // The charset of available the client prefers most, earlier entries winning
+    // ties; NoAcceptableValue when none is acceptable.
     preference(available is Sequencing<CharsetName>) is CharsetName {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative charset choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @CharsetName = (0..count).map() -> index {
             available.item(index);
         };
@@ -597,39 +657,47 @@ hidden object CharsetChoice {
     }
 }
 
+// A language range with a quality, as Accept-Language lists it.
 object WeightedLanguageRange {
     has range is BasicLanguageRange;
     has quality is Quality;
 
+    // range at quality 1.
     WeightedLanguageRange(range is BasicLanguageRange) {
         self.range = range;
         quality = Quality(1.rat());
     }
 
+    // range at quality.
     WeightedLanguageRange(range is BasicLanguageRange, quality is Quality) {
         self.range = range;
         self.quality = quality;
     }
 
+    // The range.
     range() is BasicLanguageRange {
         range;
     }
 
+    // The quality.
     quality() is Quality {
         quality;
     }
 
+    // `range` or `range;q=…`.
     string() is string {
         range.string() + ";q=" + quality.string();
     }
 }
 
+// An Accept-Language field: the client's preferences, read when it is built.
 object AcceptedLanguages {
     has origin is @CodingPreference;
     has indexed is Sorted<CodingPreference>;
     has limits is NegotiationLimits;
     has present is bool;
 
+    // No Accept-Language field: every language is acceptable.
     AcceptedLanguages() {
         let empty is @CodingPreference = [];
         origin = empty;
@@ -638,6 +706,8 @@ object AcceptedLanguages {
         present = false;
     }
 
+    // Reads origin within the default limits; InvalidNegotiation for text that
+    // is not the field.
     AcceptedLanguages(origin is string) {
         let budget = NegotiationLimits();
         let entries = LanguageField(origin: origin, limits: budget).values();
@@ -647,6 +717,7 @@ object AcceptedLanguages {
         present = true;
     }
 
+    // Reads origin within limits.
     AcceptedLanguages(origin is string, limits is NegotiationLimits) {
         let entries = LanguageField(origin: origin, limits: limits).values();
         self.limits = limits;
@@ -655,17 +726,23 @@ object AcceptedLanguages {
         present = true;
     }
 
+    // Whether the field was sent.
     present() is bool {
         present;
     }
 
+    // The entries, in order.
     values() is Sequencing<WeightedLanguageRange> {
         let values is @WeightedLanguageRange = origin.map() -> entry {
-            WeightedLanguageRange(range: BasicLanguageRange(entry.token()), quality: entry.quality());
+            WeightedLanguageRange(
+                range: BasicLanguageRange(entry.token()),
+                quality: entry.quality()
+            );
         };
         values;
     }
 
+    // The field as it would be written.
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> entry {
@@ -674,15 +751,20 @@ object AcceptedLanguages {
         parts.join(", ");
     }
 
+    // How much the client wants this locale; 0 when it is not acceptable.
+    // Ranges match by basic filtering (RFC 4647).
     quality(locale is Locale) is Quality {
         self.lookup_match(locale).quality();
     }
 
+    // The locale of available the client prefers most, earlier entries winning
+    // ties; NoAcceptableValue when none is acceptable.
     preference(available is Sequencing<Locale>) is Locale {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative language choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @Locale = (0..count).map() -> index {
             available.item(index);
         };
@@ -695,7 +777,10 @@ object AcceptedLanguages {
 
     hidden lookup_match(locale is Locale) is LanguageMatch {
         if !present {
-            return LanguageMatch(origin: WeightedLanguageRange(BasicLanguageRange("*")), position: 0);
+            return LanguageMatch(
+                origin: WeightedLanguageRange(BasicLanguageRange("*")),
+                position: 0
+            );
         }
         for LanguagePrefixes(locale).values() -> prefix {
             let exact = WeightedTokenLookup(origin: indexed, token: prefix.string()).preferences();
@@ -800,20 +885,27 @@ hidden object LanguageChoice {
     }
 }
 
+// A negotiation field that is not valid; reason says why.
 enum InvalidNegotiation is Error = (because(reason is string));
 
+// A field or a choice list over a limit; kind says which.
 enum NegotiationLimitExceeded is Error = (kind(kind is string));
 
+// None of the available choices is acceptable.
 enum NoAcceptableValue is Error = (none);
 
+// The field was not sent.
 enum MissingNegotiationField is Error = (missing);
 
+// A media range of Accept: `*/*`, `type/*` or `type/subtype`, with parameters
+// and a quality.
 object MediaRange {
     has major, minor is string;
     has parameters is HttpMediaParameters;
     has quality is Quality;
     has specificity is MediaSpecificity;
 
+    // `*/*` at quality 1.
     MediaRange() {
         major = "*";
         minor = "*";
@@ -823,6 +915,7 @@ object MediaRange {
         specificity = MediaSpecificity(kind: 0, parameters: 0);
     }
 
+    // Reads one range within the default limits.
     MediaRange(origin is string) {
         let parsed = ParsedMediaRange(origin: origin, limits: HttpMediaLimits()).range();
         major = parsed::Range::type;
@@ -832,6 +925,7 @@ object MediaRange {
         specificity = parsed.specificity();
     }
 
+    // Reads one range within limits.
     MediaRange(origin is string, limits is HttpMediaLimits) {
         let parsed = ParsedMediaRange(origin: origin, limits: limits).range();
         major = parsed::Range::type;
@@ -841,6 +935,7 @@ object MediaRange {
         specificity = parsed.specificity();
     }
 
+    // type/subtype with parameters at quality.
     MediaRange(
         type is string,
         subtype is string,
@@ -881,18 +976,22 @@ object MediaRange {
         specificity = MediaSpecificity(kind: kind, parameters: parameters.entries().size());
     }
 
+    // Its parameters, without q.
     parameters() is HttpMediaParameters {
         parameters;
     }
 
+    // Its quality.
     quality() is Quality {
         quality;
     }
 
+    // How specific it is.
     specificity() is MediaSpecificity {
         specificity;
     }
 
+    // The range as Accept writes it.
     string() is string {
         major + "/" + minor + if parameters.entries().size() == 0 {
             "";
@@ -902,6 +1001,7 @@ object MediaRange {
         } + ";q=" + quality.string();
     }
 
+    // Whether origin falls in the range, parameters included.
     matches(origin is HttpMediaType) is bool {
         if major != "*" && major != origin::Type::type {
             return false;
@@ -919,6 +1019,7 @@ object MediaRange {
         true;
     }
 
+    // The type and subtype, either of which may be `*`.
     cap Range {
         type is string {
             major;
@@ -990,9 +1091,12 @@ hidden object ParsedMediaRange {
     }
 }
 
+// How specific a range is: its kind (0 for `*/*`, 1 for `type/*`, 2 for a full
+// type), then its parameter count.
 object MediaSpecificity does Comparing<MediaSpecificity> {
     has kind, parameters is int;
 
+    // As given.
     MediaSpecificity(kind is int, parameters is int) {
         confirm kind >= 0 && kind <= 2 && parameters >= 0
             else throw InvalidArgument.because("invalid media specificity");
@@ -1000,14 +1104,17 @@ object MediaSpecificity does Comparing<MediaSpecificity> {
         self.parameters = parameters;
     }
 
+    // 0, 1 or 2.
     kind() is int {
         kind;
     }
 
+    // How many parameters.
     parameters() is int {
         parameters;
     }
 
+    // Less specific first.
     order(other is MediaSpecificity) is Order {
         if kind != other.kind() {
             kind.order(other.kind());
@@ -1018,9 +1125,11 @@ object MediaSpecificity does Comparing<MediaSpecificity> {
     }
 }
 
+// How large an Accept field may be.
 object MediaNegotiationLimits {
     has bytes, entries, parameters, available is int;
 
+    // 8192 bytes, 128 ranges, 32 parameters each and 128 available types.
     MediaNegotiationLimits() {
         bytes = 8192;
         entries = 128;
@@ -1028,6 +1137,7 @@ object MediaNegotiationLimits {
         available = 128;
     }
 
+    // The limits as given.
     MediaNegotiationLimits(bytes is int, entries is int, parameters is int, available is int) {
         confirm bytes >= 0 && entries >= 0 && parameters >= 0 && available >= 0
             else throw InvalidArgument.because("negative media negotiation budget");
@@ -1037,6 +1147,7 @@ object MediaNegotiationLimits {
         self.available = available;
     }
 
+    // The limits.
     cap Limits {
         bytes is int {
             bytes;
@@ -1056,17 +1167,21 @@ object MediaNegotiationLimits {
     }
 }
 
+// An Accept field: the client's preferences, read when it is built.
 object AcceptedMediaTypes {
     has origin is @MediaRange;
     has limits is MediaNegotiationLimits;
     has present is bool;
 
+    // No Accept field: every type is acceptable.
     AcceptedMediaTypes() {
         origin = [];
         limits = MediaNegotiationLimits();
         present = false;
     }
 
+    // Reads origin within the default limits; InvalidNegotiation for text that
+    // is not the field.
     AcceptedMediaTypes(origin is string) {
         let budget = MediaNegotiationLimits();
         self.origin = MediaField(origin: origin, limits: budget).values();
@@ -1074,20 +1189,24 @@ object AcceptedMediaTypes {
         present = true;
     }
 
+    // Reads origin within limits.
     AcceptedMediaTypes(origin is string, limits is MediaNegotiationLimits) {
         self.origin = MediaField(origin: origin, limits: limits).values();
         self.limits = limits;
         present = true;
     }
 
+    // Whether the field was sent.
     present() is bool {
         present;
     }
 
+    // The entries, in order.
     values() is Sequencing<MediaRange> {
         origin;
     }
 
+    // The field as it would be written.
     string() is string {
         confirm present else throw MissingNegotiationField.missing;
         let parts is @string = origin.map() -> range {
@@ -1096,15 +1215,20 @@ object AcceptedMediaTypes {
         parts.join(", ");
     }
 
+    // How much the client wants this media type; 0 when it is not acceptable.
+    // The most specific matching range decides.
     quality(media is HttpMediaType) is Quality {
         self.lookup_match(media).quality();
     }
 
+    // The media type of available the client prefers most, earlier entries
+    // winning ties; NoAcceptableValue when none is acceptable.
     preference(available is Sequencing<HttpMediaType>) is HttpMediaType {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative media choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @HttpMediaType = (0..count).map() -> index {
             available.item(index);
         };
@@ -1130,21 +1254,25 @@ object AcceptedMediaTypes {
     }
 }
 
+// The most specific range matching a type so far; used inside http/negotiation.
 object MediaMatch {
     has selected is @MediaRange;
     has position is int;
 
+    // No match yet.
     MediaMatch() {
         selected = [];
         position = 0;
     }
 
+    // range at position.
     MediaMatch(range is MediaRange, position is int) {
         confirm position >= 0 else throw InvalidArgument.because("negative media match position");
         selected = [range];
         self.position = position;
     }
 
+    // This match, or range when it is more specific.
     following(range is MediaRange, position is int) is ^MediaMatch {
         confirm position >= 0 else throw InvalidArgument.because("negative media match position");
         if selected.size() == 0
@@ -1154,6 +1282,7 @@ object MediaMatch {
             }
     }
 
+    // The quality of the match; 0 for none.
     quality() is Quality {
         if selected.size() == 0 {
             Quality(0.rat());
@@ -1163,6 +1292,7 @@ object MediaMatch {
         }
     }
 
+    // Its specificity.
     specificity() is MediaSpecificity {
         if selected.size() == 0 {
             MediaSpecificity(kind: 0, parameters: 0);
@@ -1172,6 +1302,7 @@ object MediaMatch {
         }
     }
 
+    // Where the range stood in the field.
     position() is int {
         position;
     }
@@ -1216,7 +1347,8 @@ hidden object MediaField {
     }
 
     values() is @MediaRange {
-        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(name: HeaderName("Accept"), value: origin).value();
         }
@@ -1235,7 +1367,10 @@ hidden object MediaField {
             part != "";
         };
         let values is @MediaRange = nonempty.map() -> part {
-            MediaRange(origin: part, limits: HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters));
+            MediaRange(
+                origin: part,
+                limits: HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters)
+            );
         };
         values;
     }
@@ -1337,8 +1472,10 @@ hidden object MediaMemberPosition {
     }
 }
 
+// A quality that is not 0 to 1 in thousandths; reason says why.
 enum InvalidQuality is Error = (because(reason is string));
 
+// A weighted value that is not a token; reason says why.
 enum InvalidWeightedValue is Error = (because(reason is string));
 
 test "quality is exact and zero refuses a preference" {
@@ -1380,5 +1517,8 @@ test "charset exact refusal overrides wildcard without an implicit legacy defaul
 test "language matching uses most-specific basic range before wildcard quality" {
     let accepted = AcceptedLanguages("en;q=0,*;q=0.5");
     test.is(accepted.quality(Locale(language: "en", region: "US")).string(), "0");
-    test.is(accepted.preference([Locale(language: "en", region: "US"), Locale("fr")]).string(), "fr");
+    test.is(
+        accepted.preference([Locale(language: "en", region: "US"), Locale("fr")]).string(),
+        "fr"
+    );
 }

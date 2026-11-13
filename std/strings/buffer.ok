@@ -1,9 +1,5 @@
 module strings/buffer v1.0.0;
 
-import "io/stream" take WritingText;
-import "runtime/buffer" take TextBufferState, text_buffer_create, text_buffer_append,
-    text_buffer_text;
-
 // Text built up piece by piece and kept by the runtime: a write does not copy
 // what is already there, and string() gives the text so far.
 //
@@ -16,13 +12,21 @@ import "runtime/buffer" take TextBufferState, text_buffer_create, text_buffer_ap
 //
 // A TextBuffer is a WritingText, so it goes wherever text is written. Copies
 // of the object share the one buffer, like the other io/buffer views.
+
+import "io/stream" take WritingText;
+import "runtime/buffer" take TextBufferState, text_buffer_create, text_buffer_append,
+    text_buffer_text;
+
+// Text built piece by piece; a write appends without copying what is there.
 object TextBuffer does WritingText {
     has state is TextBufferState;
 
+    // An empty buffer.
     TextBuffer() {
         state = text_buffer_create();
     }
 
+    // Appends the strings.
     write(values is ...string) is void {
         let parts is @string = values...;
         for parts -> part {
@@ -30,6 +34,7 @@ object TextBuffer does WritingText {
         }
     }
 
+    // Appends the strings and then one LF.
     writeln(values is ...string) is void {
         let parts is @string = values...;
         for parts -> part {
@@ -38,6 +43,7 @@ object TextBuffer does WritingText {
         text_buffer_append(state, "\n");
     }
 
+    // The text so far.
     string() is string {
         text_buffer_text(state);
     }

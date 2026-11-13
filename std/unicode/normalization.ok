@@ -17,17 +17,22 @@ import "runtime/unicode_normalization" take normalized_text;
 // selected Unicode normalization algorithm. The source string remains
 // unchanged and normalizing an already normalized result is idempotent.
 
+// NFC and NFD compose and decompose; NFKC and NFKD also fold compatibility
+// forms such as `ﬁ`.
 enum NormalizationForm = (nfc, nfd, nfkc, nfkd);
 
+// Text in a Unicode normalization form.
 object Normalized {
     has origin is string;
     has form is NormalizationForm;
 
+    // origin in form.
     Normalized(origin is string, form is NormalizationForm) {
         self.origin = origin;
         self.form = form;
     }
 
+    // The normalized text.
     string() is string {
         normalized_text(origin, self.form_name());
     }

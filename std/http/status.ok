@@ -1,5 +1,16 @@
 module http/status v1.0.0;
 
+// HTTP status codes: a case for each code of the IANA registry, and
+// `other(code)` for the rest of 100-599.
+//
+//     StatusCode(Status.not_found).number();          // 404
+//     StatusCode(418).status();                       // Status.other(418)
+//     StatusCode(503).class();                        // StatusClass.server_error
+//     StatusCode(Status.ok).phrase();                 // "OK"
+//
+// A registered number always reads back as its own case, so `Status.other(404)`
+// is refused.
+
 // Numeric protocol classification, independent of display phrases and wire version.
 enum StatusClass = (informational, successful, redirection, client_error, server_error);
 
@@ -15,11 +26,13 @@ enum Status = (continue, switching_protocols, processing, early_hints, upload_re
 object StatusCode {
     has origin is int;
 
+    // The status of code; InvalidStatus outside 100-599.
     StatusCode(code is int) {
         confirm code >= 100 && code <= 599 else throw InvalidStatus.code(code);
         origin = code;
     }
 
+    // The number of status; InvalidStatus for other() of a registered code.
     StatusCode(status is Status) {
         let number = match status {
             case Status.continue {
@@ -217,10 +230,12 @@ object StatusCode {
         origin = number;
     }
 
+    // The number.
     number() is int {
         origin;
     }
 
+    // The status.
     status() is Status {
         match origin {
             case 100 {
@@ -415,6 +430,7 @@ object StatusCode {
         }
     }
 
+    // Its class, from the first digit.
     class() is StatusClass {
         match (origin / 100).int() {
             case 1 {

@@ -1,5 +1,10 @@
 module http/internal/http2_headers v1.0.0;
 
+// Header blocks on the wire: HEADERS followed by CONTINUATION frames, read and
+// written as one block.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope, Http2FaultView;
 import "http/internal/http2_reading" take Http2FrameReading, EndOfHttp2Frames;
@@ -12,12 +17,14 @@ import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
+// A decoded header block of one stream.
 object Http2HeaderBlock {
     has fields is @HpackField;
     has context is HpackDecoder;
     has stream is int;
     has end_stream is bool;
 
+    // As given.
     Http2HeaderBlock(
         fields is @HpackField,
         context is HpackDecoder,
@@ -30,18 +37,22 @@ object Http2HeaderBlock {
         self.end_stream = end_stream;
     }
 
+    // The fields.
     fields() is @HpackField {
         fields;
     }
 
+    // The decoder after the block.
     context() is HpackDecoder {
         context;
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // Whether the stream ends with it.
     end_stream() is bool {
         end_stream;
     }
@@ -52,6 +63,8 @@ object Http2HeaderBlock {
 object Http2HeaderBlockReading {
     has pending is Future<Http2HeaderBlock>;
 
+    // Reads the block first starts, from origin, with payloads up to 16384
+    // bytes.
     Http2HeaderBlockReading(
         first is Http2Frame,
         origin is AsyncReading,
@@ -68,6 +81,7 @@ object Http2HeaderBlockReading {
         pending = operation.reading();
     }
 
+    // The same with payloads up to maximum bytes.
     Http2HeaderBlockReading(
         first is Http2Frame,
         origin is AsyncReading,
@@ -85,6 +99,7 @@ object Http2HeaderBlockReading {
         pending = operation.reading();
     }
 
+    // The decoded block; Http2Fault for an interleaved frame or a bad block.
     async block() is Http2HeaderBlock {
         let group is FutureGroup<Http2HeaderBlock> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
@@ -245,6 +260,7 @@ hidden object Http2HeaderFragment {
 object Http2HeaderBlockWriting {
     has pending is Future<AsyncWriting>;
 
+    // Writes fields on stream in frames of at most fragment bytes.
     Http2HeaderBlockWriting(
         origin is AsyncWriting,
         stream is int,
@@ -264,6 +280,7 @@ object Http2HeaderBlockWriting {
         pending = operation.writing();
     }
 
+    // Writes the frames and gives the writer back.
     async output() is AsyncWriting {
         let group is FutureGroup<AsyncWriting> = FutureGroup();
         let cleanup = Http2HeaderSettlement(group);
@@ -327,6 +344,8 @@ hidden object Http2HeaderOutput {
 object Http2EncodedHeaderFrames {
     has value is @Http2Frame;
 
+    // fields on stream, cut into HEADERS and CONTINUATION of at most fragment
+    // bytes.
     Http2EncodedHeaderFrames(
         stream is int,
         fields is Sequencing<HpackField>,
@@ -394,6 +413,7 @@ object Http2EncodedHeaderFrames {
         };
     }
 
+    // The frames.
     frames() is @Http2Frame {
         value;
     }

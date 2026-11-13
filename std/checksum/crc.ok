@@ -1,8 +1,5 @@
 module checksum/crc v1.0.0;
 
-import "checksum/state" take Checksumming, InvalidChecksumInitial;
-import "runtime/checksum" take checksum_crc32, checksum_crc16;
-
 // Immutable CRC values over byte chunks. Both objects compute lazily in checksum()
 // without mutation or memoization. state(bytes) computes the receiver's value,
 // then returns a successor retaining only the new chunk and resulting seed.
@@ -20,20 +17,28 @@ import "runtime/checksum" take checksum_crc32, checksum_crc16;
 // a finalized CRC (as in zlib), so it is XORed before and after calculation.
 // Crc32()/Crc32(bytes) default to public seed 0. Crc32(origin: bytes, initial: initial) requires
 // 0..4294967295 and throws InvalidChecksumInitial at construction otherwise.
+
+import "checksum/state" take Checksumming, InvalidChecksumInitial;
+import "runtime/checksum" take checksum_crc32, checksum_crc16;
+
+// CRC-32 as gzip, zip and PNG use it.
 object Crc32 does Checksumming {
     has origin is @byte;
     has initial is int;
 
+    // The checksum of nothing yet; state(bytes) feeds it.
     Crc32() {
         origin = [];
         initial = 0;
     }
 
+    // The checksum of these bytes.
     Crc32(origin is @byte) {
         self.origin = origin;
         initial = 0;
     }
 
+    // The checksum of these bytes continued from initial.
     Crc32(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 4294967295
             else throw InvalidChecksumInitial.detailed(initial, 4294967295);
@@ -46,6 +51,7 @@ object Crc32 does Checksumming {
         checksum_crc32(origin, initial);
     }
 
+    // The checksum of everything fed so far and then origin.
     state(origin is @byte) is ^Crc32 {
         ^initial = self.checksum();
         ^origin = origin;
@@ -63,6 +69,8 @@ object Crc16Ccitt does Checksumming {
     has origin is @byte;
     has initial is int;
 
+    // CRC-16/CCITT of nothing yet, starting from initial (0xFFFF for
+    // CCITT-FALSE, 0 for XMODEM).
     Crc16Ccitt(initial is int) {
         confirm initial >= 0 && initial <= 65535
             else throw InvalidChecksumInitial.detailed(initial, 65535);
@@ -70,6 +78,7 @@ object Crc16Ccitt does Checksumming {
         self.initial = initial;
     }
 
+    // CRC-16/CCITT of these bytes, starting from initial.
     Crc16Ccitt(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 65535
             else throw InvalidChecksumInitial.detailed(initial, 65535);
@@ -82,6 +91,7 @@ object Crc16Ccitt does Checksumming {
         checksum_crc16(origin, initial);
     }
 
+    // The checksum of everything fed so far and then origin.
     state(origin is @byte) is ^Crc16Ccitt {
         ^initial = self.checksum();
         ^origin = origin;

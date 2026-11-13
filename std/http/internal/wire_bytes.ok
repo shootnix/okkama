@@ -1,5 +1,9 @@
 module http/internal/wire_bytes v1.0.0;
 
+// Joining byte chunks into one bounded buffer.
+//
+// Internal to the http modules; programs do not import it.
+
 import "runtime/buffer" take buffer_state_create, buffer_state_append, buffer_state_bytes,
     buffer_state_close;
 
@@ -8,6 +12,7 @@ import "runtime/buffer" take buffer_state_create, buffer_state_append, buffer_st
 object HttpWireBytes {
     has chunks is @@byte;
 
+    // chunks joined, at most maximum bytes.
     HttpWireBytes(chunks is @@byte, maximum is int) {
         confirm maximum >= 0 && maximum <= 16777224 && chunks.size() <= 1024
             else throw WireByteLimit.exceeded;
@@ -18,6 +23,7 @@ object HttpWireBytes {
         self.chunks = chunks;
     }
 
+    // The bytes; WireByteLimit beyond maximum.
     bytes() is @byte {
         let buffer = buffer_state_create([]);
         defer buffer_state_close(buffer);
@@ -29,6 +35,7 @@ object HttpWireBytes {
     }
 }
 
+// The bytes would exceed the limit.
 enum WireByteLimit is Error = (exceeded);
 
 test "bulk join returns independent octets after its private buffer closes" {

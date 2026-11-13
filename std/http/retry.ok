@@ -1,5 +1,13 @@
 module http/retry v1.0.0;
 
+// Sending a request once more when a reused connection closed before it
+// answered.
+//
+//     let client = Retrying(HttpClient());
+//
+// Only HttpStaleConnection is retried, only once, and only for idempotent
+// methods with replayable bodies. Every other failure goes to the caller.
+
 import "http/client" take HttpStaleConnection;
 import "http/message" take Request;
 import "http/method" take MethodSemantics;
@@ -12,10 +20,13 @@ import "async/atomic" take Atomic;
 object Retrying does Exchanging {
     has origin is Exchanging;
 
+    // Sends through origin.
     Retrying(origin is Exchanging) {
         self.origin = origin;
     }
 
+    // The response; one more attempt after HttpStaleConnection when that is
+    // safe.
     async response(request is Request) is ClientResponse {
         let outcome is @ClientResponse = try {
             [await self.once(request)];
@@ -33,6 +44,7 @@ object Retrying does Exchanging {
         await self.once(request);
     }
 
+    // One attempt.
     async once(request is Request) is ClientResponse {
         let pending = origin.response(request);
         await pending;
@@ -59,6 +71,7 @@ hidden object StaleOnce does Exchanging {
     }
 }
 
+// Thrown by the test double of http/retry on its second attempt.
 enum RetryProbe is Error = (second_attempt);
 
 async test "a stale connection is retried once for an idempotent, replayable request" {

@@ -1,5 +1,8 @@
 module http/cache_admission v1.0.0;
 
+// One request at a time per cache key: concurrent misses for one URL wait for
+// the first to fill the cache. Caching uses it; programs do not.
+
 import "http/method" take MethodName;
 import "http/message" take Request;
 import "http/cache_memory" take CachedHttpEntry;
@@ -44,14 +47,18 @@ hidden object CacheAdmissionKey {
     }
 }
 
+// The admission slots of a cache, one per key in use.
 object CacheAdmissions {
     has entries is Atomic<@CacheAdmissionSlot>;
 
+    // No slots.
     CacheAdmissions() {
         let empty is @CacheAdmissionSlot = [];
         entries = Atomic(empty);
     }
 
+    // A booking of the slot for request's key; CacheAdmissionExceeded beyond
+    // 256 keys at once.
     booking(request is Request) is CacheAdmissionBooking {
         let key = CacheAdmissionKey(request).key();
         let current = entries.value();
@@ -68,6 +75,7 @@ object CacheAdmissions {
         CacheAdmissionBooking(origin: self, slot: slot);
     }
 
+    // Drops slot when nobody uses it any more.
     released(slot is CacheAdmissionSlot) is void {
         slot.leave();
         if slot.users() == 0 {
@@ -79,11 +87,13 @@ object CacheAdmissions {
         }
     }
 
+    // How many slots are in use.
     size() is int {
         entries.value().size();
     }
 }
 
+// The slot of one cache key: who waits on it and what was published.
 object CacheAdmissionSlot {
     has key is string;
     has lock is Lock;
@@ -91,6 +101,7 @@ object CacheAdmissionSlot {
     has publication is Atomic<int>;
     has published is Atomic<@CacheValidatedEntry>;
 
+    // The slot of key.
     CacheAdmissionSlot(key is string) {
         self.key = key;
         lock = Lock();
@@ -100,15 +111,18 @@ object CacheAdmissionSlot {
         published = Atomic(empty);
     }
 
+    // The revision of the last publication.
     publication() is int {
         publication.value();
     }
 
+    // Publishes entry at revision.
     publish(entry is CachedHttpEntry, revision is int) is void {
         published.replace([CacheValidatedEntry(entry: entry, revision: revision)]);
         publication.replace(publication.value() + 1);
     }
 
+    // What was published after revision.
     following(revision is int) is @CacheValidatedEntry {
         if publication.value() > revision {
             published.value();
@@ -119,39 +133,47 @@ object CacheAdmissionSlot {
         }
     }
 
+    // Retires the slot.
     retire() is void {
         published.close();
         publication.close();
     }
 
+    // The key.
     key() is string {
         key;
     }
 
+    // How many bookings hold it.
     users() is int {
         users.value();
     }
 
+    // One more user.
     join() is void {
         confirm users.value() < 256 else throw CacheAdmissionExceeded.exceeded;
         users.replace(users.value() + 1);
     }
 
+    // One user fewer.
     leave() is void {
         users.replace(users.value() - 1);
     }
 
+    // Waits for the slot's lock.
     async guard() is LockGuard {
         await lock.guard();
     }
 }
 
+// A request's hold on a slot.
 object CacheAdmissionBooking does Closing {
     has origin is CacheAdmissions;
     has slot is CacheAdmissionSlot;
     has stopped is Event;
     has joined is int;
 
+    // A hold on slot of origin.
     CacheAdmissionBooking(origin is CacheAdmissions, slot is CacheAdmissionSlot) {
         self.origin = origin;
         self.slot = slot;
@@ -159,22 +181,27 @@ object CacheAdmissionBooking does Closing {
         stopped = Event();
     }
 
+    // What others published meanwhile.
     published() is @CacheValidatedEntry {
         slot.following(joined);
     }
 
+    // Publishes entry at revision.
     publish(entry is CachedHttpEntry, revision is int) is void {
         slot.publish(entry, revision);
     }
 
+    // Waits for the slot's lock.
     async guard() is LockGuard {
         await slot.guard();
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // Releases it.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -183,29 +210,35 @@ object CacheAdmissionBooking does Closing {
     }
 }
 
+// A booking with the slot's lock held.
 object CacheAdmissionLease does Closing {
     has booking is CacheAdmissionBooking;
     has guard is LockGuard;
     has stopped is Event;
 
+    // booking holding guard.
     CacheAdmissionLease(booking is CacheAdmissionBooking, guard is LockGuard) {
         self.booking = booking;
         self.guard = guard;
         stopped = Event();
     }
 
+    // What others published meanwhile.
     published() is @CacheValidatedEntry {
         booking.published();
     }
 
+    // Publishes entry at revision.
     publish(entry is CachedHttpEntry, revision is int) is void {
         booking.publish(entry, revision);
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // Releases it.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -223,15 +256,18 @@ object CacheAdmissionLease does Closing {
     }
 }
 
+// Leases kept until a response body is done with.
 object CacheAdmissionAnchor {
     has leases is @Closing;
     has retained is Event;
 
+    // leases, released when retained fires.
     CacheAdmissionAnchor(leases is @Closing, retained is Event) {
         self.leases = leases;
         self.retained = retained;
     }
 
+    // Releases the leases.
     close() is void {
         if !retained.ready() {
             for leases -> lease {
@@ -241,21 +277,26 @@ object CacheAdmissionAnchor {
     }
 }
 
+// Too many cache keys are being filled at once.
 enum CacheAdmissionExceeded is Error = (exceeded);
 
+// An entry published at a revision.
 object CacheValidatedEntry {
     has entry is CachedHttpEntry;
     has revision is int;
 
+    // entry at revision.
     CacheValidatedEntry(entry is CachedHttpEntry, revision is int) {
         self.entry = entry;
         self.revision = revision;
     }
 
+    // The entry.
     entry() is CachedHttpEntry {
         entry;
     }
 
+    // The revision.
     revision() is int {
         revision;
     }

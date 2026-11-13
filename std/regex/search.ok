@@ -30,9 +30,12 @@ import "regex/match" take RegexCapture, RegexMatch, RegexMatching, RegexMaybeVal
 //
 //     FirstRegexMatch(origin: text, regex: pattern, range: RegexRange(start: 10, end: 40));
 
+// The first match of a pattern in a text.
 object FirstRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
 
+    // The first match of regex in origin; NoRegexMatch when there is none,
+    // thrown when it is read.
     FirstRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -42,6 +45,7 @@ object FirstRegexMatch does RegexMatching {
         );
     }
 
+    // The first match within range.
     FirstRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -51,42 +55,55 @@ object FirstRegexMatch does RegexMatching {
         );
     }
 
+    // The matched text.
     text() is string {
         observation.match().text();
     }
 
+    // Where the match is in the input.
     range() is RegexRange {
         observation.match().range();
     }
 
+    // The capture group at index, 1 for the first; MissingRegexCapture past the
+    // last.
     capture(index is int) is RegexCapture {
         observation.match().capture(index);
     }
 
+    // The named group; MissingRegexGroup when the pattern has none.
     group(name is string) is RegexCapture {
         observation.match().group(name);
     }
 
+    // Every capture group, in order.
     captures() is @RegexCapture {
         observation.match().captures();
     }
 
+    // The named group's text; UnmatchedRegexCapture when it did not take part.
     text(name is string) is string {
         observation.match().text(name);
     }
 
+    // The named group's text as an int.
     int(name is string) is int {
         observation.match().int(name);
     }
 
+    // The named group, or none when it did not take part:
+    // `found.maybe("port").int() else 80`.
     maybe(name is string) is RegexMaybeValue {
         observation.match().maybe(name);
     }
 }
 
+// A match at the very start of a text.
 object PrefixRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
 
+    // The match at the start of regex in origin; NoRegexMatch when there is
+    // none, thrown when it is read.
     PrefixRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -96,6 +113,7 @@ object PrefixRegexMatch does RegexMatching {
         );
     }
 
+    // The match at the start within range.
     PrefixRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -105,42 +123,55 @@ object PrefixRegexMatch does RegexMatching {
         );
     }
 
+    // The matched text.
     text() is string {
         observation.match().text();
     }
 
+    // Where the match is in the input.
     range() is RegexRange {
         observation.match().range();
     }
 
+    // The capture group at index, 1 for the first; MissingRegexCapture past the
+    // last.
     capture(index is int) is RegexCapture {
         observation.match().capture(index);
     }
 
+    // The named group; MissingRegexGroup when the pattern has none.
     group(name is string) is RegexCapture {
         observation.match().group(name);
     }
 
+    // Every capture group, in order.
     captures() is @RegexCapture {
         observation.match().captures();
     }
 
+    // The named group's text; UnmatchedRegexCapture when it did not take part.
     text(name is string) is string {
         observation.match().text(name);
     }
 
+    // The named group's text as an int.
     int(name is string) is int {
         observation.match().int(name);
     }
 
+    // The named group, or none when it did not take part:
+    // `found.maybe("port").int() else 80`.
     maybe(name is string) is RegexMaybeValue {
         observation.match().maybe(name);
     }
 }
 
+// A match of the whole text.
 object EntireRegexMatch does RegexMatching {
     has observation is RegexMatchObservation;
 
+    // The match of the whole text of regex in origin; NoRegexMatch when there
+    // is none, thrown when it is read.
     EntireRegexMatch(origin is string, regex is Regex) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -150,6 +181,7 @@ object EntireRegexMatch does RegexMatching {
         );
     }
 
+    // The match of the whole text within range.
     EntireRegexMatch(origin is string, regex is Regex, range is RegexRange) {
         observation = RegexMatchObservation(
             origin: origin,
@@ -159,56 +191,71 @@ object EntireRegexMatch does RegexMatching {
         );
     }
 
+    // The matched text.
     text() is string {
         observation.match().text();
     }
 
+    // Where the match is in the input.
     range() is RegexRange {
         observation.match().range();
     }
 
+    // The capture group at index, 1 for the first; MissingRegexCapture past the
+    // last.
     capture(index is int) is RegexCapture {
         observation.match().capture(index);
     }
 
+    // The named group; MissingRegexGroup when the pattern has none.
     group(name is string) is RegexCapture {
         observation.match().group(name);
     }
 
+    // Every capture group, in order.
     captures() is @RegexCapture {
         observation.match().captures();
     }
 
+    // The named group's text; UnmatchedRegexCapture when it did not take part.
     text(name is string) is string {
         observation.match().text(name);
     }
 
+    // The named group's text as an int.
     int(name is string) is int {
         observation.match().int(name);
     }
 
+    // The named group, or none when it did not take part:
+    // `found.maybe("port").int() else 80`.
     maybe(name is string) is RegexMaybeValue {
         observation.match().maybe(name);
     }
 }
 
+// Every match of a pattern in a text, left to right: `for RegexMatches(origin:
+// text, regex: words) -> found { … }`.
 object RegexMatches does Iterating<RegexMatching> {
     has source is string;
     has pattern is Regex;
     has selected is RegexRange;
 
+    // Matches in all of origin.
     RegexMatches(origin is string, regex is Regex) {
         source = origin;
         pattern = regex;
         selected = RegexRange(start: 0, end: origin.length());
     }
 
+    // Matches within range.
     RegexMatches(origin is string, regex is Regex, range is RegexRange) {
         source = origin;
         pattern = regex;
         selected = range;
     }
 
+    // Walks the matches.
     cursor() is Cursor<RegexMatching> {
         confirm selected::Bounds::end <= source.length()
             else throw RegexRangeOutsideInput.range(
@@ -225,6 +272,7 @@ object RegexMatches does Iterating<RegexMatching> {
         );
     }
 
+    // Whether there is at least one.
     found() is bool {
         self.cursor().available();
     }

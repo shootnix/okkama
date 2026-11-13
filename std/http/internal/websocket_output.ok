@@ -1,5 +1,10 @@
 module http/internal/websocket_output v1.0.0;
 
+// The single writer of a WebSocket connection: messages cut into frames,
+// control frames between them, each message finished once started.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/websocket_frame" take WebSocketFrame;
 import "http/websocket" take WebSocketMessage, WebSocketMessageKind, WebSocketLimits,
     WebSocketFailure, WebSocketClosed;
@@ -23,6 +28,7 @@ object WebSocketOutput {
     has changed, space is Atomic<Event>;
     has stopped, started, quiescing is Event;
 
+    // Writes to origin, masking with random when masked, within limits.
     WebSocketOutput(
         origin is AsyncWriting,
         masked is bool,
@@ -45,6 +51,7 @@ object WebSocketOutput {
         quiescing = Event();
     }
 
+    // A ticket for a data message.
     message(value is WebSocketMessage) is WebSocketOutputTicket {
         let text = value.kind() == WebSocketMessageKind.text;
         let payload = if text {
@@ -67,6 +74,7 @@ object WebSocketOutput {
         );
     }
 
+    // A ticket for a control frame.
     control(opcode is int, payload is @byte) is WebSocketOutputTicket {
         confirm opcode == 8 || opcode == 9 || opcode == 10
             else throw WebSocketFailure.because("outgoing control opcode");
@@ -74,6 +82,7 @@ object WebSocketOutput {
         WebSocketOutputTicket(owner: self, opcode: opcode, payload: payload);
     }
 
+    // Queues ticket; true once it is written.
     async submit(ticket is WebSocketOutputTicket) is bool {
         loop {
             confirm !stopped.ready() else throw WebSocketClosed.detailed(1006, "");
@@ -94,12 +103,14 @@ object WebSocketOutput {
         }
     }
 
+    // Writes what is queued, then stops.
     finish() is void {
         stopped.set();
         changed.value().set();
         space.value().set();
     }
 
+    // Takes no more data messages.
     closing() is void {
         if !quiescing.ready() {
             quiescing.set();
@@ -122,6 +133,7 @@ object WebSocketOutput {
         }
     }
 
+    // Stops at once.
     abort() is void {
         self.finish();
         for [jobs.value(), current.value()] -> batch {
@@ -133,6 +145,7 @@ object WebSocketOutput {
         current.replace([]);
     }
 
+    // Takes the queued tickets.
     take() is @WebSocketOutputTicket {
         let queue = jobs.value();
         if queue.size() == 0 {
@@ -144,12 +157,14 @@ object WebSocketOutput {
         [first];
     }
 
+    // Frees the room of a written ticket.
     release() is void {
         current.replace([]);
         space.value().set();
         space.replace(Event());
     }
 
+    // Writes one frame.
     async frame(frame is WebSocketFrame) is bool {
         let mask is @byte = if masked {
             random.bytes(4);
@@ -164,6 +179,7 @@ object WebSocketOutput {
         true;
     }
 
+    // Writes ticket's frames.
     async emit(ticket is WebSocketOutputTicket) is bool {
         let payload = ticket.payload();
         let kind = ticket.opcode();
@@ -197,6 +213,7 @@ object WebSocketOutput {
         }
     }
 
+    // Writes until finished or aborted; true when it finished cleanly.
     async run() is bool {
         confirm !started.ready() else throw InvalidState.because("WebSocket writer is single-use");
         started.set();
@@ -223,6 +240,7 @@ object WebSocketOutput {
     }
 }
 
+// One queued message or control frame.
 object WebSocketOutputTicket {
     has owner is WebSocketOutput;
     has opcode is int;
@@ -230,6 +248,7 @@ object WebSocketOutputTicket {
     has finished, cancellation, stopped is Event;
     has waiting is Atomic<@Future<bool>>;
 
+    // payload with opcode, for owner.
     WebSocketOutputTicket(owner is WebSocketOutput, opcode is int, payload is @byte) {
         self.owner = owner;
         self.opcode = opcode;
@@ -241,18 +260,22 @@ object WebSocketOutputTicket {
         waiting = Atomic(empty);
     }
 
+    // The opcode.
     opcode() is int {
         opcode;
     }
 
+    // The payload.
     payload() is @byte {
         payload;
     }
 
+    // Whether it was cancelled.
     cancelled() is bool {
         cancellation.ready();
     }
 
+    // Cancels it unless it started.
     cancel() is void {
         if !finished.ready() {
             cancellation.set();
@@ -260,10 +283,12 @@ object WebSocketOutputTicket {
         }
     }
 
+    // Marks it written.
     completed() is void {
         finished.set();
     }
 
+    // Marks it failed.
     failed() is void {
         if !finished.ready() {
             stopped.set();
@@ -271,6 +296,7 @@ object WebSocketOutputTicket {
         }
     }
 
+    // Waits for its turn.
     async waiting() is bool {
         defer self.cancel();
         if self.cancelled() {
@@ -286,6 +312,7 @@ object WebSocketOutputTicket {
         true;
     }
 
+    // Waits for it; true when written, WebSocketOutputCancelled otherwise.
     async delivered() is bool {
         let group is FutureGroup<bool> = FutureGroup();
         let cleanup = WebSocketOutputSettlement(group);
@@ -308,13 +335,16 @@ object WebSocketOutputTicket {
     }
 }
 
+// Cancels and waits for a writer's tasks on close.
 object WebSocketOutputSettlement<T> {
     has group is FutureGroup<T>;
 
+    // Settles group.
     WebSocketOutputSettlement(group is FutureGroup<T>) {
         self.group = group;
     }
 
+    // Cancels the group and waits for it.
     async close() is void {
         if group.active() > 0 {
             group.cancel();
@@ -323,4 +353,5 @@ object WebSocketOutputSettlement<T> {
     }
 }
 
+// The ticket was cancelled before it was written.
 enum WebSocketOutputCancelled is Error = (cancelled);

@@ -1,15 +1,20 @@
 module mime/disposition v1.0.0;
 
+// Content-Disposition (RFC 6266, RFC 2183): inline or attachment, and a file
+// name.
+//
+//     let disposition = ContentDisposition("attachment; filename=\"report.pdf\"");
+//     disposition::Disposition::kind;                          // "attachment"
+//     disposition.parameters().first("filename");             // "report.pdf"
+
 import "mime/media_type" take MimeParameters, MimeToken, MimeScanning, InvalidMediaType;
 
-// Eager immutable disposition value using the shared bounded MIME grammar.
-// Extension kinds are retained, case-normalized. Filenames remain decoded
-// strings: no path conversion, sanitization or filesystem effects.
-// string() is a logical field body; see docs/std/mime-disposition.md.
+// A Content-Disposition value.
 object ContentDisposition {
     has token is string;
     has entries is MimeParameters;
 
+    // Reads origin; InvalidContentDisposition says where it is wrong.
     ContentDisposition(origin is string) {
         let parsed = try {
             MimeScanning(origin: origin, maximum_parameters: 256, maximum_bytes: 1048576).disposition();
@@ -21,6 +26,7 @@ object ContentDisposition {
         entries = parsed.parameters();
     }
 
+    // kind with parameters.
     ContentDisposition(kind is string, parameters is MimeParameters) {
         token = try {
             MimeToken(kind).string();
@@ -31,9 +37,14 @@ object ContentDisposition {
         entries = parameters;
     }
 
+    // Reads origin within these limits.
     ContentDisposition(origin is string, maximum_parameters is int, maximum_bytes is int) {
         let parsed = try {
-            MimeScanning(origin: origin, maximum_parameters: maximum_parameters, maximum_bytes: maximum_bytes).disposition();
+            MimeScanning(
+                origin: origin,
+                maximum_parameters: maximum_parameters,
+                maximum_bytes: maximum_bytes
+            ).disposition();
         }
         catch InvalidMediaType.located(offset, reason) {
             throw InvalidContentDisposition.located(offset, reason);
@@ -42,10 +53,12 @@ object ContentDisposition {
         entries = parsed.parameters();
     }
 
+    // Its parameters.
     parameters() is MimeParameters {
         entries;
     }
 
+    // The value as a header writes it.
     string() is string {
         token + if entries.entries().size() == 0 {
             "";
@@ -55,6 +68,7 @@ object ContentDisposition {
         };
     }
 
+    // `inline`, `attachment` or another kind.
     cap Disposition {
         kind is string {
             token;
@@ -62,8 +76,10 @@ object ContentDisposition {
     }
 }
 
+// A value that is not a disposition; offset says where.
 enum InvalidContentDisposition is Error = (located(offset is int, reason is string));
 
+// There is no Content-Disposition.
 enum MissingContentDisposition is Error = (missing);
 
 test "content disposition retains filename data" {

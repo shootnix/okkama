@@ -76,7 +76,9 @@ import "web/exception" take Exception, ProblemReply;
 // translated. Any other error propagates to the std HttpServer, which answers
 // 500 without a body; cancellation and timeouts keep their std meaning.
 
+// Turns the exceptions of endpoints into replies.
 role ExceptionScope {
+    // Runs endpoint and replies to what it throws.
     async scoped(request is WebRequest, endpoint is async (WebRequest) is Responding) is Responding;
 }
 
@@ -86,10 +88,15 @@ role ExceptionScope {
 // as a refused login does, or call inner and work with its reply. An Exception
 // thrown further in reaches it as its problem reply; other errors pass through.
 role Surrounding {
+    // Runs inner for request, with code before and after: logging,
+    // authentication, compression.
     async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding;
 }
 
+// Something that adds routes to a table: a route, a resource, a scope, a
+// fallback.
 role WebRouting {
+    // The routes it adds under prefix.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route;
 
     // The answer for requests no route matches. Only Fallback has one.
@@ -103,9 +110,12 @@ role WebRouting {
     slashes() is Maybe<http_routing.SlashPolicy>;
 }
 
+// A route for GET requests: `Get(path: "/notes/{id}", endpoint: notes.show)`.
 object Get does WebRouting {
     has origin is MethodRoute;
 
+    // GET on path to endpoint; {name} parts of path become route parameters,
+    // and name lets WebLinks build the path.
     Get(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(
             method: Maybe.some(Method.get),
@@ -120,26 +130,33 @@ object Get does WebRouting {
         origin = MethodRoute(method: Maybe.some(Method.get), path: "", endpoint: endpoint, name: "");
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
+// A route for POST requests: `Post(path: "/notes/{id}", endpoint: notes.show)`.
 object Post does WebRouting {
     has origin is MethodRoute;
 
+    // POST on path to endpoint; {name} parts of path become route parameters,
+    // and name lets WebLinks build the path.
     Post(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(
             method: Maybe.some(Method.post),
@@ -159,26 +176,33 @@ object Post does WebRouting {
         );
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
+// A route for PUT requests: `Put(path: "/notes/{id}", endpoint: notes.show)`.
 object Put does WebRouting {
     has origin is MethodRoute;
 
+    // PUT on path to endpoint; {name} parts of path become route parameters,
+    // and name lets WebLinks build the path.
     Put(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(
             method: Maybe.some(Method.put),
@@ -193,26 +217,34 @@ object Put does WebRouting {
         origin = MethodRoute(method: Maybe.some(Method.put), path: "", endpoint: endpoint, name: "");
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
+// A route for PATCH requests: `Patch(path: "/notes/{id}", endpoint:
+// notes.show)`.
 object Patch does WebRouting {
     has origin is MethodRoute;
 
+    // PATCH on path to endpoint; {name} parts of path become route parameters,
+    // and name lets WebLinks build the path.
     Patch(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(
             method: Maybe.some(Method.patch),
@@ -232,26 +264,34 @@ object Patch does WebRouting {
         );
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
 }
 
+// A route for DELETE requests: `Delete(path: "/notes/{id}", endpoint:
+// notes.show)`.
 object Delete does WebRouting {
     has origin is MethodRoute;
 
+    // DELETE on path to endpoint; {name} parts of path become route parameters,
+    // and name lets WebLinks build the path.
     Delete(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(
             method: Maybe.some(Method.delete),
@@ -271,18 +311,22 @@ object Delete does WebRouting {
         );
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -293,6 +337,7 @@ object Delete does WebRouting {
 object Route does WebRouting {
     has origin is MethodRoute;
 
+    // method on path to endpoint.
     Route(
         method is Method,
         path is string,
@@ -307,18 +352,22 @@ object Route does WebRouting {
         origin = MethodRoute(method: Maybe.some(method), path: "", endpoint: endpoint, name: "");
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -331,6 +380,7 @@ object Route does WebRouting {
 object Any does WebRouting {
     has origin is MethodRoute;
 
+    // Any method on path to endpoint.
     Any(path is string, endpoint is async (WebRequest) is Responding, name is string = "") {
         origin = MethodRoute(method: Maybe<Method>.none, path: path, endpoint: endpoint, name: name);
     }
@@ -340,18 +390,22 @@ object Any does WebRouting {
         origin = MethodRoute(method: Maybe<Method>.none, path: "", endpoint: endpoint, name: "");
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         origin.routes(prefix, scopes);
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -368,6 +422,7 @@ object Resource does WebRouting {
     has path is string;
     has routings is @WebRouting;
 
+    // routings under path.
     Resource(path is string, routings is ...WebRouting) {
         confirm path == "" || path.starts_with("/")
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
@@ -376,6 +431,7 @@ object Resource does WebRouting {
         self.routings = listed;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let full = prefix + path;
         let inner = scopes + WebArounds(routings).scopes();
@@ -400,14 +456,17 @@ object Resource does WebRouting {
         all;
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -428,23 +487,28 @@ object Resource does WebRouting {
 object Around does WebRouting {
     has origin is Surrounding;
 
+    // origin around the endpoints.
     Around(origin is Surrounding) {
         self.origin = origin;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let empty is @http_routing.Route = [];
         empty;
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe.some(origin);
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -457,23 +521,28 @@ object Around does WebRouting {
 object Slashes does WebRouting {
     has policy is http_routing.SlashPolicy;
 
+    // Applies policy.
     Slashes(policy is http_routing.SlashPolicy) {
         self.policy = policy;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let empty is @http_routing.Route = [];
         empty;
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe.some(policy);
     }
@@ -496,6 +565,7 @@ object Files does WebRouting {
     has path is string;
     has files is StaticFiles;
 
+    // Serves root at path; cache becomes Cache-Control, tags picks ETags.
     Files(
         path is string,
         root is FileRoot,
@@ -525,6 +595,7 @@ object Files does WebRouting {
         );
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         [
             http_routing.Route(
@@ -535,14 +606,17 @@ object Files does WebRouting {
         ];
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -560,11 +634,13 @@ hidden object FilesEndpoint {
     }
 }
 
+// Routes under one prefix, maybe with their own exception handling.
 object Scope does WebRouting {
     has prefix is string;
     has own is @ExceptionScope;
     has routings is @WebRouting;
 
+    // routings under prefix.
     Scope(prefix is string, routings is @WebRouting) {
         self.prefix = WebPrefix(prefix).string();
         let bare is @ExceptionScope = [];
@@ -572,6 +648,7 @@ object Scope does WebRouting {
         self.routings = routings;
     }
 
+    // routings under prefix, their exceptions handled by exceptions.
     Scope(prefix is string, exceptions is ExceptionScope, routings is @WebRouting) {
         self.prefix = WebPrefix(prefix).string();
         let single is @ExceptionScope = [exceptions];
@@ -597,6 +674,7 @@ object Scope does WebRouting {
         self.routings = listed;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(outer is string, scopes is @ExceptionScope) is @http_routing.Route {
         for routings -> routing {
             confirm routing.fallback() == Maybe<Fallback>.none
@@ -615,14 +693,17 @@ object Scope does WebRouting {
         };
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -633,23 +714,28 @@ object Scope does WebRouting {
 object Fallback does WebRouting {
     has endpoint is async (WebRequest) is Responding;
 
+    // endpoint answers what nothing else does.
     Fallback(endpoint is async (WebRequest) is Responding) {
         self.endpoint = endpoint;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let empty is @http_routing.Route = [];
         empty;
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe.some(self);
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -687,11 +773,14 @@ object WebRoutes does Handling {
         ).routes();
     }
 
+    // A table of routings; fallback answers the rest.
     WebRoutes(routings is @WebRouting, fallback is async (WebRequest) is Responding) {
         let bare is @ExceptionScope = [];
         origin = WebRouteTable(routings: routings, scopes: bare, fallback: fallback).routes();
     }
 
+    // A table whose exceptions are handled by exceptions, fallback answering
+    // the rest.
     WebRoutes(
         routings is @WebRouting,
         exceptions is ExceptionScope,
@@ -707,6 +796,7 @@ object WebRoutes does Handling {
         origin;
     }
 
+    // Answers request; the server calls this.
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         await origin.handling(request, context);
     }
@@ -984,6 +1074,7 @@ object WebSocket does WebRouting {
     has path is string;
     has application is WebSocketHandling;
 
+    // Upgrades requests to path and hands the socket to application.
     WebSocket(path is string, application is WebSocketHandling) {
         confirm path == "" || path.starts_with("/")
             else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
@@ -991,6 +1082,7 @@ object WebSocket does WebRouting {
         self.application = application;
     }
 
+    // The routes it adds under prefix; WebRoutes calls this.
     routes(prefix is string, scopes is @ExceptionScope) is @http_routing.Route {
         let pattern = prefix + path;
         confirm pattern != ""
@@ -1006,14 +1098,17 @@ object WebSocket does WebRouting {
         ];
     }
 
+    // The fallback it sets, if any; WebRoutes reads it.
     fallback() is Maybe<Fallback> {
         Maybe<Fallback>.none;
     }
 
+    // The code it puts around endpoints, if any; WebRoutes reads it.
     around() is Maybe<Surrounding> {
         Maybe<Surrounding>.none;
     }
 
+    // The trailing-slash policy it sets, if any; WebRoutes reads it.
     slashes() is Maybe<http_routing.SlashPolicy> {
         Maybe<http_routing.SlashPolicy>.none;
     }
@@ -1148,6 +1243,7 @@ hidden object ScopedEndpoint {
     }
 }
 
+// A route that cannot be built: a bad path or two routes alike.
 enum InvalidWebRoute is Error = (because(reason is string));
 
 test "scope prefixes are absolute and have no trailing slash" {

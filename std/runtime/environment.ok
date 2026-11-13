@@ -1,32 +1,45 @@
 module runtime/environment v1.0.0;
 
+// The native layer under os/environment: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 // Portable immutable environment boundary used by os/environment.
 native environment_snapshot() is %string:string;
 
+// values with names normalized for the host.
 native environment_normalize(values is %string:string) is %string:string;
 
+// values with name set to value.
 native environment_add(
     values is %string:string,
     name is string,
     value is string,
 ) is %string:string;
 
+// values without name.
 native environment_diff(
     values is %string:string,
     name is string,
 ) is %string:string;
 
+// name checked and normalized as the host spells variable names.
 native environment_name(name is string) is string;
 
+// The home directory values name.
 native environment_home(values is %string:string) is string;
 
+// `:` or `;`.
 native environment_path_separator() is string;
 
 // Legacy raw mutation boundary. High-level std modules must not use it.
 native environment_get(name is @byte) is @byte;
 
+// Sets name to value in this process.
 native environment_set(name is @byte, value is @byte) is bool;
 
+// Removes name from this process.
 native environment_remove(name is @byte) is bool;
 
+// Every variable of this process, as name and value bytes.
 native environment_all() is @@@byte;

@@ -1,5 +1,17 @@
 module template/sections v1.0.0;
 
+// Section templates over JSON, in the Mustache style.
+//
+//     let order = SectionTemplate(
+//         source: "Order {{id}}:\n{{#items}}  - {{title}}\n{{/items}}{{^items}}  (empty)\n{{/items}}",
+//     );
+//     order.string(ParsedJson(text).root());
+//
+// `{{#name}}…{{/name}}` repeats over an array, renders once for an object or a
+// true value, and not at all for false, null, "", [] or a missing member;
+// `{{^name}}` is the opposite; `{{.}}` is the current item; `{{>name}}`
+// includes a template from the partials library. Nothing is escaped.
+
 import "template/library" take TemplateLibrary;
 import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;
 import "template/compile" take InvalidTemplateLimits, TemplateOutputLimitExceeded;
@@ -13,31 +25,7 @@ import "io/stream" take WritingText;
 import "io/text" take Utf8Output;
 import "runtime/template" take template_output_size;
 
-// Bounded JSON section template, entirely in Okkama. Construction binds source
-// and nonnegative budgets; string(data) compiles the complete tree before JSON
-// observation, then returns text only on success. No escaping or parent fallback.
-// Arrays iterate in order; objects render once. Truthy scalars render once as
-// current context; zero is true. False/null/empty text/empty array/absence are
-// false. Inverted blocks keep enclosing context. '.' selects the current item.
-// Each executed body costs one shared iteration, even an empty/inverted body.
-// Defaults: 10000 iterations, 1048576 UTF-8 output bytes, 1024 object members;
-// input/token/depth bounds are TemplateTree defaults. Partial tags anywhere in
-// the tree fail before data observation unless an explicit library is supplied.
-// Library constructors enable lazy reached-partial expansion; source catalog
-// entries compile with TemplateTree defaults. Flat TextTemplate budgets do not
-// apply. Default partial depth 32; each expansion costs one shared iteration.
-// Active section depth remains <=64 across partials; no indentation propagation.
-// write(data,destination) streams the same result in <=1024-scalar chunks. Each
-// contribution is byte-preflighted before writing. Successful prefixes survive
-// later errors; source/sink failures stop further work. Borrowed sinks are never
-// closed/flushed and no newline is added. No ambient file/module access.
-// Every custom JSON print must emit exactly one event; source errors propagate.
-// Temporary buffers close on all paths; sources are borrowed, never closed.
-// Streaming storage: eight-byte output meter + one byte per executed body + bounded member snapshots
-// and depth-bounded parser/visitor stacks and one scalar interpolation. string()
-// additionally owns its result buffer. Repeated rendering uses fresh budgets.
-// Contract: docs/std/template-sections-guide.md. Example: SectionTemplate("{{#.}}{{.}}{{/.}}").string(items).
-// Run: okkama run -t std/template/sections.ok
+// A section template over JSON.
 object SectionTemplate {
     has program is TemplateTree;
     has maximum_iterations, maximum_output, maximum_members is int;
@@ -45,6 +33,8 @@ object SectionTemplate {
     has maximum_partial_depth is int = 32;
     has partials_enabled is bool = false;
 
+    // A template of source, without partials: 10000 iterations, 1 MiB of
+    // output, 1024 members a step.
     SectionTemplate(source is string) {
         program = TemplateTree(source);
         partials = TemplateLibrary();
@@ -53,6 +43,7 @@ object SectionTemplate {
         maximum_members = 1024;
     }
 
+    // The same within these limits.
     SectionTemplate(
         source is string,
         maximum_iterations is int,
@@ -68,6 +59,7 @@ object SectionTemplate {
         self.maximum_members = maximum_members;
     }
 
+    // A template that may include partials, nested at most 32 deep.
     SectionTemplate(source is string, partials is TemplateLibrary) {
         program = TemplateTree(source);
         self.partials = partials;
@@ -77,6 +69,7 @@ object SectionTemplate {
         maximum_members = 1024;
     }
 
+    // The same within these limits.
     SectionTemplate(
         source is string,
         partials is TemplateLibrary,
@@ -99,6 +92,7 @@ object SectionTemplate {
         self.maximum_partial_depth = maximum_partial_depth;
     }
 
+    // The text for data; the source is checked whole first.
     string(data is Json) is string {
         let output = ByteBuffer();
         defer output.closing().close();
@@ -106,6 +100,7 @@ object SectionTemplate {
         Utf8Decoded(output.content().bytes()).string();
     }
 
+    // Writes the text for data to destination.
     write(data is Json, destination is WritingText) is void {
         let nodes = program.nodes();
         if !partials_enabled {
@@ -204,7 +199,11 @@ hidden object TemplateSectionRun {
                 else {
                     if node.kind() == TemplateTreeKind.variable {
                         output.append(
-                            JsonTemplateStrings(origin: data, maximum_members: maximum_members, maximum_output: output.remaining()).string(
+                            JsonTemplateStrings(
+                                origin: data,
+                                maximum_members: maximum_members,
+                                maximum_output: output.remaining()
+                            ).string(
                                 node.text()
                             )
                         );
@@ -264,7 +263,9 @@ hidden object TemplateOutputMeter {
     TemplateOutputMeter(maximum is int) {
         confirm maximum >= 0 else throw InvalidTemplateLimits.invalid;
         self.maximum = maximum;
-        count = ByteBuffer(IntegerBytes(value: 0, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes());
+        count = ByteBuffer(
+            IntegerBytes(value: 0, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
+        );
     }
 
     remaining() is int {
@@ -299,15 +300,18 @@ object TemplateSectionOutput {
     has destination is WritingText;
     has meter is TemplateOutputMeter;
 
+    // To destination, at most maximum bytes.
     TemplateSectionOutput(destination is WritingText, maximum is int) {
         self.destination = destination;
         meter = TemplateOutputMeter(maximum);
     }
 
+    // Bytes left.
     remaining() is int {
         meter.remaining();
     }
 
+    // Writes value; TemplateOutputLimitExceeded beyond the limit.
     append(value is string) is void {
         meter.claim(value);
         for (0..((value.length() >> 10) + 1)) -> chunk {
@@ -439,10 +443,13 @@ hidden object TemplateSection {
     }
 }
 
+// More iterations than the limit.
 enum TemplateIterationLimitExceeded is Error = (exceeded);
 
+// A negative size.
 enum InvalidTemplateSectionSize is Error = (invalid);
 
+// A partial the library does not have, or partials without a library.
 enum UnsupportedTemplatePartial is Error = (name(name is string));
 
 test "section iterations share a bounded ledger" {
@@ -500,6 +507,7 @@ test "section configuration rejects negatives before parsing" {
 // Partial expansion and active section depth are separate bounded dimensions.
 enum TemplatePartialDepthExceeded is Error = (exceeded);
 
+// Sections nested deeper than allowed.
 enum TemplateSectionDepthExceeded is Error = (exceeded);
 
 test "partial and active section depth errors stay distinct" {

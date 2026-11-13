@@ -1,5 +1,18 @@
 module mail/mbox v1.0.0;
 
+// mbox archives in the mboxrd flavour: messages one after another, each behind
+// a `From ` line.
+//
+//     let record = MboxRecord(separator: MboxSeparator("From ada@example.test Thu Nov 13 10:00:00 2026"), message: message);
+//     let bytes = MboxArchive(record).bytes();
+//     let back = ParsedMbox(bytes).records();
+//     back.first().message();
+//
+// Lines of the archive end in LF, messages inside keep CRLF, and a `From ` line
+// inside a message is quoted with `>` and unquoted when read. By default an
+// archive holds 1000 messages and 64 MiB. Mbox in mail/mbox_store keeps one in
+// a file.
+
 import "mail/message" take MailMessage, ParsedMail;
 import "mime/part" take MimePart, MimeLimits, MimeLimitFailure;
 import "mime/media_type" take MimeItems, MimePosition;
@@ -9,25 +22,12 @@ import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Explicit mboxrd content: LF archive framing, CRLF MIME, reversible From
-// quoting. No filesystem/session effects or implicit envelope/date inference.
-//
-//     let record=MboxRecord(MboxSeparator("From sender date"),message);
-//     let bytes=MboxArchive(record).bytes();
-//     let restored=ParsedMbox(bytes).records().first().message();
-//
-// Separator construction validates ASCII metadata; archive construction takes
-// a bounded reference snapshot without reading bodies. Each bytes() call reads
-// borrowed bodies once and never closes them. ParsedMbox.records() returns an
-// eager semantic MIME snapshot on each observation; empty archives are valid.
-// Defaults: 1000 records, 64 MiB archive bytes, default per-message MimeLimits.
-// Missing terminators, NUL and bare MIME newlines throw InvalidMbox; framing
-// offsets refer to archive input (message-relative while rendering). Aggregate
-// limits throw MboxLimitExceeded; MIME failures retain their existing types.
-// Scratch buffers are owned and closed. See docs/std/mbox.md for the profile.
+// The `From ` line before a message.
 object MboxSeparator {
     has origin is string;
 
+    // The line, without its newline: printable ASCII, 8 to 998 long, `From `
+    // and a sender; InvalidMbox otherwise.
     MboxSeparator(origin is string) {
         confirm origin.length() >= 8 && origin.length() <= 998
             else throw InvalidMbox.located(0, "separator length outside 8..998");
@@ -50,39 +50,47 @@ object MboxSeparator {
         self.origin = origin;
     }
 
+    // The line.
     string() is string {
         origin;
     }
 }
 
+// A message with its separator line.
 object MboxRecord {
     has separator is MboxSeparator;
     has message is MailMessage;
 
+    // message behind separator.
     MboxRecord(separator is MboxSeparator, message is MailMessage) {
         self.separator = separator;
         self.message = message;
     }
 
+    // The separator.
     separator() is MboxSeparator {
         separator;
     }
 
+    // The message.
     message() is MailMessage {
         message;
     }
 }
 
+// How large an archive may be.
 object MboxLimits {
     has messages, wire_bytes is int;
     has mime is MimeLimits;
 
+    // 1000 messages, 64 MiB and the default MIME limits.
     MboxLimits() {
         messages = 1000;
         wire_bytes = 67108864;
         mime = MimeLimits();
     }
 
+    // The limits as given.
     MboxLimits(messages is int, wire_bytes is int, mime is MimeLimits) {
         confirm messages >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("mbox bounds must be nonnegative");
@@ -91,10 +99,12 @@ object MboxLimits {
         self.mime = mime;
     }
 
+    // The MIME limits of each message.
     mime() is MimeLimits {
         mime;
     }
 
+    // Messages and bytes in all.
     cap Limits {
         messages is int {
             messages;
@@ -106,10 +116,12 @@ object MboxLimits {
     }
 }
 
+// Records as an mbox archive.
 object MboxArchive does ByteSource {
     has records is @MboxRecord;
     has limits is MboxLimits;
 
+    // The records, within the default limits.
     MboxArchive(records is Sequencing<MboxRecord>) {
         let bounds = MboxLimits();
         self.records = MboxRecordsSnapshot(origin: records, maximum: bounds::Limits::messages).values();
@@ -124,11 +136,13 @@ object MboxArchive does ByteSource {
         limits = bounds;
     }
 
+    // The records within limits.
     MboxArchive(records is Sequencing<MboxRecord>, limits is MboxLimits) {
         self.records = MboxRecordsSnapshot(origin: records, maximum: limits::Limits::messages).values();
         self.limits = limits;
     }
 
+    // The archive.
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
@@ -163,27 +177,33 @@ object MboxArchive does ByteSource {
     }
 }
 
+// An archive read from bytes.
 object ParsedMbox {
     has origin is @byte;
     has limits is MboxLimits;
 
+    // Reads origin within the default limits.
     ParsedMbox(origin is @byte) {
         self.origin = origin;
         limits = MboxLimits();
     }
 
+    // Reads origin within limits.
     ParsedMbox(origin is @byte, limits is MboxLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The records; InvalidMbox says where the bytes are wrong.
     records() is Sequencing<MboxRecord> {
         MboxParsing(origin: origin, limits: limits).records();
     }
 }
 
+// Bytes that are not an archive; offset and reason say where and why.
 enum InvalidMbox is Error = (located(offset is int, reason is string));
 
+// An archive over a limit; kind says which.
 enum MboxLimitExceeded is Error = (kind(kind is string));
 
 hidden object MboxRecordsSnapshot {

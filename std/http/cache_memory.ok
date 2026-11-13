@@ -1,5 +1,17 @@
 module http/cache_memory v1.0.0;
 
+// Cached responses and a cache in memory.
+//
+//     let cache = MemoryHttpCache(clock: SystemClock(), maximum: BigInt(67108864));
+//     Caching(origin: HttpClient(), cache: cache, clock: SystemClock());
+//
+// An entry holds a whole response: its head, its body bytes and trailers, read
+// to the end first. MemoryHttpCache keeps entries up to maximum bytes, evicting
+// the oldest. It keeps only 200 responses to GET, without no-store or
+// Content-Range, and skips requests with Authorization unless told otherwise.
+// Entries vary by Authorization, Cookie and the fields their Vary names; `Vary:
+// *` is never kept.
+
 import "http/status" take StatusCode, Status;
 import "http/method" take MethodName, Method;
 import "http/message" take Request, Response;
@@ -22,15 +34,24 @@ import "compare" take Order;
 // Explicit completed storage boundary: bytes/trailers are supplied only after
 // clean body EOF by a consuming adapter. This store never opens a live body.
 role ResponseCaching {
+    // The entry for request; MissingCachedResponse when there is none.
     entry(request is Request) is CachedHttpEntry;
+    // How many bytes it may hold.
     budget() is int;
+    // A number that grows with every change.
     revision() is int;
+    // Stores entry if nothing changed since revision.
     conditional_store(entry is CachedHttpEntry, revision is int) is void;
+    // The cached response for request; MissingCachedResponse when there is
+    // none.
     response(request is Request) is ClientResponse;
+    // Stores entry.
     store(entry is CachedHttpEntry) is void;
+    // Forgets the entries for request's URL.
     invalidate(request is Request) is void;
 }
 
+// A whole response kept for a request.
 object CachedHttpEntry {
     has request is Request;
     has result is ClientResponse;
@@ -41,6 +62,8 @@ object CachedHttpEntry {
     has freshness is CacheFreshness;
     has cacheable is bool;
 
+    // result for request, with its body bytes and trailers and timing;
+    // InvalidCachedResponse when they do not fit.
     CachedHttpEntry(
         request is Request,
         result is ClientResponse,
@@ -88,6 +111,8 @@ object CachedHttpEntry {
         vary = CacheVary(fields).names();
     }
 
+    // Whether a private cache may keep it: the response allows it and Vary is
+    // not `*`.
     storable() is bool {
         let wildcard = vary.reduce(false) -> found, name {
             found || name.string() == "*";
@@ -95,26 +120,32 @@ object CachedHttpEntry {
         cacheable && !wildcard;
     }
 
+    // The request.
     request() is Request {
         request;
     }
 
+    // The response.
     response() is ClientResponse {
         result;
     }
 
+    // The body.
     bytes() is @byte {
         bytes;
     }
 
+    // The trailers.
     trailers() is Headers {
         trailers;
     }
 
+    // When it came.
     timing() is CacheResponseTiming {
         timing;
     }
 
+    // Its Date, or when it came.
     dated() is Instant {
         let fields = result::Head::headers;
         try {
@@ -125,18 +156,23 @@ object CachedHttpEntry {
         }
     }
 
+    // The field names its Vary lists.
     vary() is @HeaderName {
         vary;
     }
 
+    // Its freshness.
     freshness() is CacheFreshness {
         freshness;
     }
 
+    // The absolute URL of the request.
     key() is string {
         request::Head::target.string();
     }
 
+    // Whether other has the same method and URL, the same Authorization and
+    // Cookie, and the same values of the Vary fields.
     matches(other is Request) is bool {
         if other::Head::target.kind() != RequestTargetKind.absolute
             || other::Head::target.string() != self.key()
@@ -167,6 +203,7 @@ object CachedHttpEntry {
         true;
     }
 
+    // Whether other is the same entry.
     same(other is CachedHttpEntry) is bool {
         if self.key() != other.key()
             || MethodName(request::Head::method).string() != MethodName(
@@ -183,12 +220,14 @@ object CachedHttpEntry {
         self.matches(other.request());
     }
 
+    // How many bytes it takes.
     cost() is int {
         128 + self.key().length() + bytes.size() + CacheHeaderSize(request::Head::headers).size() + CacheHeaderSize(
             result::Head::headers
         ).size() + CacheHeaderSize(trailers).size();
     }
 
+    // A fresh response for request at now, with its Age field.
     response(request is Request, now is MonotonicInstant) is ClientResponse {
         let current = freshness.age(now)::Span::seconds.int();
         let fields = ReplacedHeader(
@@ -223,6 +262,7 @@ object CachedHttpEntry {
     }
 }
 
+// A cache of responses in memory.
 object MemoryHttpCache does ResponseCaching, Closing {
     has clock is Timing;
     has maximum is int;
@@ -230,6 +270,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
     has cell is Atomic<@CachedHttpEntry>;
     has revision is Atomic<int>;
 
+    // At most maximum bytes; requests with Authorization are not cached.
     MemoryHttpCache(clock is Timing, maximum is BigInt) {
         let config = CacheMemoryBudget(maximum);
         self.clock = clock;
@@ -240,6 +281,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         revision = Atomic(0);
     }
 
+    // The same; authenticated caches requests with Authorization too.
     MemoryHttpCache(clock is Timing, maximum is BigInt, authenticated is bool) {
         let config = CacheMemoryBudget(maximum);
         self.clock = clock;
@@ -250,6 +292,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         revision = Atomic(0);
     }
 
+    // The entry for request; MissingCachedResponse when there is none.
     entry(request is Request) is CachedHttpEntry {
         confirm !cell.closed() else throw CacheClosed.closed;
         if request::Head::headers.membership(HeaderName("Authorization")) && !authenticated {
@@ -265,6 +308,8 @@ object MemoryHttpCache does ResponseCaching, Closing {
         selected.entry();
     }
 
+    // The cached response for request; MissingCachedResponse when there is
+    // none.
     response(request is Request) is ClientResponse {
         let now = clock.monotonic_instant();
         let item = self.entry(request);
@@ -272,6 +317,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         item.response(request, now);
     }
 
+    // Stores entry when it may be kept, evicting the oldest beyond the budget.
     store(entry is CachedHttpEntry) is void {
         confirm !cell.closed() else throw CacheClosed.closed;
         let request = entry.request();
@@ -307,6 +353,7 @@ object MemoryHttpCache does ResponseCaching, Closing {
         cell.replace(revised);
     }
 
+    // Forgets the entries for request's URL.
     invalidate(request is Request) is void {
         confirm !cell.closed() else throw CacheClosed.closed;
         if request::Head::target.kind() != RequestTargetKind.absolute {
@@ -320,28 +367,34 @@ object MemoryHttpCache does ResponseCaching, Closing {
         cell.replace(kept);
     }
 
+    // A number that grows with every change.
     revision() is int {
         revision.value();
     }
 
+    // Stores entry if nothing changed since revision.
     conditional_store(entry is CachedHttpEntry, revision is int) is void {
         if self.revision() == revision {
             self.store(entry);
         }
     }
 
+    // How many bytes it may hold.
     budget() is int {
         maximum;
     }
 
+    // How many entries it holds.
     size() is int {
         cell.value().size();
     }
 
+    // Whether it was closed.
     closed() is bool {
         cell.closed();
     }
 
+    // Closes it and forgets everything; CacheClosed after.
     close() is void {
         cell.close();
         revision.close();
@@ -502,10 +555,13 @@ hidden object CachedByteBody does BodyOpening {
     }
 }
 
+// A response that cannot be kept as given.
 enum InvalidCachedResponse is Error = (invalid);
 
+// Nothing is cached for the request.
 enum MissingCachedResponse is Error = (missing);
 
+// The cache was used after close().
 enum CacheClosed is Error = (closed);
 
 hidden object CacheEntrySelection {
@@ -527,9 +583,11 @@ hidden object CacheEntrySelection {
     }
 }
 
+// The fields of a response as a cache keeps them.
 object CacheStoredHeaders {
     has result is Headers;
 
+    // The fields of origin.
     CacheStoredHeaders(origin is Headers) {
         let names is HttpMediaItems<HeaderName> = HttpMediaItems();
         let count = CacheStoragePosition(offset: 0, cost: 0);
@@ -563,6 +621,7 @@ object CacheStoredHeaders {
         result = HeadersWithout(origin: clean, names: selected).headers();
     }
 
+    // origin without hop-by-hop fields and those Connection names.
     headers() is Headers {
         result;
     }

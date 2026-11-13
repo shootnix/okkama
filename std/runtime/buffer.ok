@@ -1,29 +1,45 @@
 module runtime/buffer v1.0.0;
 
+// The native layer under http/internal/http2_body, http/internal/wire_bytes,
+// io/buffer, io/decorators: the calls those modules make into the host runtime.
+// Programs use those modules instead; these declarations may change with the
+// runtime.
+//
 // Opaque mutable storage shared by the capability views from io/buffer.
 
+// Bytes kept in the runtime.
 native object BufferState;
 
+// A buffer holding initial.
 native buffer_state_create(initial is @byte) is BufferState;
 
+// Takes at most limit bytes from the front.
 native buffer_state_read(state is BufferState, limit is int) is @byte;
 
+// Appends value; the new size.
 native buffer_state_append(state is BufferState, value is @byte) is int;
 
+// Every byte held.
 native buffer_state_bytes(state is BufferState) is @byte;
 
+// How many bytes.
 native buffer_state_size(state is BufferState) is int;
 
+// Whether it was closed.
 native buffer_state_closed(state is BufferState) is bool;
 
+// Frees it.
 native buffer_state_close(state is BufferState) is bool;
 
 // Text built up piece by piece for strings/buffer (#139); appending does not
 // copy the text so far.
 native object TextBufferState;
 
+// An empty text buffer.
 native text_buffer_create() is TextBufferState;
 
+// Appends text.
 native text_buffer_append(state is TextBufferState, text is string) is bool;
 
+// The text.
 native text_buffer_text(state is TextBufferState) is string;

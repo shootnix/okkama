@@ -1,5 +1,7 @@
 module http/proxy_connection v1.0.0;
 
+// Connections through a proxy for one client pool. Proxied uses it.
+
 import "http/proxy_policy" take ProxyPolicy;
 import "http/proxy_tunnel" take HttpProxyTunnel;
 import "http/auth" take BasicAuthorization;
@@ -35,6 +37,7 @@ object HttpProxyRouting does HttpConversationRouting {
     has client is ClientPolicy;
     has clock is Timing;
 
+    // Routes through proxy; only the proxy's address is resolved and checked.
     HttpProxyRouting(
         proxy is ProxyPolicy,
         resolver is Resolving,
@@ -50,10 +53,19 @@ object HttpProxyRouting does HttpConversationRouting {
         HttpClientProtocols(policy: client, tls: tls);
     }
 
+    // How to reach url through the proxy.
     connecting(url is UrlParts) is HttpConversationConnecting {
-        HttpProxyConnecting(proxy: proxy, target: url, resolver: resolver, tls: tls, client: client, clock: clock);
+        HttpProxyConnecting(
+            proxy: proxy,
+            target: url,
+            resolver: resolver,
+            tls: tls,
+            client: client,
+            clock: clock
+        );
     }
 
+    // Whether a connection with details may serve url.
     allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool {
         access.allowed(proxy.url(), details.endpoints().remote_endpoint());
     }
@@ -106,7 +118,12 @@ hidden object HttpProxyConnecting does HttpConversationConnecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: raw, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: raw,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let opening = TcpRacing(
             origins: endpoints,
@@ -159,7 +176,13 @@ hidden object HttpProxyConnecting does HttpConversationConnecting {
             dispose: HttpConversationAcquisitionDisposal().release
         );
         defer await adopted_cleanup.close();
-        let adapting = HttpConversationAdopting(tcp: tcp, target: target, policy: tls, client: client, clock: clock).acquisition();
+        let adapting = HttpConversationAdopting(
+            tcp: tcp,
+            target: target,
+            policy: tls,
+            client: client,
+            clock: clock
+        ).acquisition();
         acquisition_pending.replace([adapting]);
         adopted.start(adapting);
         let acquired = await adapting;

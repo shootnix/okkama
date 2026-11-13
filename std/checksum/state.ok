@@ -12,8 +12,13 @@ module checksum/state v1.0.0;
 // Inputs are immutable arrays, not consuming streams. No resources are owned
 // or closed. Encode text explicitly before supplying bytes. The test-only
 // fake counts bytes; it does not implement a production checksum algorithm.
+
+// A checksum that is fed bytes piece by piece:
+// `Crc32().state(head).state(rest).checksum()`.
 role Checksumming {
+    // The checksum continued with origin.
     state(origin is @byte) is ^Checksumming;
+    // The checksum so far, as an unsigned int.
     checksum() is int;
 
     fake {

@@ -1,25 +1,49 @@
 module http/handler v1.0.0;
 
+// Handlers: what answers a request.
+//
+//     object Hello does Handling {
+//         Hello();
+//
+//         async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+//             ResponseHandling(Response(status: Status.ok, content: TextBody(text: "hello")));
+//         }
+//     }
+//
+// A handler answers with a response, or with a WebSocket upgrade and the
+// application that takes the connection. Routes, StaticFiles and the web/
+// handlers are handlers too.
+
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
 import "http/websocket" take WebSocketConnection;
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/status" take Status;
 
+// What a handler answered: a response or a WebSocket upgrade.
 enum HandlingKind = (response, websocket);
 
+// What a handler answers.
 role HandlingResult {
+    // Which kind it is.
     kind() is HandlingKind;
+    // The response; WrongHandlingKind for an upgrade.
     response() is Response;
+    // The upgrade; WrongHandlingKind for a response.
     websocket() is WebSocketUpgrade;
+    // What takes the upgraded connection; WrongHandlingKind for a response.
     application() is WebSocketHandling;
 }
 
+// Something that answers requests.
 role Handling {
+    // The answer to request.
     async handling(request is Request, context is HttpRequestContext) is HandlingResult;
 }
 
+// Something that takes an upgraded WebSocket connection.
 role WebSocketHandling {
+    // Works with connection until it is done.
     async handle(
         connection is WebSocketConnection,
         request is Request,
@@ -27,25 +51,31 @@ role WebSocketHandling {
     ) is WebSocketHandling;
 }
 
+// An answer that is a response.
 object ResponseHandling does HandlingResult {
     has origin is Response;
 
+    // Answers with origin.
     ResponseHandling(origin is Response) {
         self.origin = origin;
     }
 
+    // HandlingKind.response.
     kind() is HandlingKind {
         HandlingKind.response;
     }
 
+    // The response.
     response() is Response {
         origin;
     }
 
+    // WrongHandlingKind.
     websocket() is WebSocketUpgrade {
         throw WrongHandlingKind.mismatch;
     }
 
+    // WrongHandlingKind.
     application() is WebSocketHandling {
         throw WrongHandlingKind.mismatch;
     }
@@ -57,28 +87,34 @@ object WebSocketHandlingResult does HandlingResult {
     has origin is WebSocketUpgrade;
     has application is WebSocketHandling;
 
+    // Accepts the upgrade origin and gives the connection to application.
     WebSocketHandlingResult(origin is WebSocketUpgrade, application is WebSocketHandling) {
         self.origin = origin;
         self.application = application;
     }
 
+    // HandlingKind.websocket.
     kind() is HandlingKind {
         HandlingKind.websocket;
     }
 
+    // WrongHandlingKind.
     response() is Response {
         throw WrongHandlingKind.mismatch;
     }
 
+    // The upgrade.
     websocket() is WebSocketUpgrade {
         origin;
     }
 
+    // The application.
     application() is WebSocketHandling {
         application;
     }
 }
 
+// A part asked of the wrong kind of answer.
 enum WrongHandlingKind is Error = (mismatch);
 
 test "a response result answers its response and refuses the WebSocket view" {

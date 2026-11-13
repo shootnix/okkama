@@ -1,27 +1,51 @@
 module db/value v1.0.0;
 
+// Database values: what is bound to a statement and what a row holds.
+//
+//     await db.execution("INSERT INTO users(name, age, nick) VALUES (?, ?, ?)",
+//         DbText("Ada"), DbInteger(36), DbText(user.nickname));       // none binds NULL
+//     DbDecimal(Decimal("9.50"));
+//     DbBytes(data);
+//     DbNull();
+//
+// Values are always bound, never pasted into SQL. Each value object takes its
+// plain type or a Maybe; none is SQL NULL. Rows are read by column with
+// db/row's readers; a value shows itself to a DbValueWriting by calling the one
+// callback of its kind.
+
 import "runtime/db" as native_db;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "encoding/utf" take Utf8Encoded;
 import "async/atomic" take Atomic;
 
+// The kind of a database value.
 enum DbValueKind = (null_value, boolean, integer, floating, decimal, text, bytes);
 
 // A role-confined consumer sees one typed printing protocol, never concrete
 // getters obtained by downcasting or reflection.
 role DbValue {
+    // Its kind.
     kind() is DbValueKind;
+    // Calls output's one callback for its kind.
     print(output is DbValueWriting) is void;
 }
 
+// Something that takes database values one kind at a time.
 role DbValueWriting {
+    // NULL.
     null_value() is void;
+    // A boolean.
     boolean(value is bool) is void;
+    // An integer.
     integer(value is BigInt) is void;
+    // A float.
     floating(value is float) is void;
+    // A decimal.
     decimal(value is Decimal) is void;
+    // Text.
     text(value is string) is void;
+    // Bytes.
     bytes(value is @byte) is void;
 }
 
@@ -30,31 +54,38 @@ role DbValueWriting {
 // DbBytes(data) and DbNull(). Each also takes a Maybe, whose none binds SQL
 // NULL: DbText(user.nickname).
 object DbNull does DbValue {
+    // NULL.
     DbNull();
 
+    // DbValueKind.null_value.
     kind() is DbValueKind {
         DbValueKind.null_value;
     }
 
+    // Calls the writer's null_value callback.
     print(output is DbValueWriting) is void {
         output.null_value();
     }
 }
 
+// A boolean value.
 object DbBoolean does DbValue {
     has origin is bool;
     has present is bool;
 
+    // The value.
     DbBoolean(value is bool) {
         origin = value;
         present = true;
     }
 
+    // The value, or NULL for none.
     DbBoolean(value is Maybe<bool>) {
         origin = value else false;
         present = DbPresence(value != Maybe<bool>.none).present();
     }
 
+    // DbValueKind.boolean, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.boolean;
@@ -64,11 +95,13 @@ object DbBoolean does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     bool() is bool {
         confirm present else throw InvalidDbValue.because("NULL has no boolean");
         origin;
     }
 
+    // Calls the writer's boolean callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.boolean(origin);
@@ -84,12 +117,14 @@ object DbInteger does DbValue {
     has origin is int;
     has present is bool;
 
+    // The value.
     DbInteger(value is int) {
         DbIntegerDigits(value).check();
         origin = value;
         present = true;
     }
 
+    // The value, at most 4096 digits.
     DbInteger(value is BigInt) {
         let number = value.int();
         DbIntegerDigits(number).check();
@@ -97,6 +132,7 @@ object DbInteger does DbValue {
         present = true;
     }
 
+    // The value, or NULL for none.
     DbInteger(value is Maybe<int>) {
         let number = value else 0;
         DbIntegerDigits(number).check();
@@ -104,6 +140,7 @@ object DbInteger does DbValue {
         present = DbPresence(value != Maybe<int>.none).present();
     }
 
+    // The value, or NULL for none.
     DbInteger(value is Maybe<BigInt>) {
         let number = match value {
             case Maybe.some(given) {
@@ -118,6 +155,7 @@ object DbInteger does DbValue {
         present = DbPresence(value != Maybe<BigInt>.none).present();
     }
 
+    // DbValueKind.integer, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.integer;
@@ -127,16 +165,19 @@ object DbInteger does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     integer() is BigInt {
         confirm present else throw InvalidDbValue.because("NULL has no integer");
         BigInt(origin);
     }
 
+    // The value as int; InvalidDbValue for NULL or a value outside int.
     int() is int {
         confirm present else throw InvalidDbValue.because("NULL has no integer");
         origin;
     }
 
+    // Calls the writer's integer callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.integer(BigInt(origin));
@@ -147,20 +188,24 @@ object DbInteger does DbValue {
     }
 }
 
+// A float value.
 object DbFloating does DbValue {
     has origin is float;
     has present is bool;
 
+    // The value.
     DbFloating(value is float) {
         origin = DbFinite(value).float();
         present = true;
     }
 
+    // The value, or NULL for none.
     DbFloating(value is Maybe<float>) {
         origin = DbFinite(value else 0.0).float();
         present = DbPresence(value != Maybe<float>.none).present();
     }
 
+    // DbValueKind.floating, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.floating;
@@ -170,11 +215,13 @@ object DbFloating does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     float() is float {
         confirm present else throw InvalidDbValue.because("NULL has no float");
         origin;
     }
 
+    // Calls the writer's floating callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.floating(origin);
@@ -185,16 +232,19 @@ object DbFloating does DbValue {
     }
 }
 
+// A decimal value.
 object DbDecimal does DbValue {
     has origin is Decimal;
     has present is bool;
 
+    // The value.
     DbDecimal(value is Decimal) {
         confirm value.string().length() <= 4096 else throw DbValueLimit.because("decimal digits");
         origin = value;
         present = true;
     }
 
+    // The value, or NULL for none.
     DbDecimal(value is Maybe<Decimal>) {
         let number = value else Decimal(0);
         confirm number.string().length() <= 4096 else throw DbValueLimit.because("decimal digits");
@@ -202,6 +252,7 @@ object DbDecimal does DbValue {
         present = DbPresence(value != Maybe<Decimal>.none).present();
     }
 
+    // DbValueKind.decimal, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.decimal;
@@ -211,11 +262,13 @@ object DbDecimal does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     decimal() is Decimal {
         confirm present else throw InvalidDbValue.because("NULL has no decimal");
         origin;
     }
 
+    // Calls the writer's decimal callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.decimal(origin);
@@ -226,17 +279,20 @@ object DbDecimal does DbValue {
     }
 }
 
+// A text value.
 object DbText does DbValue {
     has origin is string;
     has width is int;
     has present is bool;
 
+    // The value.
     DbText(value is string) {
         width = DbTextWidth(value).bytes();
         origin = value;
         present = true;
     }
 
+    // The value, or NULL for none.
     DbText(value is Maybe<string>) {
         let text = value else "";
         width = DbTextWidth(text).bytes();
@@ -244,10 +300,12 @@ object DbText does DbValue {
         present = DbPresence(value != Maybe<string>.none).present();
     }
 
+    // Its size in UTF-8 bytes.
     width() is int {
         width;
     }
 
+    // DbValueKind.text, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.text;
@@ -257,11 +315,13 @@ object DbText does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     string() is string {
         confirm present else throw InvalidDbValue.because("NULL has no text");
         origin;
     }
 
+    // Calls the writer's text callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.text(origin);
@@ -272,16 +332,19 @@ object DbText does DbValue {
     }
 }
 
+// A bytes value (BLOB, bytea).
 object DbBytes does DbValue {
     has origin is @byte;
     has present is bool;
 
+    // The value.
     DbBytes(value is @byte) {
         confirm value.size() <= 8388608 else throw DbValueLimit.because("binary bytes");
         origin = value;
         present = true;
     }
 
+    // The value, or NULL for none.
     DbBytes(value is Maybe<@byte>) {
         let empty is @byte = [];
         let data = value else empty;
@@ -290,6 +353,7 @@ object DbBytes does DbValue {
         present = DbPresence(value != Maybe<@byte>.none).present();
     }
 
+    // DbValueKind.bytes, or null_value when made from none.
     kind() is DbValueKind {
         if present {
             DbValueKind.bytes;
@@ -299,11 +363,13 @@ object DbBytes does DbValue {
         }
     }
 
+    // The value. InvalidDbValue for NULL.
     bytes() is @byte {
         confirm present else throw InvalidDbValue.because("NULL has no bytes");
         origin;
     }
 
+    // Calls the writer's bytes callback, or null_value for NULL.
     print(output is DbValueWriting) is void {
         if present {
             output.bytes(origin);
@@ -389,6 +455,7 @@ object ObservedDbValue {
     has kind is DbValueKind;
     has state is native_db.DbCellState;
 
+    // Observes origin; InvalidDbValue when its print breaks the protocol.
     ObservedDbValue(origin is DbValue) {
         let expected = origin.kind();
         kind = expected;
@@ -401,42 +468,52 @@ object ObservedDbValue {
         self.origin = DbNativeValue(cell);
     }
 
+    // Its kind.
     kind() is DbValueKind {
         kind;
     }
 
+    // The value.
     cell() is DbValue {
         origin;
     }
 
+    // The boolean; WrongDbValue for another kind.
     boolean() is bool {
         captured.boolean_value();
     }
 
+    // The integer; WrongDbValue for another kind.
     integer() is BigInt {
         captured.integer_value();
     }
 
+    // The float; WrongDbValue for another kind.
     floating() is float {
         captured.floating_value();
     }
 
+    // The decimal; WrongDbValue for another kind.
     decimal() is Decimal {
         captured.decimal_value();
     }
 
+    // The text; WrongDbValue for another kind.
     text() is string {
         captured.text_value();
     }
 
+    // The bytes; WrongDbValue for another kind.
     bytes() is @byte {
         captured.bytes_value();
     }
 
+    // Its size in bytes.
     width() is int {
         captured.width();
     }
 
+    // The native cell.
     state() is native_db.DbCellState {
         state;
     }
@@ -449,6 +526,7 @@ object DbValueCapture does DbValueWriting {
     has flags is Atomic<int>;
     has cell is Atomic<@native_db.DbCellState>;
 
+    // Expects one event of kind.
     DbValueCapture(kind is DbValueKind) {
         self.kind = kind;
         flags = Atomic(0);
@@ -456,6 +534,8 @@ object DbValueCapture does DbValueWriting {
         cell = Atomic(empty);
     }
 
+    // Records an event of kind; InvalidDbValue for a second event or another
+    // kind.
     emit(kind is DbValueKind) is void {
         let current = flags.value();
         confirm current & 8 == 0 else throw InvalidDbValue.because("printer is sealed");
@@ -483,100 +563,120 @@ object DbValueCapture does DbValueWriting {
         confirm valid else throw InvalidDbValue.because("print omitted or invalidated its value");
     }
 
+    // Seals it.
     complete() is void {
         confirm self.completed()
             else throw InvalidDbValue.because("print omitted or invalidated its value");
     }
 
+    // Throws unless exactly one event came.
     finish() is void {
         confirm self.completed()
             else throw InvalidDbValue.because("print omitted or invalidated its value");
         flags.replace(flags.value() | 8);
     }
 
+    // Throws WrongDbValue unless the kind is kind.
     require(kind is DbValueKind) is void {
         confirm self.kind == kind else throw WrongDbValue.detailed(kind, self.kind);
         self.complete();
     }
 
+    // The native cell.
     state() is native_db.DbCellState {
         self.complete();
         cell.value()[0];
     }
 
+    // Whether it is sealed.
     completed() is bool {
         flags.value() & 3 == 1 && cell.value().size() == 1;
     }
 
+    // Takes NULL.
     null_value() is void {
         self.emit(DbValueKind.null_value);
         self.published(native_db.db_null());
     }
 
+    // Takes a boolean.
     boolean(value is bool) is void {
         self.emit(DbValueKind.boolean);
         self.published(native_db.db_boolean(DbBoolean(value).bool()));
     }
 
+    // The boolean taken.
     boolean_value() is bool {
         self.require(DbValueKind.boolean);
         native_db.db_boolean_value(self.state());
     }
 
+    // Takes an integer.
     integer(value is BigInt) is void {
         self.emit(DbValueKind.integer);
         self.published(native_db.db_integer(DbInteger(value).int().string()));
     }
 
+    // The integer taken.
     integer_value() is BigInt {
         self.require(DbValueKind.integer);
         BigInt(native_db.db_integer_value(self.state()));
     }
 
+    // Takes a float.
     floating(value is float) is void {
         self.emit(DbValueKind.floating);
         self.published(native_db.db_floating(DbFloating(value).float()));
     }
 
+    // The float taken.
     floating_value() is float {
         self.require(DbValueKind.floating);
         native_db.db_floating_value(self.state());
     }
 
+    // Takes a decimal.
     decimal(value is Decimal) is void {
         self.emit(DbValueKind.decimal);
         self.published(native_db.db_decimal(DbDecimal(value).decimal().string()));
     }
 
+    // The decimal taken.
     decimal_value() is Decimal {
         self.require(DbValueKind.decimal);
         Decimal(native_db.db_decimal_value(self.state()));
     }
 
+    // Takes text.
     text(value is string) is void {
         self.emit(DbValueKind.text);
         self.published(native_db.db_text(DbText(value).string()));
     }
 
+    // The text taken.
     text_value() is string {
         self.require(DbValueKind.text);
         native_db.db_text_value(self.state());
     }
 
+    // Takes bytes.
     bytes(value is @byte) is void {
         self.emit(DbValueKind.bytes);
         self.published(native_db.db_bytes(DbBytes(value).bytes()));
     }
 
+    // The bytes taken.
     bytes_value() is @byte {
         self.require(DbValueKind.bytes);
         native_db.db_bytes_value(self.state());
     }
 
+    // The value taken.
     cell() is DbValue {
         DbNativeValue(self.state());
     }
 
+    // Its size in bytes.
     width() is int {
         native_db.db_cells_bytes([self.state()]);
     }
@@ -616,10 +716,13 @@ hidden object DbKindCode {
     }
 }
 
+// A value of another kind than asked for.
 enum WrongDbValue is Error = (detailed(expected_kind is DbValueKind, actual_kind is DbValueKind));
 
+// A value that cannot be used; reason says why.
 enum InvalidDbValue is Error = (because(reason is string));
 
+// A value over a size limit; reason says which.
 enum DbValueLimit is Error = (because(reason is string));
 
 test "database NULL remains separate from empty text" {
@@ -631,14 +734,17 @@ test "database NULL remains separate from empty text" {
 object DbNativeValue does DbValue {
     has state is native_db.DbCellState;
 
+    // The value of state.
     DbNativeValue(state is native_db.DbCellState) {
         self.state = state;
     }
 
+    // Its kind.
     kind() is DbValueKind {
         DbNativeKind(native_db.db_kind(state)).kind();
     }
 
+    // Calls the writer's callback for its kind.
     print(output is DbValueWriting) is void {
         match self.kind() {
             case DbValueKind.null_value {
@@ -666,13 +772,16 @@ object DbNativeValue does DbValue {
     }
 }
 
+// The kind of a native kind code.
 object DbNativeKind {
     has code is int;
 
+    // The code.
     DbNativeKind(code is int) {
         self.code = code;
     }
 
+    // The kind; InvalidDbValue for an unknown code.
     kind() is DbValueKind {
         match code {
             case 0 {

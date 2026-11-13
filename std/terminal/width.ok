@@ -1,14 +1,26 @@
 module terminal/width v1.0.0;
 
+// How many columns text takes on a terminal, by grapheme cluster: wide East
+// Asian characters and emoji take two, combining marks none.
+//
+//     DisplayWidth("日本").columns();                        // 4
+//     TruncatedDisplay(origin: title, width: 20, ellipsis: "…").string();
+//     WrappedDisplay(origin: paragraph, width: 72).string();
+//
+// Control characters are refused with InvalidDisplayText.
+
 import "runtime/unicode_character" take display_clusters, display_widths, display_invalid_index;
 
+// The columns text takes.
 object DisplayWidth {
     has origin is string;
 
+    // The text.
     DisplayWidth(origin is string) {
         self.origin = origin;
     }
 
+    // Its width; InvalidDisplayText for a control character.
     columns() is int {
         let invalid = display_invalid_index(origin);
         confirm invalid < 0
@@ -19,16 +31,20 @@ object DisplayWidth {
     }
 }
 
+// Text cut to a width.
 object TruncatedDisplay {
     has origin, ellipsis is string;
     has width is int;
 
+    // origin cut to width columns, ellipsis included when cut;
+    // InvalidDisplayWidth when negative.
     TruncatedDisplay(origin is string, width is int, ellipsis is string) {
         self.origin = origin;
         self.width = width;
         self.ellipsis = ellipsis;
     }
 
+    // The text, whole when it fits.
     string() is string {
         confirm width >= 0 else throw InvalidDisplayWidth.invalid;
         let ending = DisplayWidth(ellipsis).columns();
@@ -48,15 +64,18 @@ object TruncatedDisplay {
     }
 }
 
+// The start of a text that fits a width; used inside terminal/width.
 object DisplayPrefix {
     has origin is string = "";
     has remaining is int;
     has ended is bool = false;
 
+    // Empty, width columns at most.
     DisplayPrefix(width is int) {
         remaining = width;
     }
 
+    // This prefix with cluster of width columns, when it fits.
     added(cluster is string, width is int) is ^DisplayPrefix {
         if !ended && width <= remaining {
             ^origin = origin + cluster;
@@ -67,13 +86,16 @@ object DisplayPrefix {
         }
     }
 
+    // The prefix.
     string() is string {
         origin;
     }
 }
 
+// Text with a character that has no width; index and reason say which.
 enum InvalidDisplayText is Error = (detailed(index is int, reason is string));
 
+// A negative width.
 enum InvalidDisplayWidth is Error = (invalid);
 
 // Wrap at extended grapheme boundaries, preserving text and existing lines.
@@ -81,11 +103,13 @@ object WrappedDisplay {
     has origin is string;
     has width is int;
 
+    // origin wrapped to width columns at grapheme boundaries.
     WrappedDisplay(origin is string, width is int) {
         self.origin = origin;
         self.width = width;
     }
 
+    // The wrapped text.
     string() is string {
         confirm width > 0 else throw InvalidDisplayWidth.invalid;
         origin.split("\n").map() -> line {
@@ -100,15 +124,18 @@ object WrappedDisplay {
     }
 }
 
+// Lines being wrapped; used inside terminal/width.
 object DisplayLines {
     has origin is string = "";
     has maximum, used is int;
 
+    // No lines yet, width columns each.
     DisplayLines(width is int) {
         maximum = width;
         used = 0;
     }
 
+    // These lines with cluster of width columns.
     added(cluster is string, width is int) is ^DisplayLines {
         confirm width <= maximum else throw InvalidDisplayWidth.invalid;
         let gap = if used > 0 && width > maximum - used {
@@ -126,6 +153,7 @@ object DisplayLines {
         };
     }
 
+    // The lines joined.
     string() is string {
         origin;
     }

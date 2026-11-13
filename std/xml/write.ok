@@ -1,10 +1,16 @@
 module xml/write v1.0.0;
 
+// Text escaped for XML.
+//
+//     EscapedXml(origin: "a < b & c", attribute: false).string();   // "a &lt; b &amp; c"
+
 import "xml/name" take InvalidXml;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches, FirstRegexMatch;
 
+// Text checked to hold only characters XML allows.
 object XmlCharacters {
+    // Checks origin; InvalidXml for a character XML refuses.
     XmlCharacters(origin is string) {
         confirm origin.length() <= 33554432
             else throw InvalidXml.located(0, "XML text exceeds 32 Mi scalars");
@@ -18,16 +24,19 @@ object XmlCharacters {
     }
 }
 
+// Text with `&`, `<` and `>` escaped, and quotes too inside an attribute.
 object EscapedXml {
     has origin is string;
     has attribute is bool;
 
+    // Escapes origin, for an attribute value or for text.
     EscapedXml(origin is string, attribute is bool) {
         XmlCharacters(origin);
         self.origin = origin;
         self.attribute = attribute;
     }
 
+    // The escaped text.
     string() is string {
         let escaped = origin.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace(
             "\r",
@@ -46,8 +55,14 @@ object EscapedXml {
 }
 
 test "text and attribute escaping differ only in quotes and whitespace" {
-    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: false).string(), "a&lt;b &amp; c&gt;\"d\"");
-    test.is(EscapedXml(origin: "a<b & c>\"d\"", attribute: true).string(), "a&lt;b &amp; c&gt;&quot;d&quot;");
+    test.is(
+        EscapedXml(origin: "a<b & c>\"d\"", attribute: false).string(),
+        "a&lt;b &amp; c&gt;\"d\""
+    );
+    test.is(
+        EscapedXml(origin: "a<b & c>\"d\"", attribute: true).string(),
+        "a&lt;b &amp; c&gt;&quot;d&quot;"
+    );
     test.is(EscapedXml(origin: "x\ty\nz\r", attribute: true).string(), "x&#9;y&#10;z&#13;");
     test.is(EscapedXml(origin: "x\ty\nz\r", attribute: false).string(), "x\ty\nz&#13;");
     test.is(EscapedXml(origin: "", attribute: false).string(), "");

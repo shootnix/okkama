@@ -1,14 +1,20 @@
 module http/internal/http2_controls v1.0.0;
 
+// HTTP/2 control frames: RST_STREAM, PING and GOAWAY, read and written.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope;
 import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
 
+// A received RST_STREAM.
 object Http2Reset {
     has stream, code is int;
 
+    // Reads frame; Http2Fault when it is not a valid RST_STREAM.
     Http2Reset(frame is Http2Frame) {
         confirm frame.header().kind().int() == 3
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "RST_STREAM required");
@@ -17,18 +23,22 @@ object Http2Reset {
         code = Binary(bytes: frame.payload(), order: ByteOrder.big).int(Signedness.unsigned);
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // The error code.
     code() is int {
         code;
     }
 }
 
+// An RST_STREAM to send.
 object Http2ResetFrame {
     has stream, code is int;
 
+    // Resets stream with code.
     Http2ResetFrame(stream is int, code is int) {
         Http2ControlCode(code);
         confirm stream > 0 && stream <= 2147483647
@@ -42,17 +52,25 @@ object Http2ResetFrame {
         self.code = code;
     }
 
+    // The frame.
     frame() is Http2Frame {
         Http2Frame(
             header: Http2FrameHeader(3.byte(), 0.byte(), stream, 4),
-            payload: IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
+            payload: IntegerBytes(
+                value: code,
+                size: 4,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes()
         );
     }
 }
 
+// The answer to a received PING.
 object Http2PingReply {
     has origin is Http2Frame;
 
+    // Reads origin; Http2Fault when it is not a valid PING.
     Http2PingReply(origin is Http2Frame) {
         confirm origin.header().kind().int() == 6
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "PING required");
@@ -60,21 +78,30 @@ object Http2PingReply {
         self.origin = origin;
     }
 
+    // A PING ACK with the same payload, or nothing when origin is itself an
+    // ACK.
     frames() is @Http2Frame {
         if (origin.header().flags().int() & 1) != 0 {
             let empty is @Http2Frame = [];
             empty;
         }
         else {
-            [Http2Frame(header: Http2FrameHeader(6.byte(), 1.byte(), 0, 8), payload: origin.payload())];
+            [
+                Http2Frame(
+                    header: Http2FrameHeader(6.byte(), 1.byte(), 0, 8),
+                    payload: origin.payload()
+                )
+            ];
         }
     }
 }
 
+// A received GOAWAY.
 object Http2GoAway {
     has last_stream, code is int;
     has debug is @byte;
 
+    // Reads frame; Http2Fault when it is not a valid GOAWAY.
     Http2GoAway(frame is Http2Frame) {
         confirm frame.header().kind().int() == 7
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "GOAWAY required");
@@ -87,10 +114,12 @@ object Http2GoAway {
         debug = payload.slice(8, payload.size());
     }
 
+    // The last stream the peer may process.
     last_stream() is int {
         last_stream;
     }
 
+    // The error code.
     code() is int {
         code;
     }
@@ -101,10 +130,12 @@ object Http2GoAway {
     }
 }
 
+// A GOAWAY to send.
 object Http2GoAwayFrame {
     has last_stream, code is int;
     has debug is @byte;
 
+    // last_stream with code and debug data.
     Http2GoAwayFrame(last_stream is int, code is int, debug is @byte) {
         Http2ControlCode(code);
         confirm last_stream >= 0 && last_stream <= 2147483647
@@ -126,11 +157,25 @@ object Http2GoAwayFrame {
         self.debug = debug;
     }
 
+    // The frame.
     frame() is Http2Frame {
-        let id = IntegerBytes(value: last_stream, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
-        let status = IntegerBytes(value: code, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        let id = IntegerBytes(
+            value: last_stream,
+            size: 4,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
+        let status = IntegerBytes(
+            value: code,
+            size: 4,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
         let payload = HttpWireBytes(chunks: [id, status, debug], maximum: 8 + debug.size()).bytes();
-        Http2Frame(header: Http2FrameHeader(7.byte(), 0.byte(), 0, payload.size()), payload: payload);
+        Http2Frame(
+            header: Http2FrameHeader(7.byte(), 0.byte(), 0, payload.size()),
+            payload: payload
+        );
     }
 }
 
@@ -146,23 +191,28 @@ hidden object Http2ControlCode {
     }
 }
 
+// What the GOAWAYs received so far allow.
 object Http2GoAwayProgress {
     has last_stream is int;
     has stopping is bool;
 
+    // No GOAWAY yet.
     Http2GoAwayProgress() {
         last_stream = 2147483647;
         stopping = false;
     }
 
+    // The lowest last stream received.
     last_stream() is int {
         last_stream;
     }
 
+    // Whether a GOAWAY was received.
     stopping() is bool {
         stopping;
     }
 
+    // This progress after frame; Http2Fault when its last stream grows.
     received(frame is Http2GoAway) is ^Http2GoAwayProgress {
         confirm frame.last_stream() <= last_stream
             else throw Http2Fault.detailed(
@@ -178,7 +228,9 @@ object Http2GoAwayProgress {
 
 test "GOAWAY observation permanently stops new streams" {
     let progress = Http2GoAwayProgress();
-    progress = progress.received(Http2GoAway(Http2GoAwayFrame(last_stream: 1, code: 0, debug: []).frame()));
+    progress = progress.received(
+        Http2GoAway(Http2GoAwayFrame(last_stream: 1, code: 0, debug: []).frame())
+    );
     test.ok(progress.stopping());
     test.is(progress.last_stream(), 1);
 }

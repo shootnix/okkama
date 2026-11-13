@@ -38,21 +38,27 @@ import "runtime/regex" take RegexState, regex_state_create, regex_state_prepare,
 //     date.replaced(origin: text, by: "YYYY-MM");  // literal, $ is not expanded
 //     Regex(",\\s*").parts("a, b,,c");             // ["a", "b", "", "c"]
 
+// How a pattern matches: ascii classes only, ignoring case, `^`/`$` per line,
+// `.` matching LF, or verbose with spaces and comments.
 enum RegexFlag = (ascii, ignore_case, multiline, dot_all, verbose);
 
+// Which bound of a pattern was passed.
 enum RegexLimit = (expression_size, nesting, groups, states);
 
+// A compiled pattern of Okkama Regex Dialect 1, which runs in linear time.
 object Regex {
     has source is string;
     has selected_flags is @RegexFlag;
     has state is RegexState;
 
+    // Compiles expression; InvalidRegex says where it is wrong.
     Regex(expression is string) {
         source = expression;
         selected_flags = [];
         state = regex_state_create(expression, []);
     }
 
+    // Compiles expression with flags.
     Regex(expression is string, flags is @RegexFlag) {
         source = expression;
         selected_flags = flags;
@@ -78,6 +84,7 @@ object Regex {
         state = regex_state_create(expression, codes);
     }
 
+    // The expression and flags it was made from.
     cap Source {
         expression is string {
             source;
@@ -144,16 +151,19 @@ object Regex {
         pieces;
     }
 
+    // How many capture groups it has.
     group_count() is int {
         self.prepare();
         regex_state_group_count(state);
     }
 
+    // The named groups and their indexes.
     group_names() is %string:int {
         self.prepare();
         regex_state_group_names(state);
     }
 
+    // A first, prefix or entire match within range; the searches use it.
     observation(origin is string, range is RegexRange, mode is RegexQuery) is RegexQueryObservation {
         let query = regex_query_create(
             state,
@@ -256,18 +266,23 @@ hidden object RegexScan {
     }
 }
 
+// A pattern that is not Dialect 1; offset and message say where and why.
 enum InvalidRegex is Error = (located(offset is int, message is string));
 
+// A pattern too large to compile; kind says which bound.
 enum RegexLimitExceeded is Error = (detailed(kind is RegexLimit, limit is int));
 
+// Where a match must be: anywhere, at the start, or the whole range.
 enum RegexQuery = (first, prefix, entire);
 
+// A match looked for, read when asked.
 object RegexMatchObservation {
     has source is string;
     has pattern is Regex;
     has selected is RegexRange;
     has mode is RegexQuery;
 
+    // Looks for regex in origin within range.
     RegexMatchObservation(origin is string, regex is Regex, range is RegexRange, mode is RegexQuery) {
         source = origin;
         pattern = regex;
@@ -275,10 +290,12 @@ object RegexMatchObservation {
         self.mode = mode;
     }
 
+    // Whether there is a match.
     found() is bool {
         self.observed().found();
     }
 
+    // The match; NoRegexMatch when there is none.
     match() is RegexMatching {
         self.observed().match();
     }
@@ -290,16 +307,20 @@ object RegexMatchObservation {
     }
 }
 
+// A range that does not fit in the input.
 enum RegexRangeOutsideInput is Error = (range(start is int, end is int, length is int));
 
+// There was no match.
 enum NoRegexMatch is Error = (none);
 
+// The runtime's answer to one query.
 object RegexQueryObservation {
     has source is string;
     has pattern is Regex;
     has selected is RegexRange;
     has query is RegexQueryState;
 
+    // Made by Regex.observation(); not constructed directly.
     RegexQueryObservation(
         source is string,
         pattern is Regex,
@@ -312,6 +333,7 @@ object RegexQueryObservation {
         self.query = query;
     }
 
+    // Whether there is a match.
     found() is bool {
         confirm selected::Bounds::end <= source.length()
             else throw RegexRangeOutsideInput.range(
@@ -323,6 +345,7 @@ object RegexQueryObservation {
         regex_query_found(query);
     }
 
+    // The match; NoRegexMatch when there is none.
     match() is RegexMatching {
         confirm self.found() else throw NoRegexMatch.none;
         RegexMatch(origin: source, state: regex_query_match(query));

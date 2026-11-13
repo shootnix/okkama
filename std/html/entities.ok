@@ -1,32 +1,35 @@
 module html/entities v1.0.0;
 
+// HTML escaping and unescaping of text.
+//
+//     EscapedHtml("<Ada & Bob>").string();                   // "&lt;Ada &amp; Bob&gt;"
+//     EscapedHtml(origin: title, quotes: true).string();     // for attribute values
+//     UnescapedHtml("caf&eacute; &lt;3").string();           // "café <3"
+//
+// Escaping is not sanitizing: it makes text safe as text or as a quoted
+// attribute value, nothing more. Unescaping knows all 2231 named references of
+// the HTML standard.
+
 import "runtime/html" take html_events, html_event_value;
 
-// HTML character-escaped representation of immutable source text.
-// Constructors only bind source and quotation policy; string() computes afresh.
-// Default/false escapes &, < and >; true also escapes double and single quotes
-// as &quot; and &#39;. Existing references are ordinary text, so &amp; becomes
-// &amp;amp;. Replacement text is never escaped again within one observation.
-// Empty input stays empty; other Unicode scalars and whitespace are unchanged.
-// Constant-count replacement passes take O(n) time and auxiliary memory, with
-// at most six output scalars per input scalar. No native imports, I/O, resource
-// ownership or destroy. This is not HTML context validation or sanitization.
-// Example: EscapedHtml("<Ada & Bob>").string() == "&lt;Ada &amp; Bob&gt;".
-// Run: okkama run -t std/html/entities.ok
+// Text with `&`, `<` and `>` escaped, and quotes too when asked.
 object EscapedHtml {
     has origin is string;
     has quotes is bool;
 
+    // Escapes origin for text.
     EscapedHtml(origin is string) {
         self.origin = origin;
         self.quotes = false;
     }
 
+    // Escapes origin; quotes also escapes `"` and `'` for attribute values.
     EscapedHtml(origin is string, quotes is bool) {
         self.origin = origin;
         self.quotes = quotes;
     }
 
+    // The escaped text; existing references are escaped again.
     string() is string {
         // Ampersands first: later replacements introduce entity ampersands.
         let escaped = origin.replace("&", "&amp;")
@@ -55,10 +58,12 @@ object EscapedHtml {
 object UnescapedHtml {
     has origin is string;
 
+    // The text.
     UnescapedHtml(origin is string) {
         self.origin = origin;
     }
 
+    // The decoded text; unknown names stay as written.
     string() is string {
         if origin == "" {
             "";

@@ -1,5 +1,14 @@
 module url/form v1.0.0;
 
+// HTML forms as `application/x-www-form-urlencoded`.
+//
+//     let body = FormUrlEncoded(parameters).bytes();
+//     let fields = ParsedForm(body).parameters();
+//     fields.text("name");
+//
+// Spaces are `+`; everything else outside the unreserved set is
+// percent-encoded.
+
 import "url/query" take QueryParameters, ParameterParsing, InvalidQueryEncoding;
 import "url/percent" take PercentEncoded, UrlComponent;
 import "encoding/utf" take Utf8Encoded;
@@ -9,10 +18,12 @@ import "error" take InvalidArgument;
 object FormUrlEncoded {
     has origin is QueryParameters;
 
+    // Encodes origin as a form body.
     FormUrlEncoded(origin is QueryParameters) {
         self.origin = origin;
     }
 
+    // The encoded text.
     string() is string {
         let entries = origin.entries();
         let parts is @string = (0..entries.size()).map() -> index {
@@ -22,6 +33,7 @@ object FormUrlEncoded {
         parts.join("&");
     }
 
+    // The encoded text as bytes, for a request body.
     bytes() is @byte {
         Utf8Encoded(self.string()).bytes();
     }
@@ -39,12 +51,14 @@ object ParsedForm {
     has origin is @byte;
     has maximum_parameters, maximum_bytes is int;
 
+    // Reads a form body, at most 10000 fields and 1 MiB.
     ParsedForm(origin is @byte) {
         self.origin = origin;
         maximum_parameters = 10000;
         maximum_bytes = 1048576;
     }
 
+    // Reads a form body within these limits.
     ParsedForm(origin is @byte, maximum_parameters is int, maximum_bytes is int) {
         confirm maximum_parameters >= 0 && maximum_bytes >= 0
             else throw InvalidArgument.because("form limits must be nonnegative");
@@ -53,6 +67,7 @@ object ParsedForm {
         self.maximum_bytes = maximum_bytes;
     }
 
+    // The fields; InvalidFormEncoding when the body is not a form.
     parameters() is QueryParameters {
         try {
             ParameterParsing(origin: origin, form: true, maximum_parameters: maximum_parameters, maximum_bytes: maximum_bytes).parameters();
@@ -63,6 +78,7 @@ object ParsedForm {
     }
 }
 
+// A body that is not form-encoded; offset says where.
 enum InvalidFormEncoding is Error = (at(offset is int));
 
 test "form plus and literal plus have different encodings" {

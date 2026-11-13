@@ -1,16 +1,16 @@
 module template/compile v1.0.0;
 
-// Parser migration contract: TemplateProgram(source, maximum_input,
-// maximum_nodes).instructions() performs bounded parsing in Okkama and returns
-// ordered immutable TemplateInstruction values (text()/variable()). Constructors
-// bind only; every observation parses afresh, with no native program cache.
-// Preserve the existing flat grammar, standalone comments, node accounting,
-// complete-before-lookup behavior and original scalar/CRLF diagnostics.
-// Maximum input is checked before scanning. Literal fragments are collected in
-// persistent lists and joined once per instruction, avoiding repeated prefix
-// copying. Diagnostics scan only the prefix preceding the offending position.
-// Private native UTF-8 byte sizing remains unchanged; grammar parsing does not
-// call runtime/template. Section/partial grammar comes after this migration.
+// Text templates: `{{name}}` filled from strings.
+//
+//     let greeting = TextTemplate("Hello, {{user.name}}! You have {{user.unread}} new messages.");
+//     greeting.string(["user.name": "Ada", "user.unread": "3"]);
+//     greeting.write(data: TemplateBindings(texts), destination: Stdout());
+//
+// Names are dotted paths; `{{! comment }}` is dropped. Nothing is escaped (use
+// template/html for HTML). The whole source is checked before any value is
+// looked up; a missing value is MissingTemplateValue. Sections and partials are
+// template/sections.
+
 import "template/model" take TemplateStrings, TemplateBindings;
 import "template/path" take TemplatePathFromString;
 import "collections/list" take List, EmptyList;
@@ -44,12 +44,15 @@ object TextTemplate {
     has program is TemplateProgram;
     has maximum_output is int;
 
+    // A template of origin, within 1 Mi characters, 10000 nodes and 1 MiB of
+    // output.
     TextTemplate(origin is string) {
         self.origin = origin;
         program = TemplateProgram(source: origin, maximum_input: 1048576, maximum_nodes: 10000);
         maximum_output = 1048576;
     }
 
+    // The same within these limits.
     TextTemplate(
         origin is string,
         maximum_input is int,
@@ -67,6 +70,7 @@ object TextTemplate {
         self.maximum_output = maximum_output;
     }
 
+    // Its source.
     source() is string {
         origin;
     }
@@ -76,6 +80,8 @@ object TextTemplate {
         self.string(TemplateBindings(texts));
     }
 
+    // The text filled from data; TemplateFailure for bad source,
+    // MissingTemplateValue for a missing value.
     string(data is TemplateStrings) is string {
         let nodes = program.instructions();
         let output = nodes.reduce(TemplateTextParts(maximum_output)) -> parts, node {
@@ -133,11 +139,13 @@ object TemplateInstruction {
     has marker is string = "";
     has location is int = 0;
 
+    // Text, or a variable when variable.
     TemplateInstruction(text is string, variable is bool) {
         origin = text;
         named = variable;
     }
 
+    // The same with its tag spelling and offset.
     TemplateInstruction(text is string, variable is bool, tag is string, offset is int) {
         origin = text;
         named = variable;
@@ -145,28 +153,34 @@ object TemplateInstruction {
         location = offset;
     }
 
+    // The literal text, or the variable's path.
     text() is string {
         origin;
     }
 
+    // Whether it is a variable.
     variable() is bool {
         named;
     }
 
+    // The tag as written.
     tag() is string {
         marker;
     }
 
+    // Where it starts in the source.
     offset() is int {
         location;
     }
 }
 
+// A template's source compiled to instructions.
 object TemplateProgram {
     has source is string;
     has maximum_input, maximum_nodes is int;
     has structured is bool = false;
 
+    // Compiles source within the limits.
     TemplateProgram(source is string, maximum_input is int, maximum_nodes is int) {
         confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits.invalid;
         self.source = source;
@@ -174,6 +188,7 @@ object TemplateProgram {
         self.maximum_nodes = maximum_nodes;
     }
 
+    // The same; structured keeps section tags for template/tree.
     TemplateProgram(
         source is string,
         maximum_input is int,
@@ -187,6 +202,7 @@ object TemplateProgram {
         self.structured = structured;
     }
 
+    // The instructions; TemplateFailure says where the source is wrong.
     instructions() is @TemplateInstruction {
         confirm source.length() <= maximum_input
             else throw TemplateFailure.located(0, 1, 1, "template input limit exceeded");
@@ -579,6 +595,8 @@ hidden object TemplateByteBudget {
     }
 }
 
+// A source that is not a template; offset, line, column and message say where
+// and why.
 enum TemplateFailure is Error = (located(
     offset is int,
     line is int,
@@ -586,8 +604,10 @@ enum TemplateFailure is Error = (located(
     message is string
 ));
 
+// A negative limit.
 enum InvalidTemplateLimits is Error = (invalid);
 
+// The output would exceed its limit.
 enum TemplateOutputLimitExceeded is Error = (exceeded);
 
 // Root test bodies cannot currently resolve imported constructors/fakes.

@@ -1,5 +1,10 @@
 module http/internal/http2_fields v1.0.0;
 
+// Requests and responses as HTTP/2 field sections: pseudo-fields first,
+// lowercase names, no connection-specific fields.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/hpack_tables" take HpackField;
 import "http/internal/http2_frame" take Http2Fault, Http2FaultScope;
 import "http/message" take Request, Response;
@@ -19,6 +24,7 @@ import "async/atomic" take Atomic;
 object Http2RequestFields {
     has fields is @HpackField;
 
+    // request on stream.
     Http2RequestFields(request is Request, stream is int) {
         Http2StreamCoordinate(stream);
         let target = request::Head::target;
@@ -57,6 +63,7 @@ object Http2RequestFields {
         ).fields();
     }
 
+    // request on stream, its :authority and :scheme from route.
     Http2RequestFields(request is Request, stream is int, route is UrlParts) {
         Http2StreamCoordinate(stream);
         AbsoluteTarget(route);
@@ -82,6 +89,7 @@ object Http2RequestFields {
         ).fields();
     }
 
+    // :method, :scheme, :authority, :path, then the fields.
     fields() is @HpackField {
         fields;
     }
@@ -214,9 +222,11 @@ hidden object Http2AuthorityKey {
     }
 }
 
+// The fields of a response on a stream.
 object Http2ResponseFields {
     has fields is @HpackField;
 
+    // response on stream.
     Http2ResponseFields(response is Response, stream is int) {
         Http2StreamCoordinate(stream);
         confirm response::Head::status != Status.switching_protocols
@@ -232,14 +242,17 @@ object Http2ResponseFields {
         ).fields();
     }
 
+    // :status, then the fields.
     fields() is @HpackField {
         fields;
     }
 }
 
+// Fields other than pseudo-fields, checked for HTTP/2.
 object Http2OrdinaryFields {
     has fields is @HpackField;
 
+    // origin of a request or a response on stream.
     Http2OrdinaryFields(origin is Headers, request is bool, stream is int) {
         let checked = try {
             Http2Headers(origin: origin, request: request).headers();
@@ -260,6 +273,7 @@ object Http2OrdinaryFields {
         fields = rows;
     }
 
+    // The fields, lowercase; Http2Fault for a connection-specific one.
     fields() is @HpackField {
         fields;
     }
@@ -278,10 +292,12 @@ hidden object Http2JoinedFields {
     }
 }
 
+// A response read from a field section.
 object ParsedHttp2Response {
     has status is Status;
     has headers is Headers;
 
+    // origin on stream.
     ParsedHttp2Response(origin is @HpackField, stream is int, end_stream is bool) {
         let section = Http2FieldSection(
             origin: origin,
@@ -325,19 +341,23 @@ object ParsedHttp2Response {
         headers = section.headers();
     }
 
+    // The :status.
     status() is Status {
         status;
     }
 
+    // The other fields.
     headers() is Headers {
         headers;
     }
 
+    // The response with body.
     response(body is BodyOpening) is Response {
         Response(status: status, headers: headers, body: body, version: HttpVersion.http_2);
     }
 }
 
+// A request read from a field section.
 object ParsedHttp2Request {
     has method is Method;
     has target is RequestTarget;
@@ -345,6 +365,7 @@ object ParsedHttp2Request {
     has scheme is string;
     has authority is UrlParts;
 
+    // origin on stream.
     ParsedHttp2Request(origin is @HpackField, stream is int) {
         let section = Http2FieldSection(
             origin: origin,
@@ -453,18 +474,22 @@ object ParsedHttp2Request {
         self.authority = authority;
     }
 
+    // The :method.
     method() is Method {
         method;
     }
 
+    // The target from :path, or from :authority for CONNECT.
     target() is RequestTarget {
         target;
     }
 
+    // The other fields.
     headers() is Headers {
         headers;
     }
 
+    // The :scheme.
     scheme() is string {
         scheme;
     }
@@ -474,6 +499,7 @@ object ParsedHttp2Request {
         authority;
     }
 
+    // The request with body.
     request(body is BodyOpening) is Request {
         Request(
             method: method,
@@ -497,10 +523,13 @@ hidden object Http2StreamCoordinate {
     }
 }
 
+// A field section split into pseudo-fields and fields.
 object Http2FieldSection {
     has pseudos is Http2PseudoFields;
     has headers is Headers;
 
+    // origin, with the pseudo-fields allowed, for a request or a response on
+    // stream.
     Http2FieldSection(origin is @HpackField, allowed is @string, request is bool, stream is int) {
         Http2StreamCoordinate(stream);
         confirm origin.size() <= 1024
@@ -584,30 +613,37 @@ object Http2FieldSection {
         pseudos = known;
     }
 
+    // The pseudo-fields; Http2Fault for one not allowed, repeated, or after a
+    // field.
     pseudos() is Http2PseudoFields {
         pseudos;
     }
 
+    // The other fields.
     headers() is Headers {
         headers;
     }
 }
 
+// The pseudo-fields gathered so far.
 object Http2PseudoFields {
     has fields is @HpackField;
     has stream is int;
 
+    // None yet, on stream.
     Http2PseudoFields(stream is int) {
         fields = [];
         self.stream = stream;
     }
 
+    // Whether it has name.
     contains(name is string) is bool {
         fields.reduce(false) -> found, field {
             found || field.name() == name;
         };
     }
 
+    // The value of name; Http2Fault when absent.
     value(name is string) is string {
         for fields -> field {
             if field.name() == name {
@@ -622,6 +658,7 @@ object Http2PseudoFields {
         );
     }
 
+    // These with field; Http2Fault for a repeat.
     added(field is HpackField) is ^Http2PseudoFields {
         let following is @HpackField = fields + [field];
         ^fields = following;

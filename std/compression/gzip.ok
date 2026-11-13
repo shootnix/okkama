@@ -28,11 +28,13 @@ object GzipCompressed {
     has origin is @byte;
     has level is int;
 
+    // Compresses origin whole as gzip, at level 0 to 9 (6 unless told).
     GzipCompressed(origin is @byte, level is int = 6) {
         self.origin = origin;
         self.level = level;
     }
 
+    // The compressed bytes.
     bytes() is @byte {
         NativeCompressed(origin: origin, format: "gzip", level: level).bytes();
     }
@@ -44,11 +46,14 @@ object GzipDecompressed {
     has origin is @byte;
     has limit is int;
 
+    // Decompresses origin whole, producing at most limit bytes.
     GzipDecompressed(origin is @byte, limit is int) {
         self.origin = origin;
         self.limit = limit;
     }
 
+    // The decompressed bytes; more than limit is CompressionLimitExceeded,
+    // damaged data InvalidCompressedData.
     bytes() is @byte {
         NativeDecompressed(origin: origin, format: "gzip", limit: limit).bytes();
     }
@@ -58,30 +63,37 @@ object GzipDecompressed {
 object GzipCompressor does Compressing {
     has codec is NativeCompressor;
 
+    // A gzip stream compressor at level 0 to 9 (6 unless told).
     GzipCompressor(level is int = 6) {
         codec = NativeCompressor(format: "gzip", level: level);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
@@ -92,34 +104,42 @@ object GzipCompressor does Compressing {
 object GzipDecompressor does Decompressing {
     has codec is NativeDecompressor;
 
+    // A gzip stream decompressor producing at most limit bytes in all.
     GzipDecompressor(limit is int) {
         codec = NativeDecompressor(format: "gzip", limit: limit);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
 
+    // The bytes that came after the end of the compressed stream.
     remainder() is @byte {
         codec.remainder();
     }

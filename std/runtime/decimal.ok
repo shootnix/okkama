@@ -1,13 +1,21 @@
 module runtime/decimal v1.0.0;
 
+// The native layer under i18n/gettext, math/decimal: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+
 // Backend-neutral exact decimal decomposition. Every runtime provider must
 // implement this contract without a binary floating-point round trip.
 native decimal_valid(origin is string) is bool;
 
+// origin as canonical decimal text.
 native decimal_canonical(origin is string) is string;
 
+// The coefficient of origin.
 native decimal_coefficient(origin is string) is string;
 
+// The exponent of origin.
 native decimal_exponent(origin is string) is int;
 
+// -1, 0 or 1 as left is less, equal or greater.
 native decimal_order(left is string, right is string) is int;

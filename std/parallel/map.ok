@@ -29,11 +29,13 @@ import "runtime/system" take system_cpu_count;
 // Worker failures retain the existing spawn diagnostics, not reconstructed child
 // Error objects. Empty inputs yield an empty sequence without dispatch.
 
+// An ordered map done by process workers.
 object ParallelMapped<T, R> {
     has origins is Sequencing<T>;
     has action is (T) is R;
     has bound is int;
 
+    // action over origins with workers processes; InvalidWorkerCount below 1.
     ParallelMapped(origins is Sequencing<T>, action is (T) is R, workers is int) {
         confirm workers > 0 else throw InvalidWorkerCount.workers(workers);
         self.origins = origins;
@@ -49,6 +51,7 @@ object ParallelMapped<T, R> {
         bound = 0;
     }
 
+    // How many workers.
     workers() is int {
         if bound > 0 {
             bound;
@@ -60,6 +63,7 @@ object ParallelMapped<T, R> {
         }
     }
 
+    // The results, in the order of origins.
     async results() is Sequencing<R> {
         let run is ParallelMapRun<T, R> = ParallelMapRun(
             origins: origins,
@@ -141,6 +145,7 @@ hidden object ParallelMapProgress<R> {
     }
 }
 
+// A worker count below 1.
 enum InvalidWorkerCount is Error = (workers(workers is int));
 
 hidden object Doubling {

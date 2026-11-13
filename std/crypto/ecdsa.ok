@@ -1,18 +1,22 @@
 module crypto/ecdsa v1.0.0;
 
+// ECDSA signatures on P-256 with SHA-256 and P-384 with SHA-384 (FIPS 186-5),
+// with deterministic nonces.
+//
+//     let key = EcdsaPrivateKey(curve: EcdsaCurve.p256, entropy: SystemEntropy());
+//     let signature = key.signature(message);
+//     key.public_key().verified(message, signature);         // true
+//     let pem = PrivateKeyPem(key.pkcs8()).string();
+//
+// Signatures are DER-encoded, as TLS and X.509 use them.
+
 import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
 import "crypto/secret" take SecretBytes;
 import "crypto/nonce" take Entropy;
 import "crypto/error" take HostOperation, InvalidCryptoInput;
 import "encoding/utf" take Utf8Decoded;
 
-// ECDSA over NIST P-256 with SHA-256 and P-384 with SHA-384 (FIPS 186-5),
-// deterministic nonces (RFC 6979), DER signatures. EcdsaPrivateKey(curve:,
-// pkcs8:) takes a DER PKCS#8 key of that curve; EcdsaPrivateKey(curve:,
-// entropy:) draws a uniformly random scalar (rejection sampling). Both
-// constructors take two parameters and are selected by argument names.
-// EcdsaPublicKey(curve, spki) takes a DER SubjectPublicKeyInfo of that curve.
-// Keys of another curve or algorithm are InvalidCryptoInput.
+// The curve: P-256 or P-384.
 enum EcdsaCurve = (p256, p384);
 
 hidden object EcdsaCurveName {
@@ -56,10 +60,12 @@ hidden object EcdsaCurveName {
     }
 }
 
+// An ECDSA private key.
 object EcdsaPrivateKey does SigningKey {
     has curve is EcdsaCurve;
     has key is SecretBytes;
 
+    // The key in a DER PKCS#8 document.
     EcdsaPrivateKey(curve is EcdsaCurve, pkcs8 is SecretBytes) {
         let algorithm = HostOperation(operation: "pkcs8-algorithm", arguments: [pkcs8.export_bytes()]).bytes();
         confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
@@ -68,15 +74,18 @@ object EcdsaPrivateKey does SigningKey {
         key = pkcs8;
     }
 
+    // A new key from entropy.
     EcdsaPrivateKey(curve is EcdsaCurve, entropy is Entropy) {
         self.curve = curve;
         key = EcdsaScalar(curve: curve, entropy: entropy).pkcs8();
     }
 
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes {
         SecretBytes(key.export_bytes());
     }
 
+    // Its public key.
     public_key() is VerifyingKey {
         EcdsaPublicKey(
             curve: curve,
@@ -84,6 +93,7 @@ object EcdsaPrivateKey does SigningKey {
         );
     }
 
+    // The DER signature of message.
     signature(message is @byte) is @byte {
         HostOperation(
             operation: "ecdsa-" + EcdsaCurveName(curve).name() + "-sign",
@@ -92,10 +102,12 @@ object EcdsaPrivateKey does SigningKey {
     }
 }
 
+// An ECDSA public key.
 object EcdsaPublicKey does PublicKey, VerifyingKey {
     has curve is EcdsaCurve;
     has origin is @byte;
 
+    // The key in a DER SubjectPublicKeyInfo document.
     EcdsaPublicKey(curve is EcdsaCurve, spki is @byte) {
         let algorithm = HostOperation(operation: "spki-algorithm", arguments: [spki]).bytes();
         confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string()
@@ -106,10 +118,12 @@ object EcdsaPublicKey does PublicKey, VerifyingKey {
         origin = spki;
     }
 
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte {
         origin;
     }
 
+    // Whether signature signs message with this key.
     verified(message is @byte, signature is @byte) is bool {
         HostOperation(
             operation: "ecdsa-" + EcdsaCurveName(curve).name() + "-verify",

@@ -1,5 +1,9 @@
 module runtime/format v1.0.0;
 
+// The native layer under numbers/float: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 // Existing core.format primitive; values are explicitly boxed at this ABI.
 // Locale/shortest-decimal policy lives in the consuming std values.
 native sprintf_values(pattern is string, values is @any) is string;

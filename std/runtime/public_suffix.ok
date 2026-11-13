@@ -1,7 +1,14 @@
 module runtime/public_suffix v1.0.0;
 
+// The native layer under net/public_suffix: the calls those modules make into
+// the host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
+// The public suffix of the host origin.
 native public_suffix_name(origin is string) is string;
 
+// The registrable domain of origin: one label above its public suffix.
 native registrable_name(origin is string) is string;
 
+// The version of the Public Suffix List shipped.
 native public_suffix_version() is string;

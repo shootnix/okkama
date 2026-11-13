@@ -22,13 +22,16 @@ import "runtime/time" take wall_clock, monotonic_clock, clock_domain, sleep_nano
 // The one-argument constructor binds explicitly supplied readings to the
 // "explicit" domain and never claims compatibility with a live clock.
 
+// A moment of wall-clock time, nanosecond exact, counted from 1970 UTC.
 object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<Duration, Instant>, Subtracting<Instant, Duration> {
     has origin is Duration;
 
+    // The moment origin after 1970-01-01T00:00:00Z.
     Instant(origin is Duration) {
         self.origin = origin;
     }
 
+    // The time since 1970-01-01T00:00:00Z.
     unix_duration() is Duration {
         origin;
     }
@@ -42,32 +45,41 @@ object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<D
         epoch.plus(origin).string() + "Z";
     }
 
+    // duration later.
     plus(duration is Duration) is Instant {
         Instant(origin: origin.plus(duration));
     }
 
+    // duration earlier.
     minus(duration is Duration) is Instant {
         Instant(origin: origin.minus(duration));
     }
 
+    // The time from other to this.
     minus(other is Instant) is Duration {
         origin.minus(other.unix_duration());
     }
 
+    // Earlier moments come first.
     order(other is Instant) is Order {
         origin.order(other.unix_duration());
     }
 }
 
+// A reading of a clock that never goes back, for measuring time; it means
+// nothing as a date.
 object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, MonotonicInstant>, Subtracting<Duration, MonotonicInstant>, Subtracting<MonotonicInstant, Duration> {
     has origin is Duration;
     has domain is string;
 
+    // A reading of the system's monotonic clock.
     MonotonicInstant(origin is Duration) {
         self.origin = origin;
         domain = "explicit";
     }
 
+    // A reading of the clock named domain; readings of different clocks do not
+    // mix.
     MonotonicInstant(origin is Duration, domain is string) {
         confirm domain.length() > 0 && domain.length() <= 128
             else throw IncompatibleClock.incompatible;
@@ -75,27 +87,33 @@ object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, Monot
         self.domain = domain;
     }
 
+    // Which clock it comes from.
     domain() is string {
         domain;
     }
 
+    // The raw reading.
     reading() is Duration {
         origin;
     }
 
+    // duration later.
     plus(duration is Duration) is MonotonicInstant {
         MonotonicInstant(origin: origin.plus(duration), domain: domain);
     }
 
+    // duration earlier.
     minus(duration is Duration) is MonotonicInstant {
         MonotonicInstant(origin: origin.minus(duration), domain: domain);
     }
 
+    // The time from other to this; IncompatibleClock across clocks.
     minus(other is MonotonicInstant) is Duration {
         confirm domain == other.domain() else throw IncompatibleClock.incompatible;
         origin.minus(other.reading());
     }
 
+    // Earlier readings come first; IncompatibleClock across clocks.
     order(other is MonotonicInstant) is Order {
         confirm domain == other.domain() else throw IncompatibleClock.incompatible;
         origin.order(other.reading());
@@ -104,14 +122,20 @@ object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, Monot
 
 // wait completes without a value; await it as a statement.
 role Timing {
+    // The wall-clock time now.
     instant() is Instant;
+    // The monotonic clock now.
     monotonic_instant() is MonotonicInstant;
+    // Waits for duration without blocking other tasks.
     async wait(duration is Duration) is void;
 }
 
+// The system's clocks; tests use a fake Timing instead.
 object SystemClock does Timing {
+    // The system clocks.
     SystemClock();
 
+    // The wall-clock time now.
     instant() is Instant {
         Instant(origin: Duration(
             value: wall_clock().rat(),
@@ -119,6 +143,7 @@ object SystemClock does Timing {
         ));
     }
 
+    // The monotonic clock now.
     monotonic_instant() is MonotonicInstant {
         MonotonicInstant(
             origin: Duration(
@@ -129,6 +154,8 @@ object SystemClock does Timing {
         );
     }
 
+    // Waits for duration without blocking other tasks; a negative duration is
+    // InvalidWait.
     async wait(duration is Duration) is void {
         confirm duration::Span::seconds >= 0.rat()
             else throw InvalidWait.because("wait duration must not be negative");
@@ -136,8 +163,10 @@ object SystemClock does Timing {
     }
 }
 
+// Readings of different monotonic clocks were compared.
 enum IncompatibleClock is Error = (incompatible);
 
+// A wait that cannot be made, such as a negative duration.
 enum InvalidWait is Error = (because(message is string));
 
 test "instants are durations from the epoch" {

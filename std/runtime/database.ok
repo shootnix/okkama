@@ -1,11 +1,18 @@
 module runtime/database v1.0.0;
 
+// The native layer under db/sqlite: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+
 import "runtime/db" take DbCellState;
 
+// A SQLite connection and its worker thread.
 native object SqliteState;
 
+// One reply from the worker.
 native object SqliteReplyState;
 
+// A connection to path (or in memory) with these options, not yet open.
 native sqlite_create(
     path is @byte,
     read_only is bool,
@@ -16,42 +23,61 @@ native sqlite_create(
     memory is bool
 ) is SqliteState;
 
+// Opens the connection; the reply says how it went.
 native async sqlite_connect(state is SqliteState) is SqliteReplyState;
 
+// Runs sql with values of kinds; the reply says how it went.
 native async sqlite_execution(state is SqliteState, sql is @byte, kinds is @int, values is @@byte) is SqliteReplyState;
 
+// Runs sql with values and starts a cursor; the reply says how it went.
 native async sqlite_rows(state is SqliteState, sql is @byte, kinds is @int, values is @@byte) is SqliteReplyState;
 
+// The next page of at most maximum rows of cursor id.
 native async sqlite_fetch(state is SqliteState, id is int, maximum is int) is SqliteReplyState;
 
+// Drops cursor id.
 native sqlite_release(state is SqliteState, id is int) is bool;
 
+// Rolls back an open transaction at once.
 native sqlite_rollback(state is SqliteState) is bool;
 
+// Whether the connection is closed.
 native sqlite_closed(state is SqliteState) is bool;
 
+// Closes the connection.
 native sqlite_close(state is SqliteState) is bool;
 
+// Waits until the worker has stopped.
 native async sqlite_settled(state is SqliteState) is bool;
 
+// Whether no transaction is open.
 native sqlite_autocommit(state is SqliteState) is bool;
 
+// The reply's facts: status, error kind, code and message.
 native sqlite_reply_info(reply is SqliteReplyState) is %string:string;
 
+// The column names.
 native sqlite_reply_names(reply is SqliteReplyState) is @string;
 
+// The declared column types.
 native sqlite_reply_declarations(reply is SqliteReplyState) is @string;
 
+// The kind code of a cell.
 native sqlite_reply_kind(reply is SqliteReplyState, row is int, column is int) is int;
 
+// A cell as text.
 native sqlite_reply_text(reply is SqliteReplyState, row is int, column is int) is string;
 
+// A cell as bytes.
 native sqlite_reply_bytes(reply is SqliteReplyState, row is int, column is int) is @byte;
 
+// Frees the reply.
 native sqlite_reply_close(reply is SqliteReplyState) is bool;
 
+// Prepares sql; the reply says how it went.
 native async sqlite_prepare(state is SqliteState, sql is @byte) is SqliteReplyState;
 
+// Runs prepared statement id with values; the reply says how it went.
 native async sqlite_prepared_execution(
     state is SqliteState,
     id is int,
@@ -59,10 +85,14 @@ native async sqlite_prepared_execution(
     values is @@byte
 ) is SqliteReplyState;
 
+// Runs prepared statement id with values and starts a cursor; the reply says
+// how it went.
 native async sqlite_prepared_rows(state is SqliteState, id is int, kinds is @int, values is @@byte) is SqliteReplyState;
 
+// Finalizes prepared statement id.
 native sqlite_unprepare(state is SqliteState, id is int) is bool;
 
+// Opens a BLOB; the reply says how it went.
 native async sqlite_blob_open(
     state is SqliteState,
     database is string,
@@ -72,51 +102,73 @@ native async sqlite_blob_open(
     writable is bool
 ) is SqliteReplyState;
 
+// Reads limit bytes of BLOB id from offset; the reply says how it went.
 native async sqlite_blob_read(state is SqliteState, id is int, offset is string, limit is int) is SqliteReplyState;
 
+// Writes source to BLOB id at offset; the reply says how it went.
 native async sqlite_blob_write(state is SqliteState, id is int, offset is string, source is @byte) is SqliteReplyState;
 
+// Closes BLOB id.
 native sqlite_blob_close(state is SqliteState, id is int) is bool;
 
+// The bytes a BLOB read gave.
 native sqlite_reply_blob_bytes(reply is SqliteReplyState) is @byte;
 
+// Starts a backup to path; the reply says how it went.
 native async sqlite_backup_open(state is SqliteState, path is @byte) is SqliteReplyState;
 
+// Copies pages more pages of backup id; the reply says how it went.
 native async sqlite_backup_step(state is SqliteState, id is int, pages is int) is SqliteReplyState;
 
+// Ends backup id.
 native sqlite_backup_close(state is SqliteState, id is int) is bool;
 
+// Runs every statement of source; the reply says how it went.
 native async sqlite_script(state is SqliteState, source is @byte) is SqliteReplyState;
 
+// The affected-row counts of a script's statements.
 native sqlite_reply_executions(reply is SqliteReplyState) is @string;
 
+// Runs a transaction control statement; the reply says how it went.
 native async sqlite_control(state is SqliteState, sql is @byte) is SqliteReplyState;
 
+// The cells of row.
 native sqlite_reply_cells(reply is SqliteReplyState, row is int) is @DbCellState;
 
 // Typed request/reply boundary: no text encoding of numeric parameters or metadata.
 native async sqlite_execution_cells(state is SqliteState, sql is string, values is @DbCellState) is SqliteReplyState;
 
+// Runs sql with cells as values and starts a cursor; the reply says how it
+// went.
 native async sqlite_rows_cells(state is SqliteState, sql is string, values is @DbCellState) is SqliteReplyState;
 
+// Runs prepared statement id with cells; the reply says how it went.
 native async sqlite_prepared_execution_cells(
     state is SqliteState,
     id is int,
     values is @DbCellState
 ) is SqliteReplyState;
 
+// Runs prepared statement id with cells and starts a cursor; the reply says how
+// it went.
 native async sqlite_prepared_rows_cells(state is SqliteState, id is int, values is @DbCellState) is SqliteReplyState;
 
+// Whether the operation succeeded.
 native sqlite_reply_ok(reply is SqliteReplyState) is bool;
 
+// The id of what was opened.
 native sqlite_reply_id(reply is SqliteReplyState) is int;
 
+// Whether the cursor reached its end.
 native sqlite_reply_eof(reply is SqliteReplyState) is bool;
 
+// How many rows the page holds.
 native sqlite_reply_count(reply is SqliteReplyState) is int;
 
+// Whether the affected-row count is known.
 native sqlite_reply_affected_known(reply is SqliteReplyState) is bool;
 
+// The affected-row count, as decimal text.
 native sqlite_reply_affected(reply is SqliteReplyState) is string;
 
 // A fetched page as flat columns (row-major): kinds use the db cell codes
@@ -124,14 +176,20 @@ native sqlite_reply_affected(reply is SqliteReplyState) is string;
 // an integer cell, else the ordinal of the cell in its typed array.
 native sqlite_reply_kinds(reply is SqliteReplyState) is @int;
 
+// The page's integer values and typed-array ordinals.
 native sqlite_reply_values(reply is SqliteReplyState) is @int;
 
+// The page's floats.
 native sqlite_reply_floats(reply is SqliteReplyState) is @float;
 
+// The page's texts.
 native sqlite_reply_texts(reply is SqliteReplyState) is @string;
 
+// The page's BLOBs.
 native sqlite_reply_blobs(reply is SqliteReplyState) is @@byte;
 
+// How many bytes the page took.
 native sqlite_reply_row_bytes(reply is SqliteReplyState) is int;
 
+// A failure of the first page, as kind and code, or [].
 native sqlite_reply_deferred(reply is SqliteReplyState) is @string;

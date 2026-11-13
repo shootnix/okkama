@@ -1,14 +1,5 @@
 module db/postgres/wire v1.0.0;
 
-import "io/stream" take AsyncReading, AsyncWriting;
-import "io/buffer" take ByteBuffer;
-import "io/input" take ByteInput;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
-import "encoding/binary" take Signedness;
-import "encoding/bytes" take ByteRange, ByteSearch;
-import "async/atomic" take Atomic;
-import "cell" take Cell;
-
 // PostgreSQL frontend/backend protocol 3.0 framing, written in Okkama.
 //
 // Frontend messages are a type byte, a big-endian Int32 length that counts
@@ -19,13 +10,26 @@ import "cell" take Cell;
 // semantics: db/postgres owns the conversation. Integers and strings are read
 // in place (encoding/bytes); DataRow messages can be taken raw, many at once,
 // for a result page.
+
+import "io/stream" take AsyncReading, AsyncWriting;
+import "io/buffer" take ByteBuffer;
+import "io/input" take ByteInput;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
+import "encoding/binary" take Signedness;
+import "encoding/bytes" take ByteRange, ByteSearch;
+import "async/atomic" take Atomic;
+import "cell" take Cell;
+
+// A big-endian 32-bit integer.
 object PgInt32 {
     has value is int;
 
+    // The value.
     PgInt32(value is int) {
         self.value = value;
     }
 
+    // Its 4 bytes.
     bytes() is @byte {
         [
             ((value >> 24) & 255).byte(),
@@ -36,25 +40,31 @@ object PgInt32 {
     }
 }
 
+// A big-endian 16-bit integer.
 object PgInt16 {
     has value is int;
 
+    // The value.
     PgInt16(value is int) {
         self.value = value;
     }
 
+    // Its 2 bytes.
     bytes() is @byte {
         [((value >> 8) & 255).byte(), (value & 255).byte()];
     }
 }
 
+// A NUL-terminated string.
 object PgCString {
     has text is string;
 
+    // The text.
     PgCString(text is string) {
         self.text = text;
     }
 
+    // Its UTF-8 bytes and NUL.
     bytes() is @byte {
         @byte(Utf8Encoded(text).bytes()..., 0.byte());
     }
@@ -65,11 +75,13 @@ object PgFrame {
     has kind is byte;
     has body is @byte;
 
+    // A message of type kind with body.
     PgFrame(kind is string, body is @byte) {
         self.kind = Utf8Encoded(kind).bytes()[0];
         self.body = body;
     }
 
+    // Type, length and body.
     bytes() is @byte {
         @byte(kind, PgInt32(body.size() + 4).bytes()..., body...);
     }
@@ -79,10 +91,12 @@ object PgFrame {
 object PgUntypedFrame {
     has body is @byte;
 
+    // A startup-family message with body.
     PgUntypedFrame(body is @byte) {
         self.body = body;
     }
 
+    // Length and body.
     bytes() is @byte {
         @byte(PgInt32(body.size() + 4).bytes()..., body...);
     }
@@ -93,19 +107,23 @@ object PgMessage {
     has kind is string;
     has body is @byte;
 
+    // A message of type kind with body.
     PgMessage(kind is string, body is @byte) {
         self.kind = kind;
         self.body = body;
     }
 
+    // Its type character.
     kind() is string {
         kind;
     }
 
+    // Its body.
     body() is @byte {
         body;
     }
 
+    // A reader of its body.
     fields() is PgFields {
         PgFields(body);
     }
@@ -116,24 +134,29 @@ object PgFields {
     has body is @byte;
     has position is Atomic<int>;
 
+    // Reads body.
     PgFields(body is @byte) {
         self.body = body;
         position = Atomic(0);
     }
 
+    // Bytes left.
     remaining() is int {
         body.size() - position.value();
     }
 
+    // The next count bytes; PgWireFailure past the end.
     take(count is int) is @byte {
         let start = self.advance(count);
         body.slice(start, start + count);
     }
 
+    // The next byte.
     byte() is int {
         body[self.advance(1)].int();
     }
 
+    // The next Int16.
     int16() is int {
         let start = self.advance(2);
         ByteRange(source: body, start: start, end: start + 2).integer(
@@ -142,6 +165,7 @@ object PgFields {
         );
     }
 
+    // The next Int32.
     int32() is int {
         let start = self.advance(4);
         ByteRange(source: body, start: start, end: start + 4).integer(
@@ -150,6 +174,7 @@ object PgFields {
         );
     }
 
+    // The next NUL-terminated string.
     cstring() is string {
         let start = position.value();
         let end = ByteSearch(source: body, pattern: [0.byte()]).from(start);
@@ -158,6 +183,7 @@ object PgFields {
         ByteRange(source: body, start: start, end: end).text();
     }
 
+    // Every byte left.
     rest() is @byte {
         self.take(self.remaining());
     }
@@ -176,19 +202,23 @@ object PgFields {
 object PgInput {
     has input is ByteInput;
 
+    // Reads from source.
     PgInput(source is AsyncReading) {
         input = ByteInput(source);
     }
 
+    // Bytes buffered.
     available() is int {
         input.available();
     }
 
+    // Waits until count bytes are buffered; PgWireFailure when the stream ends.
     async ensure(count is int) is void {
         confirm await input.ensure(count)
             else throw PgWireFailure.because("server closed the connection");
     }
 
+    // Takes count buffered bytes.
     take(count is int) is @byte {
         input.take(count);
     }
@@ -232,6 +262,7 @@ object PgInput {
         PgDataRows(bytes: input.take(end.value()), count: count.value());
     }
 
+    // The next whole message; PgWireFailure past 1 GiB or at the end.
     async message() is PgMessage {
         let ready = self.buffered();
         if ready.size() == 1 {
@@ -262,15 +293,18 @@ object PgDataRows {
     has bytes is @byte;
     has count is int;
 
+    // bytes holding count DataRow messages.
     PgDataRows(bytes is @byte, count is int) {
         self.bytes = bytes;
         self.count = count;
     }
 
+    // The raw messages.
     bytes() is @byte {
         bytes;
     }
 
+    // How many rows.
     count() is int {
         count;
     }
@@ -280,10 +314,12 @@ object PgDataRows {
 object PgJoined {
     has parts is @@byte;
 
+    // The parts.
     PgJoined(parts is @@byte) {
         self.parts = parts;
     }
 
+    // The parts joined.
     bytes() is @byte {
         let joined = ByteBuffer();
         defer joined.closing().close();
@@ -295,18 +331,22 @@ object PgJoined {
     }
 }
 
+// Writes frontend messages.
 object PgOutput {
     has sink is AsyncWriting;
 
+    // Writes to sink.
     PgOutput(sink is AsyncWriting) {
         self.sink = sink;
     }
 
+    // Writes bytes.
     async send(bytes is @byte) is void {
         await sink.write(bytes);
     }
 }
 
+// A message that cannot be read or written; reason says why.
 enum PgWireFailure is Error = (because(reason is string));
 
 test "frames carry big-endian self-inclusive lengths" {

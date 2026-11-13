@@ -1,5 +1,8 @@
 module http/http1_message_writing v1.0.0;
 
+// Writing whole HTTP/1.1 messages: head and body, in one write when the body is
+// in memory.
+
 import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/http1_head" take Http1RequestHead, Http1ResponseHead, Http1Limits,
     ParsedHttp1RequestHead;
@@ -16,26 +19,32 @@ import "async/scope" take FutureScope, Supervising;
 import "net/unix" take UnixPaired;
 import "http/http1_reading" take Http1RequestHeadReading;
 
+// Writes a request.
 object Http1RequestWriting {
     has pending is Future<AsyncWriting>;
 
+    // Writes request to origin within the default limits.
     Http1RequestWriting(origin is AsyncWriting, request is Request) {
         pending = Http1MessageOutput().request(origin, request, Http1Limits());
     }
 
+    // The same within limits.
     Http1RequestWriting(origin is AsyncWriting, request is Request, limits is Http1Limits) {
         pending = Http1MessageOutput().request(origin, request, limits);
     }
 
+    // Writes the request; the future gives the writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }
 }
 
+// Writes a response.
 object Http1ResponseWriting {
     has wire is Http1ResponseHeadWire;
     has pending is Future<AsyncWriting>;
 
+    // Writes response answering method, within the default limits.
     Http1ResponseWriting(origin is AsyncWriting, response is Response, method is Method) {
         let limits = Http1Limits();
         let framed = Http1MessageOutput().wire(response, method, limits);
@@ -43,6 +52,7 @@ object Http1ResponseWriting {
         pending = Http1MessageOutput().response(origin, response, framed, limits);
     }
 
+    // The same within limits.
     Http1ResponseWriting(
         origin is AsyncWriting,
         response is Response,
@@ -54,6 +64,7 @@ object Http1ResponseWriting {
         pending = Http1MessageOutput().response(origin, response, framed, limits);
     }
 
+    // Writes the response; the future gives the writer back when done.
     output() is Future<AsyncWriting> {
         pending;
     }

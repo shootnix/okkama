@@ -1,18 +1,26 @@
 module locale/match v1.0.0;
 
+// Choosing a locale from what a user asks for (RFC 4647).
+//
+//     let asked = [BasicLanguageRange("de-CH"), BasicLanguageRange("en")];
+//     LookedUpLocale(requested: asked, available: [Locale("en"), Locale("de")], fallback: Locale("en")).locale();   // de
+//     FilteredLocales(requested: asked, available: supported);     // every match, best first
+//
+// Lookup drops subtags from the end until something matches, then tries the
+// next range, then the fallback. `*` matches anything.
+
 import "locale/tag" take Locale, LocaleSubtag;
 import "encoding/utf" take Utf8Encoded;
 import "collections/sequence" take Sequencing;
 import "collections/iteration" take Cursor;
 import "collections/ordering" take SortedBy, Ranked, LowerBound;
 
-// RFC 4647 basic ranges are syntactic preferences, not registered locales.
-// This predicate consumes the existing ordinary Locale subset; no CLDR,
-// alias, likely-subtag or host locale expansion occurs during matching.
+// A language range such as `de-CH` or `*`.
 object BasicLanguageRange {
     has origin is string;
     has specificity is int;
 
+    // The range; InvalidLanguageRange otherwise.
     BasicLanguageRange(origin is string) {
         confirm origin.length() <= 255
             else throw InvalidLanguageRange.located(255, "range length exceeded");
@@ -36,14 +44,17 @@ object BasicLanguageRange {
         }
     }
 
+    // The range, lowercase.
     string() is string {
         origin;
     }
 
+    // How many subtags it has; 0 for `*`.
     specificity() is int {
         specificity;
     }
 
+    // Whether locale's tag starts with the range at a subtag boundary.
     matches(locale is Locale) is bool {
         if origin == "*" {
             return true;
@@ -63,6 +74,7 @@ object BasicLanguageRange {
 object LanguagePrefixes {
     has origin is @BasicLanguageRange;
 
+    // The ranges of origin from the longest down.
     LanguagePrefixes(origin is Locale) {
         let parts = origin.string().split("-");
         let values is @BasicLanguageRange = (0..parts.size()).map() -> index {
@@ -75,6 +87,7 @@ object LanguagePrefixes {
         self.origin = values;
     }
 
+    // The ranges.
     values() is Sequencing<BasicLanguageRange> {
         origin;
     }
@@ -105,6 +118,7 @@ hidden object BasicRangeSubtag {
     }
 }
 
+// A range that is not valid; offset says where.
 enum InvalidLanguageRange is Error = (located(offset is int, reason is string));
 
 // Snapshot once, then observe pure values. Filtering orders preferences before
@@ -237,29 +251,36 @@ hidden object LocaleRangeIndex {
     }
 }
 
+// The available locales that requested ranges match, in order of preference.
 object FilteredLocales does Sequencing<Locale> {
     has inputs is LocaleSelectionInputs;
 
+    // Matches available against requested.
     FilteredLocales(requested is Sequencing<BasicLanguageRange>, available is Sequencing<Locale>) {
         inputs = LocaleSelectionInputs(requested: requested, available: available);
     }
 
+    // How many.
     size() is int {
         self.selected().size();
     }
 
+    // The locale at index.
     item(index is int) is Locale {
         self.selected().item(index);
     }
 
+    // The first locale.
     first() is Locale {
         self.selected().first();
     }
 
+    // The last locale.
     last() is Locale {
         self.selected().last();
     }
 
+    // Walks them.
     cursor() is Cursor<Locale> {
         self.selected().cursor();
     }
@@ -289,7 +310,11 @@ object FilteredLocales does Sequencing<Locale> {
         };
         let ranked is @LocalePreference = unique.map() -> index {
             let position = lexical.item(index);
-            LocalePreference(locale: choices[position], priority: ranking.rank(choices[position]), position: position);
+            LocalePreference(
+                locale: choices[position],
+                priority: ranking.rank(choices[position]),
+                position: position
+            );
         };
         let accepted is @LocalePreference = ranked.filter() -> candidate {
             candidate.priority() >= 0;
@@ -312,20 +337,24 @@ object LocalePreference {
     has locale is Locale;
     has priority, available_position is int;
 
+    // As given.
     LocalePreference(locale is Locale, priority is int, position is int) {
         self.locale = locale;
         self.priority = priority;
         available_position = position;
     }
 
+    // The locale.
     locale() is Locale {
         locale;
     }
 
+    // The index of the range that matched it.
     priority() is int {
         priority;
     }
 
+    // Its position among the available.
     position() is int {
         priority * 512 + available_position;
     }
@@ -339,6 +368,8 @@ object LookedUpLocale {
     has fallback_index is int;
     has lookup is LocaleAvailableIndex;
 
+    // Looks requested up in available, with fallback; InvalidLocaleSelection
+    // when fallback is not available.
     LookedUpLocale(
         requested is Sequencing<BasicLanguageRange>,
         available is Sequencing<Locale>,
@@ -366,6 +397,7 @@ object LookedUpLocale {
         lookup = LocaleAvailableIndex(choices);
     }
 
+    // The locale chosen.
     locale() is Locale {
         let choices = inputs.available();
         for inputs.requested() -> range {
@@ -503,12 +535,16 @@ hidden object LocalePositionRange {
     }
 }
 
+// A selection that cannot be made as given; reason says why.
 enum InvalidLocaleSelection is Error = (because(reason is string));
 
 test "basic filtering respects hyphen boundaries and case" {
     test.ok(BasicLanguageRange("EN").matches(Locale(language: "en", region: "US")));
     test.ok(!BasicLanguageRange("en-US").matches(Locale(language: "en", region: "GB")));
-    test.is(LanguagePrefixes(Locale(language: "en", region: "US")).values().item(0).string(), "en-us");
+    test.is(
+        LanguagePrefixes(Locale(language: "en", region: "US")).values().item(0).string(),
+        "en-us"
+    );
 }
 
 test "basic range grammar rejects extended wildcard and POSIX syntax" {

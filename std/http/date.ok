@@ -1,5 +1,14 @@
 module http/date v1.0.0;
 
+// HTTP dates (RFC 9110 §5.6.7): `Thu, 01 Jan 1970 00:00:00 GMT`.
+//
+//     HttpDate(SystemClock().instant()).string();        // for Date, Last-Modified
+//     ParsedHttpDate("Sun, 06 Nov 1994 08:49:37 GMT").instant();
+//
+// ParsedHttpDate reads the IMF-fixdate form and the two obsolete forms; the RFC
+// 850 form has a two-digit year, so it needs a reference instant to pick the
+// century (HttpDateReferenceRequired otherwise).
+
 import "compare" take Comparing, Order;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
@@ -14,6 +23,7 @@ import "encoding/utf" take Utf8Encoded;
 object HttpDate does Comparing<HttpDate> {
     has origin is Instant;
 
+    // The date of origin, to the whole second.
     HttpDate(origin is Instant) {
         let seconds = origin.unix_duration()::Span::seconds;
         confirm seconds >= (-62135596800).rat() && seconds < 253402300800.rat()
@@ -28,14 +38,17 @@ object HttpDate does Comparing<HttpDate> {
         self.origin = Instant(Duration(seconds: whole));
     }
 
+    // The instant.
     instant() is Instant {
         origin;
     }
 
+    // Earlier dates first.
     order(other is HttpDate) is Order {
         origin.order(other.instant());
     }
 
+    // The IMF-fixdate form.
     string() is string {
         let local = HttpDateLocal(origin).local();
         let weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -67,16 +80,19 @@ object ParsedHttpDate {
     has origin is string;
     has references is @Instant;
 
+    // Text to read, without a reference.
     ParsedHttpDate(origin is string) {
         self.origin = origin;
         references = [];
     }
 
+    // Text to read; reference picks the century of a two-digit year.
     ParsedHttpDate(origin is string, reference is Instant) {
         self.origin = origin;
         references = [reference];
     }
 
+    // The instant; InvalidHttpDate for text that is not a date.
     instant() is Instant {
         confirm origin.length() >= 24 && origin.length() <= 33
             else throw InvalidHttpDate.because("date length");
@@ -281,8 +297,10 @@ hidden object HttpDateWeekday {
     }
 }
 
+// Text that is not an HTTP date; reason says why.
 enum InvalidHttpDate is Error = (because(reason is string));
 
+// A two-digit year was read without a reference instant.
 enum HttpDateReferenceRequired is Error = (required);
 
 test "HTTP dates are whole seconds in GMT" {

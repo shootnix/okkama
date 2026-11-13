@@ -1,21 +1,28 @@
 module digest/sha3 v1.0.0;
 
+// SHA-3 digests (FIPS 202) of 28, 32, 48 or 64 bytes.
+//
+//     let digest = Sha3_256(Utf8Encoded("hello").bytes()).bytes();
+//     let streamed = Sha3_512().state(head).state(rest).bytes();
+//
+// They follow digest/state: each state is a value, fed piece by piece.
+
 import "digest/state" take Digesting;
 import "encoding/utf" take Utf8Encoded;
 import "digest/host" take HostDigest;
 
-// SHA-3 (FIPS 202) fixed-width digests over the host provider: Sha3_224,
-// Sha3_256, Sha3_384 and Sha3_512 (28/32/48/64 raw bytes). The successor and
-// observation contract is the one of digest/sha2.
 import "encoding/hex" take HexEncoded;
 
+// SHA3-224.
 object Sha3_224 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha3_224() {
         digest = HostDigest(algorithm: "sha3-224", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha3_224(origin is @byte) {
         digest = HostDigest(algorithm: "sha3-224", key: [], width: 0).appended(origin);
     }
@@ -25,6 +32,7 @@ object Sha3_224 does Digesting {
         digest = HostDigest(algorithm: "sha3-224", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -34,6 +42,8 @@ object Sha3_224 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha3_224 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -46,13 +56,16 @@ object Sha3_224 does Digesting {
     }
 }
 
+// SHA3-256.
 object Sha3_256 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha3_256() {
         digest = HostDigest(algorithm: "sha3-256", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha3_256(origin is @byte) {
         digest = HostDigest(algorithm: "sha3-256", key: [], width: 0).appended(origin);
     }
@@ -62,6 +75,7 @@ object Sha3_256 does Digesting {
         digest = HostDigest(algorithm: "sha3-256", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -71,6 +85,8 @@ object Sha3_256 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha3_256 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -83,13 +99,16 @@ object Sha3_256 does Digesting {
     }
 }
 
+// SHA3-384.
 object Sha3_384 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha3_384() {
         digest = HostDigest(algorithm: "sha3-384", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha3_384(origin is @byte) {
         digest = HostDigest(algorithm: "sha3-384", key: [], width: 0).appended(origin);
     }
@@ -99,6 +118,7 @@ object Sha3_384 does Digesting {
         digest = HostDigest(algorithm: "sha3-384", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -108,6 +128,8 @@ object Sha3_384 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha3_384 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -120,13 +142,16 @@ object Sha3_384 does Digesting {
     }
 }
 
+// SHA3-512.
 object Sha3_512 does Digesting {
     has digest is HostDigest;
 
+    // An empty digest; state(bytes) feeds it.
     Sha3_512() {
         digest = HostDigest(algorithm: "sha3-512", key: [], width: 0);
     }
 
+    // The digest of these bytes.
     Sha3_512(origin is @byte) {
         digest = HostDigest(algorithm: "sha3-512", key: [], width: 0).appended(origin);
     }
@@ -136,6 +161,7 @@ object Sha3_512 does Digesting {
         digest = HostDigest(algorithm: "sha3-512", key: [], width: 0).appended(Utf8Encoded(text).bytes());
     }
 
+    // The digest.
     bytes() is @byte {
         digest.bytes();
     }
@@ -145,6 +171,8 @@ object Sha3_512 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The digest of everything fed so far and then origin; this one stays as it
+    // is.
     state(origin is @byte) is ^Sha3_512 {
         let continued = digest.appended(origin);
         ^digest = continued;

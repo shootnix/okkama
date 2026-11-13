@@ -1,5 +1,21 @@
 module mail/pop3_session v1.0.0;
 
+// A POP3 session in the TRANSACTION state: listing, fetching and deleting
+// messages.
+//
+//     let mailbox = session.mailbox();
+//     let state = await mailbox.state();                    // STAT
+//     let listing = await mailbox.messages();               // LIST and UIDL
+//     for listing -> entry {
+//         let message = await mailbox.message(entry.number());   // RETR, parsed
+//         await mailbox.delete(entry.number());                   // DELE
+//     }
+//     await session.quit();                                 // deletions take effect
+//
+// The caller connects and authenticates, then hands the transport to
+// PopSession. One command runs at a time. Deletions take effect at QUIT;
+// PopDeleteReset undoes them before.
+
 import "mail/pop3" take PopCapabilities, PopFeature, PopNumber, PopMessage, PopListingLimits,
     PopListing, PopMailboxState;
 import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
@@ -13,16 +29,15 @@ import "async/lock" take Lock;
 import "async/event" take Event;
 import "error" take InvalidArgument, UnsupportedOperation;
 
-// Transaction-state infrastructure. The caller has already authenticated and
-// transfers exclusive transport ownership. No constructor sends credentials.
-// Whole operations (including LIST + UIDL) serialize under one lock. A live
-// mailbox retains this owner; dropping an unrelated observation does not close it.
+// An authenticated POP3 session.
 object PopSession does Closing {
     has wire is PopWire;
     has capabilities is PopCapabilities;
     has limits is PopListingLimits;
     has lock is Lock;
 
+    // Takes over input and output (closing owner) after login, with the
+    // server's capabilities and the bytes already read.
     PopSession(
         input is AsyncReading,
         output is AsyncWriting,
@@ -44,22 +59,27 @@ object PopSession does Closing {
         lock = Lock();
     }
 
+    // The server's capabilities.
     capabilities() is PopCapabilities {
         capabilities;
     }
 
+    // The maildrop.
     mailbox() is PopMailbox {
         PopMailbox(self);
     }
 
+    // Whether it was closed.
     closed() is bool {
         wire.closed();
     }
 
+    // Closes the transport without QUIT; deletions are not applied.
     close() is void {
         wire.close();
     }
 
+    // Closes the transport, ignoring errors.
     abort() is void {
         try {
             self.close();
@@ -68,6 +88,7 @@ object PopSession does Closing {
         catch failure is NativeFailure {}
     }
 
+    // STAT.
     async state() is PopMailboxState {
         confirm !self.closed() else throw PopSessionClosed.closed;
         let guard = await lock.guard();
@@ -87,6 +108,7 @@ object PopSession does Closing {
         state;
     }
 
+    // LIST, and UIDL when the server has it.
     async messages() is Sequencing<PopMessage> {
         confirm !self.closed() else throw PopSessionClosed.closed;
         let guard = await lock.guard();
@@ -119,6 +141,7 @@ object PopSession does Closing {
         result;
     }
 
+    // Sends command and reads its reply; PopCommandRejected for -ERR.
     async run(command is PopCommand) is PopReply {
         // Typed command only: there is no arbitrary text constructor.
         confirm !self.closed() else throw PopSessionClosed.closed;
@@ -146,10 +169,12 @@ object PopSession does Closing {
         reply;
     }
 
+    // QUIT: applies the deletions and ends the session.
     async quit() is void {
         await self.run(PopCommand(PopSimpleCommand.quit));
     }
 
+    // RSET: undoes the deletions.
     async reset() is void {
         await self.run(PopCommand(PopSimpleCommand.reset));
     }
@@ -159,21 +184,26 @@ object PopSession does Closing {
     }
 }
 
+// The maildrop of a session.
 object PopMailbox {
     has origin is PopSession;
 
+    // The maildrop of origin.
     PopMailbox(origin is PopSession) {
         self.origin = origin;
     }
 
+    // STAT.
     async state() is PopMailboxState {
         await origin.state();
     }
 
+    // LIST, and UIDL when the server has it.
     async messages() is Sequencing<PopMessage> {
         await origin.messages();
     }
 
+    // RETR: the message's bytes.
     async bytes(number is PopNumber) is @byte {
         let reply = await origin.run(
             PopCommand(operation: PopMessageCommand.retrieve, number: number)
@@ -181,42 +211,51 @@ object PopMailbox {
         reply::Reply::body;
     }
 
+    // RETR: the message, parsed.
     async message(number is PopNumber) is MailMessage {
         let bytes = await self.bytes(number);
         ParsedMail(bytes).message();
     }
 
+    // DELE: marks the message deleted.
     async delete(number is PopNumber) is void {
         await origin.run(PopCommand(operation: PopMessageCommand.delete, number: number));
     }
 
+    // TOP: the header and the first lines of the body.
     async preview(number is PopNumber, lines is int) is @byte {
         let reply = await origin.run(PopCommand(number: number, lines: lines));
         reply::Reply::body;
     }
 }
 
+// The TOP of a message, fetched on demand.
 object PreviewedPopMail {
     has pending is Future<@byte>;
 
+    // lines of message number of origin.
     PreviewedPopMail(origin is PopMailbox, number is PopNumber, lines is int) {
         confirm lines >= 0
             else throw InvalidArgument.because("POP3 TOP line count must be nonnegative");
         pending = origin.preview(number, lines);
     }
 
+    // The bytes.
     bytes() is Future<@byte> {
         pending;
     }
 }
 
+// Undoes the deletions of a session.
 object PopDeleteReset {
     has origin is PopSession;
 
+    // For origin.
     PopDeleteReset(origin is PopSession) {
         self.origin = origin;
     }
 
+    // Sends RSET.
     async reset() is void {
         await origin.reset();
     }
@@ -226,12 +265,15 @@ object PopDeleteReset {
 // validates/encodes a value. Sending belongs to the session, never to projection.
 enum PopSimpleCommand = (stat, list, uidl, reset, quit);
 
+// Commands that take a message number.
 enum PopMessageCommand = (retrieve, delete);
 
+// A POP3 command.
 object PopCommand {
     has name, line is string;
     has multiple is bool;
 
+    // The command.
     PopCommand(operation is PopSimpleCommand) {
         let name = match operation {
             case PopSimpleCommand.stat {
@@ -255,6 +297,7 @@ object PopCommand {
         multiple = operation == PopSimpleCommand.list || operation == PopSimpleCommand.uidl;
     }
 
+    // The command for message number.
     PopCommand(operation is PopMessageCommand, number is PopNumber) {
         let name = if operation == PopMessageCommand.retrieve {
             "RETR";
@@ -267,6 +310,7 @@ object PopCommand {
         multiple = operation == PopMessageCommand.retrieve;
     }
 
+    // TOP with lines.
     PopCommand(number is PopNumber, lines is int) {
         confirm lines >= 0
             else throw InvalidArgument.because("POP3 TOP line count must be nonnegative");
@@ -278,14 +322,17 @@ object PopCommand {
             else throw InvalidArgument.because("POP3 command exceeds base command budget");
     }
 
+    // Its name, such as RETR.
     name() is string {
         name;
     }
 
+    // The command line with CRLF.
     bytes() is @byte {
         Utf8Encoded(line).bytes();
     }
 
+    // Whether its reply is multiline.
     mode() is PopReplyMode {
         if multiple {
             PopReplyMode.multiline;
@@ -366,8 +413,10 @@ hidden object PopSessionCleanup {
     }
 }
 
+// The server answered -ERR; operation and reason say to what.
 enum PopCommandRejected is Error = (detailed(operation is string, reason is string));
 
+// The session was used after it closed.
 enum PopSessionClosed is Error = (closed);
 
 test "POP3 commands encode only typed operands" {

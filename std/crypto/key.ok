@@ -1,27 +1,37 @@
 module crypto/key v1.0.0;
 
+// The roles keys play across crypto: PublicKey, VerifyingKey and SigningKey.
+//
+//     let key is SigningKey = Ed25519PrivateKey(entropy: SystemEntropy());
+//     let signature = key.signature(message);
+//     let check is VerifyingKey = key.public_key();
+//     check.verified(message, signature);
+//
+// Code that signs or verifies takes the role, so the algorithm can change
+// without it.
+
 import "crypto/secret" take SecretBytes;
 
-// Key roles shared by crypto/ed25519, crypto/ecdsa, crypto/rsa,
-// crypto/key_format and crypto/x509.
-//
-// PublicKey is a public key as DER SubjectPublicKeyInfo, including the
-// algorithm identifier. VerifyingKey checks signatures of one fixed algorithm
-// (and, for RSA, one scheme and hash): verified() answers false for any
-// malformed or non-matching signature and never throws for them. SigningKey
-// produces such signatures; pkcs8() exports the private key as DER PKCS#8 in a
-// fresh SecretBytes and public_key() is the matching VerifyingKey.
+// A public key in its interchange form.
 role PublicKey {
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte;
 }
 
+// A key that checks signatures.
 role VerifyingKey {
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte;
+    // Whether signature signs message.
     verified(message is @byte, signature is @byte) is bool;
 }
 
+// A private key that makes signatures.
 role SigningKey {
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes;
+    // The key that checks its signatures.
     public_key() is VerifyingKey;
+    // The signature of message.
     signature(message is @byte) is @byte;
 }

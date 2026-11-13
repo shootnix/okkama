@@ -1,11 +1,18 @@
 module runtime/account v1.0.0;
 
+// The native layer under os/account: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+
 // Portable immutable account lookup boundary. Identity strings are opaque to
 // the language and may contain a UID, SID or another provider representation.
 native account_current_user() is %string:string;
 
+// The account called name: id, group, home, shell; empty when none.
 native account_user_named(name is string) is %string:string;
 
+// The group called name: id; empty when none.
 native account_group_named(name is string) is %string:string;
 
+// The members of the group called name.
 native account_group_users(name is string) is @string;

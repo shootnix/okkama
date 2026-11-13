@@ -38,12 +38,17 @@ import "cell" take Cell;
 // still emit section(name); an empty document emits nothing. Every call repeats
 // the same protocol. Observer errors stop emission. No JSON, reflection or casts.
 
+// INI content that writes itself to an IniWriting.
 role IniContent {
+    // Writes the sections and entries in order.
     print(to is IniWriting) is void;
 }
 
+// Something that takes INI sections and entries.
 role IniWriting {
+    // Starts a section.
     section(name is string) is void;
+    // Writes `name = value`.
     entry(name is string, value is string) is void;
 
     fake {
@@ -63,32 +68,39 @@ role IniWriting {
     }
 }
 
+// One `name = value` line.
 object IniEntry {
     has key is string;
     has origin is string;
 
+    // The entry as given.
     IniEntry(name is string, value is string) {
         key = name;
         origin = value;
     }
 
+    // Its name.
     name() is string {
         key;
     }
 
+    // Its value.
     value() is string {
         origin;
     }
 
+    // Writes it.
     print(to is IniWriting) is void {
         to.entry(key, origin);
     }
 }
 
+// A `[name]` section and its entries.
 object IniSection does IniContent {
     has label is string;
     has origin is @IniEntry;
 
+    // The section; a repeated entry name is DuplicateIniEntry.
     IniSection(name is string, entries is Sequencing<IniEntry>) {
         label = name;
         let size = entries.size();
@@ -105,6 +117,7 @@ object IniSection does IniContent {
         confirm repeated < 0 else throw DuplicateIniEntry.detailed(name, names[repeated]);
     }
 
+    // The section, at most maximum_entries entries.
     IniSection(name is string, entries is Sequencing<IniEntry>, maximum_entries is int) {
         confirm maximum_entries >= 0 else throw InvalidIniLimit.invalid;
         label = name;
@@ -122,24 +135,29 @@ object IniSection does IniContent {
         confirm repeated < 0 else throw DuplicateIniEntry.detailed(name, names[repeated]);
     }
 
+    // Its name; "" for the entries before any section.
     name() is string {
         label;
     }
 
+    // Its entries, in order.
     entries() is Sequencing<IniEntry> {
         origin;
     }
 
+    // Whether an entry has that name.
     membership(name is string) is bool {
         self.index(name) >= 0;
     }
 
+    // The value of the entry; MissingIniEntry when there is none.
     value(name is string) is string {
         let at = self.index(name);
         confirm at >= 0 else throw MissingIniEntry.detailed(label, name);
         origin[at].value();
     }
 
+    // Writes the section.
     print(to is IniWriting) is void {
         to.section(label);
         for origin -> entry {
@@ -159,9 +177,11 @@ object IniSection does IniContent {
     }
 }
 
+// An INI document: sections in order.
 object IniDocument does IniContent {
     has origin is @IniSection;
 
+    // The document; a repeated section is DuplicateIniSection.
     IniDocument(sections is Sequencing<IniSection>) {
         let size = sections.size();
         confirm size >= 0 else throw InvalidIniSize.invalid;
@@ -194,6 +214,7 @@ object IniDocument does IniContent {
         confirm repeated < 0 else throw DuplicateIniSection.name(names[repeated]);
     }
 
+    // The document, at most maximum_sections sections.
     IniDocument(sections is Sequencing<IniSection>, maximum_sections is int) {
         confirm maximum_sections >= 0 else throw InvalidIniLimit.invalid;
         let size = sections.size();
@@ -210,10 +231,12 @@ object IniDocument does IniContent {
         confirm repeated < 0 else throw DuplicateIniSection.name(names[repeated]);
     }
 
+    // Its sections.
     sections() is Sequencing<IniSection> {
         origin;
     }
 
+    // The section called name; MissingIniSection when there is none.
     section(name is string) is IniSection {
         let at = (0..origin.size()).reduce(-1) -> found, index {
             if origin[index].name() == name {
@@ -227,6 +250,7 @@ object IniDocument does IniContent {
         origin[at];
     }
 
+    // Writes the document.
     print(to is IniWriting) is void {
         for origin -> section {
             section.print(to);
@@ -247,6 +271,7 @@ object ParsedIni does IniContent {
     has origin is string;
     has maximum_input, maximum_sections, maximum_entries is int;
 
+    // INI text to read, with the default limits.
     ParsedIni(origin is string) {
         self.origin = origin;
         maximum_input = 1048576;
@@ -254,6 +279,7 @@ object ParsedIni does IniContent {
         maximum_entries = 10000;
     }
 
+    // INI text to read within these limits.
     ParsedIni(
         origin is string,
         maximum_input is int,
@@ -268,6 +294,7 @@ object ParsedIni does IniContent {
         self.maximum_entries = maximum_entries;
     }
 
+    // The document; InvalidIni says where the text is wrong.
     document() is IniDocument {
         IniParse(
             origin: origin,
@@ -277,6 +304,7 @@ object ParsedIni does IniContent {
         ).document();
     }
 
+    // Writes the document.
     print(to is IniWriting) is void {
         self.document().print(to);
     }
@@ -293,17 +321,20 @@ object IniString {
     has origin is IniContent;
     has maximum is int;
 
+    // origin written as INI text.
     IniString(origin is IniContent) {
         self.origin = origin;
         maximum = 1048576;
     }
 
+    // origin written as INI text, at most maximum_output characters.
     IniString(origin is IniContent, maximum_output is int) {
         confirm maximum_output >= 0 else throw InvalidIniLimit.invalid;
         self.origin = origin;
         maximum = maximum_output;
     }
 
+    // The text.
     string() is string {
         let emission = IniTextEmission(maximum);
         origin.print(emission);
@@ -420,24 +451,34 @@ hidden object IniTextEmission does IniWriting {
     }
 }
 
+// Text that is not INI; line and column say where.
 enum InvalidIni is Error = (located(line is int, column is int, message is string));
 
+// A section or entry that cannot be written, such as a name with `=`.
 enum InvalidIniEmission is Error = (invalid);
 
+// The text would be longer than the limit.
 enum IniOutputLimitExceeded is Error = (exceeded);
 
+// No section has that name.
 enum MissingIniSection is Error = (name(name is string));
 
+// Two sections with one name.
 enum DuplicateIniSection is Error = (name(name is string));
 
+// The section has no entry of that name.
 enum MissingIniEntry is Error = (detailed(section is string, name is string));
 
+// Two entries with one name in a section.
 enum DuplicateIniEntry is Error = (detailed(section is string, name is string));
 
+// A negative limit.
 enum InvalidIniLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidIniSize is Error = (invalid);
 
+// The text went over a limit.
 enum IniLimitExceeded is Error = (exceeded);
 
 // ---- the codec ----

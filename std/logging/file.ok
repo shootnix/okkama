@@ -1,5 +1,11 @@
 module logging/file v1.0.0;
 
+// Log files: appended to, flushed or synced as told, reopened after outside
+// rotation.
+//
+//     let file = LogFile(path: Path("app.log"), options: FileLogOptions(permissions: PermissionMode(0o640), flush_each: true, sync_each: false));
+//     Logger(name: "shop", destination: TextStreamLogs(file));
+
 import "fs/path" take Path;
 import "fs/stat" take PermissionMode, Permissions;
 import "fs/error" take FileFailure;
@@ -11,20 +17,25 @@ import "fs/directory" take Directory;
 import "fs/file" take File;
 import "encoding/utf" take Utf8Encoded;
 
+// How a log file is written.
 object FileLogOptions {
     has mode is PermissionMode;
     has flushing, syncing is bool;
 
+    // Created with permissions; flush_each flushes each write, sync_each syncs
+    // it to disk.
     FileLogOptions(permissions is PermissionMode, flush_each is bool, sync_each is bool) {
         mode = permissions;
         flushing = flush_each;
         syncing = sync_each;
     }
 
+    // The permissions of a new file.
     permissions() is PermissionMode {
         mode;
     }
 
+    // Whether each write is flushed and synced.
     cap Writes {
         flush_each is bool {
             flushing;
@@ -72,6 +83,7 @@ object LogFileState does Writing, Closing {
     has handles is Atomic<@fs.FileHandle>;
     has finished is Atomic<bool>;
 
+    // The open file at path; used inside logging.
     LogFileState(path is Path, options is FileLogOptions) {
         self.path = path;
         self.options = options;
@@ -80,10 +92,12 @@ object LogFileState does Writing, Closing {
         finished = Atomic(false);
     }
 
+    // Appends source's bytes.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Appends bytes.
     write(bytes is @byte) is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
         let handle = self.handle();
@@ -102,6 +116,7 @@ object LogFileState does Writing, Closing {
         }
     }
 
+    // Sends what is buffered to the file.
     flush() is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
         if handles.value().size() > 0 {
@@ -114,6 +129,7 @@ object LogFileState does Writing, Closing {
         }
     }
 
+    // Closes and opens the path again, as after an outside rotation.
     reopen() is void {
         confirm !self.closed() else throw ClosedLogFile.closed;
         let replacement = self.open();
@@ -129,6 +145,7 @@ object LogFileState does Writing, Closing {
         }
     }
 
+    // Closes the handle without marking it closed, for reopening.
     release() is void {
         let previous = handles.value();
         let empty is @fs.FileHandle = [];
@@ -143,10 +160,12 @@ object LogFileState does Writing, Closing {
         }
     }
 
+    // Whether it was closed.
     closed() is bool {
         finished.value();
     }
 
+    // Closes it.
     close() is void {
         if !self.closed() {
             finished.replace(true);
@@ -181,33 +200,41 @@ object LogFileState does Writing, Closing {
     }
 }
 
+// A log file appended to.
 object LogFile does Writing, Closing {
     has state is LogFileState;
 
+    // Opens path for appending with options.
     LogFile(path is Path, options is FileLogOptions) {
         state = LogFileState(path: path, options: options);
     }
 
+    // Appends source's bytes.
     write(source is ByteSource) is void {
         state.write(source);
     }
 
+    // Appends bytes.
     write(bytes is @byte) is void {
         state.write(bytes);
     }
 
+    // Sends what is buffered to the file.
     flush() is void {
         state.flush();
     }
 
+    // Closes and opens the path again, as after an outside rotation.
     reopen() is void {
         state.reopen();
     }
 
+    // Whether it was closed.
     closed() is bool {
         state.closed();
     }
 
+    // Closes it.
     close() is void {
         state.close();
     }
@@ -217,6 +244,7 @@ object LogFile does Writing, Closing {
     }
 }
 
+// The file was written after close().
 enum ClosedLogFile is Error = (closed);
 
 test "a log file appends, reopens and refuses writes once closed" {

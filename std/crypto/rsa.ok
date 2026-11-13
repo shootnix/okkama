@@ -1,14 +1,5 @@
 module crypto/rsa v1.0.0;
 
-import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
-import "crypto/secret" take SecretBytes;
-import "crypto/nonce" take Entropy;
-import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
-import "encoding/utf" take Utf8Decoded;
-import "strings/parse" take Number;
-import "encoding/pem" take PemBlock;
-import "encoding/hex" take HexDecoded;
-
 // RSA (RFC 8017) over the host provider (aws-lc: constant-time, blinded
 // private operations). Generated keys are 2048, 3072 or 4096 bits; imported
 // PKCS#8 keys 2048 to 8192. The entropy arguments are kept for the API: key
@@ -25,6 +16,17 @@ import "encoding/hex" take HexDecoded;
 //
 // Verifying keys answer false for invalid signatures; failed OAEP decryption
 // is AuthenticationFailed without distinguishing padding errors.
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+import "encoding/utf" take Utf8Decoded;
+import "strings/parse" take Number;
+import "encoding/pem" take PemBlock;
+import "encoding/hex" take HexDecoded;
+
+// The hash an RSA scheme uses.
 enum RsaHash = (sha256, sha384, sha512);
 
 hidden object RsaHashName {
@@ -49,9 +51,11 @@ hidden object RsaHashName {
     }
 }
 
+// An RSA private key.
 object RsaPrivateKey {
     has key is SecretBytes;
 
+    // The key in a DER PKCS#8 document.
     RsaPrivateKey(pkcs8 is SecretBytes) {
         let algorithm = HostOperation(operation: "pkcs8-algorithm", arguments: [pkcs8.export_bytes()]).bytes();
         confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1"
@@ -59,6 +63,7 @@ object RsaPrivateKey {
         key = pkcs8;
     }
 
+    // A new key of 2048, 3072 or 4096 bits from entropy.
     RsaPrivateKey(bits is int, entropy is Entropy) {
         confirm bits == 2048 || bits == 3072 || bits == 4096
             else throw InvalidCryptoInput.because("RSA modulus must be 2048, 3072 or 4096 bits");
@@ -67,18 +72,22 @@ object RsaPrivateKey {
         );
     }
 
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes {
         SecretBytes(key.export_bytes());
     }
 
+    // Its public key.
     public_key() is RsaPublicKey {
         RsaPublicKey(HostOperation(operation: "rsa-public", arguments: [key.export_bytes()]).bytes());
     }
 }
 
+// An RSA public key.
 object RsaPublicKey does PublicKey {
     has origin is @byte;
 
+    // The key in a DER SubjectPublicKeyInfo document.
     RsaPublicKey(spki is @byte) {
         let algorithm = HostOperation(operation: "spki-algorithm", arguments: [spki]).bytes();
         confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1"
@@ -86,34 +95,41 @@ object RsaPublicKey does PublicKey {
         origin = spki;
     }
 
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte {
         origin;
     }
 
+    // The modulus size.
     bits() is int {
         Number(Utf8Decoded(HostOperation(operation: "rsa-bits", arguments: [origin]).bytes()).string()).int();
     }
 }
 
+// RSA-PSS signatures, the modern RSA scheme.
 object RsaPssSigning does SigningKey {
     has key is RsaPrivateKey;
     has hash is RsaHash;
     has entropy is Entropy;
 
+    // Signs with key and hash, salting from entropy.
     RsaPssSigning(key is RsaPrivateKey, hash is RsaHash, entropy is Entropy) {
         self.key = key;
         self.hash = hash;
         self.entropy = entropy;
     }
 
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes {
         key.pkcs8();
     }
 
+    // The key that checks its signatures.
     public_key() is VerifyingKey {
         RsaPssVerifying(key: key.public_key(), hash: hash);
     }
 
+    // The signature of message.
     signature(message is @byte) is @byte {
         HostOperation(
             operation: "rsa-pss-sign:" + RsaHashName(hash).string(),
@@ -122,19 +138,23 @@ object RsaPssSigning does SigningKey {
     }
 }
 
+// Checks RSA-PSS signatures.
 object RsaPssVerifying does VerifyingKey {
     has key is RsaPublicKey;
     has hash is RsaHash;
 
+    // Checks with key and hash.
     RsaPssVerifying(key is RsaPublicKey, hash is RsaHash) {
         self.key = key;
         self.hash = hash;
     }
 
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte {
         key.bytes();
     }
 
+    // Whether signature signs message.
     verified(message is @byte, signature is @byte) is bool {
         HostOperation(
             operation: "rsa-pss-verify:" + RsaHashName(hash).string(),
@@ -143,23 +163,28 @@ object RsaPssVerifying does VerifyingKey {
     }
 }
 
+// RSA PKCS#1 v1.5 signatures, for older systems that need them.
 object RsaPkcs1Signing does SigningKey {
     has key is RsaPrivateKey;
     has hash is RsaHash;
 
+    // Signs with key and hash.
     RsaPkcs1Signing(key is RsaPrivateKey, hash is RsaHash) {
         self.key = key;
         self.hash = hash;
     }
 
+    // The key as DER PKCS#8.
     pkcs8() is SecretBytes {
         key.pkcs8();
     }
 
+    // The key that checks its signatures.
     public_key() is VerifyingKey {
         RsaPkcs1Verifying(key: key.public_key(), hash: hash);
     }
 
+    // The signature of message.
     signature(message is @byte) is @byte {
         HostOperation(
             operation: "rsa-pkcs1-sign:" + RsaHashName(hash).string(),
@@ -168,19 +193,23 @@ object RsaPkcs1Signing does SigningKey {
     }
 }
 
+// Checks RSA PKCS#1 v1.5 signatures.
 object RsaPkcs1Verifying does VerifyingKey {
     has key is RsaPublicKey;
     has hash is RsaHash;
 
+    // Checks with key and hash.
     RsaPkcs1Verifying(key is RsaPublicKey, hash is RsaHash) {
         self.key = key;
         self.hash = hash;
     }
 
+    // The key as DER SubjectPublicKeyInfo.
     bytes() is @byte {
         key.bytes();
     }
 
+    // Whether signature signs message.
     verified(message is @byte, signature is @byte) is bool {
         HostOperation(
             operation: "rsa-pkcs1-verify:" + RsaHashName(hash).string(),
@@ -189,17 +218,20 @@ object RsaPkcs1Verifying does VerifyingKey {
     }
 }
 
+// RSA-OAEP encryption of short messages, such as a key.
 object RsaOaepEncryption {
     has key is RsaPublicKey;
     has hash is RsaHash;
     has entropy is Entropy;
 
+    // Encrypts to key with hash, padding from entropy.
     RsaOaepEncryption(key is RsaPublicKey, hash is RsaHash, entropy is Entropy) {
         self.key = key;
         self.hash = hash;
         self.entropy = entropy;
     }
 
+    // message encrypted.
     encrypted(message is @byte) is @byte {
         HostOperation(
             operation: "rsa-oaep-encrypt:" + RsaHashName(hash).string(),
@@ -208,17 +240,20 @@ object RsaOaepEncryption {
     }
 }
 
+// RSA-OAEP decryption.
 object RsaOaepDecryption {
     has key is RsaPrivateKey;
     has hash is RsaHash;
     has entropy is Entropy;
 
+    // Decrypts with key and hash.
     RsaOaepDecryption(key is RsaPrivateKey, hash is RsaHash, entropy is Entropy) {
         self.key = key;
         self.hash = hash;
         self.entropy = entropy;
     }
 
+    // The message; AuthenticationFailed when it was not made for this key.
     decrypted(ciphertext is @byte) is SecretBytes {
         SecretBytes(
             HostOperation(

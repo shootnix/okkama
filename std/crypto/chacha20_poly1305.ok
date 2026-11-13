@@ -1,35 +1,48 @@
 module crypto/chacha20_poly1305 v1.0.0;
 
+// ChaCha20-Poly1305 (RFC 8439) with a 12-byte nonce, and XChaCha20-Poly1305
+// with a 24-byte nonce, long enough to pick at random for every message.
+//
+//     let cipher = XChaCha20Poly1305(SecretBytes(SystemEntropy().bytes(32)));
+//     let nonce = RandomNonce(SystemEntropy(), 24).bytes();
+//     let sealed = cipher.sealed(nonce, aad, plaintext);
+//
+// Both take a 32-byte key and add a 16-byte tag.
+
 import "crypto/aead" take Sealing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "crypto/secret" take SecretBytes;
 import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
 import "encoding/hex" take HexEncoded, HexDecoded;
 
-// ChaCha20-Poly1305 (RFC 8439, 96-bit nonce) and XChaCha20-Poly1305
-// (192-bit nonce, safe for random nonces). 256-bit SecretBytes key, 128-bit
-// tag; see crypto/aead for the sealing contract.
+// ChaCha20-Poly1305 with a 12-byte nonce.
 object ChaCha20Poly1305 does Sealing {
     has key is SecretBytes;
 
+    // A cipher with a 32-byte key.
     ChaCha20Poly1305(key is SecretBytes) {
         confirm key.size() == 32
             else throw InvalidCryptoInput.because("ChaCha20-Poly1305 key must be 32 bytes");
         self.key = key;
     }
 
+    // How many bytes a nonce has.
     nonce_size() is int {
         12;
     }
 
+    // How many bytes the tag adds.
     tag_size() is int {
         16;
     }
 
+    // plaintext encrypted and authenticated with aad, under nonce; never reuse
+    // a nonce with the same key.
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
         HostOperation(operation: "aead-seal:chacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
+    // The plaintext of sealed; AuthenticationFailed when it or aad was changed.
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:chacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
@@ -39,6 +52,7 @@ object ChaCha20Poly1305 does Sealing {
         self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
     }
 
+    // The same with aad as UTF-8 text.
     opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
         self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
     }
@@ -49,27 +63,34 @@ object ChaCha20Poly1305 does Sealing {
     }
 }
 
+// XChaCha20-Poly1305 with a 24-byte nonce, safe to pick at random.
 object XChaCha20Poly1305 does Sealing {
     has key is SecretBytes;
 
+    // A cipher with a 32-byte key.
     XChaCha20Poly1305(key is SecretBytes) {
         confirm key.size() == 32
             else throw InvalidCryptoInput.because("XChaCha20-Poly1305 key must be 32 bytes");
         self.key = key;
     }
 
+    // How many bytes a nonce has.
     nonce_size() is int {
         24;
     }
 
+    // How many bytes the tag adds.
     tag_size() is int {
         16;
     }
 
+    // plaintext encrypted and authenticated with aad, under nonce; never reuse
+    // a nonce with the same key.
     sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
         HostOperation(operation: "aead-seal:xchacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, plaintext]).bytes();
     }
 
+    // The plaintext of sealed; AuthenticationFailed when it or aad was changed.
     opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
         HostOperation(operation: "aead-open:xchacha20-poly1305", arguments: [key.export_bytes(), nonce, aad, sealed]).bytes();
     }
@@ -79,6 +100,7 @@ object XChaCha20Poly1305 does Sealing {
         self.sealed(nonce, Utf8Encoded(aad).bytes(), Utf8Encoded(text).bytes());
     }
 
+    // The same with aad as UTF-8 text.
     opened(nonce is @byte, aad is string, sealed is @byte) is @byte {
         self.opened(nonce, Utf8Encoded(aad).bytes(), sealed);
     }

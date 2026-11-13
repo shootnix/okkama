@@ -1,5 +1,24 @@
 module http/redirect v1.0.0;
 
+// Following redirects (RFC 9110 §15.4).
+//
+//     let client = HttpClient(redirects: Redirects(limit: 5));
+//     let reply = await client.get("http://example.com/old");
+//     reply::Exchange::history;                    // the hops
+//
+// 301, 302, 303, 307 and 308 are followed, up to the limit (0 follows none).
+// 303, and 301 or 302 after POST, become a GET without a body; the others
+// resend the body, which must be replayable. Authorization, Cookie and
+// Proxy-Authorization are dropped when the origin changes, and https never goes
+// to http unless allowed.
+//
+// # Errors
+//
+// - TooManyRedirects: more hops than the limit, or 20 in all.
+// - RedirectLoop: a URL came back.
+// - NonReplayableRedirect: the body cannot be sent again.
+// - UnsafeRedirect: a Location that may not be followed.
+
 import "http/status" take StatusCode, Status;
 import "http/exchange" take ClientResponse, ExchangeHop, Exchanging, HttpClientKey;
 import "http/message" take Request, Response;
@@ -17,6 +36,8 @@ object Redirects {
     has limit is int;
     has https_downgrade is bool;
 
+    // At most limit hops (0 to 20), with https to http only when
+    // https_downgrade.
     Redirects(limit is int = 10, https_downgrade is bool = false) {
         confirm limit >= 0 && limit <= 20
             else throw InvalidArgument.because("redirect budget outside 0..20");
@@ -24,6 +45,7 @@ object Redirects {
         self.https_downgrade = https_downgrade;
     }
 
+    // The limit and whether https may go to http.
     cap Rules {
         limit is int {
             limit;
@@ -35,15 +57,18 @@ object Redirects {
     }
 }
 
+// A client that follows redirects.
 object Redirecting does Exchanging {
     has origin is Exchanging;
     has policy is Redirects;
 
+    // Sends through origin, following policy.
     Redirecting(origin is Exchanging, policy is Redirects) {
         self.origin = origin;
         self.policy = policy;
     }
 
+    // The final response, with the hops before it.
     async response(request is Request) is ClientResponse {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw UnsafeRedirect.because("absolute target required");
@@ -298,16 +323,19 @@ hidden object RedirectKey {
     }
 }
 
+// Closes the body of a redirect response that is not handed out.
 object RedirectResponseCleanup {
     has response is Response;
     has retained, closed is Event;
 
+    // response, unless retained fires.
     RedirectResponseCleanup(response is Response, retained is Event) {
         self.response = response;
         self.retained = retained;
         closed = Event();
     }
 
+    // Closes the body.
     close() is void {
         if !retained.ready() && !closed.ready() {
             closed.set();
@@ -316,12 +344,16 @@ object RedirectResponseCleanup {
     }
 }
 
+// More hops than allowed.
 enum TooManyRedirects is Error = (exceeded);
 
+// A URL was visited twice.
 enum RedirectLoop is Error = (detected);
 
+// The body of the request cannot be sent again.
 enum NonReplayableRedirect is Error = (not_replayable);
 
+// A Location that may not be followed; reason says why.
 enum UnsafeRedirect is Error = (because(reason is string));
 
 test "redirect policy bounds history and disables downgrade by default" {

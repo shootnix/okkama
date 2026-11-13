@@ -18,16 +18,19 @@ import "async/atomic" take Atomic;
 // further. Copy carries everything, 64 KiB at a time, and neither flushes nor
 // closes either side.
 
+// Reads a source to its end, at most limit bytes: more is ReadLimitExceeded.
 object ReadUntilEnd {
     has origin is AsyncReading;
     has limit is int;
 
+    // Reads an asynchronous source; limit must not be negative.
     ReadUntilEnd(origin is AsyncReading, limit is int) {
         confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
         self.origin = origin;
         self.limit = limit;
     }
 
+    // Reads a blocking source; limit must not be negative.
     ReadUntilEnd(origin is Reading, limit is int) {
         confirm limit >= 0 else throw InvalidReadLimit.limit(limit);
         self.origin = ReadingAsync(origin);
@@ -79,25 +82,31 @@ object ReadUntilEnd {
     }
 }
 
+// Carries every byte of a source to a destination, 64 KiB at a time, without
+// flushing or closing either.
 object Copy {
     has source is AsyncReading;
     has destination is AsyncWriting;
 
+    // From an asynchronous source to an asynchronous output.
     Copy(from is AsyncReading, to is AsyncWriting) {
         source = from;
         destination = to;
     }
 
+    // From a blocking source to a blocking output.
     Copy(from is Reading, to is Writing) {
         source = ReadingAsync(from);
         destination = WritingAsync(to);
     }
 
+    // From an asynchronous source to a blocking output.
     Copy(from is AsyncReading, to is Writing) {
         source = from;
         destination = WritingAsync(to);
     }
 
+    // From a blocking source to an asynchronous output.
     Copy(from is Reading, to is AsyncWriting) {
         source = ReadingAsync(from);
         destination = to;

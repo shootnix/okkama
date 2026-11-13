@@ -1,10 +1,5 @@
 module net/interface v1.0.0;
 
-import "net/ip" take IpInterface;
-import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Decoded;
-import "error" take InvalidArgument;
-
 // Immutable observation of one interface, supplied by a provider or a fixture.
 // Construction performs no device enumeration, existence check or configuration.
 // Name is exact nonempty text without NUL; index is a positive system identity.
@@ -17,6 +12,13 @@ import "error" take InvalidArgument;
 //     interface.addresses().first().string(); // "192.0.2.7/24"
 //
 // SystemInterfaces is a separate, still-unimplemented enumeration capability.
+
+import "net/ip" take IpInterface;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+import "error" take InvalidArgument;
+
+// A network interface of this host, as seen when asked.
 object NetworkInterface {
     has label is string;
     has identity is int;
@@ -24,6 +26,7 @@ object NetworkInterface {
     has active is bool;
     has local is bool;
 
+    // An interface as given.
     NetworkInterface(
         name is string,
         index is int,
@@ -47,22 +50,27 @@ object NetworkInterface {
         local = loopback;
     }
 
+    // Its name, such as `eth0`.
     name() is string {
         label;
     }
 
+    // Its index.
     index() is int {
         identity;
     }
 
+    // Its addresses with their prefixes.
     addresses() is Sequencing<IpInterface> {
         assigned;
     }
 
+    // Whether it is up.
     up() is bool {
         active;
     }
 
+    // Whether it is the loopback.
     loopback() is bool {
         local;
     }

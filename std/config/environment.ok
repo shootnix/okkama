@@ -1,5 +1,15 @@
 module config/environment v1.0.0;
 
+// Settings read from environment variables, each bound to a key.
+//
+//     let settings = EnvironmentSettings(
+//         environment: Environment(),
+//         names: [EnvironmentBinding(name: "APP_PORT", key: SettingKey("server", "port"))],
+//         source: SettingSource(kind: SettingSourceKind.environment, name: "environment"),
+//     );
+//
+// Only the variables that are bound are read.
+
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
 import "config/key" take SettingKey;
@@ -9,19 +19,23 @@ import "os/environment" take Environment;
 import "config/source" take SettingSourceKind;
 import "config/value" take ScalarSetting;
 
+// Which variable gives which setting.
 object EnvironmentBinding {
     has label is string;
     has identity is SettingKey;
 
+    // Variable name gives key.
     EnvironmentBinding(name is string, key is SettingKey) {
         label = name;
         identity = key;
     }
 
+    // The key.
     key() is SettingKey {
         identity;
     }
 
+    // The variable name.
     cap Binding {
         name is string {
             label;
@@ -29,9 +43,11 @@ object EnvironmentBinding {
     }
 }
 
+// Settings from bound environment variables.
 object EnvironmentSettings does SettingReading {
     has origin is Settings;
 
+    // Reads the bound names of environment.
     EnvironmentSettings(
         environment is Environment,
         names is Sequencing<EnvironmentBinding>,
@@ -58,14 +74,17 @@ object EnvironmentSettings does SettingReading {
         origin = Settings(entries);
     }
 
+    // Whether the environment has the key.
     membership(key is SettingKey) is bool {
         origin.membership(key);
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         origin.entry(key);
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }

@@ -1,8 +1,5 @@
 module archive/path v1.0.0;
 
-import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Decoded;
-
 // Immutable relative archive member name, independent of fs/Path and the host.
 // The constructor rejects empty/absolute paths, any backslash or NUL, leading
 // ASCII drive prefixes (including C:relative), and empty, . or .. segments.
@@ -21,9 +18,16 @@ import "encoding/utf" take Utf8Decoded;
 // a synthetic empty/root path. All observations are pure; no owned resources.
 // This is lexical validation only: link traversal, host-specific restrictions
 // and destination containment/races belong to the later extraction capability.
+
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+
+// A member name inside an archive: relative, `/`-separated, never `..`.
 object ArchivePath {
     has parts is @string;
 
+    // Reads origin; an empty or absolute path, a backslash or `..` is
+    // UnsafeArchivePath.
     ArchivePath(origin is string) {
         confirm origin != "" else throw UnsafeArchivePath.detailed(origin, "empty path");
         confirm origin.slice(0, 1) != "/"
@@ -47,18 +51,22 @@ object ArchivePath {
         parts = segments;
     }
 
+    // The name with `/` separators.
     string() is string {
         parts.join("/");
     }
 
+    // Its parts.
     segments() is Sequencing<string> {
         parts;
     }
 
+    // The last part.
     name() is string {
         parts[parts.size() - 1];
     }
 
+    // The path without its last part; MissingArchiveParent at the top.
     parent() is ArchivePath {
         confirm parts.size() > 1 else throw MissingArchiveParent.path(self.string());
         ArchivePath(parts.slice(0, parts.size() - 1).join("/"));
@@ -69,6 +77,7 @@ object ArchivePath {
 // No host exceptions or filesystem observations enter these value errors.
 enum UnsafeArchivePath is Error = (detailed(path is string, message is string));
 
+// A one-part path has no parent.
 enum MissingArchiveParent is Error = (path(path is string));
 
 test "archive path preserves spelling and returns immutable components" {

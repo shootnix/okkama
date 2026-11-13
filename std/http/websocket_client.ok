@@ -1,7 +1,18 @@
 module http/websocket_client v1.0.0;
 
+// Opening a WebSocket connection as a client.
+//
+//     let connection = await WebSocketConnecting(url: ParsedUrl("wss://example.com/chat").parts()).connection();
+//     await connection.send_text("hello");
+//     let reply = await connection.message();
+//
+// Like HttpClient(), it resolves with the system's DNS, trusts the system's
+// roots and reaches public endpoints only; WebSocketPolicy changes that and the
+// timeouts (30 seconds to open, 5 to close).
+
 import "http/status" take StatusCode, Status, StatusClass;
-import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure, TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
+import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure,
+    TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
 import "http/websocket_handshake" take WebSocketClientHandshake;
 import "http/websocket_session" take WebSocketSession;
 import "http/internal/websocket_upgrade" take WebSocketOpeningCleanup, WebSocketPrefixedInput;
@@ -11,12 +22,14 @@ import "http/http1_head" take Http1Limits;
 import "http/http1_reading" take Http1ResponseHeadReading;
 import "http/http1_message_writing" take Http1RequestWriting;
 import "http/body" take EmptyBody;
-import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal, HttpUnpublishedTcp, HttpUnpublishedTls;
+import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal,
+    HttpUnpublishedTcp, HttpUnpublishedTls;
 import "net/tcp" take TcpConnection, TcpOptions, TcpListening;
 import "net/tcp_racing" take TcpRacing;
 import "net/dns" take Resolving, FixedResolution, SystemResolution;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
-import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity, TrustStore, SystemTrustStore;
+import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity,
+    TrustStore, SystemTrustStore;
 import "url/value" take UrlParts, UrlHostKind, ParsedUrl;
 import "random/source" take SecureRandom;
 import "time/clock" take Timing, SystemClock;
@@ -34,11 +47,13 @@ import "http/message" take Request;
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/websocket_origin" take WebSocketAllowing;
 
+// What a WebSocket client allows itself.
 object WebSocketPolicy {
     has limits is WebSocketLimits;
     has opening, closing is Duration;
     has access is EndpointAllowing;
 
+    // The default limits, 30 seconds to open, 5 to close, public endpoints.
     WebSocketPolicy() {
         limits = WebSocketLimits();
         opening = Duration(seconds: 30);
@@ -46,6 +61,7 @@ object WebSocketPolicy {
         access = PublicEndpoints();
     }
 
+    // The policy as given.
     WebSocketPolicy(
         limits is WebSocketLimits,
         opening is Duration,
@@ -60,18 +76,22 @@ object WebSocketPolicy {
         self.access = access;
     }
 
+    // The message limits.
     limits() is WebSocketLimits {
         limits;
     }
 
+    // To connect and finish the handshake.
     opening_timeout() is Duration {
         opening;
     }
 
+    // To wait for the peer's close.
     closing_timeout() is Duration {
         closing;
     }
 
+    // Which endpoints it may reach.
     access() is EndpointAllowing {
         access;
     }
@@ -94,9 +114,18 @@ object WebSocketConnecting {
         policy is WebSocketPolicy = WebSocketPolicy(),
         clock is Timing = SystemClock()
     ) {
-        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: TlsClientPolicy(trust), policy: policy, clock: clock).outcome();
+        waiting = WebSocketStart(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            resolver: resolver,
+            tls: TlsClientPolicy(trust),
+            policy: policy,
+            clock: clock
+        ).outcome();
     }
 
+    // The same with an explicit TLS policy.
     WebSocketConnecting(
         url is UrlParts,
         protocols is @string,
@@ -106,9 +135,18 @@ object WebSocketConnecting {
         policy is WebSocketPolicy,
         clock is Timing
     ) {
-        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: tls, policy: policy, clock: clock).outcome();
+        waiting = WebSocketStart(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            resolver: resolver,
+            tls: tls,
+            policy: policy,
+            clock: clock
+        ).outcome();
     }
 
+    // Connects once and gives the connection; later calls give the same one.
     async connection() is WebSocketConnection {
         let group is FutureGroup<WebSocketSession> = FutureGroup();
         let taken = Event();
@@ -173,8 +211,20 @@ hidden object WebSocketStart {
             query: parts::Parts::query,
             fragment: Maybe<string>.none,
         );
-        let route = HttpEndpointSelection(url: transport, resolver: resolver, access: policy.access());
-        let operation = WebSocketOpening(url: url, protocols: protocols, headers: headers, route: route, tls: tls, policy: policy, clock: clock);
+        let route = HttpEndpointSelection(
+            url: transport,
+            resolver: resolver,
+            access: policy.access()
+        );
+        let operation = WebSocketOpening(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            route: route,
+            tls: tls,
+            policy: policy,
+            clock: clock
+        );
         let bounded is Within<WebSocketSession> = Within(
             origin: operation.open(),
             limit: policy.opening_timeout(),
@@ -184,6 +234,7 @@ hidden object WebSocketStart {
     }
 }
 
+// One opening handshake of a client connection.
 object WebSocketOpening {
     has url is UrlParts;
     has protocols is @string;
@@ -193,6 +244,7 @@ object WebSocketOpening {
     has policy is WebSocketPolicy;
     has clock is Timing;
 
+    // Opens url over route with these protocols, headers, TLS and policy.
     WebSocketOpening(
         url is UrlParts,
         protocols is @string,
@@ -211,15 +263,26 @@ object WebSocketOpening {
         self.clock = clock;
     }
 
+    // Connects, upgrades and gives the session.
     async open() is WebSocketSession {
         let random = SecureRandom();
-        let handshake = WebSocketClientHandshake(url: url, protocols: protocols, headers: headers, nonce: random.bytes(16));
+        let handshake = WebSocketClientHandshake(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            nonce: random.bytes(16)
+        );
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -246,9 +309,19 @@ object WebSocketOpening {
             let empty is @Future<TlsConnection> = [];
             let pending = Atomic(empty);
             let taken = Event();
-            let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTlsDisposal().release);
+            let cleanup = HttpAcquisitionCleanup(
+                group: group,
+                pending: pending,
+                taken: taken,
+                dispose: HttpTlsDisposal().release
+            );
             defer await cleanup.close();
-            let waiting = TlsClientHandshake(origin: tcp, server: identity, policy: tls, clock: clock).connection();
+            let waiting = TlsClientHandshake(
+                origin: tcp,
+                server: identity,
+                policy: tls,
+                clock: clock
+            ).connection();
             pending.replace([waiting]);
             group.start(waiting);
             let secure = await waiting;
@@ -287,6 +360,8 @@ object WebSocketOpening {
         session;
     }
 
+    // Sends the handshake on output and checks the answer on input; gives the
+    // bytes read past it.
     async upgrade(
         input is AsyncReading,
         output is AsyncWriting,
@@ -298,7 +373,12 @@ object WebSocketOpening {
         let prefix = Atomic(empty);
         let count = Atomic(0);
         loop {
-            let pending = Http1ResponseHeadReading(origin: input, prefix: prefix.value(), limits: Http1Limits(), chunk_bytes: 4096).head();
+            let pending = Http1ResponseHeadReading(
+                origin: input,
+                prefix: prefix.value(),
+                limits: Http1Limits(),
+                chunk_bytes: 4096
+            ).head();
             let received = await pending;
             let status = received.head()::Head::status;
             if StatusCode(status).class() == StatusClass.informational
@@ -336,7 +416,11 @@ hidden object ShoutingEcho does Handling, WebSocketHandling {
         WebSocketHandlingResult(origin: upgrade, application: self);
     }
 
-    async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
+    async handle(
+        connection is WebSocketConnection,
+        request is Request,
+        context is HttpRequestContext
+    ) is WebSocketHandling {
         try {
             loop {
                 let message = await connection.message();
@@ -360,15 +444,25 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
     let clock = SystemClock();
     // WebSocket upgrades need the server's own URL to check the Origin against.
     let own = ParsedUrl("http://127.0.0.1:" + listener::Local::port.string() + "/").parts();
-    let server = HttpServer(listener: listener, handling: ShoutingEcho(), policy: ServerPolicy(), clock: clock, url: own).started();
-        let url = ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/echo").parts();
+    let server = HttpServer(
+        listener: listener,
+        handling: ShoutingEcho(),
+        policy: ServerPolicy(),
+        clock: clock,
+        url: own
+    ).started();
+    let url = ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/echo").parts();
     let policy = WebSocketPolicy(
         limits: WebSocketLimits(),
         opening: Duration(seconds: 5),
         closing: Duration(seconds: 2),
         access: AllEndpoints(),
     );
-    let connection = await WebSocketConnecting(url: url, resolver: FixedResolution(), policy: policy).connection();
+    let connection = await WebSocketConnecting(
+        url: url,
+        resolver: FixedResolution(),
+        policy: policy
+    ).connection();
     await connection.send(TextWebSocketMessage("hello"));
     test.is((await connection.message()).text(), "HELLO");
     await connection.send(BinaryWebSocketMessage([1.byte(), 2.byte()]));

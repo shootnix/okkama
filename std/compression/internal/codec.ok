@@ -15,11 +15,14 @@ import "error" take InvalidArgument, InvalidState;
 // stream. Output waits in the codec until output() takes it. An engine without
 // a codec for the format throws UnsupportedCompression when one is made.
 
+// The runtime compressor of one format; the format modules wrap it.
 object NativeCompressor does Compressing {
     has state is CodecState;
     has pending is Atomic<@byte>;
     has done, shut is Atomic<bool>;
 
+    // A compressor of format at level; UnsupportedCompression where the engine
+    // lacks it.
     NativeCompressor(format is string, level is int) {
         CodecLevel(format: format, level: level).check();
         state = CodecOpening(format: format, compressing: true, level: level, limit: 1).state();
@@ -29,12 +32,14 @@ object NativeCompressor does Compressing {
         shut = Atomic(false);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         confirm !shut.value() && !done.value()
             else throw InvalidState.because("codec is not writable");
         pending.replace(pending.value() + codec_write(state, origin));
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         confirm !shut.value() else throw InvalidState.because("codec output is unavailable");
         let ready = pending.value();
@@ -43,6 +48,7 @@ object NativeCompressor does Compressing {
         CompressionOutput(ready);
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         confirm !shut.value() && !done.value()
             else throw InvalidState.because("codec cannot finish");
@@ -50,28 +56,33 @@ object NativeCompressor does Compressing {
         done.replace(true);
     }
 
+    // Whether finish() was called.
     finished() is bool {
         confirm !shut.value() else throw InvalidState.because("codec completion is unavailable");
         done.value();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         shut.replace(true);
         let empty is @byte = [];
         pending.replace(empty);
     }
 
+    // Whether it is closed.
     closed() is bool {
         shut.value();
     }
 }
 
+// The runtime decompressor of one format.
 object NativeDecompressor does Decompressing {
     has state is CodecState;
     has limit is int;
     has pending is Atomic<@byte>;
     has done, shut, failed is Atomic<bool>;
 
+    // A decompressor of format producing at most limit bytes.
     NativeDecompressor(format is string, limit is int) {
         confirm limit > 0 else throw InvalidCompressionLimit.maximum(limit);
         state = CodecOpening(format: format, compressing: false, level: 0, limit: limit).state();
@@ -83,6 +94,7 @@ object NativeDecompressor does Decompressing {
         failed = Atomic(false);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         confirm !shut.value() && !done.value() && !failed.value()
             else throw InvalidState.because("codec is not writable");
@@ -96,6 +108,7 @@ object NativeDecompressor does Decompressing {
         pending.replace(pending.value() + produced);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         confirm !shut.value() && !failed.value()
             else throw InvalidState.because("codec output is unavailable");
@@ -105,6 +118,7 @@ object NativeDecompressor does Decompressing {
         CompressionOutput(ready);
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         confirm !shut.value() && !done.value() && !failed.value()
             else throw InvalidState.because("codec cannot finish");
@@ -118,18 +132,21 @@ object NativeDecompressor does Decompressing {
         done.replace(true);
     }
 
+    // Whether finish() was called.
     finished() is bool {
         confirm !shut.value() && !failed.value()
             else throw InvalidState.because("codec completion is unavailable");
         done.value();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         shut.replace(true);
         let empty is @byte = [];
         pending.replace(empty);
     }
 
+    // Whether it is closed.
     closed() is bool {
         shut.value();
     }
@@ -212,11 +229,13 @@ object CodecFailure {
     has failure is NativeFailure;
     has limit is int;
 
+    // A runtime failure of a codec with its limit.
     CodecFailure(failure is NativeFailure, limit is int) {
         self.failure = failure;
         self.limit = limit;
     }
 
+    // CompressionLimitExceeded or InvalidCompressedData.
     error() is Error {
         if failure.code() == "resource_exhausted" {
             return CompressionLimitExceeded.maximum(limit);
@@ -231,12 +250,14 @@ object NativeCompressed {
     has format is string;
     has level is int;
 
+    // origin compressed whole as format at level.
     NativeCompressed(origin is @byte, format is string, level is int) {
         self.origin = origin;
         self.format = format;
         self.level = level;
     }
 
+    // The compressed bytes.
     bytes() is @byte {
         CodecLevel(format: format, level: level).check();
         let state = CodecOpening(format: format, compressing: true, level: level, limit: 1).state();
@@ -251,12 +272,14 @@ object NativeDecompressed {
     has format is string;
     has limit is int;
 
+    // origin decompressed whole as format, at most limit bytes.
     NativeDecompressed(origin is @byte, format is string, limit is int) {
         self.origin = origin;
         self.format = format;
         self.limit = limit;
     }
 
+    // The decompressed bytes; bytes after the stream are InvalidCompressedData.
     bytes() is @byte {
         let codec = NativeDecompressor(format: format, limit: limit);
         codec.write(origin);

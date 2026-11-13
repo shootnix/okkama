@@ -1,14 +1,28 @@
 module message/header v1.0.0;
 
+// Header fields of Internet messages (RFC 5322): mail and MIME parts use them.
+//
+//     let fields = MessageHeaders(
+//         MessageHeader(name: MessageHeaderName("Subject"), value: "Hello"),
+//         MessageHeader(name: MessageHeaderName("To"), value: "grace@example.test"),
+//     );
+//     fields.first("subject");                        // "Hello": names ignore case
+//     RenderedMessageHeaders(fields).bytes();         // "Subject: Hello\r\n…"
+//
+// Names are printable ASCII without `:` and match without regard to case;
+// values keep their spelling. By default 1024 fields and 1 MiB rendered.
+
 import "compare" take Comparing, Order;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
+// A field name, matched without regard to case.
 object MessageHeaderName does Comparing<MessageHeaderName> {
     has spelling is string;
 
+    // Checks origin; InvalidMessageHeader when it is empty or not a field name.
     MessageHeaderName(origin is string) {
         confirm origin.length() > 0 else throw InvalidMessageHeader.located(0, "empty field name");
         let bytes = Utf8Encoded(origin).bytes();
@@ -20,6 +34,7 @@ object MessageHeaderName does Comparing<MessageHeaderName> {
         spelling = origin;
     }
 
+    // The name as spelled.
     string() is string {
         spelling;
     }
@@ -55,28 +70,35 @@ hidden object MessageHeaderKey {
     }
 }
 
+// One field: a name and a value.
 object MessageHeader {
     has label is MessageHeaderName;
     has text is string;
 
+    // name with value, its folded lines joined; InvalidMessageHeader for a line
+    // break that is not folding.
     MessageHeader(name is MessageHeaderName, value is string) {
         label = name;
         text = UnfoldedMessageHeader(value).string();
     }
 
+    // The name.
     name() is MessageHeaderName {
         label;
     }
 
+    // The value.
     value() is string {
         text;
     }
 }
 
+// The fields of a message, in order.
 object MessageHeaders {
     has origin is @MessageHeader;
     has maximum is int;
 
+    // The fields, at most 1024.
     MessageHeaders(entries is Sequencing<MessageHeader>) {
         maximum = 1024;
         origin = MessageHeaderSnapshot(origin: entries, maximum: 1024).entries();
@@ -89,21 +111,25 @@ object MessageHeaders {
         origin = MessageHeaderSnapshot(origin: listed, maximum: 1024).entries();
     }
 
+    // The fields, at most maximum_entries.
     MessageHeaders(entries is Sequencing<MessageHeader>, maximum_entries is int) {
         maximum = maximum_entries;
         origin = MessageHeaderSnapshot(origin: entries, maximum: maximum_entries).entries();
     }
 
+    // Every field.
     entries() is Sequencing<MessageHeader> {
         origin;
     }
 
+    // Whether a field has the name.
     membership(name is MessageHeaderName) is bool {
         origin.reduce(false) -> found, entry {
             found || entry.name().order(name) == Order.equal;
         };
     }
 
+    // The value of the first field of the name; MissingMessageHeader when none.
     first(name is MessageHeaderName) is string {
         for origin -> entry {
             if entry.name().order(name) == Order.equal {
@@ -113,6 +139,7 @@ object MessageHeaders {
         throw MissingMessageHeader.name(name.string());
     }
 
+    // The values of every field of the name.
     values(name is MessageHeaderName) is Sequencing<string> {
         let matching is @MessageHeader = origin.filter() -> entry {
             entry.name().order(name) == Order.equal;
@@ -123,6 +150,7 @@ object MessageHeaders {
         values;
     }
 
+    // These fields and entry.
     addition(entry is MessageHeader) is MessageHeaders {
         confirm origin.size() < maximum else throw MessageHeaderLimitExceeded.kind("entries");
         let entries is @MessageHeader = origin + [entry];
@@ -134,24 +162,29 @@ object MessageHeaders {
         self.membership(MessageHeaderName(name));
     }
 
+    // The same by name text.
     first(name is string) is string {
         self.first(MessageHeaderName(name));
     }
 
+    // The same by name text.
     values(name is string) is Sequencing<string> {
         self.values(MessageHeaderName(name));
     }
 }
 
+// Fields as the bytes of a header section.
 object RenderedMessageHeaders {
     has origin is MessageHeaders;
     has maximum is int;
 
+    // origin, at most 1 MiB.
     RenderedMessageHeaders(origin is MessageHeaders) {
         self.origin = origin;
         maximum = 1048576;
     }
 
+    // origin, at most maximum_bytes.
     RenderedMessageHeaders(origin is MessageHeaders, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("header output limit must be nonnegative");
@@ -159,6 +192,7 @@ object RenderedMessageHeaders {
         maximum = maximum_bytes;
     }
 
+    // Each field as `Name: value` and CRLF.
     bytes() is @byte {
         let buffer = ByteBuffer();
         defer buffer.closing().close();
@@ -171,10 +205,13 @@ object RenderedMessageHeaders {
     }
 }
 
+// A field that is not valid; offset and reason say where and why.
 enum InvalidMessageHeader is Error = (located(offset is int, reason is string));
 
+// No field has that name.
 enum MissingMessageHeader is Error = (name(name is string));
 
+// Fields over a limit; kind says which.
 enum MessageHeaderLimitExceeded is Error = (kind(kind is string));
 
 // Importable implementation collaborators; no HTTP grammar or field-specific

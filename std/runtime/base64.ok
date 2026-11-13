@@ -1,9 +1,16 @@
 module runtime/base64 v1.0.0;
 
+// The native layer under encoding/base64: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Portable strict RFC 4648 Base64 boundary for encoding/base64.
 
+// origin in Base64 with alphabet (standard or URL-safe).
 native base64_encode(origin is @byte, alphabet is string) is string;
 
+// Where origin stops being Base64 in alphabet, or -1.
 native base64_invalid_offset(origin is string, alphabet is string) is int;
 
+// The bytes of Base64 origin.
 native base64_decode(origin is string, alphabet is string) is @byte;

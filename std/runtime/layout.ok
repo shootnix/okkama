@@ -1,15 +1,23 @@
 module runtime/layout v1.0.0;
 
+// The native layer under text/layout: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Native bulk primitives for text/layout.
 //
 // This module is intentionally low-level. Applications should construct the
 // validated value objects from text/layout instead of calling these actions
 // directly.
 
+// origin with prefix before each line.
 native indent(origin is string, prefix is string) is string;
 
+// origin without the indentation its lines share.
 native dedent(origin is string) is string;
 
+// origin wrapped to width columns.
 native wrap(origin is string, width is int) is string;
 
+// origin cut to width with placeholder.
 native shorten(origin is string, width is int, placeholder is string) is string;

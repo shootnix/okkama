@@ -35,14 +35,18 @@ import "runtime/process" take ProcessState, CapturedProcess, process_state_creat
 // output() and errors() remain bytes. Decode them explicitly with the selected
 // encoding module. The limit applies independently to each stream.
 
+// Which stream went over its limit.
 enum CapturedStream = (output, errors);
 
+// Runs a command to its end and keeps what it printed, at most limit bytes of
+// each stream.
 object CommandCapture {
     has command is Commanding;
     has input is ByteSource;
     has limit is int;
     has state is ProcessState;
 
+    // Runs origin with an empty input.
     CommandCapture(origin is Commanding, limit is int) {
         command = origin;
         let empty is @byte = [];
@@ -51,6 +55,7 @@ object CommandCapture {
         state = process_state_create();
     }
 
+    // Runs origin with input written to it and then closed.
     CommandCapture(origin is Commanding, input is @byte, limit is int) {
         command = origin;
         self.input = ByteSnapshot(input);
@@ -66,6 +71,8 @@ object CommandCapture {
         state = process_state_create();
     }
 
+    // Starts the command, feeds it, reads both outputs at once and waits for
+    // its end; more than limit bytes on a stream is CaptureLimitExceeded.
     async completion() is CompletedCommand {
         confirm limit > 0 else throw InvalidCaptureLimit.limit(limit);
 
@@ -127,17 +134,20 @@ object CommandCapture {
     }
 }
 
+// How a captured command ended and what it printed, as bytes.
 object CompletedCommand {
     has completed_exit is Exit;
     has captured_output is @byte;
     has captured_errors is @byte;
 
+    // A result as given.
     CompletedCommand(exit is Exit, output is @byte, errors is @byte) {
         completed_exit = exit;
         captured_output = output;
         captured_errors = errors;
     }
 
+    // How it ended.
     exit() is Exit {
         completed_exit;
     }
@@ -166,8 +176,10 @@ object CompletedCommand {
     }
 }
 
+// A limit below one.
 enum InvalidCaptureLimit is Error = (limit(limit is int));
 
+// A stream printed more than the limit.
 enum CaptureLimitExceeded is Error = (detailed(stream is CapturedStream, limit is int));
 
 async test "output, errors and the exit are captured" {

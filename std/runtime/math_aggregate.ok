@@ -1,6 +1,11 @@
 module runtime/math_aggregate v1.0.0;
 
+// The native layer under math/aggregate, statistics: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Portable finite-float square-root primitive used by math/aggregate until
 // builtin/float-math owns the same operation on every backend.
 
+// The square root of value.
 native aggregate_square_root(value is float) is float;

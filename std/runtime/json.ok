@@ -1,54 +1,78 @@
 module runtime/json v1.0.0;
 
+// The native layer under json: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+
 // Private exact JSON parse tree and diagnostics. The public json module wraps
 // these opaque states in immutable Json values.
 native object JsonParseState;
 
+// A node of a parsed or built JSON tree.
 native object JsonNodeState;
 
+// JSON text being written.
 native object JsonOutputState;
 
 // JSON items cut from a stream (#136).
 native object JsonSplitState;
 
+// Parses origin, at most maximum_depth deep.
 native json_parse_state(origin is string, maximum_depth is int) is JsonParseState;
 
 // JSON as UTF-8 bytes (#135): bytes that are not UTF-8 fail where the valid
 // prefix ends.
 native json_parse_bytes_state(origin is @byte, maximum_depth is int) is JsonParseState;
 
+// Whether it parsed.
 native json_parse_valid(origin is JsonParseState) is bool;
 
+// Where it failed, as a character offset.
 native json_parse_offset(origin is JsonParseState) is int;
 
+// The line where it failed, from 1.
 native json_parse_line(origin is JsonParseState) is int;
 
+// The column where it failed, from 1.
 native json_parse_column(origin is JsonParseState) is int;
 
+// Why it failed.
 native json_parse_message(origin is JsonParseState) is string;
 
+// Whether an object repeated a member name.
 native json_parse_has_duplicate(origin is JsonParseState) is bool;
 
+// The first repeated member name.
 native json_parse_duplicate(origin is JsonParseState) is string;
 
+// The root node.
 native json_parse_root(origin is JsonParseState) is JsonNodeState;
 
+// The node's kind code: null, boolean, number, string, array or object.
 native json_node_kind(origin is JsonNodeState) is int;
 
+// A boolean node's value.
 native json_node_boolean(origin is JsonNodeState) is bool;
 
+// A number node's text, exactly as written.
 native json_node_number(origin is JsonNodeState) is string;
 
+// A string node's text.
 native json_node_text(origin is JsonNodeState) is string;
 
+// How many items or members.
 native json_node_size(origin is JsonNodeState) is int;
 
+// The item at index of an array.
 native json_node_item(origin is JsonNodeState, index is int) is JsonNodeState;
 
+// The name of member index of an object.
 native json_member_name(origin is JsonNodeState, index is int) is string;
 
+// The value of member index of an object.
 native json_member_value(origin is JsonNodeState, index is int) is JsonNodeState;
 
+// The index of the member called name, or -1.
 native json_member_position(origin is JsonNodeState, name is string) is int;
 
 // JSON string literal of any string: '"' and '\' escaped, \n, \r, \t by name,
@@ -65,14 +89,19 @@ native json_number_text(origin is string) is string;
 // json_output_member a member name with its colon, after a comma unless first.
 native json_output() is JsonOutputState;
 
+// Appends text as it is; the length so far.
 native json_output_raw(origin is JsonOutputState, text is string) is int;
 
+// Appends text as a JSON string; the length so far.
 native json_output_text(origin is JsonOutputState, text is string) is int;
 
+// Appends a number; the length so far.
 native json_output_number(origin is JsonOutputState, number is string) is int;
 
+// Appends a member name, with a comma unless first; the length so far.
 native json_output_member(origin is JsonOutputState, name is string, first is bool) is int;
 
+// The text written.
 native json_output_string(origin is JsonOutputState) is string;
 
 // The first index whose name repeats an earlier one, or the number of names.
@@ -84,10 +113,13 @@ native json_repeated_name(names is @string) is int;
 // number) is invalid_input; callers then read the member the long way.
 native json_member_text(origin is JsonNodeState, name is string) is string;
 
+// The name of the member called name as written, for diagnostics.
 native json_member_spelling(origin is JsonNodeState, name is string) is string;
 
+// The boolean member called name.
 native json_member_boolean(origin is JsonNodeState, name is string) is bool;
 
+// The int member called name.
 native json_member_int(origin is JsonNodeState, name is string) is int;
 
 // Values built in code: a string, a number from its decimal text, a boolean,
@@ -95,14 +127,19 @@ native json_member_int(origin is JsonNodeState, name is string) is int;
 // (invalid_input for differing counts or a repeated name).
 native json_text_node(value is string) is JsonNodeState;
 
+// A number node of decimal.
 native json_number_node(decimal is string) is JsonNodeState;
 
+// A boolean node.
 native json_boolean_node(value is bool) is JsonNodeState;
 
+// A null node.
 native json_null_node() is JsonNodeState;
 
+// An array node of values.
 native json_array_node(values is @JsonNodeState) is JsonNodeState;
 
+// An object node of names and values.
 native json_object_node(names is @string, values is @JsonNodeState) is JsonNodeState;
 
 // JSON text of a node: compact for a negative indentation, otherwise one
@@ -116,10 +153,13 @@ native json_node_write(origin is JsonNodeState, indentation is int) is string;
 // of an object and the items of an array in order.
 native json_node_pointer(root is JsonNodeState, target is JsonNodeState) is string;
 
+// Every member name, in order.
 native json_member_names(origin is JsonNodeState) is @string;
 
+// Every member value, in order.
 native json_member_values(origin is JsonNodeState) is @JsonNodeState;
 
+// Every item, in order.
 native json_node_items(origin is JsonNodeState) is @JsonNodeState;
 
 // json_member_position is the index of the member with exactly that name, or -1.
@@ -403,14 +443,21 @@ test "JSON nodes built in code are written compact and pretty" {
 // whitespace-separated values. next answers "item", "more", "end" or "error".
 native json_split_state(maximum_item is int) is JsonSplitState;
 
+// Feeds bytes to a splitter of concatenated JSON values.
 native json_split_feed(state is JsonSplitState, bytes is @byte) is bool;
 
+// Ends the input.
 native json_split_finish(state is JsonSplitState) is bool;
 
+// What comes next: `item` (a whole value is ready), `end`, `error`, or anything
+// else to feed more.
 native json_split_next(state is JsonSplitState) is string;
 
+// The bytes of the value `item` announced.
 native json_split_item(state is JsonSplitState) is @byte;
 
+// Why splitting failed.
 native json_split_error(state is JsonSplitState) is string;
 
+// Where splitting failed.
 native json_split_offset(state is JsonSplitState) is int;

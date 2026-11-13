@@ -26,19 +26,28 @@ import "runtime/uuid" take uuid_valid, uuid_bytes, uuid_string, uuid_version, uu
 // and as Uuid values they compare false. To ask whether two are the same
 // UUID, compare bytes(), string() or order().
 
+// The layout a UUID follows; RFC 9562 UUIDs are rfc.
 enum UuidVariant = (rfc, microsoft, reserved, future);
 
+// A UUID, whatever made it.
 role Uuid {
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string;
+    // The 16 bytes.
     bytes() is @byte;
+    // Its version number.
     version() is int;
+    // Its variant.
     variant() is UuidVariant;
+    // Orders by the bytes.
     order(other is Uuid) is Order;
 }
 
+// A UUID read from text.
 object UuidText does Uuid, Comparing<Uuid> {
     has origin is @byte;
 
+    // Reads `8-4-4-4-12` hexadecimal text, either case; InvalidUuid otherwise.
     UuidText(origin is string) {
         confirm uuid_valid(origin)
             else throw InvalidUuid.because("invalid canonical UUID text");
@@ -46,52 +55,64 @@ object UuidText does Uuid, Comparing<Uuid> {
         self.origin = uuid_bytes(origin);
     }
 
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string {
         uuid_string(origin);
     }
 
+    // The 16 bytes.
     bytes() is @byte {
         origin;
     }
 
+    // Its version number.
     version() is int {
         uuid_version(origin);
     }
 
+    // Its variant.
     variant() is UuidVariant {
         UuidValue(bytes: origin).variant();
     }
 
+    // Orders by the bytes.
     order(other is Uuid) is Order {
         self.string().order(other.string());
     }
 }
 
+// A UUID from 16 bytes.
 object UuidBytes does Uuid, Comparing<Uuid> {
     has origin is @byte;
 
+    // Takes exactly 16 bytes; InvalidUuid otherwise.
     UuidBytes(origin is @byte) {
         confirm origin.size() == 16
             else throw InvalidUuid.because("UUID binary value must contain sixteen bytes");
         self.origin = origin;
     }
 
+    // The canonical lowercase text: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`.
     string() is string {
         uuid_string(origin);
     }
 
+    // The 16 bytes.
     bytes() is @byte {
         origin;
     }
 
+    // Its version number.
     version() is int {
         uuid_version(origin);
     }
 
+    // Its variant.
     variant() is UuidVariant {
         UuidValue(bytes: origin).variant();
     }
 
+    // Orders by the bytes.
     order(other is Uuid) is Order {
         self.string().order(other.string());
     }
@@ -121,6 +142,7 @@ hidden object UuidValue {
     }
 }
 
+// Text or bytes that are not a UUID.
 enum InvalidUuid is Error = (because(message is string));
 
 test "text is read strictly and kept as bytes" {

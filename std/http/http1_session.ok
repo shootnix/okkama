@@ -1,5 +1,14 @@
 module http/http1_session v1.0.0;
 
+// One HTTP/1.1 client connection: one request at a time, no pipelining.
+//
+//     let session = Http1Session(input: tcp, output: tcp, owner: tcp);
+//     let exchange = await session.exchange(request);
+//     exchange.response();
+//
+// The connection is reused only after a response body was read to its end; a
+// body left unread or broken closes it.
+
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/message" take Request, Response, InvalidHttpMessage;
 import "http/http1_head" take Http1Limits, Http1LimitExceeded, Http1RequestHead, Http1ResponseHead;
@@ -37,6 +46,7 @@ object Http1Session does Closing {
     has clock is Timing;
     has continue_wait is Duration;
 
+    // A session over input and output, closing owner, with the default limits.
     Http1Session(input is AsyncReading, output is AsyncWriting, owner is Closing) {
         confirm !owner.closed() else throw Http1SessionClosed.closed;
         self.input = input;
@@ -51,6 +61,7 @@ object Http1Session does Closing {
         continue_wait = Duration(seconds: 1);
     }
 
+    // The same within limits.
     Http1Session(
         input is AsyncReading,
         output is AsyncWriting,
@@ -70,6 +81,7 @@ object Http1Session does Closing {
         continue_wait = Duration(seconds: 1);
     }
 
+    // The same, waiting continue_wait for a 100 before sending a body.
     Http1Session(
         input is AsyncReading,
         output is AsyncWriting,
@@ -93,10 +105,12 @@ object Http1Session does Closing {
         current = Atomic(empty);
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready() || owner.closed();
     }
 
+    // Closes the connection.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -111,6 +125,8 @@ object Http1Session does Closing {
         }
     }
 
+    // Sends request and reads the response head; Http1SessionClosed once
+    // closed.
     async exchange(request is Request) is Http1Exchange {
         confirm !self.closed() else throw Http1SessionClosed.closed;
         let outgoing = Http1RequestHead(
@@ -228,25 +244,30 @@ object Http1Session does Closing {
     }
 }
 
+// One request on a session and its response.
 object Http1Exchange {
     has request is Request;
     has response is Response;
     has information is @Http1ResponseHead;
 
+    // request answered by response after the 1xx heads in information.
     Http1Exchange(request is Request, response is Response, information is @Http1ResponseHead) {
         self.request = request;
         self.response = response;
         self.information = information;
     }
 
+    // The request.
     request() is Request {
         request;
     }
 
+    // The final response.
     response() is Response {
         response;
     }
 
+    // The 1xx heads before it.
     informational() is Sequencing<Http1ResponseHead> {
         information;
     }
@@ -641,6 +662,7 @@ hidden object Http1SessionBody does BodyOpening {
     }
 }
 
+// The session was used after it closed.
 enum Http1SessionClosed is Error = (closed);
 
 hidden object Http1UnstartedTransport does AsyncReading, AsyncWriting, Closing {

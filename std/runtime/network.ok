@@ -1,27 +1,39 @@
 module runtime/network v1.0.0;
 
+// The native layer under net/dns, net/multicast, net/stream, net/tcp: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+//
 // Private native substrate for Stage 20 networking. SocketState is an opaque,
 // runtime-owned capability. Every state created here is non-blocking; public
 // net/* modules never expose this object or its numeric family/type protocol.
 
+// A socket.
 native object SocketState;
 
+// A multicast group membership.
 native object MembershipState;
 
+// A listening Unix socket.
 native object ListenerState;
 
+// A connected pair of Unix sockets.
 native object PairState;
 
+// A bound TCP socket.
 native object TcpListenerState;
 
 // Private system resolver results: numeric address, requested port, IPv6 scope.
 // Both directions use IO::Async worker requests; no sockaddr/flags are public.
 native async dns_addresses(host is string, port is int) is @@string;
 
+// The name address resolves back to (reverse DNS).
 native async dns_name(address is string) is string;
 
+// A socket of family, type and protocol.
 native socket(family is int, socket_type is int, protocol is int) is SocketState;
 
+// Closes origin.
 native close(origin is SocketState) is bool;
 
 // Atomic nonblocking UDP acquisition: configure options before binding and close
@@ -37,8 +49,10 @@ native udp_bound(
     dual_stack is bool
 ) is SocketState;
 
+// The local address, port and IPv6 scope.
 native local_endpoint(origin is SocketState) is @string;
 
+// Whether origin is closed.
 native closed(origin is SocketState) is bool;
 
 // One ordinary UDP packet, with a fixed native receive buffer <= 65536 bytes.
@@ -46,10 +60,13 @@ native closed(origin is SocketState) is bool;
 // Cancellation removes readiness; close wakes the pending receive.
 native async udp_receive(origin is SocketState, limit is int) is @byte;
 
+// The address, port and scope a received packet came from.
 native packet_source(origin is @byte) is @string;
 
+// The payload of a received packet.
 native packet_bytes(origin is @byte) is @byte;
 
+// Whether the packet was longer than the buffer.
 native packet_truncated(origin is @byte) is bool;
 
 // Submit exactly one ordinary UDP packet; success is the full payload count.
@@ -67,10 +84,13 @@ native async udp_send(
 // cannot override the peer, and unconnected packet actions reject this state.
 native async udp_connect(origin is SocketState, target is @byte, zone is string) is bool;
 
+// The peer's address, port and scope.
 native peer_endpoint(origin is SocketState) is @string;
 
+// Sends payload to the connected peer; how many bytes went.
 native async udp_connected_send(origin is SocketState, payload is @byte) is int;
 
+// One packet from the connected peer, at most limit bytes.
 native async udp_connected_receive(origin is SocketState, limit is int) is @byte;
 
 // Synchronous any-source membership acquisition on an existing UDP owner.
@@ -85,8 +105,10 @@ native multicast_join(
     loopback is bool
 ) is MembershipState;
 
+// Whether the membership ended.
 native multicast_closed(origin is MembershipState) is bool;
 
+// Leaves the group.
 native multicast_close(origin is MembershipState) is bool;
 
 // No I/O: reject empty/NUL/overlong filesystem paths before host packing.
@@ -94,50 +116,73 @@ native multicast_close(origin is MembershipState) is bool;
 // private sockaddr helper must be reused by future Unix bind/connect actions.
 native unix_path_valid(origin is @byte) is bool;
 
+// A connected pair of Unix sockets.
 native unix_pair() is PairState;
 
+// The first or second socket of the pair.
 native unix_pair_socket(origin is PairState, second is bool) is SocketState;
 
+// Hands the sockets over; the pair no longer closes them.
 native unix_pair_release(origin is PairState) is bool;
 
+// Closes both sockets.
 native unix_pair_close(origin is PairState) is bool;
 
+// The socket's own path, or its peer's.
 native unix_endpoint(origin is SocketState, peer is bool) is @byte;
 
+// At most limit bytes; [] at the end.
 native async stream_read(origin is SocketState, limit is int) is @byte;
 
+// Writes the whole payload.
 native async stream_write(origin is SocketState, payload is @byte) is bool;
 
+// Shuts down the output or the input.
 native stream_shutdown(origin is SocketState, output is bool) is bool;
 
+// Whether that direction is shut down.
 native stream_half_closed(origin is SocketState, output is bool) is bool;
 
+// Connects to address (scope zone) with the keep-alive and no-delay options.
 native async tcp_connect(address is @byte, zone is string, keep_alive is bool, no_delay is bool) is SocketState;
 
+// A TCP socket bound to address, with address reuse and dual-stack options.
 native tcp_bound(address is @byte, zone is string, reuse is bool, dual_stack is bool) is TcpListenerState;
 
+// Starts listening with backlog.
 native tcp_start_listening(origin is TcpListenerState, backlog is int) is bool;
 
+// The address and port it is bound to.
 native tcp_listener_endpoint(origin is TcpListenerState) is @string;
 
+// The socket's local or peer address and port.
 native tcp_endpoint(origin is SocketState, peer is bool) is @string;
 
+// The next connection, with the keep-alive and no-delay options.
 native async tcp_accept(origin is TcpListenerState, keep_alive is bool, no_delay is bool) is SocketState;
 
+// Closes the listener.
 native tcp_listener_close(origin is TcpListenerState) is bool;
 
+// Whether the listener is closed.
 native tcp_listener_closed(origin is TcpListenerState) is bool;
 
+// Connects to the Unix socket at path.
 native async unix_connect(path is @byte) is SocketState;
 
+// Listens on a Unix socket at path with backlog.
 native unix_listen(path is @byte, backlog is int) is ListenerState;
 
+// The path it listens on.
 native unix_listener_path(origin is ListenerState) is @byte;
 
+// The next connection.
 native async unix_accept(origin is ListenerState) is SocketState;
 
+// Closes the listener.
 native unix_listener_close(origin is ListenerState) is bool;
 
+// Whether the listener is closed.
 native unix_listener_closed(origin is ListenerState) is bool;
 
 test "managed socket closure is shared and idempotent" {

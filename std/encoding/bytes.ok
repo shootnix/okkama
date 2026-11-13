@@ -24,10 +24,12 @@ import "runtime/bytes" take bytes_find, bytes_utf8_invalid, bytes_text, bytes_de
 // lone '-', fails at its end.
 enum InvalidByteDecimal is Error = (at(offset is int));
 
+// Where a pattern of bytes occurs in other bytes, found in place.
 object ByteSearch {
     has source is @byte;
     has pattern is @byte;
 
+    // Searches source for pattern.
     ByteSearch(source is @byte, pattern is @byte) {
         confirm pattern.size() > 0
             else throw InvalidArgument.because("byte search pattern must not be empty");
@@ -43,11 +45,13 @@ object ByteSearch {
     }
 }
 
+// A run of bytes inside other bytes, read in place without copying.
 object ByteRange {
     has source is @byte;
     has start is int;
     has end is int;
 
+    // Bytes start to end of source.
     ByteRange(source is @byte, start is int, end is int) {
         confirm start >= 0 && start <= end && end <= source.size()
             else throw OutOfRange.because("byte range is outside the source");
@@ -56,6 +60,7 @@ object ByteRange {
         self.end = end;
     }
 
+    // end - start.
     size() is int {
         end - start;
     }

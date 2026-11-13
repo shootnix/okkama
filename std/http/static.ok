@@ -1,5 +1,18 @@
 module http/static v1.0.0;
 
+// Files from a directory, with validators, ranges and precompressed variants.
+//
+//     let files = StaticFiles(root: FileRoot(Directory(Path("public"))), media: StandardMediaTypes(), policy: StaticPolicy());
+//     Route(method: Method.get, pattern: RoutePattern("/assets/*file"),
+//         handling: StaticFiles(root: root, media: types, policy: StaticPolicy(), random: SecureRandom(),
+//             clock: SystemClock(), parameter: "file"));
+//
+// Paths never leave the root: each name is opened below it without following
+// links. Responses carry ETag and Last-Modified, answer conditional and range
+// requests, and serve `.br` or `.gz` companions when the policy allows. By
+// default index.html is the index, there is no listing, at most 16 ranges and
+// 1024 names per directory. web/routing's Files is the usual way in.
+
 import "http/method" take MethodName, Method;
 import "fs/root" take FileRoot, RootedEntry;
 import "fs/stat" take FileStat, FileKind;
@@ -54,6 +67,8 @@ object StaticPolicy {
     has cache is string;
     has tags is FileTags;
 
+    // index.html, no listing, no companions, 16 ranges, 1024 names, no
+    // Cache-Control, metadata ETags.
     StaticPolicy() {
         indexes = ["index.html"];
         listing = false;
@@ -64,6 +79,7 @@ object StaticPolicy {
         tags = FileTags.metadata;
     }
 
+    // These indexes, listing and companions, with the other defaults.
     StaticPolicy(indexes is Sequencing<string>, listing is bool, precompressed is bool) {
         let checked = StaticIndexes(indexes);
         self.indexes = checked.values();
@@ -100,10 +116,12 @@ object StaticPolicy {
         self.tags = tags;
     }
 
+    // The index file names, tried in order.
     indexes() is Sequencing<string> {
         indexes;
     }
 
+    // Listing, companions, ranges, names, Cache-Control and ETags.
     cap Settings {
         listing is bool {
             listing;
@@ -297,6 +315,7 @@ object StaticFiles does Handling {
     has parameter is string;
     has tagged is Atomic<%string:string>;
 
+    // Files below root, typed by media.
     StaticFiles(root is FileRoot, media is MediaIdentifying, policy is StaticPolicy) {
         self.root = root;
         self.media = media;
@@ -307,6 +326,7 @@ object StaticFiles does Handling {
         tagged = Atomic([:]);
     }
 
+    // The same; random makes multipart range boundaries.
     StaticFiles(
         root is FileRoot,
         media is MediaIdentifying,
@@ -322,6 +342,8 @@ object StaticFiles does Handling {
         tagged = Atomic([:]);
     }
 
+    // The same with clock for Date; parameter names the route parameter that
+    // holds the path.
     StaticFiles(
         root is FileRoot,
         media is MediaIdentifying,
@@ -339,6 +361,7 @@ object StaticFiles does Handling {
         tagged = Atomic([:]);
     }
 
+    // Answers GET and HEAD with the file the request names.
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         context.cancelling().check();
         let method = MethodName(request::Head::method).string();
@@ -370,6 +393,7 @@ object StaticFiles does Handling {
         self.answered(request, clock.instant(), Maybe.some(path));
     }
 
+    // The answer to request at now.
     response(request is Request, now is Instant) is Response {
         self.served(request, now, Maybe<string>.none);
     }
@@ -678,6 +702,7 @@ object StaticFiles does Handling {
         EntityTag(value: value, weak: false);
     }
 
+    // The index files of a directory at coordinates.
     index(coordinates is @string, directory is bool) is @StaticIndexFile {
         if !directory {
             let empty is @StaticIndexFile = [];
@@ -703,6 +728,7 @@ object StaticFiles does Handling {
         empty;
     }
 
+    // The precompressed variants of a file, when enabled.
     companions(
         coordinates is @string,
         name is string,
@@ -762,6 +788,7 @@ object StaticFiles does Handling {
         result.values();
     }
 
+    // An HTML listing of directory.
     listing(directory is RootedEntry, request is Request) is Response {
         let names = directory.names(policy::Settings::names);
         let text = Atomic("<!doctype html><meta charset=\"utf-8\"><title>Directory</title><ul>");
@@ -838,37 +865,45 @@ hidden object StaticSelection {
     }
 }
 
+// An index file found in a directory.
 object StaticIndexFile {
     has entry is RootedEntry;
     has name is string;
 
+    // entry called name.
     StaticIndexFile(entry is RootedEntry, name is string) {
         self.entry = entry;
         self.name = name;
     }
 
+    // The file.
     entry() is RootedEntry {
         entry;
     }
 
+    // Its name.
     name() is string {
         name;
     }
 }
 
+// A file or one of its precompressed companions.
 object StaticRepresentation {
     has entry is RootedEntry;
     has coding is string;
 
+    // entry with its content coding ("" for none).
     StaticRepresentation(entry is RootedEntry, coding is string) {
         self.entry = entry;
         self.coding = coding;
     }
 
+    // The file.
     entry() is RootedEntry {
         entry;
     }
 
+    // Its content coding.
     coding() is string {
         coding;
     }
@@ -1263,10 +1298,13 @@ hidden object StaticDigest {
     }
 }
 
+// A request path that does not name a file below the root.
 enum InvalidStaticPath is Error = (invalid);
 
+// A policy that cannot be used; reason says why.
 enum InvalidStaticPolicy is Error = (because(reason is string));
 
+// A file changed while it was being served.
 enum StaticFileChanged is Error = (changed);
 
 test "static policy defaults bound ranges and disable optional file modes" {

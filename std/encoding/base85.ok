@@ -22,17 +22,21 @@ import "runtime/base85" take base85_encode, base85_invalid_offset, base85_decode
 // Z85 is deliberately absent: its fixed 4-byte/5-character block contract
 // would make encoding partial and deserves a separate consumer-driven API.
 
+// ascii85 as Adobe uses it, or rfc1924's alphabet.
 enum Base85Alphabet = (ascii85, rfc1924);
 
+// Bytes as Base85 text.
 object Base85Encoded {
     has origin is @byte;
     has alphabet is Base85Alphabet;
 
+    // Encodes origin with alphabet.
     Base85Encoded(origin is @byte, alphabet is Base85Alphabet) {
         self.origin = origin;
         self.alphabet = alphabet;
     }
 
+    // The text.
     string() is string {
         base85_encode(origin, self.alphabet_name());
     }
@@ -47,15 +51,18 @@ object Base85Encoded {
     }
 }
 
+// Base85 text back to bytes.
 object Base85Decoded {
     has origin is string;
     has alphabet is Base85Alphabet;
 
+    // Decodes origin with alphabet.
     Base85Decoded(origin is string, alphabet is Base85Alphabet) {
         self.origin = origin;
         self.alphabet = alphabet;
     }
 
+    // The bytes.
     bytes() is @byte {
         let name is string = self.alphabet_name();
         let offset is int = base85_invalid_offset(origin, name);
@@ -73,6 +80,7 @@ object Base85Decoded {
     }
 }
 
+// Text that is not strict Base85; offset says where.
 enum InvalidBase85 is Error = (at(offset is int));
 
 test "both base85 variants round-trip" {

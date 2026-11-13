@@ -1,15 +1,31 @@
 module terminal/capability v1.0.0;
 
+// What a terminal can do: whether input and output are interactive, how many
+// colors it shows and its size.
+//
+//     let capabilities = session.capabilities();
+//     capabilities::Support::colors;               // TerminalColorDepth.true_color…
+//     capabilities.size()::Size::columns;
+//
+// Colors are decided once, from the terminal, the environment and the program's
+// policy. never turns them off. automatic turns them off for output that is not
+// a terminal, NO_COLOR or TERM=dumb. Otherwise COLORTERM truecolor or 24bit
+// gives true color and a TERM with 256color gives 256 colors.
+
 import "os/environment" take Environment;
 import "strings/parse" take Number;
 
+// How many colors: none, 8, 256 or true color.
 enum TerminalColorDepth = (disabled, basic, indexed, true_color);
 
+// Whether to use colors: decide, never or always.
 enum ColorPolicy = (automatic, never, always);
 
+// A size in columns and rows.
 object TerminalSize {
     has width, height is int;
 
+    // columns by rows; InvalidTerminalSize when negative.
     TerminalSize(columns is int, rows is int) {
         confirm columns >= 0 && rows >= 0 && columns <= 65535 && rows <= 65535
             else throw InvalidTerminalSize.invalid;
@@ -17,6 +33,7 @@ object TerminalSize {
         height = rows;
     }
 
+    // The columns and rows.
     cap Size {
         columns is int {
             width;
@@ -28,11 +45,13 @@ object TerminalSize {
     }
 }
 
+// What a terminal can do.
 object TerminalCapabilities {
     has input, output is bool;
     has depth is TerminalColorDepth;
     has geometry is TerminalSize;
 
+    // As given.
     TerminalCapabilities(
         input_interactive is bool,
         output_interactive is bool,
@@ -45,10 +64,12 @@ object TerminalCapabilities {
         geometry = size;
     }
 
+    // Its size.
     size() is TerminalSize {
         geometry;
     }
 
+    // Whether input and output are interactive, and the color depth.
     cap Support {
         input_interactive is bool {
             input;
@@ -64,9 +85,12 @@ object TerminalCapabilities {
     }
 }
 
+// Capabilities decided from what a terminal reports, the environment and a
+// policy.
 object DetectedTerminalCapabilities {
     has origin is TerminalCapabilities;
 
+    // From interactivity, the native depth and size, environment and policy.
     DetectedTerminalCapabilities(
         input is bool,
         output is bool,
@@ -128,6 +152,7 @@ object DetectedTerminalCapabilities {
         );
     }
 
+    // The capabilities.
     capabilities() is TerminalCapabilities {
         origin;
     }
@@ -164,6 +189,7 @@ hidden object TerminalFallback {
     }
 }
 
+// A negative size.
 enum InvalidTerminalSize is Error = (invalid);
 
 test "a terminal size is two bounded counts" {

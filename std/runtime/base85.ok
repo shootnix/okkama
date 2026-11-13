@@ -1,9 +1,16 @@
 module runtime/base85 v1.0.0;
 
+// The native layer under encoding/base85: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Portable strict ASCII85 and RFC 1924 Base85 boundary.
 
+// origin in Base85 with alphabet (Ascii85 or Z85).
 native base85_encode(origin is @byte, alphabet is string) is string;
 
+// Where origin stops being Base85 in alphabet, or -1.
 native base85_invalid_offset(origin is string, alphabet is string) is int;
 
+// The bytes of Base85 origin.
 native base85_decode(origin is string, alphabet is string) is @byte;

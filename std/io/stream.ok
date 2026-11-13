@@ -1,36 +1,51 @@
 module io/stream v1.0.0;
 
-// Small nominal contracts for byte and text streams.
+// The roles every byte and text stream of std plays: Reading and Writing for
+// bytes, AsyncReading and AsyncWriting for streams that wait, ReadingText and
+// WritingText for text, ByteSource for something that has bytes, and Closing.
 //
 //     writer.write(packet);
-//     writer.flush();
 //     writer <- "header: " <- payload <- "\n";
+//     writer.flush();
+//     let piece = reader.bytes(4096);          // [] is the end
 //
-// `<-` accepts a formal ByteSource. Only inside that operator, builtin string
-// is adapted through strict UTF-8 and builtin @byte is adapted without any
-// transformation. Explicit `writer <- array_expression...` writes each source
-// in order after evaluating the array once; empty arrays make no writes.
-// No other value is converted implicitly. The operator calls
-// Writing.write(), then returns the same Writing capability so left-associated
-// chains remain commands rather than builders. Every operand is evaluated once
-// from left to right; a failed write prevents evaluation of later sources.
+// `<-` writes any ByteSource; only inside that operator a string is written as
+// strict UTF-8 and an @byte as it is. Explicit `writer <- parts...` writes each
+// element of the array in order. The operator calls Writing.write and gives
+// back the same Writing, so chains read left to right; a failed write stops the
+// chain.
 //
-// Writing.write() either consumes the complete source or throws
-// IncompleteWrite.after(written) with the consumed prefix length. It does not
-// retry, flush or close implicitly. Reading.bytes(limit) requires limit > 0. An empty result is
-// normal EOF, remains empty on later reads, and is not an error.
+// Writing.write takes the whole source or throws IncompleteWrite.after(written)
+// with the number of bytes taken; it neither retries, nor flushes, nor closes.
+// Reading.bytes(limit) needs limit > 0 and returns at most limit bytes; an
+// empty result is the end, and stays the end.
+//
+// # Errors
+//
+// - IncompleteWrite.after(written): a write took only the first written bytes.
+// - InvalidReadLimit.limit(value): a read limit below one.
 
+// Something that has bytes to write: Utf8Encoded(text), ByteSnapshot(bytes) and
+// more.
 role ByteSource {
+    // The bytes, the same ones each time.
     bytes() is @byte;
 }
 
+// A byte output: files, sockets, buffers, Stdout.
 role Writing {
+    // Writes all the bytes of source, or throws IncompleteWrite with how many
+    // went.
     write(source is ByteSource) is void;
+    // Writes all the bytes, or throws IncompleteWrite with how many went.
     write(bytes is @byte) is void;
+    // Sends on whatever the output still holds.
     flush() is void;
 }
 
+// A byte input read in pieces.
 role Reading {
+    // At most limit bytes (limit > 0); [] at the end.
     bytes(limit is int) is @byte;
 }
 
@@ -40,6 +55,7 @@ role Reading {
 // a lazy Future; repeated await of that Future observes the same read outcome.
 // This role does not imply synchronous Reading, resource ownership or close().
 role AsyncReading {
+    // At most limit bytes once they come; [] at the end.
     async bytes(limit is int) is @byte;
 }
 
@@ -50,27 +66,39 @@ role AsyncReading {
 // conformance and is not an operand for the synchronous stream-write operator.
 // Concrete socket halves must separately implement serialization and cleanup.
 role AsyncWriting {
+    // Writes all the bytes of source and gives back this output, for chaining.
     async write(source is ByteSource) is AsyncWriting;
+    // Writes all the bytes and gives back this output, for chaining.
     async write(bytes is @byte) is AsyncWriting;
 }
 
+// A text output: arguments are written in order, as UTF-8 unless the output
+// says otherwise.
 role WritingText {
+    // Writes the strings one after another, with nothing between them.
     write(values is ...string) is void;
+    // Writes the strings and then one LF.
     writeln(values is ...string) is void;
 }
 
+// A text input read by lines or whole.
 role ReadingText {
+    // The next line without its line end.
     line() is string;
+    // Everything that is left, as one string.
     content() is string;
 }
 
+// A resource that can be closed; closing twice is fine.
 role Closing {
+    // Whether it is closed.
     closed() is bool;
+    // Closes it; a closed resource stays closed.
     close() is void;
 }
 
-// IncompleteWrite.after(written) carries the consumed prefix length;
-// InvalidReadLimit.limit(value) carries the rejected limit.
+// A write that took only part of its bytes: written says how many.
 enum IncompleteWrite is Error = (after(written is int));
 
+// A read limit below one.
 enum InvalidReadLimit is Error = (limit(value is int));

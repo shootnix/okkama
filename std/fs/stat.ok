@@ -1,16 +1,26 @@
 module fs/stat v1.0.0;
 
+// What the disk knows about an entry: its kind, size, permissions, times and
+// identity.
+//
+//     let stat = FileEntry(Path("notes.txt")).stat();
+//     stat::Shape::kind == FileKind.file;
+//     stat::Shape::size;                                // bytes
+//     stat.mode().owner()::Access::writable;
+//     stat.times().modification();                      // Instant
+//     stat.identity().same(other.identity());           // the same file?
+//
+// Every platform's metadata comes in the same shape. Not every file system
+// records a creation time: creation() then throws MissingCreationTime.
+
 import "numbers/bigint" take BigInt;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
-// Portable metadata values. Native providers normalize their host stat shape
-// into integer fields; no host-specific mode or timestamp object crosses the
-// runtime boundary. Creation time is optional because many filesystems do not
-// expose one. Calling creation() when it is unavailable throws a typed error.
-
+// What an entry is.
 enum FileKind = (other, file, directory, symbolic_link, block_device, character_device, fifo, socket);
 
+// The metadata of one entry.
 object FileStat {
     has file_kind is FileKind;
     has byte_size is int;
@@ -18,6 +28,8 @@ object FileStat {
     has file_times is FileTimes;
     has file_identity is FileIdentity;
 
+    // Metadata as given; FileEntry.stat() and DirectoryEntry.stat() make it
+    // from the disk.
     FileStat(
         kind is FileKind,
         size is int,
@@ -43,25 +55,30 @@ object FileStat {
         }
     }
 
+    // The permission bits.
     mode() is PermissionMode {
         permission_mode;
     }
 
+    // When it was last read, changed and made.
     times() is FileTimes {
         file_times;
     }
 
+    // Which file it is on its device.
     identity() is FileIdentity {
         file_identity;
     }
 }
 
+// The times of an entry.
 object FileTimes {
     has accessed is int;
     has modified is int;
     has changed is int;
     has created is int;
 
+    // Times as seconds since 1970; a negative creation means none was recorded.
     FileTimes(access is int, modification is int, change is int, creation is int) {
         accessed = access;
         modified = modification;
@@ -69,59 +86,72 @@ object FileTimes {
         created = creation;
     }
 
+    // When it was last read.
     access() is Instant {
         EpochInstant(seconds: accessed).instant();
     }
 
+    // When its content last changed.
     modification() is Instant {
         EpochInstant(seconds: modified).instant();
     }
 
+    // When its metadata last changed.
     change() is Instant {
         EpochInstant(seconds: changed).instant();
     }
 
+    // When it was made; MissingCreationTime when the file system did not record
+    // it.
     creation() is Instant {
         confirm created >= 0 else throw MissingCreationTime.missing;
         EpochInstant(seconds: created).instant();
     }
 }
 
+// Which file an entry is: its device and inode.
 object FileIdentity {
     has device_number is int;
     has inode_number is BigInt;
 
+    // An identity as given.
     FileIdentity(device is int, inode is BigInt) {
         device_number = device;
         inode_number = inode;
     }
 
+    // Whether both are the same file, as two links to it are.
     same(other is FileIdentity) is bool {
         self == other;
     }
 
+    // The device number.
     cap Identity {
         device is int {
             device_number;
         }
     }
 
+    // The inode number.
     inode() is BigInt {
         inode_number;
     }
 }
 
+// Read, write and execute for one class of users.
 object Permissions {
     has read_bit is bool;
     has write_bit is bool;
     has execute_bit is bool;
 
+    // The three permissions as given.
     Permissions(readable is bool, writable is bool, executable is bool) {
         read_bit = readable;
         write_bit = writable;
         execute_bit = executable;
     }
 
+    // Whether reading, writing and executing are allowed.
     cap Access {
         readable is bool {
             read_bit;
@@ -137,38 +167,47 @@ object Permissions {
     }
 }
 
+// Unix permission bits: owner, group and others, and the special bits.
 object PermissionMode {
     has bits is int;
 
+    // The bits, 0 to 0o7777; anything else is InvalidPermissionMode.
     PermissionMode(bits is int) {
         confirm bits >= 0 && bits <= 4095
             else throw InvalidPermissionMode.bits(bits);
         self.bits = bits;
     }
 
-    // These are integer bit fields; division produces a rat in Okkama.
+    // What the owner may do.
     owner() is Permissions {
         PermissionBits(bits: (bits >> 6) & 7).permissions();
     }
 
+    // What the group may do.
     group() is Permissions {
         PermissionBits(bits: (bits >> 3) & 7).permissions();
     }
 
+    // What everyone else may do.
     others() is Permissions {
         PermissionBits(bits: bits % 8).permissions();
     }
 
+    // The setuid, setgid and sticky bits, as 0 to 7.
     special() is int {
         bits >> 9;
     }
 }
 
+// Metadata from the runtime's map of fields; std uses it, programs seldom need
+// to.
 object FileStatFromMap {
     has origin is %string:int;
 
+    // From the runtime's fields.
     FileStatFromMap(:origin);
 
+    // The metadata.
     stat() is FileStat {
         FileStat(
             kind: FileKindFromCode(code: origin["kind"]).kind(),
@@ -248,8 +287,10 @@ hidden object FileKindFromCode {
     }
 }
 
+// The file system did not record when the file was made.
 enum MissingCreationTime is Error = (missing);
 
+// Permission bits outside 0 to 0o7777.
 enum InvalidPermissionMode is Error = (bits(bits is int));
 
 test "permission observations retain integer bit groups" {

@@ -1,12 +1,34 @@
 module collections/iteration v1.0.0;
 
+// How `for` walks a collection: an Iterating gives a Cursor, and a Batching
+// gives batches.
+//
+//     for collection -> item { … }              // any Iterating or Batching
+//
+//     let cursor = collection.cursor();
+//     if cursor.available() {
+//         cursor.item();
+//         cursor.successor();
+//     }
+//
+// Cursors are positions that never change: successor() gives a new cursor, and
+// an old one stays where it was. Iterating is for collections that can be
+// walked again; a consumable stream such as a file or a network body is a
+// Batching, read one batch at a time. map, filter, reduce and find accept both.
+
+// A position in a walk; successor() moves on by giving a new cursor.
 role Cursor<T> {
+    // Whether there is an item here; false at the end.
     available() is bool;
+    // The item here; IterationEnded at the end.
     item() is T;
+    // The position after this one.
     successor() is Cursor<T>;
 }
 
+// A collection `for` can walk, again and again.
 role Iterating<T> {
+    // The position of the first item.
     cursor() is Cursor<T>;
 }
 
@@ -15,18 +37,23 @@ role Iterating<T> {
 // source (#465). Files, sockets and other streams use it instead of a cursor,
 // which would allocate an object per item.
 role Batching<T> {
+    // The next batch; [] ends the walk.
     batch() is @T;
 }
 
+// An item was asked for past the end.
 enum IterationEnded is Error = (ended);
 
+// The items from a cursor on, as an Iterating.
 object CursorItems<T> does Iterating<T> {
     has origin is Cursor<T>;
 
+    // Walks from cursor.
     CursorItems(cursor is Cursor<T>) {
         origin = cursor;
     }
 
+    // The cursor given.
     cursor() is Cursor<T> {
         origin;
     }

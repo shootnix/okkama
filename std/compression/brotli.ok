@@ -34,11 +34,13 @@ object BrotliCompressed {
     has origin is @byte;
     has level is int;
 
+    // Compresses origin whole as Brotli, at level 0 to 11 (11 unless told).
     BrotliCompressed(origin is @byte, level is int = 11) {
         self.origin = origin;
         self.level = level;
     }
 
+    // The compressed bytes.
     bytes() is @byte {
         NativeCompressed(origin: origin, format: "brotli", level: level).bytes();
     }
@@ -50,11 +52,14 @@ object BrotliDecompressed {
     has origin is @byte;
     has limit is int;
 
+    // Decompresses origin whole, producing at most limit bytes.
     BrotliDecompressed(origin is @byte, limit is int) {
         self.origin = origin;
         self.limit = limit;
     }
 
+    // The decompressed bytes; more than limit is CompressionLimitExceeded,
+    // damaged data InvalidCompressedData.
     bytes() is @byte {
         NativeDecompressed(origin: origin, format: "brotli", limit: limit).bytes();
     }
@@ -64,30 +69,37 @@ object BrotliDecompressed {
 object BrotliCompressor does Compressing {
     has codec is NativeCompressor;
 
+    // A Brotli stream compressor at level 0 to 11 (11 unless told).
     BrotliCompressor(level is int = 11) {
         codec = NativeCompressor(format: "brotli", level: level);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
@@ -98,34 +110,42 @@ object BrotliCompressor does Compressing {
 object BrotliDecompressor does Decompressing {
     has codec is NativeDecompressor;
 
+    // A Brotli stream decompressor producing at most limit bytes in all.
     BrotliDecompressor(limit is int) {
         codec = NativeDecompressor(format: "brotli", limit: limit);
     }
 
+    // Feeds origin to the codec; output may come now or later.
     write(origin is @byte) is void {
         codec.write(origin);
     }
 
+    // The output ready so far, taken out of the codec.
     output() is Reading {
         codec.output();
     }
 
+    // Ends the input; the rest of the output becomes ready.
     finish() is void {
         codec.finish();
     }
 
+    // Whether finish() was called.
     finished() is bool {
         codec.finished();
     }
 
+    // Drops the codec and any output not taken.
     close() is void {
         codec.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         codec.closed();
     }
 
+    // The bytes that came after the end of the compressed stream.
     remainder() is @byte {
         codec.remainder();
     }

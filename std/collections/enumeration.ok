@@ -37,32 +37,41 @@ import "collections/iteration" take Cursor, Iterating, IterationEnded;
 // exhausted cursor throws IterationEnded. If another item would require an
 // index larger than int.max, successor() throws EnumerationOverflow.
 
+// An item with its position.
 object Indexed<T> {
     has offset is int;
     has origin is T;
 
+    // item at index.
     Indexed(index is int, item is T) {
         offset = index;
         origin = item;
     }
 
+    // Its position.
     index() is int {
         offset;
     }
 
+    // The item.
     item() is T {
         origin;
     }
 }
 
+// The items of origin with their positions: `for Enumerated(origin: names) ->
+// entry { entry.index(); }`.
 object Enumerated<T> does Iterating<Indexed<T>> {
     has origin is Iterating<T>;
     has start is int = 0;
 
+    // Positions counted from 0.
     Enumerated(:origin);
 
+    // Positions counted from start.
     Enumerated(:origin, :start);
 
+    // Walks the items.
     cursor() is Cursor<Indexed<T>> {
         EnumerationCursor(
             origin: origin.cursor(),
@@ -104,6 +113,7 @@ hidden object EnumerationCursor<T> does Cursor<Indexed<T>> {
     }
 }
 
+// A position past the largest int.
 enum EnumerationOverflow is Error = (index(index is int));
 
 test "enumerated numbers items from zero or a chosen start" {

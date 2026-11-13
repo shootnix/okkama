@@ -1,5 +1,14 @@
 module i18n/plural v1.0.0;
 
+// Plural categories (CLDR): which form of a word a number takes in a language.
+//
+//     PluralCategoryOf(origin: PluralNumber("21"), locale: Locale("ru"), kind: PluralKind.cardinal).category();   // one
+//     PluralCategoryOf(origin: PluralNumber("1.5"), locale: Locale("en"), kind: PluralKind.cardinal).category();  // other
+//     PluralCategoryOf(origin: PluralNumber("2"), locale: Locale("en"), kind: PluralKind.ordinal).category();     // two (2nd)
+//
+// A PluralNumber keeps its visible decimals: "1" and "1.0" differ, as CLDR says
+// they do.
+
 import "locale/tag" take Locale;
 import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt;
@@ -8,8 +17,10 @@ import "encoding/utf" take Utf8Encoded;
 import "i18n/operands" take PluralOperands;
 import "locale/internal/plurals" take CldrPlurals;
 
+// The CLDR plural categories.
 enum PluralCategory = (zero, one, two, few, many, other);
 
+// Cardinal (1 book) or ordinal (1st).
 enum PluralKind = (cardinal, ordinal);
 
 // Preserve the spelling's visible fraction precision, unlike Decimal's numeric
@@ -19,6 +30,7 @@ object PluralNumber does PluralOperands {
     has integer, fraction, trimmed_fraction is BigInt;
     has visible, trimmed is int;
 
+    // A plain decimal such as `21` or `1.50`; InvalidPluralNumber otherwise.
     PluralNumber(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 1024
             else throw InvalidPluralNumber.because("number length");
@@ -70,14 +82,17 @@ object PluralNumber does PluralOperands {
         });
     }
 
+    // The number as written.
     string() is string {
         origin;
     }
 
+    // Its value.
     number() is Decimal {
         Decimal(origin);
     }
 
+    // A CLDR operand: n, i, v, w, f, t, c or e.
     operand(name is string) is BigInt {
         match name {
             case "i" {
@@ -107,6 +122,8 @@ object PluralNumber does PluralOperands {
         }
     }
 
+    // Whether operand name, modulo modulus when not 0, lies in
+    // minimum..maximum.
     relation(name is string, modulus is int, minimum is int, maximum is int) is bool {
         // CLDR '=' / '!=' relations range over integers. A nonintegral n is not
         // a member even of 0..1; its negated relation is compiled by the table.
@@ -176,17 +193,20 @@ hidden object CanonicalPluralNumber {
     }
 }
 
+// The plural category of a number in a locale.
 object PluralCategoryOf {
     has origin is PluralNumber;
     has locale is Locale;
     has kind is PluralKind;
 
+    // origin in locale, counted as kind.
     PluralCategoryOf(origin is PluralNumber, locale is Locale, kind is PluralKind) {
         self.origin = origin;
         self.locale = locale;
         self.kind = kind;
     }
 
+    // The category.
     category() is PluralCategory {
         let index = CldrPlurals().category(origin, locale.string(), kind == PluralKind.ordinal);
         match index {
@@ -212,6 +232,7 @@ object PluralCategoryOf {
     }
 }
 
+// Text that is not a plain decimal number; reason says why.
 enum InvalidPluralNumber is Error = (because(reason is string));
 
 test "visible decimal precision affects English cardinal category" {
@@ -220,7 +241,11 @@ test "visible decimal precision affects English cardinal category" {
         PluralCategory.one
     );
     test.is(
-        PluralCategoryOf(origin: PluralNumber("1.0"), locale: Locale("en"), kind: PluralKind.cardinal).category(),
+        PluralCategoryOf(
+            origin: PluralNumber("1.0"),
+            locale: Locale("en"),
+            kind: PluralKind.cardinal
+        ).category(),
         PluralCategory.other
     );
 }

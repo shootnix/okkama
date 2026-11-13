@@ -1,5 +1,9 @@
 module runtime/postgres v1.0.0;
 
+// The native layer under db/postgres: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // The DataRow messages of one result portion (raw, as read from the wire)
 // become one result page in the PostgreSQL text format: one call per portion
 // instead of one object per row and column. `types` are the column type oids.
@@ -10,20 +14,30 @@ module runtime/postgres v1.0.0;
 // and texts share `pg_page_texts`). A malformed portion gives a page whose
 // failure is one of "message", "truncated", "width", "utf8", "integer",
 // "floating", "nonfinite", "bytea"; a whole page has an empty failure.
+
+// DataRow messages decoded into a page.
 native object PgPageState;
 
+// Decodes rows of width columns with type OIDs types.
 native pg_page(rows is @byte, width is int, types is @int) is PgPageState;
 
+// Why decoding failed, or "".
 native pg_page_failure(page is PgPageState) is string;
 
+// How many rows.
 native pg_page_rows(page is PgPageState) is int;
 
+// The cell kind codes.
 native pg_page_kinds(page is PgPageState) is @int;
 
+// The integer values and typed-array ordinals.
 native pg_page_values(page is PgPageState) is @int;
 
+// The floats.
 native pg_page_floats(page is PgPageState) is @float;
 
+// The texts.
 native pg_page_texts(page is PgPageState) is @string;
 
+// The byte strings.
 native pg_page_blobs(page is PgPageState) is @@byte;

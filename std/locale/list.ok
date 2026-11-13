@@ -1,17 +1,26 @@
 module locale/list v1.0.0;
 
+// Lists in words: "tea, milk and bread", "tea, milk ou bread".
+//
+//     LocalizedList(values: ["tea", "milk", "bread"], locale: Locale("en"), kind: ListKind.conjunction, style: ListStyle.long).string();
+//     // "tea, milk, and bread"
+
 import "locale/tag" take Locale;
 import "locale/data" take LocaleFallbacks;
 import "locale/internal/lists" take CldrLists;
 import "collections/sequence" take Sequencing;
 
+// And, or, or units ("3 ft, 7 in").
 enum ListKind = (conjunction, disjunction, unit);
 
+// Long, short or narrow.
 enum ListStyle = (long, short, narrow);
 
+// A list in words.
 object LocalizedList {
     has values, patterns is @string;
 
+    // values joined as locale writes a list of kind in style.
     LocalizedList(
         values is Sequencing<string>,
         locale is Locale,
@@ -63,6 +72,7 @@ object LocalizedList {
         };
     }
 
+    // The text.
     string() is string {
         let count = values.size();
         if count == 0 {
@@ -126,11 +136,17 @@ hidden object LocalizedListPattern {
     }
 }
 
+// A list that cannot be written; reason says why.
 enum InvalidLocalizedList is Error = (because(reason is string));
 
 test "list item placeholders remain literal" {
     test.is(
-        LocalizedList(values: ["{1}", "{0}"], locale: Locale("en"), kind: ListKind.conjunction, style: ListStyle.long).string(),
+        LocalizedList(
+            values: ["{1}", "{0}"],
+            locale: Locale("en"),
+            kind: ListKind.conjunction,
+            style: ListStyle.long
+        ).string(),
         "{1} and {0}"
     );
 }

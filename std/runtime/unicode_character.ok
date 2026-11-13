@@ -1,24 +1,35 @@
 module runtime/unicode_character v1.0.0;
 
+// The native layer under logging/line, terminal/width, unicode/character: the
+// calls those modules make into the host runtime. Programs use those modules
+// instead; these declarations may change with the runtime.
+//
 // Portable Unicode 16.0.0 Character Database boundary for
 // unicode/character. A backend may use vendored tables, platform libraries or
 // VM intrinsics, but it must expose the same observable Unicode 16.0.0 data.
 // Applications should use UnicodeCharacter instead of these raw actions.
 
+// The Unicode name of origin.
 native character_name(origin is char) is string;
 
+// Its general category, such as `Lu`.
 native category_code(origin is char) is string;
 
+// Its canonical combining class.
 native character_combining_class(origin is char) is int;
 
+// Whether it has a numeric value.
 native character_is_numeric(origin is char) is bool;
 
+// Its numeric value.
 native character_numeric_value(origin is char) is float;
 
 // Unicode 16.0 grapheme and display-property bulk observations. Ambiguous
 // characters are narrow; emoji presentation clusters and W/F characters wide.
 native display_clusters(origin is string) is @string;
 
+// The terminal width of each grapheme cluster of origin.
 native display_widths(origin is string) is @int;
 
+// The index of the first character without a width, or -1.
 native display_invalid_index(origin is string) is int;

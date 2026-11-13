@@ -1,8 +1,13 @@
 module locale/date_time v1.0.0;
 
-// Immutable Gregorian standard-style representations. Wall values never acquire
-// a timezone; an Instant requires an explicit TimeZone. CLDR data is pinned,
-// patterns are compiled at generation time, and host locale state is not read.
+// Dates and times as a locale writes them (CLDR Gregorian styles).
+//
+//     LocalizedDate(origin: Date(year: 2026, month: 11, day: 12), locale: Locale("fr"), style: DateStyle.long).string();   // "12 novembre 2026"
+//     LocalizedTime(origin: TimeOfDay(9, 30, 0, 0), locale: Locale("en"), style: TimeStyle.short).string();             // "9:30 AM"
+//     LocalizedInstant(origin: now, zone: zone, locale: Locale("de"), style: DateTimeStyle(date: DateStyle.medium, time: TimeStyle.long)).string();
+//
+// Zone names come from CLDR; where a locale has none, a GMT offset is written.
+
 import "locale/tag" take Locale, LocaleExtensions;
 import "locale/data" take LocaleFallbacks;
 import "locale/number" take NumberLocaleData, NumberZeroes, InvalidLocalizedNumber;
@@ -18,19 +23,24 @@ import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 import "strings/parse" take Number;
 
+// Full, long, medium or short date.
 enum DateStyle = (full, long, medium, short);
 
+// Full, long, medium or short time.
 enum TimeStyle = (full, long, medium, short);
 
+// A date style and a time style.
 object DateTimeStyle {
     has date is DateStyle;
     has time is TimeStyle;
 
+    // date with time.
     DateTimeStyle(date is DateStyle, time is TimeStyle) {
         self.date = date;
         self.time = time;
     }
 
+    // The date and time styles.
     cap Styles {
         date is DateStyle {
             date;
@@ -42,6 +52,7 @@ object DateTimeStyle {
     }
 }
 
+// A date or time that cannot be written; reason says why.
 enum InvalidLocalizedDateTime is Error = (because(reason is string));
 
 hidden object DateStyleIndex {
@@ -94,11 +105,13 @@ hidden object TimeStyleIndex {
     }
 }
 
+// A locale's Gregorian patterns and names.
 object GregorianLocaleData {
     has table is CldrGregorian;
     has numbers is NumberLocaleData;
     has fields, rules, tags is @string;
 
+    // The data of locale.
     GregorianLocaleData(locale is Locale) {
         let extensions = LocaleExtensions(locale).unicode();
         for (0..extensions.size()) -> index {
@@ -159,18 +172,22 @@ object GregorianLocaleData {
         };
     }
 
+    // The data keys it falls back through.
     tags() is @string {
         tags;
     }
 
+    // Its number data.
     numbers() is NumberLocaleData {
         numbers;
     }
 
+    // The date pattern of style.
     date(style is DateStyle) is string {
         table.program(Number(fields[167 + DateStyleIndex(style).index()]).int());
     }
 
+    // The time pattern of style, with a zone or not.
     time(style is TimeStyle, zoned is bool) is string {
         let width = TimeStyleIndex(style).index();
         let selected = if !zoned && width < 2 {
@@ -182,10 +199,12 @@ object GregorianLocaleData {
         table.program(Number(fields[171 + selected]).int());
     }
 
+    // How date and time are joined at style.
     combination(style is DateStyle) is string {
         fields[175 + DateStyleIndex(style).index()];
     }
 
+    // A month's name at width, standalone or in a date.
     month(number is int, width is int, standalone is bool) is string {
         let style = if width == 3 {
             0;
@@ -206,6 +225,7 @@ object GregorianLocaleData {
         }) + style * 12 + number - 1];
     }
 
+    // A weekday's name at width, standalone or in a date.
     weekday(day is Weekday, width is int, standalone is bool) is string {
         let index = match day {
             case Weekday.monday {
@@ -254,6 +274,7 @@ object GregorianLocaleData {
         }) + style * 7 + index];
     }
 
+    // The name of the common era at width.
     era(width is int) is string {
         fields[128 + (if width <= 3 {
             0;
@@ -268,6 +289,7 @@ object GregorianLocaleData {
         })];
     }
 
+    // The day period of time (AM, PM, noon…).
     period(time is TimeOfDay, width is int, flexible is bool) is string {
         let ordinary = if time::Clock::hour < 12 {
             0;
@@ -334,6 +356,7 @@ object GregorianLocaleData {
         }
     }
 
+    // value in the locale's digits, padded to width.
     number(value is int, width is int) is string {
         let text = value.string();
         numbers.localized((if text.length() < width {
@@ -379,6 +402,7 @@ object LocalizedZoneObservation {
     has daylight is bool;
     has instant is Instant;
 
+    // zone at instant.
     LocalizedZoneObservation(zone is TimeZone, instant is Instant) {
         let name = zone.name();
         confirm name.length() > 0 && name.length() <= 255
@@ -396,38 +420,46 @@ object LocalizedZoneObservation {
         self.instant = instant;
     }
 
+    // The local date and time there.
     local() is LocalDateTime {
         ZonedDateTime(instant: instant, zone: FixedZone(name, offset)).local_datetime();
     }
 
+    // The zone's IANA name.
     name() is string {
         name;
     }
 
+    // Its offset then.
     offset() is Duration {
         offset;
     }
 
+    // Whether daylight time is in effect.
     daylight() is bool {
         daylight;
     }
 
+    // The instant.
     instant() is Instant {
         instant;
     }
 }
 
+// A zone's name in a locale.
 object LocalizedZoneName {
     has origin is LocalizedZoneObservation;
     has data is GregorianLocaleData;
     has wide is bool;
 
+    // The name of origin in data, long or short.
     LocalizedZoneName(origin is LocalizedZoneObservation, data is GregorianLocaleData, wide is bool) {
         self.origin = origin;
         self.data = data;
         self.wide = wide;
     }
 
+    // The name, or the GMT offset when the locale has none.
     string() is string {
         let metadata = CldrZoneMeta();
         let canonical = metadata.canonical(origin.name());
@@ -514,12 +546,14 @@ object LocalizedZoneName {
     }
 }
 
+// An offset written as the locale writes GMT offsets.
 object LocalizedGmtOffset {
     has offset is Duration;
     has data is GregorianLocaleData;
     has fields is @string;
     has wide is bool;
 
+    // offset in data, long or short.
     LocalizedGmtOffset(
         offset is Duration,
         data is GregorianLocaleData,
@@ -552,6 +586,7 @@ object LocalizedGmtOffset {
         self.fields = fields;
     }
 
+    // `GMT+1`, `UTC+01:00` and the like.
     string() is string {
         let seconds = offset::Span::seconds.int();
         if seconds == 0 {
@@ -765,12 +800,14 @@ object LocalizedDate {
     has locale is Locale;
     has style is DateStyle;
 
+    // origin as locale writes a date in style.
     LocalizedDate(origin is Date, locale is Locale, style is DateStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
     }
 
+    // The text.
     string() is string {
         once let rendered is string = self.rendered();
         rendered;
@@ -780,21 +817,26 @@ object LocalizedDate {
         let data = GregorianLocaleData(locale);
         let times is @TimeOfDay = [];
         let zones is @LocalizedZoneObservation = [];
-        GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(data.date(style));
+        GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(
+            data.date(style)
+        );
     }
 }
 
+// A time of day in a locale.
 object LocalizedTime {
     has origin is TimeOfDay;
     has locale is Locale;
     has style is TimeStyle;
 
+    // origin as locale writes a time in style.
     LocalizedTime(origin is TimeOfDay, locale is Locale, style is TimeStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
     }
 
+    // The text.
     string() is string {
         once let rendered is string = self.rendered();
         rendered;
@@ -804,21 +846,26 @@ object LocalizedTime {
         let data = GregorianLocaleData(locale);
         let dates is @Date = [];
         let zones is @LocalizedZoneObservation = [];
-        GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(data.time(style, false));
+        GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(
+            data.time(style, false)
+        );
     }
 }
 
+// A local date and time in a locale.
 object LocalizedLocalDateTime {
     has origin is LocalDateTime;
     has locale is Locale;
     has style is DateTimeStyle;
 
+    // origin as locale writes it in style.
     LocalizedLocalDateTime(origin is LocalDateTime, locale is Locale, style is DateTimeStyle) {
         self.origin = origin;
         self.locale = locale;
         self.style = style;
     }
 
+    // The text.
     string() is string {
         once let rendered is string = self.rendered();
         rendered;
@@ -827,7 +874,12 @@ object LocalizedLocalDateTime {
     hidden rendered() is string {
         let data = GregorianLocaleData(locale);
         let zones is @LocalizedZoneObservation = [];
-        let printing = GregorianPrinting(dates: [origin.date()], times: [origin.time()], zones: zones, data: data);
+        let printing = GregorianPrinting(
+            dates: [origin.date()],
+            times: [origin.time()],
+            zones: zones,
+            data: data
+        );
         GregorianCombined(
             date: printing.string(data.date(style::Styles::date)),
             time: printing.string(data.time(style::Styles::time, false)),
@@ -836,6 +888,7 @@ object LocalizedLocalDateTime {
     }
 }
 
+// An instant in a zone and locale.
 object LocalizedInstant {
     has data is GregorianLocaleData;
     has origin is Instant;
@@ -843,6 +896,7 @@ object LocalizedInstant {
     has locale is Locale;
     has style is DateTimeStyle;
 
+    // origin in zone as locale writes it in style.
     LocalizedInstant(origin is Instant, zone is TimeZone, locale is Locale, style is DateTimeStyle) {
         self.origin = origin;
         self.zone = zone;
@@ -851,11 +905,17 @@ object LocalizedInstant {
         data = GregorianLocaleData(locale);
     }
 
+    // The text.
     string() is string {
         let data = self.data;
         let observed = LocalizedZoneObservation(zone: zone, instant: origin);
         let local = observed.local();
-        let printing = GregorianPrinting(dates: [local.date()], times: [local.time()], zones: [observed], data: data);
+        let printing = GregorianPrinting(
+            dates: [local.date()],
+            times: [local.time()],
+            zones: [observed],
+            data: data
+        );
         GregorianCombined(
             date: printing.string(data.date(style::Styles::date)),
             time: printing.string(data.time(style::Styles::time, true)),
@@ -865,5 +925,12 @@ object LocalizedInstant {
 }
 
 test "localized date keeps the Gregorian year explicit" {
-    test.is(LocalizedDate(origin: Date(year: 2026, month: 8, day: 11), locale: Locale("en"), style: DateStyle.short).string(), "8/11/26");
+    test.is(
+        LocalizedDate(
+            origin: Date(year: 2026, month: 8, day: 11),
+            locale: Locale("en"),
+            style: DateStyle.short
+        ).string(),
+        "8/11/26"
+    );
 }

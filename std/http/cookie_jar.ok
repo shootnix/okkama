@@ -1,5 +1,16 @@
 module http/cookie_jar v1.0.0;
 
+// Cookie jars: where a client keeps cookies between requests.
+//
+//     let jar = MemoryCookieJar();
+//     let client = HttpClient(cookies: jar);
+//     SavedCookieJar(origin: jar, destination: file).file();          // save
+//     let restored = LoadedCookieJar(origin: file, clock: SystemClock()).jar();
+//
+// A MemoryCookieJar holds at most 3000 cookies and 180 per domain by default;
+// beyond that it evicts, non-secure cookies first. Session cookies and expired
+// ones are not saved.
+
 import "http/cookie" take Cookie, CookieAttributes, CookieExpiry, CookieFlag, SameSite,
     InvalidCookie;
 import "http/cookie_policy" take ParsedSetCookie, CookieContext, CookieOrigin, CookiePathMatch,
@@ -24,20 +35,27 @@ import "net/endpoint" take HostName;
 import "net/public_suffix" take PublicSuffixList;
 import "time/duration" take Duration, DurationUnit;
 
+// Something a client keeps cookies in.
 role CookieStoring {
+    // The cookies to send to origin in context.
     cookies(origin is UrlParts, context is CookieContext) is Sequencing<Cookie>;
+    // Keeps the cookies the Set-Cookie fields of headers set.
     store(origin is UrlParts, headers is Headers, context is CookieContext) is void;
+    // Forgets every cookie.
     clear() is void;
 }
 
+// How many cookies a jar keeps.
 object CookieLimits {
     has total, per_domain is int;
 
+    // 3000 in all and 180 per domain.
     CookieLimits() {
         total = 3000;
         per_domain = 180;
     }
 
+    // The limits as given.
     CookieLimits(total is int, per_domain is int) {
         confirm total >= 1 && total <= 10000 && per_domain >= 1 && per_domain <= total
             else throw InvalidCookie.because("jar limits require 1 <= per-domain <= total <= 10000");
@@ -45,6 +63,7 @@ object CookieLimits {
         self.per_domain = per_domain;
     }
 
+    // The limits.
     cap Limits {
         total is int {
             total;
@@ -64,16 +83,20 @@ object MemoryCookieJar does CookieStoring, Closing {
     has limits is CookieLimits;
     has cell is Atomic<CookieJarState>;
 
+    // An empty jar; clock decides what has expired.
     MemoryCookieJar(clock is Timing = SystemClock(), limits is CookieLimits = CookieLimits()) {
         self.clock = clock;
         self.limits = limits;
         cell = Atomic(CookieJarState());
     }
 
+    // Its limits.
     limits() is CookieLimits {
         limits;
     }
 
+    // The live cookies to send to origin in context; CookieJarClosed after
+    // close().
     cookies(origin is UrlParts, context is CookieContext) is Sequencing<Cookie> {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint = CookieOrigin(origin);
@@ -105,6 +128,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         values;
     }
 
+    // Keeps the cookies headers set; a cookie the policy refuses is dropped.
     store(origin is UrlParts, headers is Headers, context is CookieContext) is void {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint = CookieOrigin(origin);
@@ -131,6 +155,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         cell.replace(update.state());
     }
 
+    // How many cookies it holds.
     size() is int {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         let now = clock.instant();
@@ -143,19 +168,23 @@ object MemoryCookieJar does CookieStoring, Closing {
         live.size();
     }
 
+    // Forgets every cookie.
     clear() is void {
         confirm !cell.closed() else throw CookieJarClosed.closed;
         cell.replace(CookieJarState());
     }
 
+    // Whether it was closed.
     closed() is bool {
         cell.closed();
     }
 
+    // Closes it; it forgets everything.
     close() is void {
         cell.close();
     }
 
+    // The persistent, unexpired cookies as text to save.
     persisted_text() is string {
         confirm !self.closed() else throw CookieJarClosed.closed;
         let now = clock.instant();
@@ -167,6 +196,7 @@ object MemoryCookieJar does CookieStoring, Closing {
         CookieStoreText(state: CookieJarState(records, current.counter()), limits: limits).string();
     }
 
+    // This jar with the cookies of saved text; InvalidCookieStore for bad text.
     restored(source is string) is ^MemoryCookieJar {
         let decoded = try {
             ParsedCookieStore(source).snapshot();
@@ -551,6 +581,7 @@ hidden object CookieJarBounded {
     }
 }
 
+// The jar was used after close().
 enum CookieJarClosed is Error = (closed);
 
 // Explicit filesystem commands; construction performs no I/O. The intermediate
@@ -560,11 +591,13 @@ object SavedCookieJar {
     has origin is MemoryCookieJar;
     has destination is FileEntry;
 
+    // Saves origin to destination.
     SavedCookieJar(origin is MemoryCookieJar, destination is FileEntry) {
         self.origin = origin;
         self.destination = destination;
     }
 
+    // Writes the file through a temporary one and a rename, then gives it.
     file() is FileEntry {
         let text = origin.persisted_text();
         let scratch = TemporaryDirectory(
@@ -584,15 +617,18 @@ object SavedCookieJar {
     }
 }
 
+// A jar read from a file saved by SavedCookieJar.
 object LoadedCookieJar {
     has origin is FileEntry;
     has clock is Timing;
 
+    // Reads a jar saved in origin.
     LoadedCookieJar(origin is FileEntry, clock is Timing) {
         self.origin = origin;
         self.clock = clock;
     }
 
+    // The jar; InvalidCookieStore for a file that is not one.
     jar() is MemoryCookieJar {
         confirm origin.stat()::Shape::size <= 67108864
             else throw InvalidCookieStore.because("file byte limit exceeded");
@@ -1022,6 +1058,7 @@ hidden object CookieStoreNumber {
     }
 }
 
+// Saved cookies that cannot be read; reason says why.
 enum InvalidCookieStore is Error = (because(reason is string));
 
 test "empty jar is an explicit closeable effect" {

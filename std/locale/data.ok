@@ -1,38 +1,54 @@
 module locale/data v1.0.0;
 
+// The locale data shipped with std: its versions, and the fallback chain of a
+// locale.
+//
+//     LocaleDataVersion().cldr();                         // "46.1.0"
+//     let chain = LocaleFallbacks(Locale("de-CH"));
+//     chain.item(0).string();                             // de-CH, then de, then root
+
 import "locale/tag" take Locale, LocaleFromLanguageTag;
 import "locale/internal/parents" take CldrParents;
 import "collections/sequence" take Sequencing;
 import "collections/iteration" take Cursor;
 import "locale/internal/iana" take IanaLanguageDataVersion;
 
+// The versions of the shipped data.
 object LocaleDataVersion {
+    // The versions.
     LocaleDataVersion();
 
+    // The CLDR version.
     cldr() is string {
         "46.1.0";
     }
 
+    // The Unicode version.
     unicode() is string {
         "16.0.0";
     }
 
+    // The IANA language subtag registry date.
     registry() is string {
         IanaLanguageDataVersion().string();
     }
 
+    // The ISO 4217 list date.
     currencies() is string {
         "2026-09-17";
     }
 
+    // The CLDR version of collation data.
     collation_cldr() is string {
         "46.0";
     }
 
+    // The ICU version used for collation.
     icu() is string {
         "76.1";
     }
 
+    // The Unicode Collation Algorithm version.
     uca() is string {
         "16.0.0";
     }
@@ -42,6 +58,7 @@ object LocaleDataVersion {
 object LocaleDataKey {
     has origin is string;
 
+    // A data key such as `de-CH` or `root`.
     LocaleDataKey(tag is string) {
         origin = if tag == "root" {
             "root";
@@ -51,19 +68,23 @@ object LocaleDataKey {
         };
     }
 
+    // The key.
     string() is string {
         origin;
     }
 
+    // The key as a locale; MissingDataLocale for `root`.
     locale() is Locale {
         confirm origin != "root" else throw MissingDataLocale.missing;
         LocaleFromLanguageTag(origin).locale();
     }
 }
 
+// Where a locale's data is looked for, most specific first, ending at root.
 object LocaleFallbacks does Sequencing<LocaleDataKey> {
     has origin is @LocaleDataKey;
 
+    // The chain of origin.
     LocaleFallbacks(origin is Locale) {
         let tags = LocaleDataChain(CldrParents()).values(origin.base_tag(), 0);
         let snapshot is @LocaleDataKey = tags.map() -> tag {
@@ -72,22 +93,27 @@ object LocaleFallbacks does Sequencing<LocaleDataKey> {
         self.origin = snapshot;
     }
 
+    // How many.
     size() is int {
         origin.size();
     }
 
+    // The key at index.
     item(index is int) is LocaleDataKey {
         origin.item(index);
     }
 
+    // The first key.
     first() is LocaleDataKey {
         origin.first();
     }
 
+    // The last key.
     last() is LocaleDataKey {
         origin.last();
     }
 
+    // Walks them.
     cursor() is Cursor<LocaleDataKey> {
         origin.cursor();
     }
@@ -127,8 +153,10 @@ hidden object LocaleDataChain {
     }
 }
 
+// root has no locale.
 enum MissingDataLocale is Error = (missing);
 
+// Data that cannot be used; reason says why.
 enum InvalidLocaleData is Error = (because(reason is string));
 
 test "data fallback finishes at its own root coordinate" {

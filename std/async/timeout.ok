@@ -36,11 +36,14 @@ import "async/event" take Event;
 // Deadlines are monotonic runtime-local readings. Civil `Instant` values are
 // deliberately not accepted and cannot be converted into timeout deadlines.
 
+// A future with a time limit: TimedOut, and the future cancelled, if it takes
+// longer.
 object Within<T> {
     has origin is Future<T>;
     has limit is Duration;
     has clock is Timing;
 
+    // origin limited to limit on clock; limit must not be negative.
     Within(origin is Future<T>, limit is Duration, clock is Timing) {
         confirm limit::Span::seconds >= 0.rat()
             else throw InvalidArgument.because("timeout duration cannot be negative");
@@ -49,23 +52,29 @@ object Within<T> {
         self.clock = clock;
     }
 
+    // origin's result, or TimedOut.
     async outcome() is T {
         throw TimedOut.elapsed;
     }
 }
 
+// A future with a deadline: TimedOut, and the future cancelled, if the deadline
+// passes.
 object Before<T> {
     has origin is Future<T>;
     has deadline is MonotonicInstant;
     has clock is Timing;
 
+    // origin with a monotonic deadline on clock.
     Before(:origin, :deadline, :clock);
 
+    // origin's result, or TimedOut.
     async outcome() is T {
         throw TimedOut.elapsed;
     }
 }
 
+// Time ran out first.
 enum TimedOut is Error = (elapsed);
 
 async test "time wins over a future that never settles" {

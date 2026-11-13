@@ -1,21 +1,33 @@
 module runtime/pem v1.0.0;
 
+// The native layer under crypto/x509/trust, encoding/pem: the calls those
+// modules make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Portable strict textual PEM boundary for encoding/pem.
 
+// Where kind stops being a valid PEM label, or -1.
 native pem_kind_invalid_offset(kind is string) is int;
 
+// A PEM block of kind around base64.
 native pem_encode(kind is string, base64 is string) is string;
 
+// Where origin stops being PEM, or -1.
 native pem_invalid_offset(origin is string) is int;
 
+// How many blocks origin holds.
 native pem_block_count(origin is string) is int;
 
+// The text of each block.
 native pem_block_sources(origin is string) is @string;
 
+// The text of block index.
 native pem_block_source(origin is string, index is int) is string;
 
+// The label of block index.
 native pem_block_kind(origin is string, index is int) is string;
 
+// The Base64 of block index.
 native pem_block_base64(origin is string, index is int) is string;
 
 test "bulk snapshot rejects malformed native input portably" {

@@ -1,5 +1,38 @@
 module http/client v1.0.0;
 
+// An HTTP client.
+//
+//     let client = HttpClient();
+//     let page = await client.get("https://example.com/");
+//     if page::Head::status == Status.ok {
+//         Stdout().writeln(await page.text());
+//     }
+//     let reply = await client.post(url: "https://api.example.com/orders", body: JsonBody(order));
+//     let created = await reply.json();
+//     client.close();
+//
+// `HttpClient()` resolves names with the system's DNS, trusts the system's
+// roots, reaches public endpoints only and speaks HTTP/1.1 with the default
+// limits and timeouts over at most 8 connections; it follows no redirects and
+// keeps no cookies. Each part is replaced by name: `HttpClient(endpoints:
+// AllEndpoints(), redirects: Redirects(limit: 5))`, `HttpClient(cookies:
+// MemoryCookieJar())`. Tests and local servers use `HttpClient(endpoints:
+// LoopbackEndpoints())`.
+//
+// A response body is read once: whole with bytes(), text() or json(), within
+// the body limit (1 GiB by default), or piece by piece with reading().
+// Decorators such as Caching, BearerExchanging and Retrying wrap a client and
+// are clients themselves.
+//
+// # Errors
+//
+// - HttpTimeout: the connection, the response head or a pause in the body took
+//   too long; phase says which.
+// - EndpointDenied: the host resolves only to addresses the client may not
+//   reach.
+// - ClientClosed: the client was used after close().
+// - HttpStaleConnection: a reused connection closed before answering.
+
 import "strings/parse" take Number;
 import "json" take Json, JsonField;
 import "http/status" take Status, StatusClass;
@@ -53,16 +86,12 @@ import "http/target" take AbsoluteTarget, RequestTargetKind;
 import "http/method" take Method;
 import "url/value" take ParsedUrl;
 
-// An HTTP client. `HttpClient()` resolves names with the system's DNS, trusts
-// the system's roots, reaches public endpoints only and speaks HTTP/1.1 with
-// the default limits and timeouts over at most 8 connections; it follows no
-// redirects and keeps no cookies. Each part is replaced by name:
-// `HttpClient(endpoints: AllEndpoints(), redirects: Redirects(limit: 5))`,
-// `HttpClient(cookies: MemoryCookieJar())`.
+// An HTTP client: a pool of connections with its policy.
 object HttpClient does Exchanging, Closing {
     has transport is HttpTransport;
     has chain is Exchanging;
 
+    // A client; every part has a default, see the module page.
     HttpClient(
         resolver is Resolving = SystemResolution(),
         trust is TrustStore = SystemTrustStore(),
@@ -88,6 +117,7 @@ object HttpClient does Exchanging, Closing {
         ).exchanging();
     }
 
+    // The same, keeping cookies in cookies.
     HttpClient(
         cookies is CookieStoring,
         resolver is Resolving = SystemResolution(),
@@ -115,46 +145,56 @@ object HttpClient does Exchanging, Closing {
         ).exchanging();
     }
 
+    // Whether it was closed.
     closed() is bool {
         transport.closed();
     }
 
+    // Closes every connection; ClientClosed after.
     close() is void {
         transport.close();
     }
 
+    // Sends request; its target must be an absolute http or https URL.
     async response(request is Request) is ClientResponse {
         await chain.response(request);
     }
 
+    // GET url.
     async get(url is string) is ClientResponse {
         await chain.response(Request(url: url));
     }
 
+    // HEAD url.
     async head(url is string) is ClientResponse {
         await chain.response(Request(url: url, method: Method.head));
     }
 
+    // OPTIONS url.
     async options(url is string) is ClientResponse {
         await chain.response(Request(url: url, method: Method.options));
     }
 
+    // DELETE url.
     async delete(url is string) is ClientResponse {
         await chain.response(Request(url: url, method: Method.delete));
     }
 
+    // POST body to url, with headers; Content-Type comes from body.
     async post(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(
             ContentRequest(url: url, method: Method.post, body: body, headers: headers).request()
         );
     }
 
+    // PUT body to url, with headers.
     async put(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(
             ContentRequest(url: url, method: Method.put, body: body, headers: headers).request()
         );
     }
 
+    // PATCH body to url, with headers.
     async patch(url is string, body is Content, headers is Headers = Headers()) is ClientResponse {
         await chain.response(
             ContentRequest(url: url, method: Method.patch, body: body, headers: headers).request()
@@ -339,6 +379,7 @@ hidden object ContentRequest {
     }
 }
 
+// The connection pool under HttpClient: no cookies, no redirects.
 object HttpTransport does Exchanging, Closing {
     has resolver is Resolving;
     has tls is TlsClientPolicy;
@@ -349,6 +390,7 @@ object HttpTransport does Exchanging, Closing {
     has mixed is @HttpSharedClientState;
     has routing is @HttpConversationRouting;
 
+    // Connects directly, with resolver, tls and policy.
     HttpTransport(
         resolver is Resolving,
         tls is TlsClientPolicy,
@@ -381,6 +423,7 @@ object HttpTransport does Exchanging, Closing {
         state = HttpClientState(policy.connections());
     }
 
+    // Connects through routing, such as a proxy.
     HttpTransport(
         resolver is Resolving,
         tls is TlsClientPolicy,
@@ -399,6 +442,7 @@ object HttpTransport does Exchanging, Closing {
         mixed = [HttpSharedClientState(policy.connections())];
     }
 
+    // Whether it was closed.
     closed() is bool {
         if mixed.size() == 1 {
             return mixed[0].closed();
@@ -411,6 +455,7 @@ object HttpTransport does Exchanging, Closing {
         }
     }
 
+    // Closes every connection.
     close() is void {
         if mixed.size() == 1 {
             mixed[0].close();
@@ -424,6 +469,7 @@ object HttpTransport does Exchanging, Closing {
         }
     }
 
+    // Sends request on a pooled or new connection.
     async response(request is Request) is ClientResponse {
         if mixed.size() == 1 {
             confirm !self.closed() else throw ClientClosed.closed;
@@ -1391,8 +1437,10 @@ hidden object HttpClientReadCleanup {
     }
 }
 
+// The client was used after close().
 enum ClientClosed is Error = (closed);
 
+// A wait took too long: `connection`, `headers` or `body_idle`.
 enum HttpTimeout is Error = (phase(phase is string));
 
 async test "unstarted client response cancellation acquires no route or connection" {
@@ -2170,8 +2218,11 @@ hidden object HttpMixedDirectRequest {
     }
 }
 
+// No connection could take the request.
 enum HttpConversationUnavailable is Error = (unavailable);
 
+// A reused connection closed before it answered; Retrying sends such a request
+// again when that is safe.
 enum HttpStaleConnection is Error = (unexplained, after(cause is string));
 
 // What a loopback test server read: the request head and its body, by its

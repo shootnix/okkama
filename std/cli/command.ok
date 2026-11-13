@@ -1,5 +1,25 @@
 module cli/command v1.0.0;
 
+// Command lines: options, flags, operands and subcommands declared as data,
+// read into an Invocation.
+//
+//     let add = CliCommand(name: "add", summary: "Add an item",
+//         options: [Option(name: "priority", short: "p", value: "N", help: "1 is urgent")],
+//         operands: [Operand(name: "TEXT", count: OperandCount.repeated)]);
+//     let todo = CliCommand(name: "todo", commands: [add], flags: [Flag(name: "help", short: "h")]);
+//
+//     let call = todo.invocation(ProcessArguments().strings());
+//     if call.command() == add {
+//         call.int("priority") else 3;
+//         call.operands();
+//     }
+//     Stdout().write(todo.usage(program: "todo"));
+//
+// Reading arguments has no side effects and can be repeated. A bad argument is
+// CliFailure with its index; reading a name nothing declares is
+// UndeclaredCliName, a mistake in the program. Values can also be layered over
+// configuration through settings().
+
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/iteration" take CursorItems;
@@ -22,12 +42,14 @@ enum OperandCount = (required, optional, repeated);
 // only to layer the command line over configuration (SettingKey(name) by
 // default).
 
+// An option that takes a value: `--name VALUE` or `-n VALUE`.
 object Option {
     has setting is SettingKey;
     has spellings is @string;
     has long, letter, placeholder, text is string;
     has many is bool;
 
+    // An option named name; a short one-letter name is optional.
     Option(
         name is string,
         short is string = "",
@@ -45,6 +67,7 @@ object Option {
         text = help;
     }
 
+    // The same, kept under key in settings().
     Option(
         name is string,
         key is SettingKey,
@@ -86,6 +109,7 @@ object Option {
         }
     }
 
+    // The setting key; SettingKey(name) unless given.
     key() is SettingKey {
         setting;
     }
@@ -96,11 +120,13 @@ object Option {
     }
 }
 
+// A flag without a value: `--name` or `-n`.
 object Flag {
     has setting is SettingKey;
     has spellings is @string;
     has long, letter, text is string;
 
+    // A flag named name.
     Flag(name is string, short is string = "", help is string = "") {
         setting = SettingKey(name);
         spellings = CliSpellings(name: name, short: short).names();
@@ -109,6 +135,7 @@ object Flag {
         text = help;
     }
 
+    // The same, kept under key in settings().
     Flag(name is string, key is SettingKey, short is string = "", help is string = "") {
         setting = key;
         spellings = CliSpellings(name: name, short: short).names();
@@ -132,20 +159,24 @@ object Flag {
         }
     }
 
+    // The setting key; SettingKey(name) unless given.
     key() is SettingKey {
         setting;
     }
 
+    // The spellings on the command line: `--name` and, if given, `-n`.
     names() is @string {
         spellings;
     }
 }
 
+// A positional argument.
 object Operand {
     has setting is SettingKey;
     has label, text is string;
     has amount is OperandCount;
 
+    // An operand named name that is required, optional or repeated.
     Operand(name is string, count is OperandCount = OperandCount.required, help is string = "") {
         confirm name != "" else throw InvalidCommandSyntax.because("empty placeholder");
         setting = SettingKey(name);
@@ -154,6 +185,7 @@ object Operand {
         text = help;
     }
 
+    // The same, kept under key in settings().
     Operand(
         name is string,
         key is SettingKey,
@@ -182,6 +214,7 @@ object Operand {
         }
     }
 
+    // The setting key; SettingKey(name) unless given.
     key() is SettingKey {
         setting;
     }
@@ -618,6 +651,8 @@ object CliCommand {
     has declared_operands is @Operand;
     has declared_commands is @CliCommand;
 
+    // A command with its options, flags, operands and subcommands;
+    // InvalidCommandSyntax for clashing names.
     CliCommand(
         name is string,
         summary is string = "",
@@ -674,18 +709,22 @@ object CliCommand {
         }
     }
 
+    // Its options.
     options() is @Option {
         declared_options;
     }
 
+    // Its flags.
     flags() is @Flag {
         declared_flags;
     }
 
+    // Its operands.
     operands() is @Operand {
         declared_operands;
     }
 
+    // Its subcommands.
     commands() is @CliCommand {
         declared_commands;
     }
@@ -727,6 +766,7 @@ hidden object CliTreeBudget {
     }
 }
 
+// A declaration that is not valid; reason says why.
 enum InvalidCommandSyntax is Error = (because(reason is string));
 
 // Parsing is repeatable and has no I/O. Branch commands accept options then one
@@ -750,6 +790,8 @@ object Invocation {
     has commands is @CliCommand;
     has entries is Settings;
 
+    // What reading arguments gave: the selected command, the path to it and the
+    // values.
     Invocation(command is CliCommand, path is @CliCommand, settings is Settings) {
         selected = command;
         commands = path;
@@ -789,6 +831,7 @@ object Invocation {
         self.values(self.option_key(name));
     }
 
+    // An option's value as int, or none; CliFailure when it is not one.
     int(name is string) is Maybe<int> {
         match self.text(name) {
             case Maybe.some(text) {
@@ -806,6 +849,7 @@ object Invocation {
         }
     }
 
+    // An option's value as float, or none; CliFailure when it is not one.
     float(name is string) is Maybe<float> {
         match self.text(name) {
             case Maybe.some(text) {
@@ -823,6 +867,8 @@ object Invocation {
         }
     }
 
+    // An option's value as true or false, or none; CliFailure when it is
+    // neither.
     bool(name is string) is Maybe<bool> {
         match self.text(name) {
             case Maybe.some(text) {
@@ -892,6 +938,7 @@ object Invocation {
     }
 }
 
+// A name no command on the path declares was read.
 enum UndeclaredCliName is Error = (name(name is string));
 
 hidden object CliOperandToken {
@@ -1198,8 +1245,10 @@ hidden object CliParsing {
     }
 }
 
+// An argument that cannot be read; index, token and message say which and why.
 enum CliFailure is Error = (detailed(index is int, token is string, message is string));
 
+// The shells completion scripts are written for.
 enum CompletionShell = (bash, zsh, fish);
 
 hidden object Usage {
@@ -1465,6 +1514,7 @@ hidden object FishCompletionLiteral {
     }
 }
 
+// A usage width too small to lay out.
 enum InvalidHelpWidth is Error = (invalid);
 
 test "options, flags and operands are read back by name" {

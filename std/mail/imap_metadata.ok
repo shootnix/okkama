@@ -1,5 +1,8 @@
 module mail/imap_metadata v1.0.0;
 
+// Values read out of IMAP responses: response codes, LIST entries, flags, UID
+// ranges and SEARCH results. ImapSession uses them.
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 
@@ -18,9 +21,11 @@ import "mime/media_type" take MimeItems, MimePosition;
 import "encoding/utf" take Utf8Decoded;
 import "error" take InvalidState;
 
+// The response code of a status response, `[UIDVALIDITY 3857529045]`.
 object ImapStatusCode {
     has values is @ImapValue;
 
+    // The code of origin.
     ImapStatusCode(origin is ImapResponse) {
         confirm origin.kind() == ImapResponseKind.tagged
             || origin.name() == "OK"
@@ -48,7 +53,10 @@ object ImapStatusCode {
                 end = end.following(end.index() + 1);
             }
             let limits = ImapDataLimits();
-            let tokens = ImapDataLexing(origin: line.slice(start + 1, end.index()), initial: ImapDataTokens(limits)).tokens().entries();
+            let tokens = ImapDataLexing(
+                origin: line.slice(start + 1, end.index()),
+                initial: ImapDataTokens(limits)
+            ).tokens().entries();
             let tree = ImapDataTree(tokens: tokens, limits: limits);
             let result is MimeItems<ImapValue> = MimeItems();
             let position = MimePosition(0);
@@ -68,15 +76,18 @@ object ImapStatusCode {
         }
     }
 
+    // Whether there is one.
     present() is bool {
         values.size() > 0;
     }
 
+    // Its name, uppercase.
     name() is string {
         confirm self.present() else throw InvalidState.because("response has no code");
         ImapDataUpper(values[0].string()).string();
     }
 
+    // Its arguments.
     arguments() is Sequencing<ImapValue> {
         confirm self.present() else throw InvalidState.because("response has no code");
         let result is @ImapValue = (1..values.size()).map() -> index {
@@ -86,11 +97,13 @@ object ImapStatusCode {
     }
 }
 
+// One LIST or LSUB entry.
 object ImapMailbox {
     has name is ImapMailboxName;
     has separator is @string;
     has attributes is Set<string>;
 
+    // Reads origin; InvalidImapData when it is not one.
     ImapMailbox(origin is ImapResponse) {
         confirm origin.name() == "LIST" || origin.name() == "LSUB"
             else throw InvalidImapData.because("expected LIST or LSUB");
@@ -120,32 +133,39 @@ object ImapMailbox {
         attributes = OrderedSet(names);
     }
 
+    // The mailbox name.
     name() is ImapMailboxName {
         name;
     }
 
+    // Whether names have a hierarchy delimiter.
     hierarchical() is bool {
         separator.size() > 0;
     }
 
+    // The delimiter, such as `/`.
     delimiter() is string {
         confirm self.hierarchical()
             else throw InvalidState.because("flat mailbox namespace has no delimiter");
         separator[0];
     }
 
+    // Its attributes, such as `\HasChildren`.
     attributes() is Set<string> {
         attributes;
     }
 
+    // Whether it can be selected: no `\Noselect`.
     selectable() is bool {
         !attributes.membership("\\NOSELECT");
     }
 }
 
+// A 32-bit unsigned number in a response.
 object ImapUnsigned {
     has value is int;
 
+    // The digits; nonzero refuses 0.
     ImapUnsigned(origin is string, nonzero is bool) {
         confirm origin.length() > 0 && origin.length() <= 10
             else throw InvalidImapData.because("unsigned number length outside 1..10");
@@ -199,14 +219,17 @@ object ImapUnsigned {
         value = count.index();
     }
 
+    // The number; InvalidImapData when it is not one.
     int() is int {
         value;
     }
 }
 
+// A parenthesized flag list.
 object ImapFlagsValue {
     has value is MailFlags;
 
+    // Reads origin.
     ImapFlagsValue(origin is ImapValue) {
         let entries = origin.entries();
         confirm entries.size() <= 256 else throw InvalidImapData.because("too many flags");
@@ -245,15 +268,18 @@ object ImapFlagsValue {
         value = MailFlags(flags);
     }
 
+    // The flags.
     flags() is MailFlags {
         value;
     }
 }
 
+// A UID set such as `4:6,9` read back.
 object ImapUidRanges {
     has value is ImapUidSet;
     has expanded is int;
 
+    // Reads origin within limits.
     ImapUidRanges(origin is string, limits is ImapUidSetLimits) {
         confirm origin.length() > 0 else throw InvalidImapData.because("empty UID range");
         confirm origin.length() <= limits::Limits::wire_bytes
@@ -297,18 +323,22 @@ object ImapUidRanges {
         expanded = count.index();
     }
 
+    // The UIDs.
     uids() is ImapUidSet {
         value;
     }
 
+    // How many UIDs the ranges hold.
     expanded_count() is int {
         expanded;
     }
 }
 
+// The UIDs a UID SEARCH found.
 object ImapSearchResult {
     has value is ImapUidSet;
 
+    // The SEARCH response of the command tagged tag, within limits.
     ImapSearchResult(origin is ImapResponse, tag is ImapTag, limits is ImapUidSetLimits) {
         let values = ParsedImapData(origin).entries();
         if origin.name() == "SEARCH" {
@@ -397,7 +427,10 @@ object ImapSearchResult {
                 let smallest = MimePosition(4294967295);
                 let largest = MimePosition(0);
                 for (0..identifiers.size()) -> index {
-                    let number = ImapUnsigned(origin: identifiers.item(index).string(), nonzero: true).int();
+                    let number = ImapUnsigned(
+                        origin: identifiers.item(index).string(),
+                        nonzero: true
+                    ).int();
                     if number < smallest.index() {
                         smallest = smallest.following(number);
                     }
@@ -413,6 +446,7 @@ object ImapSearchResult {
         }
     }
 
+    // The UIDs.
     uids() is ImapUidSet {
         value;
     }

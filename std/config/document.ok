@@ -1,5 +1,14 @@
 module config/document v1.0.0;
 
+// Settings read from a parsed JSON, TOML or INI document.
+//
+//     let file = SettingSource(kind: SettingSourceKind.document, name: "app.toml");
+//     let settings = TomlSettings(document: ParsedToml(text).root(), source: file);
+//     settings.membership(SettingKey("server", "port"));
+//
+// Nested tables and sections become dotted keys; arrays become several values.
+// Combine them with environment and command-line settings in LayeredSettings.
+
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
 import "config/key" take SettingKey;
@@ -42,6 +51,7 @@ hidden object SettingDocumentEntries {
 object JsonSettings does SettingReading {
     has origin is Settings;
 
+    // The settings of document, from source.
     JsonSettings(document is Json, source is SettingSource) {
         confirm document.kind() == JsonKind.object_value
             else throw InvalidSettingDocument.because("settings document must be a JSON object");
@@ -50,14 +60,17 @@ object JsonSettings does SettingReading {
         origin = entries.settings();
     }
 
+    // Whether the document has the key.
     membership(key is SettingKey) is bool {
         origin.membership(key);
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         origin.entry(key);
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }
@@ -151,9 +164,11 @@ hidden object JsonSettingText {
     }
 }
 
+// Settings read from a TOML table.
 object TomlSettings does SettingReading {
     has origin is Settings;
 
+    // The settings of document, from source.
     TomlSettings(document is TomlTable, source is SettingSource) {
         let entries = SettingDocumentEntries();
         let visitor = TomlSettingVisitor(path: [], source: source, entries: entries, depth: 64);
@@ -162,14 +177,17 @@ object TomlSettings does SettingReading {
         origin = entries.settings();
     }
 
+    // Whether the document has the key.
     membership(key is SettingKey) is bool {
         origin.membership(key);
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         origin.entry(key);
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }
@@ -388,9 +406,11 @@ hidden object TomlSettingScalar does TomlVisitor {
     }
 }
 
+// Settings read from an INI document: `section.key`.
 object IniSettings does SettingReading {
     has origin is Settings;
 
+    // The settings of document, from source.
     IniSettings(document is IniDocument, source is SettingSource) {
         let entries = SettingDocumentEntries();
         for document.sections() -> section {
@@ -407,19 +427,23 @@ object IniSettings does SettingReading {
         origin = entries.settings();
     }
 
+    // Whether the document has the key.
     membership(key is SettingKey) is bool {
         origin.membership(key);
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         origin.entry(key);
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }
 }
 
+// A document that cannot be read as settings; reason says why.
 enum InvalidSettingDocument is Error = (because(reason is string));
 
 // Seals a nominal printer observation, including errors the producer catches.

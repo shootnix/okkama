@@ -1,5 +1,15 @@
 module mail/imap_uid v1.0.0;
 
+// IMAP message numbers and UIDs: different types, so they cannot be mixed.
+//
+//     let set = ImapUidSet(ImapUid(BigInt(4)), ImapUid(BigInt(5)), ImapUid(BigInt(9)));
+//     set.argument();                          // for UID FETCH, UID STORE …
+//     MailboxUids(mailbox: inbox, validity: state.uid_validity(), uids: set).checked(mailbox: inbox, validity: now);
+//
+// UIDs mean something only with their mailbox's UIDVALIDITY: MailboxUids keeps
+// them together and refuses stale ones (StaleImapUids). UIDs are nonzero 32-bit
+// numbers; sets hold at most 4096 by default.
+
 import "numbers/bigint" take BigInt;
 import "collections/sequence" take Sequencing;
 import "collections/set" take Set, OrderedSet;
@@ -8,81 +18,96 @@ import "mime/media_type" take MimeItems, MimePosition;
 import "mail/imap_name" take ImapMailboxName;
 import "error" take InvalidArgument;
 
-// Protocol sequence numbers and UIDs are deliberately different nominal types.
-// UIDs and UIDVALIDITY are nonzero unsigned 32-bit protocol values, represented
-// by BigInt independently of the host integer width. No wildcard or range input.
+// A message UID: 1 to 2³²−1.
 object ImapUid does Comparing<ImapUid> {
     has value is BigInt;
 
+    // Checks origin; InvalidImapIdentifier outside the range.
     ImapUid(origin is BigInt) {
         ImapUidNumber(origin).validate();
         value = origin;
     }
 
+    // The number.
     number() is BigInt {
         value;
     }
 
+    // Its decimal text.
     string() is string {
         value.string();
     }
 
+    // Smaller first.
     order(other is ImapUid) is Order {
         value.order(other.number());
     }
 }
 
+// A UIDVALIDITY value: 1 to 2³²−1.
 object ImapUidValidity does Comparing<ImapUidValidity> {
     has value is BigInt;
 
+    // Checks origin; InvalidImapIdentifier outside the range.
     ImapUidValidity(origin is BigInt) {
         ImapUidNumber(origin).validate();
         value = origin;
     }
 
+    // The number.
     number() is BigInt {
         value;
     }
 
+    // Its decimal text.
     string() is string {
         value.string();
     }
 
+    // Smaller first.
     order(other is ImapUidValidity) is Order {
         value.order(other.number());
     }
 }
 
+// A message sequence number: 1 to 2³²−1.
 object ImapSequence does Comparing<ImapSequence> {
     has value is int;
 
+    // Checks origin; InvalidImapIdentifier outside the range.
     ImapSequence(origin is int) {
         confirm origin > 0 && origin <= 4294967295
             else throw InvalidImapIdentifier.because("sequence outside 1..4294967295");
         value = origin;
     }
 
+    // The number.
     number() is int {
         value;
     }
 
+    // Its decimal text.
     string() is string {
         value.string();
     }
 
+    // Smaller first.
     order(other is ImapSequence) is Order {
         value.order(other.number());
     }
 }
 
+// How large a UID set may be.
 object ImapUidSetLimits {
     has entries, wire_bytes is int;
 
+    // 4096 UIDs, 64 KiB as an argument.
     ImapUidSetLimits() {
         entries = 4096;
         wire_bytes = 65536;
     }
 
+    // The limits as given.
     ImapUidSetLimits(entries is int, wire_bytes is int) {
         confirm entries >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("IMAP UID set limits must be nonnegative");
@@ -90,6 +115,7 @@ object ImapUidSetLimits {
         self.wire_bytes = wire_bytes;
     }
 
+    // UIDs and argument bytes.
     cap Limits {
         entries is int {
             entries;
@@ -101,9 +127,11 @@ object ImapUidSetLimits {
     }
 }
 
+// A set of UIDs.
 object ImapUidSet {
     has value is ImapUidSnapshot;
 
+    // The UIDs, within the default limits.
     ImapUidSet(origin is Sequencing<ImapUid>) {
         value = ImapUidSnapshot(origin: origin, limits: ImapUidSetLimits());
     }
@@ -114,18 +142,22 @@ object ImapUidSet {
         value = ImapUidSnapshot(origin: listed, limits: ImapUidSetLimits());
     }
 
+    // The UIDs within limits.
     ImapUidSet(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {
         value = ImapUidSnapshot(origin: origin, limits: limits);
     }
 
+    // The UIDs.
     entries() is Sequencing<ImapUid> {
         value.entries();
     }
 
+    // Whether it has none.
     empty() is bool {
         value.entries().size() == 0;
     }
 
+    // The set as a command argument; InvalidImapIdentifier when empty.
     argument() is string {
         confirm !self.empty()
             else throw InvalidImapIdentifier.because("empty UID set has no command argument");
@@ -133,12 +165,14 @@ object ImapUidSet {
     }
 }
 
+// UIDs with the mailbox and UIDVALIDITY they belong to.
 object MailboxUids {
     has name is ImapMailboxName;
     has epoch is ImapUidValidity;
     has value is ImapUidSet;
     has account is string;
 
+    // As given.
     MailboxUids(mailbox is ImapMailboxName, validity is ImapUidValidity, uids is ImapUidSet) {
         name = mailbox;
         epoch = validity;
@@ -146,6 +180,7 @@ object MailboxUids {
         account = "";
     }
 
+    // As given, for account.
     MailboxUids(
         mailbox is ImapMailboxName,
         validity is ImapUidValidity,
@@ -162,22 +197,27 @@ object MailboxUids {
         self.account = account;
     }
 
+    // The mailbox.
     mailbox() is ImapMailboxName {
         name;
     }
 
+    // Its UIDVALIDITY.
     validity() is ImapUidValidity {
         epoch;
     }
 
+    // The UIDs.
     uids() is ImapUidSet {
         value;
     }
 
+    // The account, "" for none.
     account() is string {
         account;
     }
 
+    // The UIDs if mailbox and validity are theirs; StaleImapUids otherwise.
     checked(mailbox is ImapMailboxName, validity is ImapUidValidity) is ImapUidSet {
         // Exact name identity is intentionally conservative, including INBOX.
         confirm account == ""
@@ -187,6 +227,7 @@ object MailboxUids {
         value;
     }
 
+    // The same, the account too.
     checked(mailbox is ImapMailboxName, validity is ImapUidValidity, account is string) is ImapUidSet {
         confirm account != ""
             && self.account == account
@@ -197,10 +238,13 @@ object MailboxUids {
     }
 }
 
+// A number or UID out of range, or one not known; reason says why.
 enum InvalidImapIdentifier is Error = (because(reason is string));
 
+// A UID set over a limit; kind says which.
 enum ImapUidLimitExceeded is Error = (kind(kind is string));
 
+// The UIDs belong to another mailbox or UIDVALIDITY.
 enum StaleImapUids is Error = (stale);
 
 hidden object ImapUidNumber {
@@ -280,8 +324,7 @@ hidden object ImapUidSeen {
 }
 
 test "UID snapshots deduplicate and preserve stable identifiers" {
-    let uids = ImapUidSet(ImapUid(BigInt(4294967295)), ImapUid(BigInt(1)), ImapUid(BigInt(1))
-    );
+    let uids = ImapUidSet(ImapUid(BigInt(4294967295)), ImapUid(BigInt(1)), ImapUid(BigInt(1)));
     test.is(uids.argument(), "4294967295,1");
     test.is(uids.entries().size(), 2);
 }

@@ -41,9 +41,11 @@ import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 //
 //     let home is Directory = Environment().home();
 
+// Environment variables, as an unchanging snapshot.
 object Environment {
     has origin is %string:string;
 
+    // The process environment, read once now.
     Environment() {
         origin = try {
             environment_snapshot();
@@ -53,6 +55,7 @@ object Environment {
         };
     }
 
+    // Exactly these variables and nothing of the process.
     Environment(values is %string:string) {
         origin = try {
             environment_normalize(values);
@@ -62,6 +65,7 @@ object Environment {
         };
     }
 
+    // Whether the variable is set, even to an empty value.
     membership(name is string) is bool {
         origin.has(self.normalized(name));
     }
@@ -126,6 +130,7 @@ object Environment {
         });
     }
 
+    // Every variable.
     variables() is %string:string {
         origin;
     }
@@ -138,6 +143,8 @@ object Environment {
         Directory(path: Path(found));
     }
 
+    // The home directory named by this snapshot (HOME, or USERPROFILE on
+    // Windows); MissingHomeDirectory when there is none.
     home() is Directory {
         let path is string = try {
             environment_home(origin);
@@ -153,6 +160,7 @@ object Environment {
         Directory(path: Path(path));
     }
 
+    // This environment with name set to value.
     addition(name is string, value is string) is Environment {
         let revised is %string:string = try {
             environment_add(origin, name, value);
@@ -163,6 +171,7 @@ object Environment {
         Environment(values: revised);
     }
 
+    // This environment without name.
     difference(name is string) is Environment {
         let revised is %string:string = try {
             environment_diff(origin, name);
@@ -192,9 +201,11 @@ object Environment {
 //         output.writeln(directory.string());
 //     }
 
+// The directories of PATH in this environment, in order.
 object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
     has environment is Environment;
 
+    // The PATH of environment, split at the platform's separator.
     SearchPath(:environment);
 
     hidden paths() is @Path {
@@ -215,14 +226,17 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
         }
     }
 
+    // Walks the directories.
     cursor() is Cursor<Path> {
         SearchPathCursor(paths: self.paths(), position: 0);
     }
 
+    // How many directories.
     size() is int {
         self.paths().size();
     }
 
+    // The directory at index.
     item(index is int) is Path {
         let paths is @Path = self.paths();
         confirm index >= 0 && index < paths.size()
@@ -230,12 +244,14 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
         paths[index];
     }
 
+    // The first directory; EmptySequence when PATH is empty.
     first() is Path {
         let paths is @Path = self.paths();
         confirm paths.size() > 0 else throw EmptySequence.empty;
         paths[0];
     }
 
+    // The last directory; EmptySequence when PATH is empty.
     last() is Path {
         let paths is @Path = self.paths();
         confirm paths.size() > 0 else throw EmptySequence.empty;
@@ -270,15 +286,18 @@ object EnvironmentMaybeValue {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by Environment.maybe(name); not constructed directly.
     EnvironmentMaybeValue(name is string, value is Maybe<string>) {
         self.name = name;
         self.value = value;
     }
 
+    // The value, or none when the variable is not set.
     text() is Maybe<string> {
         value;
     }
 
+    // The value as an int, or none; InvalidEnvironmentValue when it is not one.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -295,6 +314,7 @@ object EnvironmentMaybeValue {
         }
     }
 
+    // The value as true or false, or none; InvalidEnvironmentValue otherwise.
     boolean() is Maybe<bool> {
         match value {
             case Maybe.some(text) {
@@ -312,13 +332,16 @@ object EnvironmentMaybeValue {
     }
 }
 
+// A variable that is not set.
 enum MissingEnvironmentVariable is Error = (name(name is string));
 
 // A variable whose value is not what its reader expects.
 enum InvalidEnvironmentValue is Error = (named(name is string, value is string, expected is string));
 
+// A name that is empty or has `=` or NUL in it, or a value with NUL.
 enum InvalidEnvironmentVariable is Error = (because(message is string));
 
+// The environment names no home directory.
 enum MissingHomeDirectory is Error = (missing);
 
 test "an isolated environment answers only what it was given" {

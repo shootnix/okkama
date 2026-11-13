@@ -1,5 +1,9 @@
 module runtime/toml v1.0.0;
 
+// The native layer under toml/parse: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+//
 // Private bounded TOML 1.0 parse tree. The public toml/parse module owns the
 // domain projection; opaque handles are not exposed by its API. No I/O.
 // State allocation binds text/budgets without parsing. First observation caches
@@ -18,10 +22,13 @@ module runtime/toml v1.0.0;
 // configuration earlier as InvalidTomlBudget. Limits: depth 1..128, input >=0,
 // nodes >=1, tables <=1024 members and arrays <=10000 items.
 
+// A TOML parse and its diagnostics.
 native object TomlParseState;
 
+// A node of a parsed TOML document.
 native object TomlNodeState;
 
+// Parses origin within these limits.
 native toml_parse_state(
     origin is string,
     maximum_input is int,
@@ -29,34 +36,49 @@ native toml_parse_state(
     maximum_nodes is int
 ) is TomlParseState;
 
+// Whether it parsed.
 native toml_parse_valid(origin is TomlParseState) is bool;
 
+// Where it failed, as a character offset.
 native toml_parse_offset(origin is TomlParseState) is int;
 
+// The line where it failed, from 1.
 native toml_parse_line(origin is TomlParseState) is int;
 
+// The column where it failed, from 1.
 native toml_parse_column(origin is TomlParseState) is int;
 
+// Why it failed.
 native toml_parse_message(origin is TomlParseState) is string;
 
+// The root table.
 native toml_parse_root(origin is TomlParseState) is TomlNodeState;
 
+// The node's kind code.
 native toml_node_kind(origin is TomlNodeState) is int;
 
+// How many items or members.
 native toml_node_size(origin is TomlNodeState) is int;
 
+// An integer node's value.
 native toml_node_integer(origin is TomlNodeState) is int;
 
+// A float node's value.
 native toml_node_real(origin is TomlNodeState) is float;
 
+// A boolean node's value.
 native toml_node_boolean(origin is TomlNodeState) is bool;
 
+// A string node's text.
 native toml_node_text(origin is TomlNodeState) is string;
 
+// A date or time node's fields.
 native toml_node_coordinates(origin is TomlNodeState) is @int;
 
+// The item or member value at index.
 native toml_node_item(origin is TomlNodeState, index is int) is TomlNodeState;
 
+// The name of member index of a table.
 native toml_member_name(origin is TomlNodeState, index is int) is string;
 
 test "opaque parse state preserves diagnostics" {

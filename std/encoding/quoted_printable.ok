@@ -21,25 +21,31 @@ import "runtime/quoted_printable" take quoted_printable_encode, quoted_printable
 // charset conversion occurs. InvalidQuotedPrintable.offset() is the byte
 // offset of the first violation.
 
+// Bytes as RFC 2045 quoted-printable, lines at most 76 characters.
 object QuotedPrintableEncoded {
     has origin is @byte;
 
+    // Encodes origin.
     QuotedPrintableEncoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The encoded bytes.
     bytes() is @byte {
         quoted_printable_encode(origin);
     }
 }
 
+// Quoted-printable back to bytes; anything else is InvalidQuotedPrintable.
 object QuotedPrintableDecoded {
     has origin is @byte;
 
+    // Decodes origin.
     QuotedPrintableDecoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The decoded bytes.
     bytes() is @byte {
         let offset is int = quoted_printable_invalid_offset(origin);
         confirm offset == -1 else throw InvalidQuotedPrintable.at(offset);
@@ -47,6 +53,7 @@ object QuotedPrintableDecoded {
     }
 }
 
+// Bytes that are not strict quoted-printable; offset says where.
 enum InvalidQuotedPrintable is Error = (at(offset is int));
 
 test "quoted-printable escapes what is not plain text" {

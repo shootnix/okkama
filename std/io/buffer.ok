@@ -1,5 +1,22 @@
 module io/buffer v1.0.0;
 
+// Bytes in memory, read, written and observed through separate views.
+//
+//     let buffer = ByteBuffer();
+//     buffer.writing() <- "hello" <- [byte(255)];
+//     let prefix = buffer.reading().bytes(2);       // consumed
+//     let rest = buffer.content().bytes();          // a snapshot, not consumed
+//     buffer.closing().close();
+//
+// Every view shares one store. Reading consumes from the front, writing
+// appends, BufferContent shows what is unread without consuming it, and its
+// bytes() is an independent copy. flush() has nothing to do. close() is
+// idempotent, frees the bytes and makes every view refuse with ClosedBuffer.
+//
+// There is no text buffer here: write text with `writing() <- text`, read lines
+// with Utf8Input(origin: buffer.reading()), or build text with strings/buffer's
+// TextBuffer.
+
 import "io/stream" take ByteSource, Reading, Writing, Closing, IncompleteWrite, InvalidReadLimit;
 import "encoding/utf" take Utf8Encoded;
 import "size" take Sizing;
@@ -7,31 +24,17 @@ import "runtime/buffer" take BufferState, buffer_state_create, buffer_state_read
     buffer_state_append, buffer_state_bytes, buffer_state_size, buffer_state_closed,
     buffer_state_close;
 
-// One byte store exposed through narrow capabilities.
-//
-//     let buffer = ByteBuffer(initial: [byte(1)]);
-//     buffer.writing() <- "hello" <- [byte(255)];
-//     let prefix is @byte = buffer.reading().bytes(2);
-//     let remaining is @byte = buffer.content().bytes();
-//     buffer.closing().close();
-//
-// Every view shares the same storage. Reading consumes a prefix; writing
-// appends exact source bytes; BufferContent observes the current unread bytes
-// without consuming them. Its bytes() result is an independent snapshot.
-// flush() is a no-op because the in-memory writer has no pending layer.
-//
-// close() is idempotent, clears retained bytes and invalidates every reading,
-// writing and content view. There is deliberately no reset() and no text
-// buffer. Use `writing() <- text` for UTF-8 output, Utf8Input over reading() for
-// line/text input, or Utf8Decoded over content().bytes() for a snapshot.
-
+// A store of bytes in memory with a reading, a writing, a content and a closing
+// view.
 object ByteBuffer {
     has state is BufferState;
 
+    // An empty buffer.
     ByteBuffer() {
         state = buffer_state_create([]);
     }
 
+    // A buffer holding these bytes.
     ByteBuffer(initial is @byte) {
         state = buffer_state_create(initial);
     }
@@ -41,30 +44,37 @@ object ByteBuffer {
         state = buffer_state_create(Utf8Encoded(text).bytes());
     }
 
+    // Reads from the front, consuming.
     reading() is Reading {
         BufferReading(state);
     }
 
+    // Appends at the end.
     writing() is Writing {
         BufferWriting(state);
     }
 
+    // Shows the unread bytes without consuming them.
     content() is BufferContent {
         BufferContent(state);
     }
 
+    // Closes the buffer and frees its bytes.
     closing() is Closing {
         BufferClosing(state);
     }
 }
 
+// The reading view of a ByteBuffer, from ByteBuffer.reading().
 object BufferReading does Reading {
     has state is BufferState;
 
+    // Made by ByteBuffer.reading(); not constructed directly.
     BufferReading(state is BufferState) {
         self.state = state;
     }
 
+    // At most limit unread bytes, consumed; [] when the buffer is empty.
     bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
@@ -72,62 +82,76 @@ object BufferReading does Reading {
     }
 }
 
+// The writing view of a ByteBuffer, from ByteBuffer.writing().
 object BufferWriting does Writing {
     has state is BufferState;
 
+    // Made by ByteBuffer.writing(); not constructed directly.
     BufferWriting(state is BufferState) {
         self.state = state;
     }
 
+    // Appends the bytes of source.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Appends the bytes.
     write(bytes is @byte) is void {
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         let written is int = buffer_state_append(state, bytes);
         confirm written == bytes.size() else throw IncompleteWrite.after(written);
     }
 
+    // Nothing to do: the bytes are already in the buffer.
     flush() is void {
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
     }
 }
 
+// The closing view of a ByteBuffer, from ByteBuffer.closing().
 object BufferClosing does Closing {
     has state is BufferState;
 
+    // Made by ByteBuffer.closing(); not constructed directly.
     BufferClosing(state is BufferState) {
         self.state = state;
     }
 
+    // Whether the buffer is closed.
     closed() is bool {
         buffer_state_closed(state);
     }
 
+    // Frees the bytes; every view then refuses with ClosedBuffer.
     close() is void {
         buffer_state_close(state);
     }
 }
 
+// The unread bytes of a ByteBuffer, seen without consuming them.
 object BufferContent does Sizing {
     has state is BufferState;
 
+    // Made by ByteBuffer.content(); not constructed directly.
     BufferContent(state is BufferState) {
         self.state = state;
     }
 
+    // A copy of the unread bytes.
     bytes() is @byte {
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         buffer_state_bytes(state);
     }
 
+    // How many bytes are unread.
     size() is int {
         confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         buffer_state_size(state);
     }
 }
 
+// The buffer was closed.
 enum ClosedBuffer is Error = (closed);
 
 test "views share one store" {

@@ -1,5 +1,12 @@
 module logging/named v1.0.0;
 
+// Named loggers with their clock, fixed fields and process id; Logger is the
+// short form.
+//
+//     let shop = NamedLogging(name: LogName("shop"), destination: TextStreamLogs(Stderr()));
+//     shop.log(LogLevel.info, "started");
+//     shop.child("db").log(LogLevel.debug, "pool ready");
+
 import "logging/level" take LogLevel;
 import "logging/name" take LogName, ChildLogName, InvalidLogName;
 import "logging/field" take LogFields, EmptyLogFields, CombinedLogFields;
@@ -13,7 +20,9 @@ import "json" take JsonField;
 import "testing/time" take ManualClock;
 import "time/duration" take Duration, DurationUnit;
 
+// Where a record's process id comes from.
 role LogProcessReading {
+    // The process id.
     id() is int;
 }
 
@@ -30,12 +39,17 @@ hidden object CurrentLogProcess does LogProcessReading {
     }
 }
 
+// Something that logs.
 role Logging {
+    // Logs message at level.
     log(level is LogLevel, message is string) is void;
+    // Logs message at level with fields.
     log(level is LogLevel, message is string, fields is LogFields) is void;
+    // Logs message at level with fields and the error that caused it.
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void;
 }
 
+// A logger with its name, destination, clock, fields and process.
 object NamedLogging does Logging {
     has name is LogName;
     has destination is LogWriting;
@@ -58,6 +72,7 @@ object NamedLogging does Logging {
         process = CurrentLogProcess();
     }
 
+    // A logger called name, writing to destination, with clock and fields.
     NamedLogging(
         name is LogName,
         destination is LogWriting,
@@ -71,6 +86,7 @@ object NamedLogging does Logging {
         process = CurrentLogProcess();
     }
 
+    // The same with process.
     NamedLogging(
         name is LogName,
         destination is LogWriting,
@@ -94,6 +110,7 @@ object NamedLogging does Logging {
         }
     }
 
+    // Logs message at level with fields.
     log(level is LogLevel, message is string, fields is LogFields) is void {
         if destination.enabled(name, level) {
             let empty is @Error = [];
@@ -101,12 +118,14 @@ object NamedLogging does Logging {
         }
     }
 
+    // Logs message at level with fields and its cause.
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
         if destination.enabled(name, level) {
             self.emit(level, message, fields, [cause]);
         }
     }
 
+    // The logger one segment below.
     child(segment is string) is NamedLogging {
         NamedLogging(
             name: ChildLogName(origin: name, segment: segment).name(),
@@ -117,6 +136,7 @@ object NamedLogging does Logging {
         );
     }
 
+    // Its name.
     name() is LogName {
         name;
     }

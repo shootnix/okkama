@@ -29,17 +29,21 @@ import "runtime/fs" take path_encode, path_decode, lstat, unlink, link, symlink,
 // targets need not exist. HardLink accepts only an existing regular file and
 // rejects directories and symbolic-link source entries portably.
 
+// A symbolic link at a path; nothing happens until a command is called.
 object SymbolicLink {
     has origin is Path;
 
+    // The link at path.
     SymbolicLink(path is Path) {
         origin = path;
     }
 
+    // Where the link is.
     path() is Path {
         origin;
     }
 
+    // Whether a link is there, even a broken one.
     existence() is bool {
         try {
             lstat(path_encode(origin.string()))["kind"] == 3;
@@ -54,6 +58,8 @@ object SymbolicLink {
         }
     }
 
+    // The target exactly as stored; a relative target is not joined to
+    // anything.
     target() is Path {
         confirm self.existence() else throw FileError.not_symbolic_link(origin.string());
         try {
@@ -64,6 +70,7 @@ object SymbolicLink {
         }
     }
 
+    // Makes the link pointing at target.
     create(target is Path) is void {
         try {
             symlink(
@@ -76,6 +83,7 @@ object SymbolicLink {
         }
     }
 
+    // Removes the link; anything that is not a link is refused, never deleted.
     remove() is void {
         confirm self.existence() else throw FileError.not_symbolic_link(origin.string());
         try {
@@ -87,12 +95,16 @@ object SymbolicLink {
     }
 }
 
+// A second name for an existing file.
 object HardLink {
     has source is FileEntry;
     has destination is Path;
 
+    // A link at destination to the file at source.
     HardLink(:source, :destination);
 
+    // Makes the link; a source that is not a regular file is
+    // FileError.invalid_hard_link_source.
     create() is void {
         let source_path is Path = source.path();
         let kind is int = try {

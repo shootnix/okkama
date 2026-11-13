@@ -1,5 +1,8 @@
 module http/tls_session v1.0.0;
 
+// HTTP/1.1 over a verified TLS connection, once ALPN agrees: `http/1.1`, or no
+// ALPN at all.
+
 import "net/tls" take TlsConnection;
 import "http/http1_session" take Http1Session, Http1Exchange, Http1SessionClosed;
 import "http/http1_head" take Http1Limits;
@@ -12,10 +15,12 @@ import "io/stream" take Closing;
 object Http1TlsProtocol {
     has selected is string;
 
+    // The ALPN protocol selected ("" for none).
     Http1TlsProtocol(selected is string) {
         self.selected = selected;
     }
 
+    // HTTP/1.1; UnsupportedHttpVersion when another protocol was selected.
     version() is HttpVersion {
         confirm selected == "" || selected == "http/1.1"
             else throw UnsupportedHttpVersion.unsupported;
@@ -29,26 +34,40 @@ object Http1TlsProtocol {
 object Http1TlsSession does Closing {
     has origin is Http1Session;
 
+    // HTTP/1.1 over connection with the default limits.
     Http1TlsSession(connection is TlsConnection) {
         confirm !connection.closed() else throw Http1SessionClosed.closed;
         Http1TlsProtocol(connection.details()::Session::protocol).version();
-        origin = Http1Session(input: connection.input(), output: connection.output(), owner: connection);
+        origin = Http1Session(
+            input: connection.input(),
+            output: connection.output(),
+            owner: connection
+        );
     }
 
+    // The same within limits.
     Http1TlsSession(connection is TlsConnection, limits is Http1Limits) {
         confirm !connection.closed() else throw Http1SessionClosed.closed;
         Http1TlsProtocol(connection.details()::Session::protocol).version();
-        origin = Http1Session(input: connection.input(), output: connection.output(), owner: connection, limits: limits);
+        origin = Http1Session(
+            input: connection.input(),
+            output: connection.output(),
+            owner: connection,
+            limits: limits
+        );
     }
 
+    // Sends request and reads the response head.
     async exchange(request is Request) is Http1Exchange {
         await origin.exchange(request);
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the connection.
     close() is void {
         origin.close();
     }

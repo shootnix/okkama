@@ -1,32 +1,47 @@
 module mail/pop3_reading v1.0.0;
 
+// Reading one POP3 reply from a stream, keeping the bytes read past it.
+//
+//     let read = await PopReplyReading(origin: socket, mode: PopReplyMode.multiline).read();
+//     read.reply()::Reply::successful;
+//     read.remainder();                   // for the next read on the same stream
+//
+// The caller says whether the command answers in one line or many. A read that
+// fails part way may have consumed input: the session is then over.
+
 import "io/stream" take AsyncReading;
 import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyDecoder, PopReplyLimits,
     PopReplyLimitExceeded;
 import "io/decorators" take InvalidReading;
 import "error" take InvalidArgument;
 
-// One lazy read of one POP3 reply from a borrowed asynchronous byte stream.
-// result() always returns the same Future, including after failure/cancellation.
-// Pass remainder() explicitly to the next operation, using the same stream.
-// No read occurs when the prefix already contains a complete reply.
-//
-// Only one operation may consume a stream at a time. This adapter does not own
-// or close the stream. A started failure/cancellation can consume a prefix:
-// the caller must discard that protocol session, not retry this read or replay
-// an POP3 command. Within/Before compose around result() and drain cancellation
-// cleanup through the awaited source future. No implicit timeout or retry.
+// Reads one reply.
 object PopReplyReading {
     has pending is Future<PopReplyRead>;
 
+    // Reads a reply of mode from origin.
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: [], limits: PopReplyLimits(), chunk_bytes: 4096).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: [],
+            limits: PopReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
+    // Reads prefix first, then origin.
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode, prefix is @byte) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: PopReplyLimits(), chunk_bytes: 4096).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: prefix,
+            limits: PopReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
+    // The same within limits, chunk_bytes at a time.
     PopReplyReading(
         origin is AsyncReading,
         mode is PopReplyMode,
@@ -34,33 +49,45 @@ object PopReplyReading {
         limits is PopReplyLimits,
         chunk_bytes is int
     ) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: prefix,
+            limits: limits,
+            chunk_bytes: chunk_bytes
+        ).read();
     }
 
+    // The reply and what came after it; the same future on every call.
     read() is Future<PopReplyRead> {
         pending;
     }
 }
 
+// A reply read from a stream, and the bytes after it.
 object PopReplyRead {
     has value is PopReply;
     has tail is @byte;
     has count is int;
 
+    // What decoder completed.
     PopReplyRead(decoder is PopReplyDecoder) {
         value = decoder.finish();
         tail = decoder.remainder();
         count = decoder.consumed();
     }
 
+    // The reply.
     reply() is PopReply {
         value;
     }
 
+    // The bytes read past it.
     remainder() is @byte {
         tail;
     }
 
+    // How many bytes the reply took.
     consumed() is int {
         count;
     }

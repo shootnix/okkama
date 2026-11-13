@@ -1,22 +1,29 @@
 module mail/pop3_reply v1.0.0;
 
+// POP3 replies: `+OK` or `-ERR`, and for some commands a multiline body ended
+// by a lone dot.
+//
+//     let reply = ParsedPopReply(origin: bytes, mode: PopReplyMode.multiline).reply();
+//     reply::Reply::successful;
+//     reply::Reply::body;                  // the lines, dot-unstuffed
+//
+// A negative reply never has a body. Replies are bounded: 512 bytes of status,
+// 1 MiB per line, 16 MiB of body and 100000 lines by default.
+
 import "encoding/single_byte" take Latin1Decoded, Latin1Encoded;
 import "encoding/utf" take Utf8Encoded;
 import "mime/media_type" take MimePosition;
 import "error" take InvalidArgument, InvalidState;
 
-// One reply in a caller-selected command response mode. Negative replies never
-// have a multiline body. Status grammar is ASCII; data is opaque octets framed
-// by strict CRLF. The terminator is omitted and exactly one leading dot is
-// removed from nonterminal dot-prefixed lines (RFC 1939 receiver algorithm).
-// Successors contain immutable strings, not shared mutable buffers. Limits
-// bound pending lines, retained body, consumed wire, data lines and feed chunks.
-// Empty feed is not EOF. finish() reports truncation; ParsedPopReply is exact.
+// Whether the reply has a multiline body.
 enum PopReplyMode = (single, multiline);
 
+// How large a reply may be.
 object PopReplyLimits {
     has status_bytes, line_bytes, body_bytes, wire_bytes, lines is int;
 
+    // 512 bytes of status, 1 MiB per line, 16 MiB of body, 32 MiB on the wire,
+    // 100000 lines.
     PopReplyLimits() {
         status_bytes = 512;
         line_bytes = 1048576;
@@ -25,6 +32,7 @@ object PopReplyLimits {
         lines = 100000;
     }
 
+    // The limits as given.
     PopReplyLimits(
         status_bytes is int,
         line_bytes is int,
@@ -45,6 +53,7 @@ object PopReplyLimits {
         self.lines = lines;
     }
 
+    // The limits.
     cap Limits {
         status_bytes is int {
             status_bytes;
@@ -76,6 +85,7 @@ object PopReply {
     has count is int;
     has multiple is bool;
 
+    // As the parser builds it.
     PopReply(successful is bool, text is string, body is @byte, lines is int, multiline is bool) {
         confirm lines >= 0
             && (multiline || (body.size() == 0 && lines == 0))
@@ -88,6 +98,8 @@ object PopReply {
         multiple = multiline;
     }
 
+    // Whether it is +OK, the status text, the body, its line count and whether
+    // it was multiline.
     cap Reply {
         successful is bool {
             success;
@@ -111,11 +123,13 @@ object PopReply {
     }
 }
 
+// Reads a reply from chunks.
 object PopReplyDecoder {
     has progress is PopReplyProgress;
     has limits is PopReplyLimits;
     has tail is @byte;
 
+    // Nothing read yet, the default limits.
     PopReplyDecoder(mode is PopReplyMode) {
         let bounds = PopReplyLimits();
         limits = bounds;
@@ -123,12 +137,14 @@ object PopReplyDecoder {
         tail = [];
     }
 
+    // Nothing read yet, within limits.
     PopReplyDecoder(mode is PopReplyMode, limits is PopReplyLimits) {
         self.limits = limits;
         progress = PopReplyProgress(mode: mode, limits: limits);
         tail = [];
     }
 
+    // This decoder after chunk; InvalidPopReply for bad input.
     fed(chunk is @byte) is ^PopReplyDecoder {
         confirm !progress.complete()
             else throw InvalidState.because("POP3 reply decoder is complete");
@@ -150,48 +166,57 @@ object PopReplyDecoder {
         ^tail = rest;
     }
 
+    // Whether the reply is complete.
     complete() is bool {
         progress.complete();
     }
 
+    // Bytes the reply took.
     consumed() is int {
         progress.consumed();
     }
 
+    // The reply; InvalidPopReply before it is complete.
     reply() is PopReply {
         confirm self.complete() else throw InvalidState.because("POP3 reply is incomplete");
         progress.reply();
     }
 
+    // The reply at the end of input; InvalidPopReply when it was cut short.
     finish() is PopReply {
         confirm self.complete()
             else throw InvalidPopReply.located(progress.consumed(), "truncated reply");
         progress.reply();
     }
 
+    // Bytes past the reply.
     remainder() is @byte {
         confirm self.complete() else throw InvalidState.because("POP3 reply is incomplete");
         tail;
     }
 }
 
+// Exactly one reply read from bytes.
 object ParsedPopReply {
     has origin is @byte;
     has mode is PopReplyMode;
     has limits is PopReplyLimits;
 
+    // Reads origin with the default limits.
     ParsedPopReply(origin is @byte, mode is PopReplyMode) {
         self.origin = origin;
         self.mode = mode;
         limits = PopReplyLimits();
     }
 
+    // Reads origin within limits.
     ParsedPopReply(origin is @byte, mode is PopReplyMode, limits is PopReplyLimits) {
         self.origin = origin;
         self.mode = mode;
         self.limits = limits;
     }
 
+    // The reply; InvalidPopReply for anything but one whole reply.
     reply() is PopReply {
         confirm origin.size() <= limits::Limits::wire_bytes
             else throw PopReplyLimitExceeded.kind("wire_bytes");
@@ -204,8 +229,10 @@ object ParsedPopReply {
     }
 }
 
+// Bytes that are not a reply; offset and reason say where and why.
 enum InvalidPopReply is Error = (located(offset is int, reason is string));
 
+// A reply over a limit; kind says which.
 enum PopReplyLimitExceeded is Error = (kind(kind is string));
 
 hidden object PopStatusLine {
@@ -283,7 +310,8 @@ hidden object PopReplyProgress {
 
     accepted(octet is byte) is ^PopReplyProgress {
         confirm !done else throw InvalidState.because("POP3 reply is complete");
-        confirm used < limits::Limits::wire_bytes else throw PopReplyLimitExceeded.kind("wire_bytes");
+        confirm used < limits::Limits::wire_bytes
+            else throw PopReplyLimitExceeded.kind("wire_bytes");
         let line_limit = if status_seen {
             limits::Limits::line_bytes;
         }
@@ -319,7 +347,8 @@ hidden object PopReplyProgress {
                     ^done = true;
                 }
                 else {
-                    confirm count < limits::Limits::lines else throw PopReplyLimitExceeded.kind("lines");
+                    confirm count < limits::Limits::lines
+                        else throw PopReplyLimitExceeded.kind("lines");
                     let start = if line.length() > 0 && line.slice(0, 1) == "." {
                         1;
                     }
@@ -355,7 +384,10 @@ test "POP3 negative multiline response retains the following reply" {
 }
 
 test "POP3 removes the terminal dot line and one stuffing dot" {
-    let reply = ParsedPopReply(origin: Utf8Encoded("+OK\r\n..\r\n.\r\n").bytes(), mode: PopReplyMode.multiline).reply();
+    let reply = ParsedPopReply(
+        origin: Utf8Encoded("+OK\r\n..\r\n.\r\n").bytes(),
+        mode: PopReplyMode.multiline
+    ).reply();
     test.is(reply::Reply::body, [46.byte(), 13.byte(), 10.byte()]);
     test.is(reply::Reply::lines, 1);
 }

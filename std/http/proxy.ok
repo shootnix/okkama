@@ -1,5 +1,11 @@
 module http/proxy v1.0.0;
 
+// A client that goes through an HTTP proxy: http requests are forwarded, https
+// ones tunnelled with CONNECT and verified end to end.
+//
+//     let proxy = ProxyPolicy(ParsedUrl("http://proxy.internal:3128").parts());
+//     let client = Proxied(proxy: proxy, resolver: SystemResolution(), tls: tls, policy: ClientPolicy(), clock: SystemClock());
+
 import "http/proxy_policy" take ProxyPolicy, ProxyAuthorizationConflict;
 import "http/proxy_connection" take HttpProxyRouting;
 import "http/client" take HttpTransport;
@@ -22,9 +28,11 @@ import "http/version" take HttpVersion;
 import "crypto/secret" take SecretBytes;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
+// A client that sends everything through one proxy.
 object Proxied does Exchanging, Closing {
     has client is HttpTransport;
 
+    // Through proxy; only the proxy's own address is resolved here.
     Proxied(
         proxy is ProxyPolicy,
         resolver is Resolving,
@@ -48,14 +56,17 @@ object Proxied does Exchanging, Closing {
         );
     }
 
+    // Whether it was closed.
     closed() is bool {
         client.closed();
     }
 
+    // Closes every connection.
     close() is void {
         client.close();
     }
 
+    // Sends request through the proxy.
     async response(request is Request) is ClientResponse {
         confirm !request::Head::headers.membership(HeaderName("Proxy-Authorization"))
             else throw ProxyAuthorizationConflict.conflict;

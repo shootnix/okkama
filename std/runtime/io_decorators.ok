@@ -1,20 +1,32 @@
 module runtime/io_decorators v1.0.0;
 
+// The native layer under io/decorators: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Narrow mutable counters used by io/decorators. They retain no wrapped
 // Reading/Writing objects and expose no generic mutable-cell abstraction.
 
+// How much a limited reader may still read.
 native object LimitedReadingState;
 
+// Which source a chained reader is on.
 native object ChainedReadingState;
 
+// A limit of limit bytes.
 native limited_reading_state_create(limit is int) is LimitedReadingState;
 
+// Bytes left.
 native limited_reading_state_remaining(state is LimitedReadingState) is int;
 
+// Takes amount; the bytes left.
 native limited_reading_state_consume(state is LimitedReadingState, amount is int) is int;
 
+// At the first source.
 native chained_reading_state_create() is ChainedReadingState;
 
+// The current source.
 native chained_reading_state_position(state is ChainedReadingState) is int;
 
+// Moves to the next source; its index.
 native chained_reading_state_advance(state is ChainedReadingState) is int;

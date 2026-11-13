@@ -13,6 +13,8 @@ module fs/error v1.0.0;
 // FileFailure turns a failed runtime/fs call into its FileError, for the fs
 // modules built on the runtime; a call on an open handle names no path.
 
+// Everything that goes wrong with files, directories and paths; each case names
+// the path or says what failed.
 enum FileError is Error = (not_found(path is string), already_exists(path is string), permission_denied(
     path is string
 ), not_empty(path is string), not_symbolic_link(path is string), invalid_hard_link_source(
@@ -21,10 +23,12 @@ enum FileError is Error = (not_found(path is string), already_exists(path is str
     name is string
 ), failed(code is string, message is string));
 
+// A runtime failure turned into the FileError it means; std uses it.
 object FileFailure {
     has failure is NativeFailure;
     has path is string;
 
+    // The failure of a native call on path.
     FileFailure(failure is NativeFailure, path is string) {
         self.failure = failure;
         self.path = path;
@@ -36,6 +40,7 @@ object FileFailure {
         path = "";
     }
 
+    // The FileError for it.
     error() is FileError {
         let code = failure.code();
         if code == "not_found" {

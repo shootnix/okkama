@@ -1,17 +1,5 @@
 module net/udp v1.0.0;
 
-import "net/endpoint" take IpEndpoint;
-import "net/ip" take IpAddress, IpVersion;
-import "net/interface" take NetworkInterface;
-import "io/stream" take ByteSource;
-import "io/decorators" take ByteSnapshot;
-import "runtime/network";
-import "runtime/net" take ip_parse;
-import "strings/parse" take Number;
-import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
-import "net/stream" take ConnectionEndpoints;
-import "error" take InvalidArgument;
-
 // Immutable observation of one received packet: sender, retained payload and
 // explicit truncation flag. No socket I/O, decoding or inferred truncation.
 // Empty payloads are packets, not EOF; even an empty retained prefix may be
@@ -25,21 +13,38 @@ import "error" take InvalidArgument;
 // ByteSource exposes only this finite payload for explicit forwarding. It does
 // not make a Datagram a byte stream or transfer sender metadata to a new send.
 // Repeated observations preserve the snapshot; equality includes all metadata.
+
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress, IpVersion;
+import "net/interface" take NetworkInterface;
+import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot;
+import "runtime/network";
+import "runtime/net" take ip_parse;
+import "strings/parse" take Number;
+import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
+import "net/stream" take ConnectionEndpoints;
+import "error" take InvalidArgument;
+
+// One received packet: who sent it and its bytes.
 object Datagram does ByteSource {
     has peer is IpEndpoint;
     has payload is @byte;
     has incomplete is bool;
 
+    // A packet as given; truncated says it was cut to the buffer.
     Datagram(source is IpEndpoint, bytes is @byte, truncated is bool) {
         peer = source;
         payload = bytes;
         incomplete = truncated;
     }
 
+    // The sender.
     source() is IpEndpoint {
         peer;
     }
 
+    // The payload.
     bytes() is @byte {
         payload;
     }
@@ -73,26 +78,31 @@ object UdpOptions {
     has broadcasting is bool;
     has dual is bool;
 
+    // No reuse, no broadcast, no dual-stack.
     UdpOptions() {
         reuse = false;
         broadcasting = false;
         dual = false;
     }
 
+    // The options as given.
     UdpOptions(address_reuse is bool, broadcast is bool, dual_stack is bool) {
         reuse = address_reuse;
         broadcasting = broadcast;
         dual = dual_stack;
     }
 
+    // Whether the address may be shared.
     address_reuse() is bool {
         reuse;
     }
 
+    // Whether broadcast sends are allowed.
     broadcast() is bool {
         broadcasting;
     }
 
+    // Whether an IPv6 socket takes IPv4 too.
     dual_stack() is bool {
         dual;
     }
@@ -111,6 +121,7 @@ object UdpBinding {
     has local is IpEndpoint;
     has options is UdpOptions;
 
+    // A socket to bind at local with options.
     UdpBinding(local is IpEndpoint, options is UdpOptions) {
         self.local = local;
         self.options = options;
@@ -128,6 +139,7 @@ object UdpBinding {
         options = UdpOptions(address_reuse: address_reuse, broadcast: broadcast, dual_stack: dual_stack);
     }
 
+    // Binds and gives the socket.
     async socket() is UdpSocket {
         let family = if local.address().version() == IpVersion.v4 {
             1;
@@ -173,14 +185,18 @@ object UdpBinding {
 // Lifecycle of an acquired membership, following fs/file.FileLocking.
 // The socket executes acquisition and retains its private native state.
 role UdpMembership {
+    // Whether the membership is closed.
     closed() is bool;
+    // Closes the membership; closing again does nothing.
     close() is void;
 }
 
+// A bound UDP socket.
 object UdpSocket {
     has state is network.SocketState;
     has endpoint is IpEndpoint;
 
+    // Made by UdpBinding; not constructed directly.
     UdpSocket(state is network.SocketState) {
         self.state = state;
         endpoint = try {
@@ -197,14 +213,17 @@ object UdpSocket {
         };
     }
 
+    // Where it is bound.
     local_endpoint() is IpEndpoint {
         endpoint;
     }
 
+    // Whether it is closed.
     closed() is bool {
         network.closed(state);
     }
 
+    // Sends source to target; how many bytes went.
     async send(target is IpEndpoint, source is ByteSource) is int {
         confirm target::Parts::port > 0
             else throw InvalidArgument.because("UDP destination port must be positive");
@@ -235,6 +254,7 @@ object UdpSocket {
         }
     }
 
+    // The next packet, cut to limit bytes.
     async datagram(limit is int) is Datagram {
         confirm limit > 0 else throw InvalidArgument.because("UDP receive limit must be positive");
         try {
@@ -258,6 +278,7 @@ object UdpSocket {
         }
     }
 
+    // Closes it.
     close() is void {
         try {
             network.close(state);
@@ -275,6 +296,7 @@ object UdpSocket {
         network.close(state);
     }
 
+    // Joins a multicast group on interface.
     membership(
         group is IpAddress,
         interface is NetworkInterface,
@@ -318,12 +340,14 @@ object UdpConnecting {
     has remote is IpEndpoint;
     has options is UdpOptions;
 
+    // A socket bound at local that talks only to remote.
     UdpConnecting(local is IpEndpoint, remote is IpEndpoint, options is UdpOptions) {
         self.local = local;
         self.remote = remote;
         self.options = options;
     }
 
+    // Binds and connects.
     async connection() is UdpConnection {
         confirm remote::Parts::port > 0
             else throw InvalidArgument.because("UDP destination port must be positive");
@@ -384,6 +408,7 @@ object UdpConnection {
     has owner is UdpSocket;
     has ends is ConnectionEndpoints<IpEndpoint>;
 
+    // Made by UdpConnecting; not constructed directly.
     UdpConnection(state is network.SocketState, owner is UdpSocket) {
         self.state = state;
         self.owner = owner;
@@ -405,18 +430,22 @@ object UdpConnection {
         };
     }
 
+    // Its two ends.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         ends;
     }
 
+    // Whether the connection is closed.
     closed() is bool {
         owner.closed();
     }
 
+    // Closes the connection; closing again does nothing.
     close() is void {
         owner.close();
     }
 
+    // Sends source to the remote end.
     async send(source is ByteSource) is int {
         confirm !self.closed() else throw NetworkClosed.closed;
         let payload = source.bytes();
@@ -438,6 +467,7 @@ object UdpConnection {
         }
     }
 
+    // The next packet from the remote end, cut to limit bytes.
     async datagram(limit is int) is Datagram {
         confirm limit > 0 else throw InvalidArgument.because("UDP receive limit must be positive");
         try {

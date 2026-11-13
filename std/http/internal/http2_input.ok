@@ -1,5 +1,10 @@
 module http/internal/http2_input v1.0.0;
 
+// The single reader of an HTTP/2 connection: it reads every frame, answers PING
+// and SETTINGS, and hands the rest to the session as events.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2Fault, Http2FaultScope,
     Http2FaultView;
 import "http/internal/http2_reading" take Http2FrameReading, EndOfHttp2Frames;
@@ -17,34 +22,47 @@ import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "error" take InvalidState;
 
-// Synchronous event publication keeps the sole wire reader independent of
-// outbound socket completion and slow application body consumption. The owner
-// provides bounded queues, state/flow checks and physical transport lifetime.
+// What the reader reports to the session.
 role Http2ReceivingEvents {
+    // A header block arrived.
     headers(block is Http2HeaderBlock) is void;
+    // A DATA frame arrived.
     data(data is Http2DataPayload) is void;
+    // A stream was reset by the peer.
     reset(reset is Http2Reset) is void;
+    // A WINDOW_UPDATE arrived.
     window(update is Http2WindowIncrement) is void;
+    // The peer changed its settings from previous to current.
     settings(previous is Http2PeerSettings, current is Http2PeerSettings) is void;
+    // The peer acknowledged our settings.
     local_settings(settings is Http2Settings) is void;
+    // A GOAWAY arrived.
     goaway(frame is Http2GoAway) is void;
+    // A stream broke the protocol; true when it was handled.
     stream_fault(fault is Http2Fault) is bool;
+    // The input ended.
     ended() is void;
 }
 
 // Optional owner acquisition barrier; never waits for application completion.
 role Http2ReceivingBarrier {
+    // Waits until the session is ready; true to go on.
     async published() is bool;
 }
 
+// Told after each frame is handed over.
 role Http2ReadBoundary {
+    // A frame was handed over.
     dispatched() is void;
 }
 
+// Where the reader queues control frames to send.
 role Http2ControlQueuing {
+    // Queues frame.
     frame(frame is Http2Frame) is void;
 }
 
+// Reads a connection until it ends.
 object Http2ConnectionInput {
     has origin is AsyncReading;
     has receiver is Http2ReceivingEvents;
@@ -59,6 +77,8 @@ object Http2ConnectionInput {
     has goaway is Atomic<Http2GoAwayProgress>;
     has budget is HpackBudget;
 
+    // Reads origin on a client, reporting to receiver and queuing controls,
+    // with both sides' settings.
     Http2ConnectionInput(
         origin is AsyncReading,
         receiver is Http2ReceivingEvents,
@@ -81,6 +101,7 @@ object Http2ConnectionInput {
         boundaries = [];
     }
 
+    // The same with an HPACK budget.
     Http2ConnectionInput(
         origin is AsyncReading,
         receiver is Http2ReceivingEvents,
@@ -129,6 +150,7 @@ object Http2ConnectionInput {
         boundaries = [];
     }
 
+    // The same, waiting for barrier first.
     Http2ConnectionInput(
         origin is AsyncReading,
         receiver is Http2ReceivingEvents,
@@ -154,6 +176,7 @@ object Http2ConnectionInput {
         boundaries = [];
     }
 
+    // The same, telling boundary after each frame.
     Http2ConnectionInput(
         origin is AsyncReading,
         receiver is Http2ReceivingEvents,
@@ -180,6 +203,8 @@ object Http2ConnectionInput {
         boundaries = [boundary];
     }
 
+    // Reads until the input ends; true when it ended cleanly, Http2Fault on a
+    // protocol error.
     async run() is bool {
         confirm !started.ready() else throw InvalidState.because("HTTP2 wire reader is single-use");
         started.set();
@@ -236,7 +261,10 @@ object Http2ConnectionInput {
     hidden stream_fault(failure is Http2Fault) is void {
         if receiver.stream_fault(failure) {
             controls.frame(
-                Http2ResetFrame(stream: Http2FaultView(failure).stream(), code: Http2FaultView(failure).code()).frame()
+                Http2ResetFrame(
+                    stream: Http2FaultView(failure).stream(),
+                    code: Http2FaultView(failure).code()
+                ).frame()
             );
         }
     }
@@ -313,7 +341,9 @@ object Http2ConnectionInput {
                 receiver.settings(previous, following);
                 peer.replace(following);
             }
-            controls.frame(Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []));
+            controls.frame(
+                Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: [])
+            );
             return true;
         }
         if kind == 9 {

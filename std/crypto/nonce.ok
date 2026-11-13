@@ -1,7 +1,5 @@
 module crypto/nonce v1.0.0;
 
-import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
-
 // Entropy is the explicit randomness capability of crypto/*: keys, salts,
 // nonces and randomized signatures draw from the Entropy they are given and
 // never from ambient state. SystemEntropy is the host CSPRNG (getrandom).
@@ -14,7 +12,12 @@ import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
 // CounterNonce is the deterministic AEAD nonce prefix || big-endian counter,
 // exactly `size` bytes; the counter must fit the remaining width. The caller
 // owns counter uniqueness per key: a repeated (key, nonce) pair breaks AEAD.
+
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+
+// Where crypto draws randomness; pass one in, so tests can use Entropy.fake().
 role Entropy {
+    // size random bytes.
     bytes(size is int) is @byte;
 
     fake {
@@ -28,9 +31,12 @@ role Entropy {
     }
 }
 
+// The operating system's cryptographic random source.
 object SystemEntropy does Entropy {
+    // The system source.
     SystemEntropy();
 
+    // size random bytes.
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
             else throw InvalidCryptoInput.because("entropy size must be 0..16777216");
@@ -43,10 +49,12 @@ object SystemEntropy does Entropy {
     }
 }
 
+// A fresh random nonce on every bytes() call.
 object RandomNonce {
     has entropy is Entropy;
     has size is int;
 
+    // Nonces of size bytes (1 to 1024) from entropy.
     RandomNonce(entropy is Entropy, size is int) {
         confirm size >= 1 && size <= 1024
             else throw InvalidCryptoInput.because("nonce size must be 1..1024");
@@ -54,16 +62,19 @@ object RandomNonce {
         self.size = size;
     }
 
+    // A new nonce.
     bytes() is @byte {
         entropy.bytes(size);
     }
 }
 
+// A nonce made of a prefix and a big-endian counter.
 object CounterNonce {
     has prefix is @byte;
     has counter is int;
     has size is int;
 
+    // prefix then counter, size bytes in all; the counter must fit.
     CounterNonce(prefix is @byte, counter is int, size is int) {
         confirm size >= 1 && size <= 1024 && prefix.size() < size
             else throw InvalidCryptoInput.because("nonce prefix must be shorter than the nonce");
@@ -76,6 +87,7 @@ object CounterNonce {
         self.size = size;
     }
 
+    // The nonce.
     bytes() is @byte {
         let start = prefix.size();
         (0..size).map() -> index {

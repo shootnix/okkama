@@ -1,5 +1,20 @@
 module fs/root v1.0.0;
 
+// Reads below one directory that cannot be led out of it: entries are reached
+// by names, one at a time, and links are never followed.
+//
+//     let root = FileRoot(directory: Directory(path: Path("public")));
+//     defer root.close();
+//     let page = root.entry(["docs", "index.html"]);
+//     defer page.close();
+//     let head = page.bytes_at(0, 4096);
+//     let names = root.entry(["docs"]).names(100);
+//
+// Each name must be a plain name, without `/` or `..`, so a request for
+// `../secret` is refused rather than resolved. An entry must be a regular file
+// or a directory. Entries keep their own descriptors and stay usable after the
+// root is closed. http/static serves files this way.
+
 import "fs/directory" take DirectoryLocating, Directory;
 import "fs/path" take Path;
 import "fs/stat" take FileStat, FileStatFromMap;
@@ -16,6 +31,7 @@ import "encoding/utf" take Utf8Decoded;
 object FileRoot does Closing {
     has state is rooted.FileRootState;
 
+    // Opens directory now; FileError when it cannot.
     FileRoot(directory is DirectoryLocating) {
         state = try {
             rooted.file_root_open(path_encode(directory.path().string()));
@@ -25,6 +41,8 @@ object FileRoot does Closing {
         };
     }
 
+    // The file or directory at these names below the root, opened without
+    // following links; at most 256 names.
     entry(segments is @string) is RootedEntry {
         let state = try {
             rooted.file_root_entry(self.state, segments);
@@ -35,10 +53,12 @@ object FileRoot does Closing {
         RootedEntry(state);
     }
 
+    // Whether the root is closed.
     closed() is bool {
         rooted.file_root_closed(state);
     }
 
+    // Closes the root; entries already opened stay usable.
     close() is void {
         try {
             rooted.file_root_close(state);
@@ -53,13 +73,16 @@ object FileRoot does Closing {
     }
 }
 
+// A file or directory opened below a FileRoot.
 object RootedEntry does Closing {
     has state is rooted.RootedEntryState;
 
+    // Made by FileRoot.entry(); not constructed directly.
     RootedEntry(state is rooted.RootedEntryState) {
         self.state = state;
     }
 
+    // Its metadata.
     stat() is FileStat {
         let metadata = try {
             rooted.rooted_entry_stat(state);
@@ -70,6 +93,8 @@ object RootedEntry does Closing {
         FileStatFromMap(origin: metadata).stat();
     }
 
+    // At most limit bytes (1 to 1048576) from offset of a regular file; [] past
+    // its end.
     bytes_at(offset is int, limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
@@ -93,6 +118,7 @@ object RootedEntry does Closing {
         }
     }
 
+    // The names in a directory, at most maximum of them.
     names(maximum is int) is @string {
         try {
             rooted.rooted_entry_names(state, maximum);
@@ -102,10 +128,12 @@ object RootedEntry does Closing {
         }
     }
 
+    // Whether it is closed.
     closed() is bool {
         rooted.rooted_entry_closed(state);
     }
 
+    // Closes it.
     close() is void {
         try {
             rooted.rooted_entry_close(state);

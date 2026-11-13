@@ -1,40 +1,62 @@
 module runtime/application v1.0.0;
 
+// The native layer under terminal/mode, terminal/screen, terminal/session: the
+// calls those modules make into the host runtime. Programs use those modules
+// instead; these declarations may change with the runtime.
+
 // Only owned host terminal effects. CLI/config/ANSI policy lives in std objects.
 native object TerminalState;
 
+// An input mode applied to a terminal.
 native object TerminalModeState;
 
+// A subscription to a terminal's size changes.
 native object TerminalResizeState;
 
+// The terminal on standard input and output (0) or standard error (1).
 native async terminal_standard(output is int) is TerminalState;
 
+// The controlling terminal.
 native async terminal_controlling() is TerminalState;
 
+// Whether input and output are terminals, their color depth and size.
 native terminal_metadata(state is TerminalState) is %string:int;
 
+// Writes bytes; how many went.
 native terminal_write(state is TerminalState, bytes is @byte) is int;
 
+// At most limit bytes of input.
 native async terminal_read(state is TerminalState, limit is int) is @byte;
 
+// Writes bytes that restore the screen when the session ends.
 native terminal_cleanup(state is TerminalState, bytes is @byte) is bool;
 
+// Whether it was closed.
 native terminal_closed(state is TerminalState) is bool;
 
+// Restores the terminal and closes it.
 native terminal_close(state is TerminalState) is bool;
 
+// Applies mode (0 cooked, 1 cbreak, 2 raw, 3 secret).
 native terminal_mode_open(state is TerminalState, mode is int) is TerminalModeState;
 
+// Whether the mode was restored.
 native terminal_mode_closed(state is TerminalModeState) is bool;
 
+// Restores the previous mode.
 native terminal_mode_close(state is TerminalModeState) is bool;
 
+// Forgets the mode without restoring it.
 native terminal_mode_drop(state is TerminalModeState) is bool;
 
+// Starts listening for size changes.
 native async terminal_resize_open(state is TerminalState) is TerminalResizeState;
 
+// The next size: columns and rows.
 native async terminal_resize_next(state is TerminalResizeState) is @int;
 
+// Whether it stopped listening.
 native terminal_resize_closed(state is TerminalResizeState) is bool;
 
+// Stops listening.
 native terminal_resize_close(state is TerminalResizeState) is bool;

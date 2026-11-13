@@ -43,32 +43,45 @@ import "size" take Sizing;
 // language supports role composition, the shared signatures are stated here
 // and concrete lists explicitly implement all three roles.
 role List<T> {
+    // Walks from the first item.
     cursor() is Cursor<T>;
+    // How many items; counting walks the list.
     size() is int;
+    // The first item; EmptyListAccess when empty.
     first() is T;
+    // The list after its first item; EmptyListAccess when empty.
     tail() is List<T>;
+    // This list with value in front; the old list is shared, not copied.
     prefix(value is T) is List<T>;
 }
 
+// The list with no items; type it to start one: `let empty is List<string> =
+// EmptyList();`.
 object EmptyList<T> does List<T>, Iterating<T>, Sizing {
+    // An empty list.
     EmptyList();
 
+    // A cursor at the end.
     cursor() is Cursor<T> {
         EmptyListCursor(origin: self);
     }
 
+    // 0.
     size() is int {
         0;
     }
 
+    // EmptyListAccess: an empty list has no first item.
     first() is T {
         throw EmptyListAccess.operation("first");
     }
 
+    // EmptyListAccess: an empty list has no tail.
     tail() is List<T> {
         throw EmptyListAccess.operation("tail");
     }
 
+    // The list of value alone.
     prefix(value is T) is List<T> {
         LinkedList(value: value, following: self, size: 1);
     }
@@ -146,6 +159,7 @@ hidden object LinkedListCursor<T> does Cursor<T> {
     }
 }
 
+// first() or tail() on an empty list; operation names the call.
 enum EmptyListAccess is Error = (operation(operation is string));
 
 test "a list is built by prefixing and shares its tail" {

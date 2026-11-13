@@ -1,7 +1,5 @@
 module digest/state v1.0.0;
 
-import "encoding/hex" take HexEncoded;
-
 // An immutable digest of an ordered byte history. bytes() returns raw bytes
 // and hex() the same as lowercase hex; the algorithms also take text as UTF-8.
 // state(bytes) appends into a fresh successor without changing this digest,
@@ -15,8 +13,15 @@ import "encoding/hex" take HexEncoded;
 // No I/O, resource ownership or close action. Algorithm-specific output widths,
 // errors and security limitations belong to concrete modules. The test-only
 // fake echoes bytes; it is not a cryptographic function or an algorithm oracle.
+
+import "encoding/hex" take HexEncoded;
+
+// A digest fed bytes piece by piece; each state is a value, so a prefix can be
+// shared.
 role Digesting {
+    // The digest continued with origin.
     state(origin is @byte) is ^Digesting;
+    // The digest of everything fed.
     bytes() is @byte;
     // The digest as lowercase hex.
     hex() is string;

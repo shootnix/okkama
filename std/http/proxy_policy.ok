@@ -1,5 +1,13 @@
 module http/proxy_policy v1.0.0;
 
+// An HTTP proxy and its credentials.
+//
+//     ProxyPolicy(ParsedUrl("http://proxy.internal:3128").parts());
+//     ProxyPolicy(origin: url, credentials: BasicCredentials(username: "ann", password: secret));
+//
+// The proxy is spoken to in plain HTTP; https origins are still verified
+// through the tunnel.
+
 import "http/status" take Status;
 import "http/auth" take BasicCredentials;
 import "http/endpoint" take HttpEndpointSelection, AllEndpoints;
@@ -12,26 +20,32 @@ object ProxyPolicy {
     has url is UrlParts;
     has credentials is @BasicCredentials;
 
+    // The proxy at origin: an http URL with no userinfo, path, query or
+    // fragment; InvalidProxy otherwise.
     ProxyPolicy(origin is UrlParts) {
         HttpProxyEndpoint(origin);
         url = origin;
         credentials = [];
     }
 
+    // The same, sending credentials with Proxy-Authorization.
     ProxyPolicy(origin is UrlParts, credentials is BasicCredentials) {
         HttpProxyEndpoint(origin);
         url = origin;
         self.credentials = [credentials];
     }
 
+    // Its URL.
     url() is UrlParts {
         url;
     }
 
+    // Whether it has credentials.
     authenticated() is bool {
         credentials.size() == 1;
     }
 
+    // The credentials; MissingProxyCredentials when there are none.
     credentials() is BasicCredentials {
         confirm credentials.size() == 1 else throw MissingProxyCredentials.missing;
         credentials[0];
@@ -58,12 +72,16 @@ hidden object HttpProxyEndpoint {
     }
 }
 
+// The proxy has no credentials.
 enum MissingProxyCredentials is Error = (missing);
 
+// A proxy URL that cannot be used; reason says why.
 enum InvalidProxy is Error = (because(reason is string));
 
+// The request already had Proxy-Authorization.
 enum ProxyAuthorizationConflict is Error = (conflict);
 
+// The proxy answered CONNECT with status.
 enum ProxyConnectRejected is Error = (status(status is Status));
 
 test "proxy policy does not acquire credentials implicitly" {

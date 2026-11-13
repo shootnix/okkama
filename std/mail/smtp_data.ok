@@ -1,5 +1,18 @@
 module mail/smtp_data v1.0.0;
 
+// The DATA content of an SMTP transaction: a message made ready to send.
+//
+//     let data = PreparedSmtpData(origin: message, capabilities: capabilities);
+//     data.body_mode();                    // seven_bit or eight_bit_mime, for MAIL FROM BODY=
+//     data.message_size();                 // for MAIL FROM SIZE=
+//     data.bytes();                        // dot-stuffed, ending in ".\r\n"
+//
+// The message is read once: Bcc and Resent-Bcc are removed, lines are checked
+// for CRLF and length, 8-bit content needs the server's 8BITMIME, leading dots
+// are doubled and the terminator added. Nothing is recoded to 7 bits and
+// nothing is sent. By default a message may have 64 MiB and lines of 1000
+// bytes.
+
 import "mail/message" take MailMessage, DeliveredMail, ParsedMail;
 import "mail/smtp" take SmtpCapabilities, SmtpFeature;
 import "mail/smtp_reply" take SmtpLimitExceeded, SmtpReply;
@@ -14,28 +27,21 @@ import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
-// Eager DATA content snapshot, not a network command or an SMTP envelope.
-// Construction calls the borrowed body's bytes() once, removes Bcc/Resent-Bcc through
-// DeliveredMail, validates MIME/CRLF/line/size limits and advertised 8BITMIME,
-// dot-stuffs each leading dot and appends ".\r\n". Terminal content CRLF is
-// required for literal content. For Base64 only, an absent final CRLF is added
-// as ignored encoding whitespace. bytes()/message_size()/body_mode() are pure.
-// message_size excludes transparency dots and the terminator (RFC 1870 SIZE).
-// BODY mode remains a coordinate for the future MAIL command; this object does
-// not negotiate SMTPUTF8, authenticate, send DATA or infer a successful reply.
-// Binary CTE requires a separate BDAT implementation, even if advertised.
-// No automatic seven-bit recoding. All scratch resources are owned/closed.
+// The BODY parameter the data needs.
 enum SmtpBodyMode = (seven_bit, eight_bit_mime);
 
+// How large DATA may be.
 object SmtpDataLimits {
     has message_bytes, wire_bytes, line_bytes is int;
 
+    // 64 MiB of message, 128 MiB on the wire, 1000-byte lines.
     SmtpDataLimits() {
         message_bytes = 67108864;
         wire_bytes = 134217731;
         line_bytes = 1000;
     }
 
+    // The limits as given.
     SmtpDataLimits(message_bytes is int, wire_bytes is int, line_bytes is int) {
         confirm message_bytes >= 0 && wire_bytes >= 0 && line_bytes >= 0
             else throw InvalidArgument.because("SMTP DATA bounds must be nonnegative");
@@ -44,6 +50,7 @@ object SmtpDataLimits {
         self.line_bytes = line_bytes;
     }
 
+    // Message bytes, wire bytes and line bytes.
     cap Limits {
         message_bytes is int {
             message_bytes;
@@ -59,13 +66,17 @@ object SmtpDataLimits {
     }
 }
 
+// A message as DATA bytes.
 object PreparedSmtpData does ByteSource {
     has value is SmtpDataValue;
 
+    // Prepares origin for a server with capabilities, within the default
+    // limits.
     PreparedSmtpData(origin is MailMessage, capabilities is SmtpCapabilities) {
         value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: SmtpDataLimits());
     }
 
+    // The same within limits.
     PreparedSmtpData(
         origin is MailMessage,
         capabilities is SmtpCapabilities,
@@ -74,21 +85,26 @@ object PreparedSmtpData does ByteSource {
         value = SmtpDataValue(origin: origin, capabilities: capabilities, limits: limits);
     }
 
+    // The DATA bytes, dot-stuffed and terminated.
     bytes() is @byte {
         value.bytes();
     }
 
+    // The message size for SIZE, without the stuffing and terminator.
     message_size() is int {
         value.message_size();
     }
 
+    // Whether the message needs 8BITMIME.
     body_mode() is SmtpBodyMode {
         value.body_mode();
     }
 }
 
+// A message that cannot be sent as DATA; offset and reason say where and why.
 enum InvalidSmtpData is Error = (located(offset is int, reason is string));
 
+// The message needs an extension the server does not offer.
 enum MissingSmtpExtension is Error = (name(name is string));
 
 hidden object SmtpDataValue {

@@ -1,5 +1,11 @@
 module mime/transfer v1.0.0;
 
+// Content-Transfer-Encoding (RFC 2045): base64 and quoted-printable for 7-bit
+// transports.
+//
+//     let wire = TransferEncodedBody(origin: ByteSnapshot(data), encoding: TransferEncoding.base64).bytes();
+//     let data = TransferDecodedBody(origin: ByteSnapshot(wire), encoding: TransferEncoding.base64).bytes();
+
 import "io/stream" take ByteSource;
 import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
@@ -13,17 +19,20 @@ import "error" take InvalidArgument;
 // no source is closed, cached or normalized. See docs/std/mime-transfer.md.
 enum TransferEncoding = (seven_bit, eight_bit, binary, base64, quoted_printable);
 
+// Bytes encoded for transfer.
 object TransferEncodedBody does ByteSource {
     has origin is ByteSource;
     has encoding is TransferEncoding;
     has maximum is int;
 
+    // origin encoded with encoding.
     TransferEncodedBody(origin is ByteSource, encoding is TransferEncoding) {
         self.origin = origin;
         self.encoding = encoding;
         maximum = 16777216;
     }
 
+    // The same, at most maximum_bytes.
     TransferEncodedBody(origin is ByteSource, encoding is TransferEncoding, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("transfer byte limit must be nonnegative");
@@ -32,6 +41,7 @@ object TransferEncodedBody does ByteSource {
         maximum = maximum_bytes;
     }
 
+    // The encoded bytes.
     bytes() is @byte {
         let snapshot = origin.bytes();
         confirm snapshot.size() <= maximum else throw TransferLimitExceeded.kind("input");
@@ -51,17 +61,20 @@ object TransferEncodedBody does ByteSource {
     }
 }
 
+// Bytes decoded from transfer.
 object TransferDecodedBody does ByteSource {
     has origin is ByteSource;
     has encoding is TransferEncoding;
     has maximum is int;
 
+    // origin decoded with encoding.
     TransferDecodedBody(origin is ByteSource, encoding is TransferEncoding) {
         self.origin = origin;
         self.encoding = encoding;
         maximum = 16777216;
     }
 
+    // The same, at most maximum_bytes.
     TransferDecodedBody(origin is ByteSource, encoding is TransferEncoding, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("transfer byte limit must be nonnegative");
@@ -70,6 +83,7 @@ object TransferDecodedBody does ByteSource {
         maximum = maximum_bytes;
     }
 
+    // The decoded bytes; InvalidTransferEncoding for bad input.
     bytes() is @byte {
         let snapshot = origin.bytes();
         confirm snapshot.size() <= maximum else throw TransferLimitExceeded.kind("input");
@@ -94,8 +108,10 @@ object TransferDecodedBody does ByteSource {
     }
 }
 
+// Bytes that do not decode; offset says where.
 enum InvalidTransferEncoding is Error = (located(offset is int, reason is string));
 
+// The result would exceed the limit.
 enum TransferLimitExceeded is Error = (kind(kind is string));
 
 hidden object TransferPosition {

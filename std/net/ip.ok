@@ -1,5 +1,16 @@
 module net/ip v1.0.0;
 
+// IP addresses and networks, IPv4 and IPv6.
+//
+//     let address = IpAddress("192.168.1.10");
+//     address.version();                                  // IpVersion.v4
+//     address.properties().membership(IpProperty.private_network);   // true
+//     let network = IpNetwork(IpAddress("10.0.0.0"), 8);
+//     network.membership(IpAddress("10.1.2.3"));           // true
+//     for IpAddresses(IpNetwork(IpAddress("192.168.0.0"), 30)) -> each { … }
+//
+// Properties come from the IANA special-purpose registries.
+
 import "runtime/net" take ip_parse, ip_format;
 import "compare" take Comparing, Order;
 import "collections/set" take Set, OrderedSet;
@@ -8,8 +19,10 @@ import "numbers/bigint" take BigInt;
 import "error" take InvalidArgument;
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 
+// IPv4 or IPv6.
 enum IpVersion = (v4, v6);
 
+// What an address is for, by the IANA registries.
 enum IpProperty = (unspecified, loopback, link_local, private_network, global, multicast, reserved, documentation);
 
 // Immutable numeric IPv4/IPv6 address, without a port, prefix or interface zone.
@@ -31,11 +44,13 @@ enum IpProperty = (unspecified, loopback, link_local, private_network, global, m
 // assert global reachability. Mapped IPv6 retains its IPv6 classification.
 // Data versions and mapping rules are documented in docs/std/ip-properties.md.
 
+// An IPv4 or IPv6 address.
 object IpAddress does Comparing<IpAddress> {
     has family is IpVersion;
     has packed is @byte;
     has canonical is string;
 
+    // Reads `1.2.3.4` or `2001:db8::1`; anything else is InvalidIpAddress.
     IpAddress(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 45
             else throw InvalidIpAddress.origin(origin);
@@ -89,18 +104,22 @@ object IpAddress does Comparing<IpAddress> {
         canonical = ip_format(encoded);
     }
 
+    // v4 or v6.
     version() is IpVersion {
         family;
     }
 
+    // 4 or 16 bytes.
     bytes() is @byte {
         packed;
     }
 
+    // The canonical text; IPv6 compressed.
     string() is string {
         canonical;
     }
 
+    // What the address is: loopback, private, global and so on.
     properties() is Set<IpProperty> {
         let flags = IpClassification(packed).flags();
         let categories = [
@@ -122,6 +141,7 @@ object IpAddress does Comparing<IpAddress> {
         OrderedSet(values: values);
     }
 
+    // v4 before v6, then by bytes.
     order(other is IpAddress) is Order {
         if family != other.version() {
             return if family == IpVersion.v4 {
@@ -142,6 +162,7 @@ object IpAddress does Comparing<IpAddress> {
     }
 }
 
+// Text that is not an IP address.
 enum InvalidIpAddress is Error = (origin(origin is string));
 
 // Inclusive CIDR interval. Host bits are masked at construction; the original
@@ -153,6 +174,7 @@ object IpNetwork {
     has base is IpAddress;
     has length is int;
 
+    // The network of address with prefix bits.
     IpNetwork(address is IpAddress, prefix is int) {
         let width = address.bytes().size() * 8;
         confirm prefix >= 0 && prefix <= width
@@ -162,16 +184,19 @@ object IpNetwork {
         length = prefix;
     }
 
+    // Its first address.
     network() is IpAddress {
         base;
     }
 
+    // Its last address.
     broadcast() is IpAddress {
         IpAddress(
             PackedIpText(IpNetworkBytes(origin: base.bytes(), prefix: length, upper: true).bytes()).string()
         );
     }
 
+    // Whether address is inside.
     membership(address is IpAddress) is bool {
         if address.version() != base.version() {
             false;
@@ -181,6 +206,7 @@ object IpNetwork {
         }
     }
 
+    // How many addresses it has.
     size() is BigInt {
         BigInt(2).power(base.bytes().size() * 8 - length, 129);
     }
@@ -200,24 +226,29 @@ object IpInterface {
     has host is IpAddress;
     has subnet is IpNetwork;
 
+    // An address with the prefix of its network.
     IpInterface(address is IpAddress, prefix is int) {
         host = address;
         subnet = IpNetwork(address: address, prefix: prefix);
     }
 
+    // The address.
     address() is IpAddress {
         host;
     }
 
+    // Its network.
     network() is IpNetwork {
         subnet;
     }
 
+    // `10.0.0.5/24`.
     string() is string {
         host.string() + "/" + subnet::Mask::prefix.string();
     }
 }
 
+// A prefix longer than the family allows.
 enum InvalidIpPrefix is Error = (detailed(prefix is int, family is IpVersion));
 
 // Lazy inclusive traversal of a CIDR network, including network/final addresses.
@@ -227,10 +258,12 @@ enum InvalidIpPrefix is Error = (detailed(prefix is int, family is IpVersion));
 object IpAddresses does Iterating<IpAddress> {
     has origin is IpNetwork;
 
+    // Every address of origin, first to last.
     IpAddresses(origin is IpNetwork) {
         self.origin = origin;
     }
 
+    // Walks the addresses.
     cursor() is Cursor<IpAddress> {
         IpAddressCursor(current: origin.network(), limit: origin.broadcast());
     }

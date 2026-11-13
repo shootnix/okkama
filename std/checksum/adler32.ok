@@ -1,8 +1,5 @@
 module checksum/adler32 v1.0.0;
 
-import "checksum/state" take Checksumming, InvalidChecksumInitial;
-import "runtime/checksum" take checksum_adler32;
-
 // Adler-32 of an immutable byte chunk continued from an unsigned 32-bit seed.
 // Adler32() and Adler32(bytes) use seed 1. Adler32(origin: bytes, initial: initial) rejects seeds
 // outside 0..4294967295 with InvalidChecksumInitial at construction.
@@ -20,20 +17,28 @@ import "runtime/checksum" take checksum_adler32;
 // valid. Immutable input arrays are borrowed; no streams/resources are closed.
 // Runtime is linear in the observed chunk. This is not a cryptographic digest;
 // encode strings explicitly before passing their bytes.
+
+import "checksum/state" take Checksumming, InvalidChecksumInitial;
+import "runtime/checksum" take checksum_adler32;
+
+// The Adler-32 checksum of zlib (RFC 1950).
 object Adler32 does Checksumming {
     has origin is @byte;
     has initial is int;
 
+    // The checksum of nothing yet; state(bytes) feeds it.
     Adler32() {
         origin = [];
         initial = 1;
     }
 
+    // The checksum of these bytes.
     Adler32(origin is @byte) {
         self.origin = origin;
         initial = 1;
     }
 
+    // The checksum of these bytes continued from initial.
     Adler32(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 4294967295
             else throw InvalidChecksumInitial.detailed(initial, 4294967295);
@@ -46,6 +51,7 @@ object Adler32 does Checksumming {
         checksum_adler32(origin, initial);
     }
 
+    // The checksum of everything fed so far and then origin.
     state(origin is @byte) is ^Adler32 {
         ^initial = self.checksum();
         ^origin = origin;

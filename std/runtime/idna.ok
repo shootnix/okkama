@@ -1,6 +1,11 @@
 module runtime/idna v1.0.0;
 
+// The native layer under net/endpoint: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 // Strict bounded UTS46 conversion; the provider contains no resolver/socket I/O.
 native hostname_ascii(origin is string) is string;
 
+// An ASCII host name with its punycode labels decoded.
 native hostname_unicode(origin is string) is string;

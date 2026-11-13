@@ -1,32 +1,49 @@
 module runtime/html v1.0.0;
 
+// The native layer under html/entities, html/events: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Private immutable tokenizer state for html/events. Numeric kinds and random
 // accessors remain below the public typed event boundary.
 
+// The events of a tokenized HTML document.
 native object HtmlEventsState;
 
+// Tokenizes origin.
 native html_events(origin is string) is HtmlEventsState;
 
+// How many events.
 native html_event_count(origin is HtmlEventsState) is int;
 
+// The kind of event index.
 native html_event_kind(origin is HtmlEventsState, index is int) is int;
 
+// The tag name of event index.
 native html_event_name(origin is HtmlEventsState, index is int) is string;
 
+// The text of event index.
 native html_event_value(origin is HtmlEventsState, index is int) is string;
 
+// The target of a processing instruction.
 native html_event_target(origin is HtmlEventsState, index is int) is string;
 
+// The data of a processing instruction.
 native html_event_data(origin is HtmlEventsState, index is int) is string;
 
+// Whether a start tag ended with `/>`.
 native html_event_self_closing(origin is HtmlEventsState, index is int) is bool;
 
+// How many attributes event index has.
 native html_attribute_count(origin is HtmlEventsState, index is int) is int;
 
+// The name of an attribute.
 native html_attribute_name(origin is HtmlEventsState, event is int, attribute is int) is string;
 
+// Whether an attribute had a value.
 native html_attribute_valued(origin is HtmlEventsState, event is int, attribute is int) is bool;
 
+// The value of an attribute.
 native html_attribute_value(origin is HtmlEventsState, event is int, attribute is int) is string;
 
 // html_events eagerly snapshots the source into ordered lexical events; this

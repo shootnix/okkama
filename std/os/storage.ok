@@ -17,17 +17,21 @@ import "runtime/system" take storage_usage;
 // this process after filesystem reservations and applicable quotas. used() is
 // capacity() minus available(), so the three values always form one identity.
 
+// The mounted file system that holds a path.
 object Storage {
     has origin is Path;
 
+    // The storage of path; nothing is asked yet.
     Storage(path is Path) {
         origin = path;
     }
 
+    // The path it was made from.
     path() is Path {
         origin;
     }
 
+    // How full it is now, asked fresh each time.
     usage() is StorageUsage {
         let snapshot is %string:string = try {
             storage_usage(origin.string());
@@ -42,10 +46,12 @@ object Storage {
     }
 }
 
+// Capacity, used and available bytes of a storage, at one moment.
 object StorageUsage {
     has total_capacity is BigInt;
     has available_capacity is BigInt;
 
+    // Usage as given; available must not exceed capacity.
     StorageUsage(capacity is BigInt, available is BigInt) {
         total_capacity = capacity;
         available_capacity = available;
@@ -56,26 +62,32 @@ object StorageUsage {
             else throw InvalidStorageUsage.invalid;
     }
 
+    // All the bytes it holds.
     capacity() is BigInt {
         total_capacity;
     }
 
+    // capacity() minus available().
     used() is BigInt {
         (total_capacity - available_capacity);
     }
 
+    // The bytes this process may still write, after reservations and quotas.
     available() is BigInt {
         available_capacity;
     }
 
+    // Whether amount bytes would fit in what is available.
     fits(amount is BigInt) is bool {
         confirm amount.sign() >= 0 else throw InvalidStorageUsage.invalid;
         amount.order(available_capacity) != Order.greater;
     }
 }
 
+// Available bytes above capacity, or a negative amount.
 enum InvalidStorageUsage is Error = (invalid);
 
+// The system could not answer; code and message say why.
 enum StorageFailure is Error = (detailed(code is string, message is string));
 
 test "usage counts what is used and what fits" {

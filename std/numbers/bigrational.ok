@@ -1,13 +1,15 @@
 module numbers/bigrational v1.0.0;
 
-import "compare" take Comparing, Order;
-import "numbers/bigint" take BigInt;
-
 // Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
 //
 //     let third = BigRational(numerator: BigInt(1), denominator: BigInt(3));
 //     third.plus(third).string();    // "2/3"
 //     third.divided(third).string(); // "1/1"
+
+import "compare" take Comparing, Order;
+import "numbers/bigint" take BigInt;
+
+// An exact fraction of two BigInts, always reduced: 2/4 is 1/2.
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
 
@@ -26,24 +28,29 @@ object BigRational does Comparing<BigRational> {
         lower = denominator / divisor;
     }
 
+    // The numerator, with the sign.
     numerator() is BigInt {
         upper;
     }
 
+    // The denominator, always positive.
     denominator() is BigInt {
         lower;
     }
 
+    // Compares the values.
     order(other is BigRational) is Order {
         let left = (upper * other.denominator());
         let right = (other.numerator() * lower);
         left.order(right);
     }
 
+    // `numerator/denominator`: "2/3".
     string() is string {
         upper.string() + "/" + lower.string();
     }
 
+    // The exact sum.
     plus(other is BigRational) is BigRational {
         BigRational(
             numerator: (upper * other.denominator() + other.numerator() * lower),
@@ -51,6 +58,7 @@ object BigRational does Comparing<BigRational> {
         );
     }
 
+    // The exact difference.
     minus(other is BigRational) is BigRational {
         BigRational(
             numerator: (upper * other.denominator() - other.numerator() * lower),
@@ -58,6 +66,7 @@ object BigRational does Comparing<BigRational> {
         );
     }
 
+    // The exact product.
     times(other is BigRational) is BigRational {
         BigRational(
             numerator: (upper * other.numerator()),
@@ -65,6 +74,7 @@ object BigRational does Comparing<BigRational> {
         );
     }
 
+    // The exact quotient; BigRationalDivisionByZero for zero.
     divided(other is BigRational) is BigRational {
         confirm other.numerator().sign() != 0 else throw BigRationalDivisionByZero.by_zero;
         BigRational(
@@ -74,8 +84,10 @@ object BigRational does Comparing<BigRational> {
     }
 }
 
+// A denominator of zero.
 enum ZeroBigRationalDenominator is Error = (zero);
 
+// Division by zero.
 enum BigRationalDivisionByZero is Error = (by_zero);
 
 test "rationals add, subtract, multiply and divide exactly" {

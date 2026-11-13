@@ -1,27 +1,26 @@
 module template/tree v1.0.0;
 
+// The syntax tree of a section template: literals, variables, sections,
+// inverted sections and partials. SectionTemplate uses it.
+//
+//     for TemplateTree("{{#items}}{{name}}{{/items}}").nodes() -> node { node.kind(); }
+//
+// By default at most 1 Mi characters of source, 20000 tokens and sections
+// nested 64 deep.
+
 import "template/compile" take TemplateProgram, TemplateInstruction, TemplateFailure,
     InvalidTemplateLimits;
 import "collections/list" take List, EmptyList;
 
-// Immutable structured source program, compiled entirely in Okkama. Constructors
-// bind only; nodes() validates the complete source anew before returning a tree.
-// Default budgets: 1048576 input scalars, 20000 flat tokens (including closing
-// tags), 64 nested sections. All budgets are nonnegative; empty input accepts 0.
-// Grammar: flat TextTemplate syntax plus #/path sections, ^/path inverted
-// sections, current item '.', and static >name partials. Standalone structural
-// tags drop indentation and their following LF/CRLF. No data/library observation,
-// partial expansion, I/O, native parsing or cache. Returned nodes outlive us.
-// Errors retain original scalar/CRLF coordinates. Memory is bounded by the
-// input/token/depth budgets. TextTemplate still accepts only the flat grammar.
-// Example: TemplateTree("{{#users}}{{.}}{{/users}}").nodes().
-// Contract: docs/std/template-tree-guide.md. Run: okkama run -t std/template/tree.ok
+// Literal, variable, section, inverted section or partial.
 enum TemplateTreeKind = (literal, variable, section, inverted, partial);
 
+// A section template's source as a tree.
 object TemplateTree {
     has source is string;
     has maximum_input, maximum_tokens, maximum_depth is int;
 
+    // source, within 1 Mi characters, 20000 tokens and depth 64.
     TemplateTree(source is string) {
         self.source = source;
         maximum_input = 1048576;
@@ -29,6 +28,7 @@ object TemplateTree {
         maximum_depth = 64;
     }
 
+    // The same within these limits.
     TemplateTree(
         source is string,
         maximum_input is int,
@@ -43,8 +43,14 @@ object TemplateTree {
         self.maximum_depth = maximum_depth;
     }
 
+    // The top nodes; TemplateFailure for bad source.
     nodes() is @TemplateTreeNode {
-        let tokens = TemplateProgram(source: source, maximum_input: maximum_input, maximum_nodes: maximum_tokens, structured: true).instructions();
+        let tokens = TemplateProgram(
+            source: source,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_tokens,
+            structured: true
+        ).instructions();
         let tree = TemplateTreeBuilder(source: source, maximum_depth: maximum_depth);
         for tokens -> token {
             tree = tree.following(token);
@@ -61,6 +67,7 @@ object TemplateTreeNode {
     has origin is string;
     has nested is @TemplateTreeNode;
 
+    // A node of kind with text and children.
     TemplateTreeNode(kind is TemplateTreeKind, text is string, children is @TemplateTreeNode) {
         confirm text != "" else throw InvalidTemplateTreeNode.invalid;
         confirm kind == TemplateTreeKind.section
@@ -72,19 +79,23 @@ object TemplateTreeNode {
         nested = children;
     }
 
+    // Its kind.
     kind() is TemplateTreeKind {
         category;
     }
 
+    // Its literal text or name.
     text() is string {
         origin;
     }
 
+    // The nodes inside a section.
     children() is @TemplateTreeNode {
         nested;
     }
 }
 
+// A node that cannot be built.
 enum InvalidTemplateTreeNode is Error = (invalid);
 
 // Internal parser stack. The root frame represents the program, not an emitted
@@ -153,7 +164,9 @@ hidden object TemplateTreeBuilder {
             else {
                 TemplateTreeKind.inverted;
             };
-            ^stack = stack.prefix(TemplateTreeFrame(name: token.text(), kind: kind, offset: token.offset()));
+            ^stack = stack.prefix(
+                TemplateTreeFrame(name: token.text(), kind: kind, offset: token.offset())
+            );
             return;
         }
         if tag == "/" {
@@ -162,7 +175,11 @@ hidden object TemplateTreeBuilder {
             let closed = stack.first();
             confirm closed.text() == token.text()
                 else throw self.failure(token.offset(), "mismatched closing template section");
-            let node = TemplateTreeNode(kind: closed.kind(), text: closed.text(), children: closed.nodes());
+            let node = TemplateTreeNode(
+                kind: closed.kind(),
+                text: closed.text(),
+                children: closed.nodes()
+            );
             let parent = stack.tail().first().following(node);
             ^stack = stack.tail().tail().prefix(parent);
             return;
@@ -178,7 +195,9 @@ hidden object TemplateTreeBuilder {
                 TemplateTreeKind.literal;
             }
         };
-        let parent = stack.first().following(TemplateTreeNode(kind: kind, text: token.text(), children: []));
+        let parent = stack.first().following(
+            TemplateTreeNode(kind: kind, text: token.text(), children: [])
+        );
         ^stack = stack.tail().prefix(parent);
     }
 
@@ -269,9 +288,18 @@ test "structured syntax errors keep original source positions" {
 }
 
 test "tree input token and depth limits are explicit" {
-    test.is(TemplateTree(source: "", maximum_input: 0, maximum_tokens: 0, maximum_depth: 0).nodes().size(), 0);
-    test.is(TemplateTree(source: "x", maximum_input: 1, maximum_tokens: 1, maximum_depth: 0).nodes()[0].text(), "x");
-    test.is(TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 2, maximum_depth: 1).nodes().size(), 1);
+    test.is(
+        TemplateTree(source: "", maximum_input: 0, maximum_tokens: 0, maximum_depth: 0).nodes().size(),
+        0
+    );
+    test.is(
+        TemplateTree(source: "x", maximum_input: 1, maximum_tokens: 1, maximum_depth: 0).nodes()[0].text(),
+        "x"
+    );
+    test.is(
+        TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 2, maximum_depth: 1).nodes().size(),
+        1
+    );
     test.ok(try {
         TemplateTree(source: "{{#x}}{{/x}}", maximum_input: 12, maximum_tokens: 1, maximum_depth: 1).nodes();
         false;

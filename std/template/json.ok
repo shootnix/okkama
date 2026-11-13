@@ -1,5 +1,13 @@
 module template/json v1.0.0;
 
+// A Json as the strings of a text template: `{{user.name}}` reads member name
+// of member user.
+//
+//     TextTemplate("Hi {{user.name}}").string(JsonTemplateStrings(ParsedJson(text).root()));
+//
+// Strings, numbers, booleans and null become text; an object or array at a leaf
+// is NonScalarTemplateValue, a missing member MissingTemplateValue.
+
 import "template/model" take TemplateStrings, MissingTemplateValue;
 import "template/path" take TemplatePath, TemplatePathFromString;
 import "template/compile" take TemplateOutputLimitExceeded;
@@ -7,29 +15,19 @@ import "json" take Json, JsonField, JsonKind, ParsedJson;
 import "math/decimal" take Decimal;
 import "runtime/template" take template_output_size;
 
-// Explicit JSON-to-template adapter: exact dotted member paths of a Json.
-// String/null/bool/number leaves become literal text/empty/true|false/the JSON number text
-// text. Arrays/objects at the leaf throw NonScalarTemplateValue; nonobjects on
-// the way to a member and absent members throw MissingTemplateValue.path(full path).
-// string(path is string) accepts compiled tag spelling: '.' is the bound value
-// itself; other spellings parse exact dotted member paths. A fresh adapter
-// binds each section item; there is no parent lookup or array indexing. The
-// TemplatePath overload still treats ['.'] as a literal member, not current item.
-//
-// Default per-object member limit 1024, per-scalar UTF-8 output 1048576 bytes;
-// optional limits must be nonnegative. Zero permits empty objects/text. Maximum
-// path depth is 64. No reflection, trimming or implicit escaping.
-// Example: TextTemplate("{{name}}").string(JsonTemplateStrings(document)).
+// The values of a Json, read by dotted path.
 object JsonTemplateStrings does TemplateStrings {
     has origin is Json;
     has maximum_members, maximum_output is int;
 
+    // Reads origin, at most 1024 members a step and 1 MiB of text.
     JsonTemplateStrings(origin is Json) {
         self.origin = origin;
         maximum_members = 1024;
         maximum_output = 1048576;
     }
 
+    // The same within these limits.
     JsonTemplateStrings(origin is Json, maximum_members is int, maximum_output is int) {
         confirm maximum_members >= 0 && maximum_output >= 0
             else throw InvalidTemplateJsonLimits.invalid;
@@ -38,11 +36,14 @@ object JsonTemplateStrings does TemplateStrings {
         self.maximum_output = maximum_output;
     }
 
+    // The value at path as text; MissingTemplateValue or NonScalarTemplateValue
+    // otherwise.
     string(path is TemplatePath) is string {
         confirm path.segments().size() <= 64 else throw TemplateJsonLimitExceeded.exceeded;
         self.scalar(path, 0);
     }
 
+    // The same for a dotted path; `.` is the whole value.
     string(path is string) is string {
         if path == "." {
             self.scalar(TemplatePath("."), 1);
@@ -96,8 +97,10 @@ object JsonTemplateStrings does TemplateStrings {
 // Typed diagnostics retain domain coordinates, not reflected Okkama types.
 enum NonScalarTemplateValue is Error = (detailed(path is string, kind is JsonKind));
 
+// A negative limit.
 enum InvalidTemplateJsonLimits is Error = (invalid);
 
+// Text over the limit.
 enum TemplateJsonLimitExceeded is Error = (exceeded);
 
 test "dotted paths read scalars of a Json" {
@@ -136,7 +139,9 @@ test "dotted paths read scalars of a Json" {
     );
     test.is(
         try {
-            JsonTemplateStrings(origin: data, maximum_members: 1, maximum_output: 100).string("name");
+            JsonTemplateStrings(origin: data, maximum_members: 1, maximum_output: 100).string(
+                "name"
+            );
             false;
         }
         catch e is TemplateJsonLimitExceeded {
@@ -153,7 +158,9 @@ test "template JSON failures have stable diagnostics" {
 }
 
 test "a JSON number renders as its JSON text, not in scientific form" {
-    let data = JsonTemplateStrings(ParsedJson("{\"n\":17,\"price\":4.5,\"big\":1e3,\"neg\":-0.25}").root());
+    let data = JsonTemplateStrings(
+        ParsedJson("{\"n\":17,\"price\":4.5,\"big\":1e3,\"neg\":-0.25}").root()
+    );
     test.is(data.string("n"), "17");
     test.is(data.string("price"), "4.5");
     test.is(data.string("big"), "1000");

@@ -1,12 +1,23 @@
 module net/endpoint v1.0.0;
 
+// Where to connect: a host name or an address, and a port.
+//
+//     let site = HostEndpoint(HostName("bücher.example"), 443);
+//     site.host().ascii();                  // "xn--bcher-kva.example"
+//     let local = IpEndpoint(IpAddress("127.0.0.1"), 8080);
+//
+// HostName checks the name and keeps its ASCII (IDNA) and Unicode forms.
+
 import "net/ip" take IpAddress, IpVersion;
 import "compare" take Comparing, Order;
 import "runtime/idna" take hostname_ascii, hostname_unicode;
 
+// A host name, checked, in its ASCII and Unicode forms.
 object HostName does Comparing<HostName> {
     has ascii, unicode is string;
 
+    // Reads origin in either form; anything that is not a host name is
+    // InvalidHostName.
     HostName(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 1024
             else throw InvalidHostName.origin(origin);
@@ -23,23 +34,28 @@ object HostName does Comparing<HostName> {
         unicode = hostname_unicode(encoded);
     }
 
+    // The ASCII form, with punycode labels: what goes on the wire.
     ascii() is string {
         ascii;
     }
 
+    // The Unicode form: what people read.
     unicode() is string {
         unicode;
     }
 
+    // Orders by the ASCII form.
     order(other is HostName) is Order {
         ascii.order(other.ascii());
     }
 }
 
+// A host name and a port.
 object HostEndpoint {
     has host is HostName;
     has port is int;
 
+    // host at port 0 to 65535.
     HostEndpoint(host is HostName, port is int) {
         confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
         self.host = host;
@@ -53,10 +69,12 @@ object HostEndpoint {
         self.port = port;
     }
 
+    // The host.
     host() is HostName {
         host;
     }
 
+    // `host:port`.
     string() is string {
         host.ascii() + ":" + port.string();
     }
@@ -69,6 +87,7 @@ object HostEndpoint {
     }
 }
 
+// Text that is not a host name.
 enum InvalidHostName is Error = (origin(origin is string));
 
 // Immutable numeric endpoint. Construction performs no DNS, interface lookup,
@@ -89,6 +108,7 @@ object IpEndpoint {
     has number is int;
     has scope is string;
 
+    // address at port 0 to 65535.
     IpEndpoint(address is IpAddress, port is int) {
         confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
         origin = address;
@@ -96,6 +116,7 @@ object IpEndpoint {
         scope = "";
     }
 
+    // An IPv6 link-local address in zone, at port.
     IpEndpoint(address is IpAddress, port is int, zone is string) {
         confirm port >= 0 && port <= 65535 else throw InvalidPort.port(port);
         confirm zone == "" || address.version() == IpVersion.v6
@@ -111,10 +132,12 @@ object IpEndpoint {
         scope = zone;
     }
 
+    // The address.
     address() is IpAddress {
         origin;
     }
 
+    // `1.2.3.4:80` or `[::1]:80`.
     string() is string {
         let host = origin.string();
         let scoped = if scope == "" {

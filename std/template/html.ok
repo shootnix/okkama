@@ -1,5 +1,15 @@
 module template/html v1.0.0;
 
+// HTML templates that escape each value for where it lands.
+//
+//     let card = HtmlTemplate("<p title=\"{{.}}\">Hello, {{.}}</p>");
+//     card.string(Json("Ada & \"friends\""));   // <p title="Ada &amp; &quot;friends&quot;">…
+//
+// Values may go into text and into a whitelist of quoted ordinary attributes;
+// anywhere else, such as an event handler attribute, the template is refused
+// with InvalidHtmlTemplate before anything is written. The template's own
+// markup must be balanced; nothing is sanitized or repaired.
+
 import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
 import "template/json" take JsonTemplateStrings;
 import "template/sections" take TemplateSectionOutput;
@@ -11,25 +21,13 @@ import "io/text" take Utf8Output;
 import "encoding/utf" take Utf8Decoded;
 import "collections/list" take List, EmptyList;
 
-// Contextual HTML fragment template. Constructors bind only; each observation
-// validates the entire source before JSON lookup or output. Text and an explicit
-// whitelist of quoted ordinary attributes are the only interpolation contexts.
-// Text escapes &<>; attributes also escape both quotes through EscapedHtml.
-// No raw/trusted form, browser repair or sanitization of authored literal markup.
-// Strict balanced ASCII tags, depth <=64, safe comments/doctype and conservative
-// raw-element handling avoid ambiguous browser states. Foreign markup is rejected.
-// Default bounds: 65536 input scalars, 10000 instructions, 1048576 output bytes.
-// Output counts escaped UTF-8, streams <=1024 scalars per call and borrows the sink.
-// Owned temporary buffers close on errors; a late error can leave a written prefix.
-// Parsing is O(input * bounded name/depth); plan storage is bounded by nodes/input.
-// One scalar escape may use <=6 times its bounded input, no aggregate stream buffer.
-// Flat JSON variables/current item, comments and delimiter escapes only in this
-// slice. Sections and partials fail explicitly. No native parser/provider changes.
-// Contract: docs/std/template-html-guide.md. Run: okkama run -t std/template/html.ok
+// An HTML template.
 object HtmlTemplate {
     has origin is string;
     has maximum_input, maximum_nodes, maximum_output is int;
 
+    // A template of source, within 65536 characters, 10000 nodes and 1 MiB of
+    // output.
     HtmlTemplate(source is string) {
         origin = source;
         maximum_input = 65536;
@@ -37,6 +35,7 @@ object HtmlTemplate {
         maximum_output = 1048576;
     }
 
+    // The same within these limits.
     HtmlTemplate(
         source is string,
         maximum_input is int,
@@ -51,10 +50,13 @@ object HtmlTemplate {
         self.maximum_output = maximum_output;
     }
 
+    // Its source.
     source() is string {
         origin;
     }
 
+    // The HTML filled from data; InvalidHtmlTemplate for a place values may not
+    // go.
     string(data is Json) is string {
         let output = ByteBuffer();
         defer output.closing().close();
@@ -62,12 +64,21 @@ object HtmlTemplate {
         Utf8Decoded(output.content().bytes()).string();
     }
 
+    // Writes the HTML to destination, piece by piece.
     write(data is Json, destination is WritingText) is void {
-        let instructions = HtmlTemplateProgram(source: origin, maximum_input: maximum_input, maximum_nodes: maximum_nodes).instructions();
+        let instructions = HtmlTemplateProgram(
+            source: origin,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_nodes
+        ).instructions();
         let output = TemplateSectionOutput(destination: destination, maximum: maximum_output);
         for instructions -> instruction {
             if instruction.variable() {
-                let value = JsonTemplateStrings(origin: data, maximum_members: 1024, maximum_output: output.remaining()).string(
+                let value = JsonTemplateStrings(
+                    origin: data,
+                    maximum_members: 1024,
+                    maximum_output: output.remaining()
+                ).string(
                     instruction.text()
                 );
                 output.append(EscapedHtml(origin: value, quotes: instruction.quotes()).string());
@@ -116,7 +127,12 @@ hidden object HtmlTemplateProgram {
     }
 
     instructions() is @HtmlTemplateInstruction {
-        let instructions = TemplateProgram(source: source, maximum_input: maximum_input, maximum_nodes: maximum_nodes, structured: true).instructions();
+        let instructions = TemplateProgram(
+            source: source,
+            maximum_input: maximum_input,
+            maximum_nodes: maximum_nodes,
+            structured: true
+        ).instructions();
         confirm source.split(Utf8Decoded([byte(0)]).string()).size() == 1
             else throw InvalidHtmlTemplate.because("NUL in source");
         let plan = instructions.reduce(HtmlTemplatePlan()) -> previous, instruction {
@@ -159,7 +175,11 @@ hidden object HtmlTemplatePlan {
         };
         ^context = following;
         ^items = items.prefix(
-            HtmlTemplateInstruction(text: instruction.text(), variable: instruction.variable(), quotes: quotes)
+            HtmlTemplateInstruction(
+                text: instruction.text(),
+                variable: instruction.variable(),
+                quotes: quotes
+            )
         );
     }
 
@@ -764,6 +784,7 @@ hidden object HtmlTemplateCharacter {
     }
 }
 
+// A template that is not safe or not valid; reason says why.
 enum InvalidHtmlTemplate is Error = (because(reason is string));
 
 test "HTML context distinguishes text and quoted ordinary attributes" {

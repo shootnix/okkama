@@ -1,5 +1,9 @@
 module runtime/collections v1.0.0;
 
+// The native layer under http/robots, http/routing: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Pure typed snapshot boundary, no environment/JSON conversion or I/O.
 // Parallel string coordinates must have equal lengths and unique exact keys.
 // Caller budgets are nonnegative, capped at4096 entries and1048576 Unicode
@@ -9,8 +13,11 @@ module runtime/collections v1.0.0;
 // resource_exhausted; malformed coordinates use invalid_input.
 // Literal scalars plus '*' only; anchored=false accepts a matching prefix.
 // Step budget 1..262144 counts pointer/retry iterations, including termination.
+
+// Whether target matches pattern with `*` wildcards, within steps.
 native string_star_match(pattern is string, target is string, anchored is bool, steps is int) is bool;
 
+// keys and values as a map, within entry and character limits.
 native string_map_snapshot(keys is @string, values is @string, entries is int, characters is int) is %string:string;
 
 test "empty snapshot preserves map type and exact aggregate boundary" {

@@ -1,5 +1,20 @@
 module http/auth v1.0.0;
 
+// Client authentication: Basic (RFC 7617) and Bearer (RFC 6750) credentials,
+// sent only inside a scope.
+//
+//     let api = BearerExchanging(
+//         origin: HttpClient(),
+//         scope: ParsedUrl("https://api.example.com/v1/").parts(),
+//         authorization: BearerAuthorization(token),
+//     );
+//     await api.response(Request(url: "https://api.example.com/v1/items"));
+//
+// The scope is an https URL: the credentials go to the same scheme, host and
+// port, under the scope's path, and never through a redirect elsewhere. Secrets
+// are SecretBytes and do not show in diagnostics. Digest authentication is in
+// http/digest.
+
 import "crypto/secret" take SecretBytes, ExportedSecret;
 import "http/exchange" take ClientResponse, Exchanging, HttpClientKey;
 import "http/message" take Request;
@@ -15,10 +30,13 @@ import "http/method" take Method;
 import "encoding/single_byte" take AsciiEncoded, AsciiDecoded, UnrepresentableAsciiCharacter;
 import "encoding/base64" take Base64Encoded;
 
+// A username and a password for Basic authentication.
 object BasicCredentials {
     has username is string;
     has password is SecretBytes;
 
+    // The credentials; InvalidAuthentication for text that is not ASCII or a
+    // username Basic cannot carry.
     BasicCredentials(username is string, password is SecretBytes) {
         confirm username.length() <= 1024 && password.size() <= 4096
             else throw InvalidAuthentication.because("credential size");
@@ -36,6 +54,7 @@ object BasicCredentials {
         self.password = password;
     }
 
+    // The Authorization field.
     authorization() is Header {
         let password = ExportedSecret(password).bytes();
         let valid is bool = password.reduce(true) -> valid, octet {
@@ -47,6 +66,7 @@ object BasicCredentials {
         Header(name: HeaderName("Authorization"), value: "Basic " + Base64Encoded(value).string());
     }
 
+    // The username.
     cap Credentials {
         username is string {
             username;
@@ -54,7 +74,9 @@ object BasicCredentials {
     }
 }
 
+// Something that gives an Authorization field.
 role HttpAuthorizing {
+    // The field.
     header() is Header;
 }
 
@@ -63,24 +85,29 @@ role HttpAuthorizing {
 object BasicAuthorization does HttpAuthorizing {
     has credentials is BasicCredentials;
 
+    // Basic authorization with credentials.
     BasicAuthorization(credentials is BasicCredentials) {
         self.credentials = credentials;
     }
 
+    // `Authorization: Basic …`.
     header() is Header {
         credentials.authorization();
     }
 }
 
+// Bearer authorization with a token.
 object BearerAuthorization does HttpAuthorizing {
     has token is SecretBytes;
 
+    // The token; InvalidAuthentication when it is not a token68.
     BearerAuthorization(token is SecretBytes) {
         confirm token.size() >= 1 && token.size() <= 8192
             else throw InvalidAuthentication.because("bearer size");
         self.token = token;
     }
 
+    // `Authorization: Bearer …`.
     header() is Header {
         let octets = ExportedSecret(token).bytes();
         let padding is int = (0..octets.size()).reduce(octets.size()) -> position, index {
@@ -114,9 +141,11 @@ object BearerAuthorization does HttpAuthorizing {
     }
 }
 
+// A client that sends Basic credentials inside a scope.
 object BasicExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
+    // Sends through origin, with credentials inside scope.
     BasicExchanging(origin is Exchanging, scope is UrlParts, credentials is BasicCredentials) {
         scoped = ScopedAuthorization(
             origin: origin,
@@ -125,26 +154,35 @@ object BasicExchanging does Exchanging {
         );
     }
 
+    // Adds the field to requests inside the scope; AuthenticationConflict when
+    // one already has Authorization.
     async response(request is Request) is ClientResponse {
         await scoped.response(request);
     }
 }
 
+// A client that sends a bearer token inside a scope.
 object BearerExchanging does Exchanging {
     has scoped is ScopedAuthorization;
 
+    // Sends through origin, with authorization inside scope.
     BearerExchanging(origin is Exchanging, scope is UrlParts, authorization is BearerAuthorization) {
         scoped = ScopedAuthorization(origin: origin, scope: scope, authorization: authorization);
     }
 
+    // Adds the field to requests inside the scope; AuthenticationConflict when
+    // one already has Authorization.
     async response(request is Request) is ClientResponse {
         await scoped.response(request);
     }
 }
 
+// Where credentials may go: an https URL and the paths under it.
 object AuthenticationScope {
     has key, path is string;
 
+    // The scope of origin; InvalidAuthentication unless it is https without
+    // query or fragment.
     AuthenticationScope(origin is UrlParts) {
         confirm origin::Parts::scheme == "https"
             && origin::Parts::query == Maybe<string>.none
@@ -164,6 +202,7 @@ object AuthenticationScope {
         };
     }
 
+    // Whether request goes to the same origin, under the scope's path.
     matches(request is Request) is bool {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidAuthentication.because("absolute auth target required");
@@ -196,17 +235,21 @@ object AuthenticationScope {
     }
 }
 
+// A client that adds an Authorization field inside a scope.
 object ScopedAuthorization does Exchanging {
     has origin is Exchanging;
     has scope is AuthenticationScope;
     has authorization is HttpAuthorizing;
 
+    // Sends through origin, with authorization inside scope.
     ScopedAuthorization(origin is Exchanging, scope is UrlParts, authorization is HttpAuthorizing) {
         self.origin = origin;
         self.scope = AuthenticationScope(scope);
         self.authorization = authorization;
     }
 
+    // Adds the field to requests inside the scope; AuthenticationConflict when
+    // one already has Authorization.
     async response(request is Request) is ClientResponse {
         if !scope.matches(request) {
             return await origin.response(request);
@@ -233,8 +276,10 @@ object ScopedAuthorization does Exchanging {
     }
 }
 
+// Credentials or a scope that cannot be used; reason says why.
 enum InvalidAuthentication is Error = (because(reason is string));
 
+// The request already had an Authorization field.
 enum AuthenticationConflict is Error = (conflict);
 
 test "authentication scope uses canonical origin and path boundaries" {

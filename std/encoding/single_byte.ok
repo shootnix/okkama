@@ -20,13 +20,16 @@ import "runtime/single_byte" take ascii_representable_prefix, ascii_encode, asci
 // ASCII decoding error reports a byte offset. Codecs never replace, skip,
 // normalize or transliterate values.
 
+// Text as ASCII bytes; a character past 127 is UnrepresentableAsciiCharacter.
 object AsciiEncoded {
     has origin is string;
 
+    // Encodes origin.
     AsciiEncoded(origin is string) {
         self.origin = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         let offset is int = ascii_representable_prefix(origin);
         confirm offset == origin.length()
@@ -35,13 +38,16 @@ object AsciiEncoded {
     }
 }
 
+// ASCII bytes as text; a byte past 127 is InvalidAsciiByte.
 object AsciiDecoded {
     has origin is @byte;
 
+    // Decodes origin.
     AsciiDecoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The text.
     string() is string {
         let offset is int = ascii_valid_prefix(origin);
         confirm offset == origin.size() else throw InvalidAsciiByte.at(offset);
@@ -49,13 +55,17 @@ object AsciiDecoded {
     }
 }
 
+// Text as ISO-8859-1 bytes; a character past 255 is
+// UnrepresentableLatin1Character.
 object Latin1Encoded {
     has origin is string;
 
+    // Encodes origin.
     Latin1Encoded(origin is string) {
         self.origin = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         let offset is int = latin1_representable_prefix(origin);
         confirm offset == origin.length()
@@ -64,22 +74,28 @@ object Latin1Encoded {
     }
 }
 
+// ISO-8859-1 bytes as text; every byte is a character.
 object Latin1Decoded {
     has origin is @byte;
 
+    // Decodes origin.
     Latin1Decoded(origin is @byte) {
         self.origin = origin;
     }
 
+    // The text.
     string() is string {
         latin1_decode(origin);
     }
 }
 
+// A character ASCII lacks; offset counts characters.
 enum UnrepresentableAsciiCharacter is Error = (at(offset is int));
 
+// A character ISO-8859-1 lacks; offset counts characters.
 enum UnrepresentableLatin1Character is Error = (at(offset is int));
 
+// A byte past 127; offset says where.
 enum InvalidAsciiByte is Error = (at(offset is int));
 
 test "ascii round-trips and refuses everything above 127" {

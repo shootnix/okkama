@@ -1,15 +1,5 @@
 module csv v1.0.0;
 
-import "collections/iteration" take Iterating, Cursor;
-import "collections/list" take List, EmptyList;
-import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
-    csv_state_row, csv_state_offset, csv_state_request, csv_state_close;
-import "encoding/utf" take Utf8Encoded, InvalidUtf8;
-import "io/stream" take AsyncReading;
-import "io/decorators" take InvalidReading;
-import "async/atomic" take Atomic;
-import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
-
 // In-memory Unicode CSV representations; defaults are comma / double quote / CRLF.
 //
 //     let dialect = CsvDialect(";", "'", "\n");
@@ -49,11 +39,24 @@ import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
 // completed field once; applications use CsvRows/CsvString.
 // Each record includes its terminator; an empty document has no records.
 // No header guessing, implicit byte encoding or spreadsheet-specific rewriting.
+
+import "collections/iteration" take Iterating, Cursor;
+import "collections/list" take List, EmptyList;
+import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
+    csv_state_row, csv_state_offset, csv_state_request, csv_state_close;
+import "encoding/utf" take Utf8Encoded, InvalidUtf8;
+import "io/stream" take AsyncReading;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
+import "strings/parse" take Number, Truth, InvalidInteger, InvalidBoolean;
+
+// Rows written as CSV text.
 object CsvString {
     has dialect is CsvDialect;
     has rows is Iterating<@string>;
     has maximum_output, maximum_field, maximum_rows, maximum_columns is int;
 
+    // rows as CSV with commas, double quotes and CRLF.
     CsvString(rows is Iterating<@string>) {
         dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         self.rows = rows;
@@ -63,6 +66,7 @@ object CsvString {
         maximum_columns = 1024;
     }
 
+    // rows as CSV within the limits given.
     CsvString(
         rows is Iterating<@string>,
         maximum_output is int,
@@ -83,6 +87,7 @@ object CsvString {
         self.maximum_columns = maximum_columns;
     }
 
+    // rows as CSV in dialect.
     CsvString(rows is Iterating<@string>, dialect is CsvDialect) {
         self.dialect = dialect;
         self.rows = rows;
@@ -92,6 +97,7 @@ object CsvString {
         maximum_columns = 1024;
     }
 
+    // rows as CSV in dialect, within the limits given.
     CsvString(
         rows is Iterating<@string>,
         maximum_output is int,
@@ -168,18 +174,22 @@ object CsvRecord {
     has header is %string:int = [:];
     has row is int = 0;
 
+    // A record of fields alone, with no header to name them.
     CsvRecord(:fields);
 
+    // Made by CsvRecords; not constructed directly.
     CsvRecord(fields is @string, header is %string:int, row is int) {
         self.fields = fields;
         self.header = header;
         self.row = row;
     }
 
+    // The field in column, as written.
     text(column is string) is string {
         self.maybe(column).text() else "";
     }
 
+    // The field in column as an int; InvalidCsvValue when it is not one.
     int(column is string) is int {
         match self.maybe(column).int() {
             case Maybe.some(found) {
@@ -191,6 +201,7 @@ object CsvRecord {
         }
     }
 
+    // The field in column as true or false; InvalidCsvValue otherwise.
     boolean(column is string) is bool {
         match self.maybe(column).boolean() {
             case Maybe.some(found) {
@@ -215,6 +226,7 @@ object CsvRecord {
         CsvMaybeValue(row: row, column: column, value: value);
     }
 
+    // The record as one CSV line.
     string() is string {
         confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;
         let encoded is @string = fields.map() -> field {
@@ -224,11 +236,14 @@ object CsvRecord {
     }
 }
 
+// One field's text.
 object CsvField {
     has origin is string;
 
+    // A field holding origin.
     CsvField(:origin);
 
+    // Its length in characters.
     size() is int {
         if self.quoted() {
             origin.length() + 2 + origin.length() - origin.replace("\"", "").length();
@@ -238,6 +253,7 @@ object CsvField {
         }
     }
 
+    // Its text.
     string() is string {
         if self.quoted() {
             "\"" + origin.replace("\"", "\"\"") + "\"";
@@ -255,6 +271,7 @@ object CsvField {
     }
 }
 
+// A row of no fields cannot be written.
 enum EmptyCsvRecord is Error = (no_fields);
 
 // A field that may be absent: its readers answer Maybe. A value that is there
@@ -264,16 +281,20 @@ object CsvMaybeValue {
     has column is string;
     has value is Maybe<string>;
 
+    // Made by CsvRecord.maybe(column); not constructed directly.
     CsvMaybeValue(row is int, column is string, value is Maybe<string>) {
         self.row = row;
         self.column = column;
         self.value = value;
     }
 
+    // The field, or none when it is empty or the row is too short; a column the
+    // header lacks is MissingCsvColumn.
     text() is Maybe<string> {
         value;
     }
 
+    // The field as an int, or none.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -290,6 +311,7 @@ object CsvMaybeValue {
         }
     }
 
+    // The field as true or false, or none.
     boolean() is Maybe<bool> {
         match value {
             case Maybe.some(text) {
@@ -338,6 +360,7 @@ object CsvRecords does Iterating<CsvRecord> {
     // Where next() is in a text.
     has walk is Atomic<@Cursor<CsvRecord>>;
 
+    // The records of a CSV text whose first row is the header.
     CsvRecords(origin is string) {
         rows = CsvRows(origin);
         upstream = Maybe<CsvAsyncRows>.none;
@@ -348,6 +371,7 @@ object CsvRecords does Iterating<CsvRecord> {
         walk = Atomic(unwalked);
     }
 
+    // The records of a CSV text in dialect.
     CsvRecords(origin is string, dialect is CsvDialect) {
         rows = CsvRows(origin, dialect);
         upstream = Maybe<CsvAsyncRows>.none;
@@ -358,6 +382,7 @@ object CsvRecords does Iterating<CsvRecord> {
         walk = Atomic(unwalked);
     }
 
+    // The records of a stream, read as they come, with the default limits.
     CsvRecords(origin is AsyncReading) {
         rows = CsvRows("");
         upstream = Maybe.some(CsvAsyncRows(
@@ -375,6 +400,7 @@ object CsvRecords does Iterating<CsvRecord> {
         walk = Atomic(unwalked);
     }
 
+    // The records of a stream within the limits given.
     CsvRecords(
         origin is AsyncReading,
         maximum_bytes is int,
@@ -399,6 +425,7 @@ object CsvRecords does Iterating<CsvRecord> {
         walk = Atomic(unwalked);
     }
 
+    // Reads the whole text and walks its records.
     cursor() is Cursor<CsvRecord> {
         confirm !self.streamed() else throw AsyncCsvOrigin.walked;
         let all = rows.cursor();
@@ -611,8 +638,9 @@ object CsvRows does Iterating<@string> {
     has origin is string;
     has maximum_input, maximum_field, maximum_rows, maximum_columns is int;
 
-    // The text is already in memory, so the default limits are wide (#203):
-    // 64 Mi characters, a field of 1 Mi, a million rows, 1024 columns.
+    // The rows of a CSV text with commas, double quotes and CRLF. The text is
+    // already in memory, so the default limits are wide (#203): 64 Mi
+    // characters, a field of 1 Mi, a million rows, 1024 columns.
     CsvRows(origin is string) {
         dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
         self.origin = origin;
@@ -622,6 +650,7 @@ object CsvRows does Iterating<@string> {
         maximum_columns = 1024;
     }
 
+    // The rows of a CSV text within the limits given.
     CsvRows(
         origin is string,
         maximum_input is int,
@@ -642,6 +671,7 @@ object CsvRows does Iterating<@string> {
             else throw InvalidCsvLimits.invalid;
     }
 
+    // The rows of a CSV text in dialect.
     CsvRows(origin is string, dialect is CsvDialect) {
         self.dialect = dialect;
         self.origin = origin;
@@ -651,6 +681,7 @@ object CsvRows does Iterating<@string> {
         maximum_columns = 1024;
     }
 
+    // The rows of a CSV text in dialect, within the limits given.
     CsvRows(
         origin is string,
         maximum_input is int,
@@ -672,6 +703,7 @@ object CsvRows does Iterating<@string> {
             else throw InvalidCsvLimits.invalid;
     }
 
+    // Checks the whole text, then walks its rows.
     cursor() is Cursor<@string> {
         self.records().cursor();
     }
@@ -808,6 +840,7 @@ hidden object CsvScanProgress {
     }
 }
 
+// Text that is not CSV; offset counts characters from the start.
 enum InvalidCsv is Error = (at(offset is int));
 
 // Importable implementation collaborators: the language has no module privacy.
@@ -967,10 +1000,13 @@ hidden object CsvPrefix {
     }
 }
 
+// Which limit was passed.
 enum CsvLimit = (input, field, rows, columns, output);
 
+// A negative limit.
 enum InvalidCsvLimits is Error = (invalid);
 
+// The text or output went over a limit; kind says which.
 enum CsvLimitExceeded is Error = (kind(kind is CsvLimit));
 
 // Snapshot and output-prefix collaborators keep limits at allocation boundaries.
@@ -1074,11 +1110,16 @@ hidden object CsvPrintRecord {
 // Immutable grammar and escaping behavior. No source or resource ownership.
 enum CsvSymbol = (ordinary, separator, quote, pending, end, invalid);
 
+// A delimiter or quote that is not one character, the two alike, or a line end
+// other than LF or CRLF.
 enum InvalidCsvDialect is Error = (invalid);
 
+// The delimiter, quote and line end of a CSV text.
 object CsvDialect {
     has delimiter, quote, line_ending is string;
 
+    // A one-character delimiter and quote, different and neither CR nor LF, and
+    // a line end of LF or CRLF; anything else is InvalidCsvDialect.
     CsvDialect(delimiter is string, quote is string, line_ending is string) {
         self.delimiter = delimiter;
         self.quote = quote;
@@ -1094,6 +1135,7 @@ object CsvDialect {
             else throw InvalidCsvDialect.invalid;
     }
 
+    // What one character means to the scanner; CsvRows uses it.
     symbol(value is string) is CsvSymbol {
         if value == delimiter {
             CsvSymbol.separator;
@@ -1115,6 +1157,8 @@ object CsvDialect {
         }
     }
 
+    // The field as it is written: quoted, with quotes doubled, when it needs to
+    // be.
     encoded(value is string) is string {
         if self.quoted(value) {
             quote + value.replace(quote, quote + quote) + quote;
@@ -1124,10 +1168,12 @@ object CsvDialect {
         }
     }
 
+    // A quoted field's text with doubled quotes undone.
     decoded(value is string) is string {
         value.replace(quote + quote, quote);
     }
 
+    // How many characters the field takes when written.
     size(value is string) is int {
         if self.quoted(value) {
             value.length() + 2 + value.length() - value.replace(quote, "").length();
@@ -1137,6 +1183,7 @@ object CsvDialect {
         }
     }
 
+    // The fields as one line, if it fits in allowance characters.
     record(fields is @string, allowance is int) is string {
         confirm allowance >= 0 else throw InvalidCsvLimits.invalid;
         confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;

@@ -1,22 +1,41 @@
 module config/source v1.0.0;
 
+// Settings from several sources, later ones winning.
+//
+//     let settings = LayeredSettings(
+//         TomlSettings(document: config, source: file),
+//         EnvironmentSettings(environment: Environment(), names: bindings, source: env),
+//         command_line,
+//     );
+//     settings.int("server.port") else 8080;
+//     settings.bool("server.debug") else false;
+//     settings.texts("cors.origins");
+//     settings.source("server.port");             // which layer gave it
+//
+// Each entry remembers its source, so errors and diagnostics can say where a
+// value came from.
+
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 import "collections/ordering" take LowerBound;
 import "config/key" take SettingKey, InvalidSettingKey;
 import "strings/parse" take Number, Truth, InvalidInteger, InvalidFloat, InvalidBoolean;
 
+// What kind of place a setting came from.
 enum SettingSourceKind = (defaults, document, environment, command_line);
 
+// Where settings came from: a kind and a name such as a file path.
 object SettingSource {
     has category is SettingSourceKind;
     has label is string;
 
+    // A source of kind called name.
     SettingSource(kind is SettingSourceKind, name is string) {
         category = kind;
         label = name;
     }
 
+    // Its kind and name.
     cap Source {
         kind is SettingSourceKind {
             category;
@@ -28,11 +47,13 @@ object SettingSource {
     }
 }
 
+// One setting: its key, its values and its source.
 object SettingEntry {
     has identity is SettingKey;
     has origin is @string;
     has provenance is SettingSource;
 
+    // key with values (at most 1024) from source.
     SettingEntry(key is SettingKey, values is Sequencing<string>, source is SettingSource) {
         let size = values.size();
         confirm size >= 0 && size <= 1024 else throw SettingLimitExceeded.exceeded;
@@ -48,29 +69,38 @@ object SettingEntry {
         provenance = source;
     }
 
+    // The key.
     key() is SettingKey {
         identity;
     }
 
+    // The values.
     values() is Sequencing<string> {
         origin;
     }
 
+    // Where it came from.
     source() is SettingSource {
         provenance;
     }
 }
 
+// Something settings can be read from.
 role SettingReading {
+    // Whether it has the key.
     membership(key is SettingKey) is bool;
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry;
+    // Every key, in order.
     keys() is Sequencing<SettingKey>;
 }
 
+// Settings given as entries.
 object Settings does SettingReading {
     has origin is @SettingEntry;
     has lookup is SettingKeyIndex;
 
+    // The entries; a repeated key is DuplicateSetting.
     Settings(entries is Sequencing<SettingEntry>) {
         let size = entries.size();
         confirm size >= 0 && size <= 4096 else throw SettingLimitExceeded.exceeded;
@@ -103,16 +133,19 @@ object Settings does SettingReading {
         lookup = checked;
     }
 
+    // Whether it has the key.
     membership(key is SettingKey) is bool {
         self.index(key) >= 0;
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         let at = self.index(key);
         confirm at >= 0 else throw MissingSetting.key(key.string());
         origin[at];
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         lookup.keys();
     }
@@ -128,22 +161,28 @@ object Settings does SettingReading {
         SettingByName(origin: self, name: name).text();
     }
 
+    // The setting named `section.key` as an int, or none; MalformedSetting when
+    // it is not one.
     int(name is string) is Maybe<int> {
         SettingByName(origin: self, name: name).int();
     }
 
+    // The setting as a float, or none.
     float(name is string) is Maybe<float> {
         SettingByName(origin: self, name: name).float();
     }
 
+    // The setting as true or false, or none.
     bool(name is string) is Maybe<bool> {
         SettingByName(origin: self, name: name).bool();
     }
 
+    // Every value of the setting; [] when absent.
     texts(name is string) is @string {
         SettingByName(origin: self, name: name).texts();
     }
 
+    // Where the setting came from, or none.
     source(name is string) is Maybe<SettingSource> {
         SettingByName(origin: self, name: name).source();
     }
@@ -173,10 +212,12 @@ hidden object SettingIndexSlot does Comparing<SettingIndexSlot> {
     }
 }
 
+// Keys in a sorted index, for lookup; Settings uses it.
 object SettingKeyIndex {
     has original, ordered is @SettingKey;
     has positions is @int;
 
+    // Indexes keys.
     SettingKeyIndex(keys is @SettingKey) {
         confirm keys.size() <= 4096 else throw SettingLimitExceeded.exceeded;
         let slots is @SettingIndexSlot = (0..keys.size()).map() -> index {
@@ -194,10 +235,12 @@ object SettingKeyIndex {
         positions = indices;
     }
 
+    // The keys.
     keys() is Sequencing<SettingKey> {
         original;
     }
 
+    // Throws DuplicateSetting for a repeated key.
     valid() is void {
         let duplicate = (0..ordered.size()).reduce(original.size()) -> earliest, index {
             if index > 0
@@ -213,6 +256,7 @@ object SettingKeyIndex {
             else throw DuplicateSetting.key((original[duplicate]).string());
     }
 
+    // The position of key, or -1.
     position(key is SettingKey) is int {
         let at = LowerBound(origin: ordered, item: key).index();
         if at < ordered.size() && ordered[at].order(key) == Order.equal {
@@ -224,9 +268,11 @@ object SettingKeyIndex {
     }
 }
 
+// Settings from several layers, the last one that has a key winning.
 object LayeredSettings does SettingReading {
     has origin is Settings;
 
+    // The layers, earliest first.
     LayeredSettings(layers is Sequencing<SettingReading>) {
         let size = layers.size();
         confirm size >= 0 && size <= 128 else throw SettingLimitExceeded.exceeded;
@@ -259,14 +305,17 @@ object LayeredSettings does SettingReading {
         origin = Settings(merged.entries());
     }
 
+    // Whether any layer has the key.
     membership(key is SettingKey) is bool {
         origin.membership(key);
     }
 
+    // The entry of key; MissingSetting when there is none.
     entry(key is SettingKey) is SettingEntry {
         origin.entry(key);
     }
 
+    // Every key, in order.
     keys() is Sequencing<SettingKey> {
         origin.keys();
     }
@@ -278,22 +327,28 @@ object LayeredSettings does SettingReading {
         SettingByName(origin: self, name: name).text();
     }
 
+    // The setting named `section.key` as an int, or none; MalformedSetting when
+    // it is not one.
     int(name is string) is Maybe<int> {
         SettingByName(origin: self, name: name).int();
     }
 
+    // The setting as a float, or none.
     float(name is string) is Maybe<float> {
         SettingByName(origin: self, name: name).float();
     }
 
+    // The setting as true or false, or none.
     bool(name is string) is Maybe<bool> {
         SettingByName(origin: self, name: name).bool();
     }
 
+    // Every value of the setting; [] when absent.
     texts(name is string) is @string {
         SettingByName(origin: self, name: name).texts();
     }
 
+    // Where the setting came from, or none.
     source(name is string) is Maybe<SettingSource> {
         SettingByName(origin: self, name: name).source();
     }
@@ -305,11 +360,13 @@ object SettingOverlay does SettingReading {
     has root is @SettingOverlayNode;
     has count is int;
 
+    // No entries yet.
     SettingOverlay() {
         root = [];
         count = 0;
     }
 
+    // The entries.
     entries() is @SettingEntry {
         if count == 0 {
             let empty is @SettingEntry = [];
@@ -322,6 +379,7 @@ object SettingOverlay does SettingReading {
         values;
     }
 
+    // Their keys.
     keys() is Sequencing<SettingKey> {
         let keys is @SettingKey = self.entries().map() -> entry {
             entry.key();
@@ -329,21 +387,27 @@ object SettingOverlay does SettingReading {
         keys;
     }
 
+    // Whether key is there.
     membership(key is SettingKey) is bool {
         root.size() > 0 && root[0].position(key) >= 0;
     }
 
+    // The entry of key.
     entry(key is SettingKey) is SettingEntry {
         confirm root.size() > 0 else throw MissingSetting.key(key.string());
         root[0].entry(key);
     }
 
+    // This overlay with entry in place of any entry of its key.
     replaced(entry is SettingEntry) is ^SettingOverlay {
         let key = entry.key();
         let slot = SettingOverlaySlot(entry: entry, identity: key, position: count);
         let update = if root.size() == 0 {
             confirm count < 4096 else throw SettingLimitExceeded.exceeded;
-            SettingOverlayUpdate(root: SettingOverlayNode(slot: slot, left: [], right: []), inserted: true);
+            SettingOverlayUpdate(
+                root: SettingOverlayNode(slot: slot, left: [], right: []),
+                inserted: true
+            );
         }
         else {
             root[0].updated(slot, count < 4096);
@@ -498,13 +562,23 @@ hidden object SettingOverlayNode {
     updated(value is SettingOverlaySlot, can_add is bool) is SettingOverlayUpdate {
         let order = value.identity().order(slot.identity());
         if order == Order.equal {
-            let retained = SettingOverlaySlot(entry: value.entry(), identity: value.identity(), position: slot.position());
-            return SettingOverlayUpdate(root: SettingOverlayNode(slot: retained, left: left, right: right), inserted: false);
+            let retained = SettingOverlaySlot(
+                entry: value.entry(),
+                identity: value.identity(),
+                position: slot.position()
+            );
+            return SettingOverlayUpdate(
+                root: SettingOverlayNode(slot: retained, left: left, right: right),
+                inserted: false
+            );
         }
         if order == Order.less {
             let update = if left.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
+                SettingOverlayUpdate(
+                    root: SettingOverlayNode(slot: value, left: [], right: []),
+                    inserted: true
+                );
             }
             else {
                 left[0].updated(value, can_add);
@@ -517,7 +591,10 @@ hidden object SettingOverlayNode {
         else {
             let update = if right.size() == 0 {
                 confirm can_add else throw SettingLimitExceeded.exceeded;
-                SettingOverlayUpdate(root: SettingOverlayNode(slot: value, left: [], right: []), inserted: true);
+                SettingOverlayUpdate(
+                    root: SettingOverlayNode(slot: value, left: [], right: []),
+                    inserted: true
+                );
             }
             else {
                 right[0].updated(value, can_add);
@@ -605,7 +682,9 @@ hidden object SettingOverlayBalance {
             let middle = pivot.right()[0];
             SettingOverlayNode(
                 slot: middle.slot(),
-                left: [SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())],
+                left: [
+                    SettingOverlayNode(slot: pivot.slot(), left: pivot.left(), right: middle.left())
+                ],
                 right: [SettingOverlayNode(slot: slot, left: middle.right(), right: right)]
             );
         }
@@ -623,7 +702,13 @@ hidden object SettingOverlayBalance {
                 SettingOverlayNode(
                     slot: middle.slot(),
                     left: [SettingOverlayNode(slot: slot, left: left, right: middle.left())],
-                    right: [SettingOverlayNode(slot: pivot.slot(), left: middle.right(), right: pivot.right())]
+                    right: [
+                        SettingOverlayNode(
+                            slot: pivot.slot(),
+                            left: middle.right(),
+                            right: pivot.right()
+                        )
+                    ]
                 );
             }
             else {
@@ -642,10 +727,13 @@ hidden object SettingOverlayBalance {
     }
 }
 
+// No setting has that key.
 enum MissingSetting is Error = (key(key is string));
 
+// Two entries with one key.
 enum DuplicateSetting is Error = (key(key is string));
 
+// Too many entries or values.
 enum SettingLimitExceeded is Error = (exceeded);
 
 test "layers replace complete values and preserve the winning source" {
@@ -675,7 +763,11 @@ hidden object SettingByName {
         }
         let values = origin.entry(key).values();
         confirm values.size() == 1
-            else throw MalformedSetting.detailed(key.string(), "one value", values.size().string() + " values");
+            else throw MalformedSetting.detailed(
+                key.string(),
+                "one value",
+                values.size().string() + " values"
+            );
         Maybe<string>.some(values.first());
     }
 
@@ -748,6 +840,7 @@ hidden object SettingByName {
     }
 }
 
+// A value of another kind than asked for; key, expected and value say which.
 enum MalformedSetting is Error = (detailed(key is string, expected is string, value is string));
 
 test "settings read a value by its dotted name" {

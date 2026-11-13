@@ -1,7 +1,5 @@
 module runtime/ordering v1.0.0;
 
-import "compare" take Comparing;
-
 // The low-level bulk ordering boundary used by collections/ordering.
 //
 // The host runtime owns the stable merge sort behind @T.ordering(). This
@@ -19,13 +17,18 @@ import "compare" take Comparing;
 // requires. If that ABI gains a safe callback protocol, this module is the
 // single boundary that can move to an external provider.
 
+import "compare" take Comparing;
+
+// Values sorted by the runtime in one call, stably.
 object BulkOrdering<T: Comparing<T>> {
     has origin is @T;
 
+    // The values.
     BulkOrdering(values is @T) {
         origin = values;
     }
 
+    // The values, sorted; equal ones keep their order.
     items() is @T {
         origin.ordering();
     }

@@ -1,5 +1,8 @@
 module http/http2_server v1.0.0;
 
+// The server side of one HTTP/2 connection. HttpServer uses it when ALPN or its
+// policy selects HTTP/2; at most 100 streams run at once.
+
 import "http/method" take Method;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
@@ -46,12 +49,11 @@ import "error" take InvalidState;
 import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 
-// Adopts one explicitly selected H2 transport, never guesses ALPN/prior
-// knowledge and never exposes raw transport to Handling. Local receive limits
-// cap active streams at 100 and window storage at 65535 per stream.
+// Serves one HTTP/2 connection with a handler.
 object Http2ServerSession does Closing {
     has state is Http2ServerState;
 
+    // Serves the connection on input and output with handling, under policy.
     Http2ServerSession(
         input is AsyncReading,
         output is AsyncWriting,
@@ -76,26 +78,32 @@ object Http2ServerSession does Closing {
         );
     }
 
+    // Whether it was closed.
     closed() is bool {
         state.closed();
     }
 
+    // Closes the connection.
     close() is void {
         state.close();
     }
 
+    // Serves until the connection ends; true when it ended cleanly.
     async serve() is bool {
         await state.run();
     }
 
+    // Takes no new streams; those open go on.
     stop_accepting() is void {
         state.stop_accepting();
     }
 
+    // Waits until no stream is left.
     async drained() is bool {
         await state.drained();
     }
 
+    // Waits until serving has stopped.
     async settled() is bool {
         await state.settled();
     }
@@ -1310,4 +1318,5 @@ hidden object Http2ServerCleanup {
     }
 }
 
+// The session was used after it closed.
 enum Http2ServerClosed is Error = (closed);

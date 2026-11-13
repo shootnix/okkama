@@ -1,5 +1,8 @@
 module http/http1_body_check v1.0.0;
 
+// Checks a body against its framing plan before the head is written: a fixed
+// length must match, a body must be within the limits.
+
 import "http/body" take BodyOpening, UnknownBodyLength, ByteBody;
 import "http/http1_framing" take Http1BodyPlan, Http1BodyKind;
 import "http/http1_head" take Http1Limits, Http1LimitExceeded;
@@ -14,6 +17,7 @@ object Http1BodyCheck {
     has limits is Http1Limits;
     has request is bool;
 
+    // Checks body against plan within limits, for a request or a response.
     Http1BodyCheck(
         body is BodyOpening,
         plan is Http1BodyPlan,
@@ -26,6 +30,8 @@ object Http1BodyCheck {
         self.request = request;
     }
 
+    // The body's length when it is known; InvalidHttpMessage when it
+    // contradicts the plan.
     known() is @BigInt {
         if !request && plan::Plan::kind == Http1BodyKind.empty {
             let empty is @BigInt = [];

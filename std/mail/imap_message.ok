@@ -1,5 +1,17 @@
 module mail/imap_message v1.0.0;
 
+// What a FETCH brought back about a message.
+//
+//     for messages -> message {
+//         message.uid();
+//         if message.has_flags() { message.flags(); }
+//         if message.has_headers() { message.headers().first("Subject"); }
+//     }
+//
+// A FETCH may come unasked and may lack what was asked for: each part has a
+// has_ check, and NIL is unavailable, never empty bytes. Bodies are the bytes
+// fetched, not MIME-decoded.
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 
@@ -15,31 +27,34 @@ import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems;
 import "numbers/bigint" take BigInt;
 
-// FETCH can be unsolicited and omit UID or requested content. Presence stays
-// explicit; NIL content is unavailable, never fabricated as empty bytes.
-// Body/header/message bytes are exact fetched wire bytes, not MIME-decoded data.
+// One FETCH item: a name and its value.
 object ImapFetchAttribute {
     has name is string;
     has value is ImapValue;
 
+    // As given.
     ImapFetchAttribute(name is string, value is ImapValue) {
         self.name = name;
         self.value = value;
     }
 
+    // Its name, uppercase.
     name() is string {
         name;
     }
 
+    // Its value.
     value() is ImapValue {
         value;
     }
 }
 
+// A FETCH response, whatever it holds.
 object ImapFetch {
     has sequence is ImapSequence;
     has attributes is @ImapFetchAttribute;
 
+    // Reads origin; InvalidImapData when it is not a FETCH.
     ImapFetch(origin is ImapResponse) {
         confirm origin.name() == "FETCH"
             else throw InvalidImapData.because("expected FETCH response");
@@ -82,14 +97,17 @@ object ImapFetch {
         attributes = result.entries();
     }
 
+    // The message number.
     sequence() is ImapSequence {
         sequence;
     }
 
+    // Every item.
     attributes() is Sequencing<ImapFetchAttribute> {
         attributes;
     }
 
+    // Whether an item has the name.
     contains(name is string) is bool {
         let upper = ImapDataUpper(name).string();
         attributes.reduce(false) -> found, entry {
@@ -97,6 +115,7 @@ object ImapFetch {
         };
     }
 
+    // The item's value; MissingImapDatum when absent.
     attribute(name is string) is ImapValue {
         let upper = ImapDataUpper(name).string();
         for attributes -> entry {
@@ -107,104 +126,128 @@ object ImapFetch {
         throw MissingImapDatum.name(upper);
     }
 
+    // Whether UID came.
     has_uid() is bool {
         self.contains("UID");
     }
 
+    // The UID; MissingImapDatum when it did not come.
     uid() is ImapUid {
         ImapUid(BigInt(self.attribute("UID").string()));
     }
 
+    // Whether FLAGS came.
     has_flags() is bool {
         self.contains("FLAGS");
     }
 
+    // FLAGS; MissingImapDatum when they did not come.
     flags() is MailFlags {
         ImapFlagsValue(self.attribute("FLAGS")).flags();
     }
 
+    // Whether the header came.
     has_headers() is bool {
         self.contains("BODY[HEADER]") && !self.attribute("BODY[HEADER]").absent();
     }
 
+    // The header fields; MissingImapDatum when not fetched.
     headers() is MessageHeaders {
         confirm self.has_headers() else throw MissingImapDatum.name("BODY[HEADER]");
         ParsedMail(self.attribute("BODY[HEADER]").bytes()).message().headers();
     }
 
+    // Whether the body text came.
     has_body() is bool {
         self.contains("BODY[TEXT]") && !self.attribute("BODY[TEXT]").absent();
     }
 
+    // The body text as fetched, not decoded; MissingImapDatum when not fetched.
     body() is @byte {
         confirm self.has_body() else throw MissingImapDatum.name("BODY[TEXT]");
         self.attribute("BODY[TEXT]").bytes();
     }
 
+    // Whether the whole message came.
     has_message() is bool {
         self.contains("BODY[]") && !self.attribute("BODY[]").absent();
     }
 
+    // The whole message, parsed; MissingImapDatum when not fetched.
     message() is MailMessage {
         confirm self.has_message() else throw MissingImapDatum.name("BODY[]");
         ParsedMail(self.attribute("BODY[]").bytes()).message();
     }
 }
 
+// A fetched message with its UID.
 object ImapMessage {
     has value is ImapFetch;
 
+    // Reads origin; MissingImapDatum without a UID.
     ImapMessage(origin is ImapResponse) {
         let parsed = ImapFetch(origin);
         confirm parsed.has_uid() else throw MissingImapDatum.name("UID");
         value = parsed;
     }
 
+    // The message number.
     sequence() is ImapSequence {
         value.sequence();
     }
 
+    // The UID.
     uid() is ImapUid {
         value.uid();
     }
 
+    // Whether FLAGS came.
     has_flags() is bool {
         value.has_flags();
     }
 
+    // FLAGS; MissingImapDatum when they did not come.
     flags() is MailFlags {
         value.flags();
     }
 
+    // Whether the header came.
     has_headers() is bool {
         value.has_headers();
     }
 
+    // The header fields; MissingImapDatum when not fetched.
     headers() is MessageHeaders {
         value.headers();
     }
 
+    // Whether the body text came.
     has_body() is bool {
         value.has_body();
     }
 
+    // The body text as fetched, not decoded; MissingImapDatum when not fetched.
     body() is @byte {
         value.body();
     }
 
+    // Whether the whole message came.
     has_message() is bool {
         value.has_message();
     }
 
+    // The whole message, parsed; MissingImapDatum when not fetched.
     message() is MailMessage {
         value.message();
     }
 
+    // Every item.
     attributes() is Sequencing<ImapFetchAttribute> {
         value.attributes();
     }
 }
 
+// The response does not have the item named.
 enum MissingImapDatum is Error = (name(name is string));
 
 test "missing FETCH content remains unavailable" {

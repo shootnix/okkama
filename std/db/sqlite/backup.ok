@@ -1,5 +1,13 @@
 module db/sqlite/backup v1.0.0;
 
+// Online backups of a SQLite database to a file.
+//
+//     let report = await SqliteBackup(origin: db, target: Path("backup.db"), pages: 100,
+//         clock: SystemClock(), timeout: Duration(seconds: 30)).report();
+//     report.copies();                 // pages copied
+//
+// The copy runs pages at a time, so other work goes on between steps.
+
 import "fs/path" take Path;
 import "numbers/bigint" take BigInt;
 import "time/clock" take Timing;
@@ -8,10 +16,13 @@ import "compare" take Order;
 import "time/clock" take SystemClock;
 import "time/duration" take DurationUnit;
 
+// Something that can back itself up.
 role SqliteBackupMaking {
+    // Copies to target, pages at a time, within timeout.
     async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport;
 }
 
+// A backup to run.
 object SqliteBackup {
     has origin is SqliteBackupMaking;
     has target is Path;
@@ -19,6 +30,8 @@ object SqliteBackup {
     has clock is Timing;
     has timeout is Duration;
 
+    // Backs origin up to target, pages per step (1-256), within timeout;
+    // InvalidSqliteBackup otherwise.
     SqliteBackup(
         origin is SqliteBackupMaking,
         target is Path,
@@ -35,14 +48,17 @@ object SqliteBackup {
         self.timeout = timeout;
     }
 
+    // Runs it and says how much was copied.
     async report() is BackupReport {
         await origin.backup(target, pages, clock, timeout);
     }
 }
 
+// How much a backup copied.
 object BackupReport {
     has copies, total is BigInt;
 
+    // copies of total pages.
     BackupReport(copies is BigInt, total is BigInt) {
         confirm copies.order(BigInt(0)) != Order.less && total.order(copies) != Order.less
             else throw InvalidSqliteBackup.invalid;
@@ -50,15 +66,18 @@ object BackupReport {
         self.total = total;
     }
 
+    // Pages copied.
     copies() is BigInt {
         copies;
     }
 
+    // Pages in the database.
     total() is BigInt {
         total;
     }
 }
 
+// A backup that cannot be run as asked.
 enum InvalidSqliteBackup is Error = (invalid);
 
 hidden object CountingBackup does SqliteBackupMaking {
@@ -83,15 +102,39 @@ test "a backup report counts copied pages within the total" {
 
 async test "a backup checks its step and timeout, then asks its source" {
     let second = Duration(seconds: 1);
-    let report = await SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 8, clock: SystemClock(), timeout: second).report();
+    let report = await SqliteBackup(
+        origin: CountingBackup(),
+        target: Path("copy.db"),
+        pages: 8,
+        clock: SystemClock(),
+        timeout: second
+    ).report();
     test.is(report.copies().string(), "8");
     test.throws(InvalidSqliteBackup) {
-        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 0, clock: SystemClock(), timeout: second);
+        SqliteBackup(
+            origin: CountingBackup(),
+            target: Path("copy.db"),
+            pages: 0,
+            clock: SystemClock(),
+            timeout: second
+        );
     };
     test.throws(InvalidSqliteBackup) {
-        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 257, clock: SystemClock(), timeout: second);
+        SqliteBackup(
+            origin: CountingBackup(),
+            target: Path("copy.db"),
+            pages: 257,
+            clock: SystemClock(),
+            timeout: second
+        );
     };
     test.throws(InvalidSqliteBackup) {
-        SqliteBackup(origin: CountingBackup(), target: Path("copy.db"), pages: 1, clock: SystemClock(), timeout: Duration(seconds: 0));
+        SqliteBackup(
+            origin: CountingBackup(),
+            target: Path("copy.db"),
+            pages: 1,
+            clock: SystemClock(),
+            timeout: Duration(seconds: 0)
+        );
     };
 }

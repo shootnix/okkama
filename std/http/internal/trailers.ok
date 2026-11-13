@@ -1,5 +1,9 @@
 module http/internal/trailers v1.0.0;
 
+// Which fields may be trailers, for HTTP/1.1 and HTTP/2 alike.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/header" take Header;
 import "http/message" take InvalidHttpMessage;
 import "http/header" take HeaderName;
@@ -9,6 +13,7 @@ import "http/header" take HeaderName;
 object HttpTrailerRules {
     has forbidden, nominated is @string;
 
+    // The rules, with the names Connection nominated.
     HttpTrailerRules(nominated is @string) {
         self.nominated = nominated;
         forbidden = [
@@ -53,6 +58,7 @@ object HttpTrailerRules {
         ];
     }
 
+    // Throws InvalidHttpMessage when entry may not be a trailer.
     check(entry is Header) is void {
         let name = entry.name().lowercase();
         let banned is bool = forbidden.reduce(false) -> found, value {

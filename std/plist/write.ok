@@ -1,5 +1,13 @@
 module plist/write v1.0.0;
 
+// Property lists written as XML or binary.
+//
+//     let bytes = EncodedPlist(origin: info, format: PlistFormat.xml).bytes();
+//     let binary = EncodedPlist(origin: info, format: PlistFormat.binary).bytes();
+//
+// Output, node count and depth are bounded; a value the format cannot hold,
+// such as a UID in XML, is UnsupportedPlistValue.
+
 import "plist/value" take PlistValue, PlistWriting, PlistMember, DuplicatePlistMember;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
@@ -14,36 +22,16 @@ import "time/duration" take Duration, DurationUnit;
 import "time/rfc3339" take Rfc3339;
 import "io/buffer" take ByteBuffer;
 
-// Repeatable, bounded property-list serialization through PlistWriting only.
-// Constructor binding is lazy; bytes() observes each value by one print event,
-// never by kind(), fields or casts. XML and binary preserve dictionary order.
-// Custom nominal values work; missing/duplicate events are protocol errors.
-// Shared children are printed per occurrence. Recursion is depth/node bounded.
-// Defaults: 1 MiB complete output, 4096 nodes including dictionary keys, depth 64.
-// Negative limits fail at construction; input/callback errors propagate unchanged.
-// Private output buffers close on success/failure; returned bytes are independent.
-// No external I/O, caller-resource close/flush, new native API or interpreter edits.
-//
-// XML: UTF-8 compact plist with declaration/LFs; XML 1.0 character validation,
-// CR character references, padded base64, UTC RFC3339 dates. UID is unsupported.
-// Binary: bplist00 postorder records, no deduplication, eight-byte refs/offsets,
-// signed 128-bit integers, unsigned 128-bit UIDs, binary64 reals, ASCII/UTF-16BE.
-// Dates in either format require UTC years 0001..9999. Binary conversion must
-// roundtrip the existing float.rat()/Instant nanosecond contract without change.
-// Container sources: size once, bound before items, ascending item once; no cursor,
-// first/last/close. Negative sizes and duplicate dictionary names fail explicitly.
-// Limits include binary offset/trailer and XML envelope, not just scalar payloads.
-// Contract: docs/std/plist-write-guide.md.
-// Example: EncodedPlist(PlistString("hello"),PlistFormat.xml).bytes().
-// Run: okkama run -t std/plist/write.ok
-
+// XML (plist 1.0) or binary (bplist00).
 enum PlistFormat = (xml, binary);
 
+// A plist value written in a format.
 object EncodedPlist {
     has origin is PlistValue;
     has format is PlistFormat;
     has maximum_bytes, maximum_nodes, maximum_depth is int;
 
+    // origin in format with the default limits.
     EncodedPlist(origin is PlistValue, format is PlistFormat) {
         self.origin = origin;
         self.format = format;
@@ -52,6 +40,7 @@ object EncodedPlist {
         maximum_depth = 64;
     }
 
+    // origin in format within these limits.
     EncodedPlist(
         origin is PlistValue,
         format is PlistFormat,
@@ -68,21 +57,32 @@ object EncodedPlist {
         self.maximum_depth = maximum_depth;
     }
 
+    // The bytes.
     bytes() is @byte {
-        let session = PlistWireSession(format: format, maximum_bytes: maximum_bytes, maximum_nodes: maximum_nodes, maximum_depth: maximum_depth);
+        let session = PlistWireSession(
+            format: format,
+            maximum_bytes: maximum_bytes,
+            maximum_nodes: maximum_nodes,
+            maximum_depth: maximum_depth
+        );
         let root = session.node(origin, 1);
         session.finished(root);
     }
 }
 
+// A negative limit.
 enum InvalidPlistWriteLimits is Error = (invalid);
 
+// The output went over a limit; kind says which.
 enum PlistWriteLimitExceeded is Error = (kind(kind is string));
 
+// A value the format cannot hold.
 enum UnsupportedPlistValue is Error = (because(reason is string));
 
+// A value whose print() did not call exactly one callback.
 enum InvalidPlistPrintProtocol is Error = (invalid);
 
+// A value that cannot be written, such as one that contains itself.
 enum InvalidPlistWriteSource is Error = (invalid);
 
 // Internal encoding session owns all aggregate buffers. Node counting uses a
@@ -281,12 +281,22 @@ hidden object PlistWireSession {
                 byte(0),
                 byte(8),
                 byte(8)
-            ] <- IntegerBytes(value: count, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes() <- IntegerBytes(
+            ] <- IntegerBytes(
+                value: count,
+                size: 8,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes() <- IntegerBytes(
                 value: root,
                 size: 8,
                 signedness: Signedness.unsigned,
                 order: ByteOrder.big
-            ).bytes() <- IntegerBytes(value: table, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+            ).bytes() <- IntegerBytes(
+                value: table,
+                size: 8,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes();
         }
         confirm output.content().size() <= maximum_bytes
             else throw PlistWriteLimitExceeded.kind("bytes");
@@ -400,7 +410,9 @@ hidden object PlistWireValue does PlistWriting {
         }
         else {
             session.capacity(value.size() + 9);
-            self.end(session.record(PlistWireLength(marker: 64, count: value.size()).bytes(), value));
+            self.end(
+                session.record(PlistWireLength(marker: 64, count: value.size()).bytes(), value)
+            );
         }
     }
 
@@ -411,7 +423,9 @@ hidden object PlistWireValue does PlistWriting {
             else throw UnsupportedPlistValue.because("date outside UTC years 0001..9999");
         if session.xml() {
             session.text("<date>");
-            session.text(Rfc3339(origin: value, offset: Duration(0.rat(), DurationUnit.second)).string());
+            session.text(
+                Rfc3339(origin: value, offset: Duration(0.rat(), DurationUnit.second)).string()
+            );
             session.text("</date>");
             self.end(0);
         }
@@ -448,7 +462,12 @@ hidden object PlistWireValue does PlistWriting {
         for (0..size) -> index {
             let id = session.node(values.item(index), depth + 1);
             if !session.xml() {
-                refs.writing() <- IntegerBytes(value: id, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                refs.writing() <- IntegerBytes(
+                    value: id,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
         }
         if session.xml() {
@@ -456,7 +475,12 @@ hidden object PlistWireValue does PlistWriting {
             self.end(0);
         }
         else {
-            self.end(session.record(PlistWireLength(marker: 160, count: size).bytes(), refs.content().bytes()));
+            self.end(
+                session.record(
+                    PlistWireLength(marker: 160, count: size).bytes(),
+                    refs.content().bytes()
+                )
+            );
         }
     }
 
@@ -479,8 +503,18 @@ hidden object PlistWireValue does PlistWriting {
             let key = session.key(name, depth + 1);
             let value = session.node(member.value(), depth + 1);
             if !session.xml() {
-                keys.writing() <- IntegerBytes(value: key, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
-                refs.writing() <- IntegerBytes(value: value, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+                keys.writing() <- IntegerBytes(
+                    value: key,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
+                refs.writing() <- IntegerBytes(
+                    value: value,
+                    size: 8,
+                    signedness: Signedness.unsigned,
+                    order: ByteOrder.big
+                ).bytes();
             }
         }
         if session.xml() {
@@ -489,7 +523,12 @@ hidden object PlistWireValue does PlistWriting {
         }
         else {
             keys.writing() <- refs.content().bytes();
-            self.end(session.record(PlistWireLength(marker: 208, count: size).bytes(), keys.content().bytes()));
+            self.end(
+                session.record(
+                    PlistWireLength(marker: 208, count: size).bytes(),
+                    keys.content().bytes()
+                )
+            );
         }
     }
 
@@ -504,7 +543,12 @@ hidden object PlistWireValue does PlistWriting {
     }
 
     hidden end(index is int) is void {
-        identity.writing() <- IntegerBytes(value: index, size: 8, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        identity.writing() <- IntegerBytes(
+            value: index,
+            size: 8,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
     }
 }
 
@@ -668,12 +712,22 @@ test "plist exact duplicate names remain distinct from case variants" {
 }
 
 test "plist binary envelope and reserved suffix fit an exact byte budget" {
-    let session = PlistWireSession(format: PlistFormat.binary, maximum_bytes: 49, maximum_nodes: 1, maximum_depth: 1);
+    let session = PlistWireSession(
+        format: PlistFormat.binary,
+        maximum_bytes: 49,
+        maximum_nodes: 1,
+        maximum_depth: 1
+    );
     let root = session.record([byte(9)], []);
     test.is(session.finished(root).size(), 49);
     test.is(
         try {
-            PlistWireSession(format: PlistFormat.binary, maximum_bytes: 39, maximum_nodes: 1, maximum_depth: 1);
+            PlistWireSession(
+                format: PlistFormat.binary,
+                maximum_bytes: 39,
+                maximum_nodes: 1,
+                maximum_depth: 1
+            );
             "bad";
         }
         catch PlistWriteLimitExceeded.kind(kind) {

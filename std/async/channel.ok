@@ -69,34 +69,48 @@ import "async/atomic" take Atomic;
 // deliberately has no polling `try_send()`, `try_receive()` or `closed()`
 // observation.
 
+// A queue between tasks, at most capacity values long; 0 makes sender and
+// receiver meet.
 object Channel<T> {
+    // A channel holding at most capacity values; a negative capacity is
+    // InvalidChannelCapacity.
     Channel(capacity is int) {}
 
+    // The side that sends.
     sending() is Sending<T> {
         Sending();
     }
 
+    // The side that receives.
     receiving() is Receiving<T> {
         Receiving();
     }
 }
 
+// The sending side of a channel.
 object Sending<T> {
+    // Made by Channel.sending(); not constructed directly.
     Sending() {}
 
+    // Sends value, waiting while the channel is full; ChannelClosed after
+    // close.
     async send(value is T) is Sending<T> {
         panic "Sending.send is a VM intrinsic";
         self;
     }
 
+    // Ends the stream: the receiver gets what is queued, then none.
     close() is void {
         panic "Sending.close is a VM intrinsic";
     }
 }
 
+// The receiving side of a channel: `for await channel.receiving() -> value`.
 object Receiving<T> {
+    // Made by Channel.receiving(); not constructed directly.
     Receiving() {}
 
+    // The next value, waiting for it; ChannelClosed when closed and empty.
     async item() is T {
         panic "Receiving.item is a VM intrinsic";
     }
@@ -116,13 +130,16 @@ object Receiving<T> {
         }
     }
 
+    // Stops receiving; senders then get ChannelClosed.
     close() is void {
         panic "Receiving.close is a VM intrinsic";
     }
 }
 
+// The channel was closed.
 enum ChannelClosed is Error = (closed);
 
+// A negative capacity.
 enum InvalidChannelCapacity is Error = (capacity(capacity is int));
 
 async test "a channel hands values over in order until closed" {

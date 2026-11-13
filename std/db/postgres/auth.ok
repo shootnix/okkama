@@ -1,16 +1,5 @@
 module db/postgres/auth v1.0.0;
 
-import "crypto/secret" take SecretBytes;
-import "crypto/kdf" take Pbkdf2Secret, KdfHash;
-import "crypto/hmac" take Hmac, HmacHash;
-import "crypto/constant_time" take ConstantTimeEqual;
-import "digest/sha2" take Sha256;
-import "digest/legacy" take Md5;
-import "encoding/base64" take Base64Encoded, Base64Decoded;
-import "encoding/hex" take HexEncoded;
-import "encoding/utf" take Utf8Encoded;
-import "strings/parse" take Number;
-
 // PostgreSQL password authentication, written in Okkama over crypto/*.
 //
 // ScramExchange is SCRAM-SHA-256 (RFC 5802, RFC 7677) without channel
@@ -24,11 +13,25 @@ import "strings/parse" take Number;
 // does not extend ours or an iteration count below 4096 is ScramFailure.
 //
 // Md5Password is the legacy "md5" response: md5(md5(password || user) || salt).
+
+import "crypto/secret" take SecretBytes;
+import "crypto/kdf" take Pbkdf2Secret, KdfHash;
+import "crypto/hmac" take Hmac, HmacHash;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "digest/sha2" take Sha256;
+import "digest/legacy" take Md5;
+import "encoding/base64" take Base64Encoded, Base64Decoded;
+import "encoding/hex" take HexEncoded;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take Number;
+
+// One SCRAM-SHA-256 exchange.
 object ScramExchange {
     has user is string;
     has password is SecretBytes;
     has nonce is string;
 
+    // For user with password, starting from the client nonce.
     ScramExchange(user is string, password is SecretBytes, nonce is string) {
         confirm nonce.length() >= 18 && nonce.split(",").size() == 1
             else throw ScramFailure.because(
@@ -39,27 +42,36 @@ object ScramExchange {
         self.nonce = nonce;
     }
 
+    // The client-first message without its GS2 header.
     bare() is string {
         "n=" + user + ",r=" + nonce;
     }
 
+    // The client-first message.
     client_first() is string {
         "n,," + self.bare();
     }
 
+    // The client-final message with the proof; ScramFailure for a bad
+    // server-first.
     client_final(server_first is string) is string {
         let parsed = ScramServerFirst(origin: server_first, client: nonce);
         let without = "c=biws,r=" + parsed.nonce();
         let keys = ScramKeys(password: password, first: parsed);
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let client_key = keys.client();
-        let signature = Hmac(hash: HmacHash.sha256, key: SecretBytes(Sha256(client_key).bytes()), origin: message).bytes();
+        let signature = Hmac(
+            hash: HmacHash.sha256,
+            key: SecretBytes(Sha256(client_key).bytes()),
+            origin: message
+        ).bytes();
         let proof is @byte = (0..32).map() -> index {
             client_key[index] ^ signature[index];
         };
         without + ",p=" + Base64Encoded(proof).string();
     }
 
+    // Whether server_final carries the right server signature.
     server_verified(server_first is string, server_final is string) is bool {
         let parsed = ScramServerFirst(origin: server_first, client: nonce);
         confirm server_final.length() > 2 && server_final.slice(0, 2) == "v="
@@ -127,7 +139,13 @@ hidden object ScramKeys {
     }
 
     salted() is SecretBytes {
-        Pbkdf2Secret(hash: KdfHash.sha256, password: password, salt: first.salt(), iterations: first.iterations(), length: 32).secret();
+        Pbkdf2Secret(
+            hash: KdfHash.sha256,
+            password: password,
+            salt: first.salt(),
+            iterations: first.iterations(),
+            length: 32
+        ).secret();
     }
 
     client() is @byte {
@@ -139,11 +157,13 @@ hidden object ScramKeys {
     }
 }
 
+// The legacy md5 password response.
 object Md5Password {
     has user is string;
     has password is SecretBytes;
     has salt is @byte;
 
+    // For user with password and the server's salt.
     Md5Password(user is string, password is SecretBytes, salt is @byte) {
         confirm salt.size() == 4 else throw ScramFailure.because("MD5 salt must be 4 bytes");
         self.user = user;
@@ -151,6 +171,7 @@ object Md5Password {
         self.salt = salt;
     }
 
+    // `md5` and the hex digest.
     string() is string {
         let inner = HexEncoded(
             Md5(@byte(password.export_bytes()..., Utf8Encoded(user).bytes()...)).bytes()
@@ -159,6 +180,7 @@ object Md5Password {
     }
 }
 
+// A SCRAM message that cannot be accepted; reason says why.
 enum ScramFailure is Error = (because(reason is string));
 
 test "SCRAM-SHA-256 matches RFC 7677 section 3" {

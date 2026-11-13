@@ -1,24 +1,28 @@
 module digest/shake v1.0.0;
 
-import "digest/state" take Digesting;
-import "encoding/utf" take Utf8Encoded;
-import "digest/host" take HostDigest;
-import "encoding/hex" take HexEncoded;
-
 // SHAKE128 and SHAKE256 extendable-output functions (FIPS 202) over the host
 // provider. The output length is part of the object: bytes() returns exactly
 // `length` bytes (1..1048576, InvalidShakeLength otherwise), and successors
 // keep it. A longer output of the same history starts with the shorter one.
 //
 //     Shake128(32, message).bytes(); // 32 raw bytes
+
+import "digest/state" take Digesting;
+import "encoding/utf" take Utf8Encoded;
+import "digest/host" take HostDigest;
+import "encoding/hex" take HexEncoded;
+
+// SHAKE128: as many output bytes as asked for.
 object Shake128 does Digesting {
     has digest is HostDigest;
 
+    // An empty SHAKE128 giving length bytes, 1 to 1048576.
     Shake128(length is int) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
         digest = HostDigest(algorithm: "shake128", key: [], width: length);
     }
 
+    // SHAKE128 of these bytes, length bytes long.
     Shake128(length is int, origin is @byte) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
         digest = HostDigest(algorithm: "shake128", key: [], width: length).appended(origin);
@@ -30,6 +34,7 @@ object Shake128 does Digesting {
         digest = HostDigest(algorithm: "shake128", key: [], width: length).appended(Utf8Encoded(text).bytes());
     }
 
+    // The output.
     bytes() is @byte {
         digest.bytes();
     }
@@ -39,6 +44,7 @@ object Shake128 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The function continued with origin.
     state(origin is @byte) is ^Shake128 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -51,14 +57,17 @@ object Shake128 does Digesting {
     }
 }
 
+// SHAKE256: as many output bytes as asked for.
 object Shake256 does Digesting {
     has digest is HostDigest;
 
+    // An empty SHAKE256 giving length bytes, 1 to 1048576.
     Shake256(length is int) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
         digest = HostDigest(algorithm: "shake256", key: [], width: length);
     }
 
+    // SHAKE256 of these bytes, length bytes long.
     Shake256(length is int, origin is @byte) {
         confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength.length(length);
         digest = HostDigest(algorithm: "shake256", key: [], width: length).appended(origin);
@@ -70,6 +79,7 @@ object Shake256 does Digesting {
         digest = HostDigest(algorithm: "shake256", key: [], width: length).appended(Utf8Encoded(text).bytes());
     }
 
+    // The output.
     bytes() is @byte {
         digest.bytes();
     }
@@ -79,6 +89,7 @@ object Shake256 does Digesting {
         HexEncoded(self.bytes()).string();
     }
 
+    // The function continued with origin.
     state(origin is @byte) is ^Shake256 {
         let continued = digest.appended(origin);
         ^digest = continued;
@@ -91,6 +102,7 @@ object Shake256 does Digesting {
     }
 }
 
+// An output length outside 1 to 1048576.
 enum InvalidShakeLength is Error = (length(length is int));
 
 test "SHAKE matches FIPS 202 empty-message outputs" {

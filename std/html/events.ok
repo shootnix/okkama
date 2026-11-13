@@ -28,13 +28,16 @@ import "runtime/html" take HtmlEventsState, html_events, html_event_count, html_
 // The tokenizer never inserts implicit html/head/body/table elements and never
 // attempts browser-equivalent tree construction.
 
+// Which kind an event is.
 enum HtmlEventKind = (start_tag, end_tag, text, comment, declaration, processing_instruction);
 
+// An attribute of a start tag.
 object HtmlAttribute {
     has attribute_name is string;
     has has_value is bool;
     has attribute_value is string;
 
+    // name, with value when valued.
     HtmlAttribute(name is string, valued is bool, value is string) {
         confirm valued || value.empty()
             else throw InvalidArgument.because(
@@ -45,14 +48,17 @@ object HtmlAttribute {
         attribute_value = value;
     }
 
+    // Its name, lowercase.
     name() is string {
         attribute_name;
     }
 
+    // Whether it had `=` and a value.
     valued() is bool {
         has_value;
     }
 
+    // Its value, references decoded; "" when it had none.
     value() is string {
         attribute_value;
     }
@@ -61,53 +67,78 @@ object HtmlAttribute {
 // Payload roles keep the visitor dependency graph acyclic while exposing the
 // exact actions available for each event shape.
 role StartingHtmlTag {
+    // The tag name, lowercase.
     name() is string;
+    // The attributes, in source order.
     attributes() is Sequencing<HtmlAttribute>;
+    // Whether it ended with `/>`.
     self_closing() is bool;
 }
 
+// An end tag as a handler sees it.
 role EndingHtmlTag {
+    // The tag name, lowercase.
     name() is string;
 }
 
+// Text as a handler sees it.
 role ContainingHtmlText {
+    // The text, references decoded (raw inside script and style).
     text() is string;
 }
 
+// A comment as a handler sees it.
 role ContainingHtmlComment {
+    // The text inside `<!--` and `-->`.
     text() is string;
 }
 
+// A declaration such as `<!DOCTYPE html>`.
 role DeclaringHtml {
+    // The text inside `<!` and `>`.
     text() is string;
 }
 
+// A processing instruction `<?target data?>`.
 role ProcessingHtmlInstruction {
+    // Its target.
     target() is string;
+    // Its data.
     data() is string;
 }
 
 // Six overloads remain one public action name. Double dispatch keeps every
 // payload statically typed without a cast from HtmlEvent.
 role HandlingHtmlEvent {
+    // A start tag.
     handle(event is StartingHtmlTag) is void;
+    // An end tag.
     handle(event is EndingHtmlTag) is void;
+    // Text.
     handle(event is ContainingHtmlText) is void;
+    // A comment.
     handle(event is ContainingHtmlComment) is void;
+    // A declaration.
     handle(event is DeclaringHtml) is void;
+    // A processing instruction.
     handle(event is ProcessingHtmlInstruction) is void;
 }
 
+// One event of a document.
 role HtmlEvent {
+    // Its kind.
     kind() is HtmlEventKind;
+    // Calls the handle of to for its kind.
     dispatch(to is HandlingHtmlEvent) is void;
 }
 
+// A start tag.
 object HtmlStartTag does HtmlEvent, StartingHtmlTag {
     has tag_name is string;
     has tag_attributes is Sequencing<HtmlAttribute>;
     has closes_self is bool;
 
+    // name with attributes, self-closing or not.
     HtmlStartTag(
         name is string,
         attributes is Sequencing<HtmlAttribute>,
@@ -118,140 +149,174 @@ object HtmlStartTag does HtmlEvent, StartingHtmlTag {
         closes_self = self_closing;
     }
 
+    // HtmlEventKind.start_tag.
     kind() is HtmlEventKind {
         HtmlEventKind.start_tag;
     }
 
+    // The name.
     name() is string {
         tag_name;
     }
 
+    // The attributes.
     attributes() is Sequencing<HtmlAttribute> {
         tag_attributes;
     }
 
+    // Whether it ended with `/>`.
     self_closing() is bool {
         closes_self;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// An end tag.
 object HtmlEndTag does HtmlEvent, EndingHtmlTag {
     has tag_name is string;
 
+    // The name.
     HtmlEndTag(name is string) {
         tag_name = name;
     }
 
+    // HtmlEventKind.end_tag.
     kind() is HtmlEventKind {
         HtmlEventKind.end_tag;
     }
 
+    // The name.
     name() is string {
         tag_name;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// A run of text.
 object HtmlText does HtmlEvent, ContainingHtmlText {
     has origin is string;
 
+    // The text.
     HtmlText(value is string) {
         origin = value;
     }
 
+    // HtmlEventKind.text.
     kind() is HtmlEventKind {
         HtmlEventKind.text;
     }
 
+    // The text.
     text() is string {
         origin;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// A comment.
 object HtmlComment does HtmlEvent, ContainingHtmlComment {
     has origin is string;
 
+    // Its text.
     HtmlComment(value is string) {
         origin = value;
     }
 
+    // HtmlEventKind.comment.
     kind() is HtmlEventKind {
         HtmlEventKind.comment;
     }
 
+    // Its text.
     text() is string {
         origin;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// A declaration.
 object HtmlDeclaration does HtmlEvent, DeclaringHtml {
     has origin is string;
 
+    // Its text.
     HtmlDeclaration(value is string) {
         origin = value;
     }
 
+    // HtmlEventKind.declaration.
     kind() is HtmlEventKind {
         HtmlEventKind.declaration;
     }
 
+    // Its text.
     text() is string {
         origin;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// A processing instruction.
 object HtmlProcessingInstruction does HtmlEvent, ProcessingHtmlInstruction {
     has instruction_target is string;
     has instruction_data is string;
 
+    // target with data.
     HtmlProcessingInstruction(target is string, data is string) {
         instruction_target = target;
         instruction_data = data;
     }
 
+    // HtmlEventKind.processing_instruction.
     kind() is HtmlEventKind {
         HtmlEventKind.processing_instruction;
     }
 
+    // Its target.
     target() is string {
         instruction_target;
     }
 
+    // Its data.
     data() is string {
         instruction_data;
     }
 
+    // Calls to.handle with this event.
     dispatch(to is HandlingHtmlEvent) is void {
         to.handle(self);
     }
 }
 
+// The events of a document, in order.
 object HtmlEvents does Iterating<HtmlEvent> {
     has state is HtmlEventsState;
 
+    // The events of origin.
     HtmlEvents(origin is string) {
         state = html_events(origin);
     }
 
+    // Walks the events, tokenizing as it goes.
     cursor() is Cursor<HtmlEvent> {
         HtmlEventCursor(
             origin: state,
@@ -341,8 +406,13 @@ hidden object EventLog does HandlingHtmlEvent {
                 attribute.name();
             }
         };
-        seen.replace(@string(seen.value()..., "<" + event.name() + "[" + names.join(",") + "]"
-            + if event.self_closing() { "/>"; } else { ">"; }));
+        seen.replace(@string(seen.value()..., "<" + event.name() + "[" + names.join(",") + "]" +
+            if event.self_closing() {
+                "/>";
+            }
+            else {
+                ">";
+            }));
     }
 
     handle(event is EndingHtmlTag) is void {
@@ -372,7 +442,9 @@ hidden object EventLog does HandlingHtmlEvent {
 
 test "events come in source order, names lowercased, references decoded" {
     let log = EventLog();
-    for HtmlEvents(origin: "<!DOCTYPE html><P Class='a &amp; b' hidden>Fish &amp; chips<br/><!-- c --></p>") -> event {
+    for HtmlEvents(
+        origin: "<!DOCTYPE html><P Class='a &amp; b' hidden>Fish &amp; chips<br/><!-- c --></p>"
+    ) -> event {
         event.dispatch(log);
     }
     test.is(log.events(), [

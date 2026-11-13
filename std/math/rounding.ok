@@ -1,3 +1,14 @@
 module math/rounding v1.0.0;
 
+// How a number is rounded to fewer digits.
+//
+//     total.rounded(scale: 2, rounding: Rounding.half_even);
+//
+// - toward_zero cuts the extra digits; away_from_zero always goes up in size.
+// - floor goes down and ceiling goes up.
+// - half_even, half_up and half_down round to the nearest value. They differ
+//   only on a tie: half_even goes to the even neighbour (bankers' rounding),
+//   half_up away from zero, half_down toward zero.
+
+// A rounding rule, for Decimal and the number formatting of locale.
 enum Rounding = (toward_zero, away_from_zero, floor, ceiling, half_even, half_up, half_down);

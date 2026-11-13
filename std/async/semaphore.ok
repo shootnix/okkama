@@ -28,33 +28,41 @@ import "io/stream" take Closing;
 // The initial count must be positive. Use an unbuffered `Channel` for a
 // rendezvous rather than treating a zero-permit semaphore as another primitive.
 
+// At most permits tasks at once.
 object Semaphore {
     has amount is int;
 
+    // A semaphore of permits, at least one.
     Semaphore(permits is int) {
         confirm permits > 0 else throw InvalidPermitCount.permits(permits);
         amount = permits;
     }
 
+    // Waits for a permit; close it to give it back.
     async permit() is Permit {
         panic "Semaphore.permit is a VM intrinsic";
     }
 
+    // How many permits are free now.
     permits() is int {
         panic "Semaphore.permits is a VM intrinsic";
     }
 }
 
+// One taken permit.
 object Permit does Closing {
+    // Whether the permit is closed.
     closed() is bool {
         panic "Permit.closed is a VM intrinsic";
     }
 
+    // Closes the permit; closing again does nothing.
     close() is void {
         panic "Permit.close is a VM intrinsic";
     }
 }
 
+// Fewer than one permit.
 enum InvalidPermitCount is Error = (permits(permits is int));
 
 async test "permits are counted and given back" {

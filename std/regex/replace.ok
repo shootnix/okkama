@@ -1,5 +1,16 @@
 module regex/replace v1.0.0;
 
+// Matches of a pattern replaced in a text.
+//
+//     RegexSubstitution(origin: text, regex: Regex("\\s+"), replacing: LiteralRegexReplacement(" ")).string();
+//     let swapped = RegexSubstitution(
+//         origin: "Ada Lovelace",
+//         regex: Regex("(?<first>\\w+) (?<last>\\w+)"),
+//         replacing: ExpandedRegexReplacement("${last}, ${first}"),
+//     ).string();                                          // "Lovelace, Ada"
+//
+// Regex.replaced(origin:, by:) is the short form for a literal replacement.
+
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 import "collections/views" take Accumulated, Taken;
 import "regex/match" take RegexMatching;
@@ -11,7 +22,9 @@ import "runtime/regex" take RegexReplacementState, regex_replacement_state,
     regex_substitution_state, regex_substitution_ready, regex_substitution_store,
     regex_substitution_string, regex_substitution_amount;
 
+// What a match is replaced with.
 role ReplacingRegexMatch {
+    // The text that takes found's place.
     replacement(found is RegexMatching) is string;
 }
 
@@ -36,27 +49,33 @@ role ReplacingRegexMatch {
 // Custom policy is an ordinary ReplacingRegexMatch object. Its replacement()
 // receives the same RegexMatching interface as search results.
 
+// The same text for every match.
 object LiteralRegexReplacement does ReplacingRegexMatch {
     has origin is string;
 
+    // Replaces each match with value as it is.
     LiteralRegexReplacement(value is string) {
         origin = value;
     }
 
+    // value.
     replacement(found is RegexMatching) is string {
         origin;
     }
 }
 
+// A template with `$1` or `${name}` for groups and `$$` for a dollar.
 object ExpandedRegexReplacement does ReplacingRegexMatch {
     has source is string;
     has state is RegexReplacementState;
 
+    // Reads template; InvalidRegexReplacement when it refers to nothing.
     ExpandedRegexReplacement(template is string) {
         source = template;
         state = regex_replacement_state(template);
     }
 
+    // The template with the groups of found put in.
     replacement(found is RegexMatching) is string {
         let status = regex_replacement_prepare(state);
         confirm status["status"] == 0
@@ -172,6 +191,7 @@ object RegexSubstitution {
     has maximum is int;
     has state is RegexSubstitutionState;
 
+    // Every match replaced.
     RegexSubstitution(
         origin is string,
         regex is Regex,
@@ -184,6 +204,7 @@ object RegexSubstitution {
         state = regex_substitution_state();
     }
 
+    // The first limit matches replaced.
     RegexSubstitution(
         origin is string,
         regex is Regex,
@@ -198,10 +219,12 @@ object RegexSubstitution {
         state = regex_substitution_state();
     }
 
+    // The text after replacing.
     string() is string {
         self.substitution().string();
     }
 
+    // How many matches were replaced.
     amount() is int {
         self.substitution().amount();
     }
@@ -311,8 +334,10 @@ hidden object RegexSubstitutionResult {
     }
 }
 
+// A template that refers to a group the pattern lacks; offset says where.
 enum InvalidRegexReplacement is Error = (located(offset is int, message is string));
 
+// A negative limit.
 enum InvalidRegexReplacementLimit is Error = (limit(limit is int));
 
 test "literal replacement never expands dollars" {

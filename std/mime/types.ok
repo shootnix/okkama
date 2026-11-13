@@ -1,5 +1,14 @@
 module mime/types v1.0.0;
 
+// Media types guessed from file name extensions.
+//
+//     let types is MediaIdentifying = StandardMediaTypes();
+//     types.type(Path("report.pdf"));                       // application/pdf
+//     types.extensions(MediaType("image/png"));             // ["png"]
+//
+// Only the name is looked at, never the file. SystemMediaTypes reads the host's
+// mime.types files on top of a fallback.
+
 import "mime/media_type" take MediaType, MimeItems, MimePosition, InvalidMediaType;
 import "fs/path" take Path, PathStyle, NativePathStyle;
 import "fs/file" take File;
@@ -10,18 +19,20 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Immutable extension mappings; target paths are never opened or inspected.
-// Configured system tables are bounded eager file snapshots, with borrowed
-// fallback policy. See docs/std/mime-types.md for precedence and file grammar.
+// Something that maps extensions to media types.
 role MediaIdentifying {
+    // The type of path's extension; UnknownMediaType when there is none.
     type(path is Path) is MediaType;
+    // The extensions of type.
     extensions(type is MediaType) is Sequencing<string>;
 }
 
+// One extension and its media type.
 object MediaTypeExtension {
     has suffix is string;
     has value is MediaType;
 
+    // extension maps to type.
     MediaTypeExtension(extension is string, type is MediaType) {
         confirm extension.length() > 0 && extension.length() <= 255
             else throw InvalidMediaExtension.extension(extension);
@@ -38,10 +49,12 @@ object MediaTypeExtension {
         value = type;
     }
 
+    // The type.
     type() is MediaType {
         value;
     }
 
+    // The extension, without the dot.
     cap Extension {
         extension is string {
             suffix;
@@ -49,17 +62,20 @@ object MediaTypeExtension {
     }
 }
 
+// A fixed map of extensions, falling back to another.
 object MappedMediaTypes does MediaIdentifying {
     has entries is @MediaTypeExtension;
     has fallback is MediaIdentifying;
     has maximum is int;
 
+    // entries, then fallback.
     MappedMediaTypes(entries is Sequencing<MediaTypeExtension>, fallback is MediaIdentifying) {
         self.entries = MediaMappingSnapshot(entries: entries, maximum: 10000).entries();
         self.fallback = fallback;
         maximum = 10000;
     }
 
+    // At most maximum_entries entries, then fallback.
     MappedMediaTypes(
         entries is Sequencing<MediaTypeExtension>,
         fallback is MediaIdentifying,
@@ -70,6 +86,7 @@ object MappedMediaTypes does MediaIdentifying {
         maximum = maximum_entries;
     }
 
+    // The type from entries, else from fallback.
     type(path is Path) is MediaType {
         let index = MediaMatch(entries: entries, name: MediaFileName(path).string()).index();
         if index >= 0 {
@@ -80,6 +97,7 @@ object MappedMediaTypes does MediaIdentifying {
         }
     }
 
+    // The extensions from entries, else from fallback.
     extensions(type is MediaType) is Sequencing<string> {
         let output = MediaAliases(maximum);
         for entries -> entry {
@@ -107,9 +125,11 @@ object MappedMediaTypes does MediaIdentifying {
     }
 }
 
+// The common web types, built in.
 object StandardMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
+    // The built-in map.
     StandardMediaTypes() {
         table = MappedMediaTypes(
             entries: StandardMediaEntries().entries(),
@@ -117,18 +137,22 @@ object StandardMediaTypes does MediaIdentifying {
         );
     }
 
+    // The type of the extension.
     type(path is Path) is MediaType {
         table.type(path);
     }
 
+    // The extensions of the type.
     extensions(type is MediaType) is Sequencing<string> {
         table.extensions(type);
     }
 }
 
+// The host's mime.types files, over a fallback.
 object SystemMediaTypes does MediaIdentifying {
     has table is MappedMediaTypes;
 
+    // /etc/mime.types on POSIX hosts (none elsewhere), then fallback.
     SystemMediaTypes(fallback is MediaIdentifying) {
         let files is @Path = if NativePathStyle().style() == PathStyle.posix {
             [Path("/etc/mime.types")];
@@ -142,6 +166,7 @@ object SystemMediaTypes does MediaIdentifying {
         );
     }
 
+    // These files, then fallback.
     SystemMediaTypes(fallback is MediaIdentifying, files is Sequencing<Path>) {
         table = MappedMediaTypes(
             entries: SystemMediaSnapshot(files, MediaTypeFileLimits()).entries(),
@@ -149,6 +174,7 @@ object SystemMediaTypes does MediaIdentifying {
         );
     }
 
+    // These files within limits, then fallback.
     SystemMediaTypes(
         fallback is MediaIdentifying,
         files is Sequencing<Path>,
@@ -161,24 +187,29 @@ object SystemMediaTypes does MediaIdentifying {
         );
     }
 
+    // The type from the files, else from fallback.
     type(path is Path) is MediaType {
         table.type(path);
     }
 
+    // The extensions from the files, else from fallback.
     extensions(type is MediaType) is Sequencing<string> {
         table.extensions(type);
     }
 }
 
+// How much of the mime.types files is read.
 object MediaTypeFileLimits {
     has maximum_files, maximum_bytes, maximum_entries is int;
 
+    // The default limits.
     MediaTypeFileLimits() {
         maximum_files = 16;
         maximum_bytes = 1048576;
         maximum_entries = 10000;
     }
 
+    // The limits as given.
     MediaTypeFileLimits(files is int, bytes is int, entries is int) {
         confirm files >= 0 && bytes >= 0 && entries >= 0
             else throw InvalidArgument.because("media table limits must be nonnegative");
@@ -187,34 +218,45 @@ object MediaTypeFileLimits {
         maximum_entries = entries;
     }
 
+    // How many files.
     files() is int {
         maximum_files;
     }
 
+    // How many bytes per file.
     bytes() is int {
         maximum_bytes;
     }
 
+    // How many entries in all.
     entries() is int {
         maximum_entries;
     }
 }
 
+// No type is known for the path.
 enum UnknownMediaType is Error = (path(path is string));
 
+// An extension with a dot or a space.
 enum InvalidMediaExtension is Error = (extension(extension is string));
 
+// A mime.types line that cannot be read.
 enum InvalidMediaTypeDatabase is Error = (located(line is int, reason is string));
 
+// The files went over a limit.
 enum MediaTypeLimitExceeded is Error = (kind(kind is string));
 
+// A map with nothing in it, for the end of a fallback chain.
 object EmptyMediaTypes does MediaIdentifying {
+    // The empty map.
     EmptyMediaTypes() {}
 
+    // UnknownMediaType.
     type(path is Path) is MediaType {
         throw UnknownMediaType.path(path.string());
     }
 
+    // None.
     extensions(type is MediaType) is Sequencing<string> {
         let empty is @string = [];
         empty;
@@ -273,15 +315,18 @@ hidden object MediaFileName {
     }
 }
 
+// The entry for an extension; used inside mime/types.
 object MediaMatch {
     has entries is @MediaTypeExtension;
     has name is string;
 
+    // Looks name up in entries.
     MediaMatch(entries is @MediaTypeExtension, name is string) {
         self.entries = entries;
         self.name = name;
     }
 
+    // Its index, or -1.
     index() is int {
         let selected = MimePosition(-1);
         let longest = MimePosition(0);

@@ -1,5 +1,16 @@
 module net/dns v1.0.0;
 
+// Names to addresses and back.
+//
+//     let resolver is Resolving = SystemResolution();
+//     let endpoints = await resolver.addresses(HostEndpoint(HostName("example.org"), 443));
+//     let name = await resolver.name(IpAddress("93.184.215.14"));
+//
+//     let fixed = FixedResolution(hosts: [HostAddresses(HostName("db"), [IpAddress("10.0.0.5")])]);
+//
+// Code takes a Resolving so tests can give a FixedResolution. SystemResolution
+// asks the operating system's resolver.
+
 import "net/endpoint" take HostName, HostEndpoint, IpEndpoint, InvalidHostName;
 import "runtime/network" as network;
 import "net/ip" take IpAddress;
@@ -8,8 +19,12 @@ import "collections/ordering" take Sorted, SortedBy;
 import "compare" take Comparing, Order;
 import "error" take InvalidArgument;
 
+// A resolver of host names and addresses.
 role Resolving {
+    // The addresses of origin's host, each with origin's port; UnknownHost when
+    // there are none.
     async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint>;
+    // The host name of origin; UnknownAddress when it has none.
     async name(origin is IpAddress) is HostName;
 }
 
@@ -19,42 +34,51 @@ object HostAddresses {
     has host is HostName;
     has origin is @IpAddress;
 
+    // host has addresses.
     HostAddresses(host is HostName, addresses is Sequencing<IpAddress>) {
         self.host = host;
         origin = DnsAddressSnapshot(addresses).items();
     }
 
+    // The host.
     host() is HostName {
         host;
     }
 
+    // Its addresses.
     addresses() is Sequencing<IpAddress> {
         origin;
     }
 }
 
+// The name an address answers to.
 object AddressName {
     has address is IpAddress;
     has name is HostName;
 
+    // address is called name.
     AddressName(address is IpAddress, name is HostName) {
         self.address = address;
         self.name = name;
     }
 
+    // The address.
     address() is IpAddress {
         address;
     }
 
+    // The name.
     name() is HostName {
         name;
     }
 }
 
+// A resolver of fixed answers, for tests and pinned hosts.
 object FixedResolution does Resolving {
     has hosts is @HostAddresses;
     has names is @AddressName;
 
+    // Answers names from hosts.
     FixedResolution(hosts is Sequencing<HostAddresses>) {
         let empty is @AddressName = [];
         let records = DnsConfiguration(hosts: hosts, names: empty);
@@ -88,12 +112,14 @@ object FixedResolution does Resolving {
         names = records.names();
     }
 
+    // Answers names from hosts and addresses from names.
     FixedResolution(hosts is Sequencing<HostAddresses>, names is Sequencing<AddressName>) {
         let records = DnsConfiguration(hosts: hosts, names: names);
         self.hosts = records.hosts();
         self.names = records.names();
     }
 
+    // The fixed addresses of the host.
     async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
         for hosts -> record {
             if record.host().order(origin.host()) == Order.equal {
@@ -107,6 +133,7 @@ object FixedResolution does Resolving {
         throw UnknownHost.host(origin.host().ascii());
     }
 
+    // The fixed name of the address.
     async name(origin is IpAddress) is HostName {
         for names -> record {
             if record.address().order(origin) == Order.equal {
@@ -117,9 +144,12 @@ object FixedResolution does Resolving {
     }
 }
 
+// The operating system's resolver.
 object SystemResolution does Resolving {
+    // The system resolver.
     SystemResolution();
 
+    // Asks the system for the host's addresses.
     async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
         try {
             let pending = network.dns_addresses(origin.host().ascii(), origin::Parts::port);
@@ -143,6 +173,7 @@ object SystemResolution does Resolving {
         }
     }
 
+    // Asks the system for the address's name.
     async name(origin is IpAddress) is HostName {
         try {
             let pending = network.dns_name(origin.string());
@@ -166,6 +197,7 @@ object SystemResolution does Resolving {
     }
 }
 
+// The resolver failed; message says why.
 enum DnsFailure is Error = (because(message is string));
 
 hidden object DnsConfiguration {
@@ -274,10 +306,13 @@ hidden object DnsIndexedAddress does Comparing<DnsIndexedAddress> {
     }
 }
 
+// The host has no addresses.
 enum UnknownHost is Error = (host(name is string));
 
+// The address has no name.
 enum UnknownAddress is Error = (address(address is string));
 
+// An answer went over a limit; kind says which.
 enum ResolutionLimitExceeded is Error = (kind(kind is string));
 
 async test "fixed lookup preserves requested port without a system resolver" {

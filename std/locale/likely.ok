@@ -1,5 +1,10 @@
 module locale/likely v1.0.0;
 
+// Likely subtags (CLDR): the script and region a language most likely means.
+//
+//     LikelyLocale(Locale("zh")).locale();       // zh-Hans-CN
+//     LikelyLocale(Locale("sr-ME")).locale();    // sr-Latn-ME
+
 import "locale/tag" take Locale, LocaleFromLanguageTag, MissingLocaleSubtag;
 import "locale/internal/likely" take CldrLikely;
 
@@ -8,10 +13,12 @@ import "locale/internal/likely" take CldrLikely;
 object LikelyLocale {
     has origin is Locale;
 
+    // The locale to complete.
     LikelyLocale(origin is Locale) {
         self.origin = origin;
     }
 
+    // It with its likely script and region added.
     locale() is Locale {
         let language = try {
             origin.language();

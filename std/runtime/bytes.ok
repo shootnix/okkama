@@ -1,5 +1,9 @@
 module runtime/bytes v1.0.0;
 
+// The native layer under encoding/bytes, io/input: the calls those modules make
+// into the host runtime. Programs use those modules instead; these declarations
+// may change with the runtime.
+//
 // Byte-range boundary for encoding/bytes. Every native reads bytes
 // start..end of source in place, without copying them; callers check
 // 0 <= start <= end <= source.size() first.
@@ -28,6 +32,8 @@ native bytes_equal(source is @byte, start is int, end is int, other is @byte) is
 // magnitude otherwise; big-endian when big. Fits: the value is a 64-bit int.
 native bytes_integer_fits(source is @byte, start is int, end is int, signed is bool, big is bool) is bool;
 
+// The integer of source from start to end, signed or not, big- or
+// little-endian.
 native bytes_integer(source is @byte, start is int, end is int, signed is bool, big is bool) is int;
 
 // source[start..] followed by tail, as one new byte value.

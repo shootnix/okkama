@@ -36,8 +36,10 @@ import "runtime/binary" take binary_integer_fits, binary_integer_bytes,
 // either an untyped value bag or a string format DSL. Callers compose these
 // typed scalar representations into protocol-specific objects instead.
 
+// Whether the bytes hold a two's-complement signed number.
 enum Signedness = (signed, unsigned);
 
+// A 4-byte or an 8-byte IEEE 754 float.
 enum FloatWidth = (bits32, bits64);
 
 // Bytes read as a number in a byte order: an integer of their width, or an
@@ -46,11 +48,13 @@ object Binary {
     has origin is @byte;
     has order is ByteOrder;
 
+    // Bytes read in order.
     Binary(bytes is @byte, order is ByteOrder) {
         origin = bytes;
         self.order = order;
     }
 
+    // The bytes as an integer of their width.
     int(signedness is Signedness) is int {
         confirm origin.size() > 0
             else throw InvalidArgument.because("integer input width must be positive");
@@ -66,6 +70,7 @@ object Binary {
         binary_integer_from_bytes(origin, sign, order_name);
     }
 
+    // The bytes as a float of width.
     float(width is FloatWidth) is float {
         let bits is int = if width == FloatWidth.bits32 {
             32;
@@ -93,12 +98,14 @@ object Binary {
     }
 }
 
+// An integer as size bytes in a byte order.
 object IntegerBytes {
     has origin is int;
     has size is int;
     has signedness is Signedness;
     has order is ByteOrder;
 
+    // value as size bytes; a value that does not fit is OutOfRange.
     IntegerBytes(value is int, size is int, signedness is Signedness, order is ByteOrder) {
         origin = value;
         self.size = size;
@@ -106,6 +113,7 @@ object IntegerBytes {
         self.order = order;
     }
 
+    // The bytes.
     bytes() is @byte {
         confirm size > 0
             else throw InvalidArgument.because("integer byte size must be positive");
@@ -134,17 +142,20 @@ object IntegerBytes {
     }
 }
 
+// A float as 4 or 8 bytes in a byte order.
 object FloatBytes {
     has origin is float;
     has width is FloatWidth;
     has order is ByteOrder;
 
+    // value as width bytes.
     FloatBytes(value is float, width is FloatWidth, order is ByteOrder) {
         origin = value;
         self.width = width;
         self.order = order;
     }
 
+    // The bytes.
     bytes() is @byte {
         let bits is int = self.width_bits();
         confirm binary_float_fits(origin, bits)

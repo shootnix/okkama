@@ -1,7 +1,13 @@
 module http/internal/http2_life v1.0.0;
 
+// Stream states (RFC 9113 §5.1) and client stream identifiers. Push is off, so
+// there are no reserved states.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Fault, Http2FaultScope;
 
+// The state of a stream.
 enum Http2StreamState = (idle, open, local_ended, remote_ended, closed);
 
 // No reserved states: push is disabled. Message semantics (informational/final
@@ -10,6 +16,7 @@ object Http2StreamLife {
     has stream is int;
     has state is Http2StreamState;
 
+    // stream, idle.
     Http2StreamLife(stream is int) {
         confirm stream > 0 && stream <= 2147483647
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid stream ID");
@@ -17,10 +24,12 @@ object Http2StreamLife {
         state = Http2StreamState.idle;
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // Its state.
     state() is Http2StreamState {
         state;
     }
@@ -32,6 +41,7 @@ object Http2StreamLife {
         state == Http2StreamState.closed;
     }
 
+    // After we send HEADERS; Http2Fault where that is not allowed.
     local_headers(end_stream is bool) is ^Http2StreamLife {
         confirm state == Http2StreamState.idle
             || state == Http2StreamState.open
@@ -56,6 +66,7 @@ object Http2StreamLife {
         };
     }
 
+    // After the peer sends HEADERS.
     remote_headers(end_stream is bool) is ^Http2StreamLife {
         confirm state != Http2StreamState.remote_ended
             else throw Http2Fault.detailed(
@@ -78,6 +89,7 @@ object Http2StreamLife {
         };
     }
 
+    // After we send DATA.
     local_data(end_stream is bool) is ^Http2StreamLife {
         confirm state != Http2StreamState.idle
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "DATA on idle stream");
@@ -96,6 +108,7 @@ object Http2StreamLife {
         };
     }
 
+    // After the peer sends DATA.
     remote_data(end_stream is bool) is ^Http2StreamLife {
         confirm state != Http2StreamState.idle
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "DATA on idle stream");
@@ -114,12 +127,14 @@ object Http2StreamLife {
         };
     }
 
+    // After we reset it.
     local_reset() is ^Http2StreamLife {
         confirm state != Http2StreamState.idle
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "reset on idle stream");
         ^state = Http2StreamState.closed;
     }
 
+    // After the peer resets it.
     remote_reset() is ^Http2StreamLife {
         confirm state != Http2StreamState.idle
             else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "reset on idle stream");
@@ -153,13 +168,16 @@ hidden object Http2LifeEnding {
     }
 }
 
+// The odd stream identifiers a client hands out.
 object Http2ClientStreamIds {
     has following is int;
 
+    // From 1.
     Http2ClientStreamIds() {
         following = 1;
     }
 
+    // From first, an odd identifier.
     Http2ClientStreamIds(first is int) {
         confirm first > 0 && first <= 2147483647 && first % 2 == 1
             else throw Http2Fault.detailed(
@@ -171,11 +189,13 @@ object Http2ClientStreamIds {
         following = first;
     }
 
+    // The next identifier; Http2StreamIdsExhausted past 2³¹−1.
     next_stream() is int {
         confirm following <= 2147483647 else throw Http2StreamIdsExhausted.exhausted;
         following;
     }
 
+    // The last identifier handed out, or 0.
     highest() is int {
         if following == 1 {
             0;
@@ -185,12 +205,14 @@ object Http2ClientStreamIds {
         }
     }
 
+    // These identifiers after one is handed out.
     allocated() is ^Http2ClientStreamIds {
         confirm following <= 2147483647 else throw Http2StreamIdsExhausted.exhausted;
         ^following = following + 2;
     }
 }
 
+// Every client stream identifier was used; the connection must be replaced.
 enum Http2StreamIdsExhausted is Error = (exhausted);
 
 test "reset is local to one stream state" {

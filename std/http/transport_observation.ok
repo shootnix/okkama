@@ -1,5 +1,8 @@
 module http/transport_observation v1.0.0;
 
+// Whether a response started to arrive on an HTTP/1 connection. Only a
+// connection that got nothing back may be retried; HttpClient uses it.
+
 import "net/failure" take NetworkFailure, NetworkFailureKind, NetworkClosed;
 import "io/stream" take AsyncReading, AsyncWriting, ByteSource;
 import "http/message" take InvalidHttpMessage;
@@ -12,37 +15,45 @@ object HttpResponseObservation {
     has observed is Atomic<Event>;
     has armed is Event;
 
+    // Nothing watched yet.
     HttpResponseObservation() {
         observed = Atomic(Event());
         armed = Event();
     }
 
+    // Starts watching.
     begin() is void {
         observed.replace(Event());
         armed.set();
     }
 
+    // Whether it is watching.
     active() is bool {
         armed.ready();
     }
 
+    // Whether any response byte came.
     received() is bool {
         observed.value().ready();
     }
 
+    // Notes that a byte came.
     receive() is void {
         observed.value().set();
     }
 
+    // origin, noting what it reads.
     reading(origin is AsyncReading) is AsyncReading {
         HttpObservedReading(origin: origin, observation: self);
     }
 
+    // origin, unchanged.
     writing(origin is AsyncWriting) is AsyncWriting {
         HttpObservedWriting(origin: origin, observation: self);
     }
 }
 
+// The connection reset, closed or broke off before any response.
 enum HttpPeerGoneBeforeResponse is Error = (reset(cause is NetworkFailure), closed(
     cause is NetworkClosed
 ), truncated(cause is InvalidHttpMessage));

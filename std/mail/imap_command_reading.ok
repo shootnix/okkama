@@ -1,5 +1,15 @@
 module mail/imap_command_reading v1.0.0;
 
+// Reading every response of one command up to its tagged completion. The
+// command channel uses it.
+//
+//     let read = await ImapCommandInput(origin: socket, tag: tag, prefix: bytes, limits: ImapCommandLimits()).read();
+//     read.require_success().responses();
+//
+// NO and BAD are completions to handle, not failures of the connection. BYE, a
+// wrong tag, an unexpected continuation, the end of input or a limit leave the
+// connection unusable. By default a command may draw 4096 responses and 64 MiB.
+
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
 import "io/stream" take AsyncReading;
@@ -12,39 +22,50 @@ import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 import "async/event" take Event;
 
+// What answers a continuation request (+).
 role ImapContinuationWriting {
+    // Writes the next piece; how many were written.
     async write() is int;
 }
 
+// Something that sees untagged responses as they come.
 role ImapResponseObserving {
+    // Sees response; what it returns is up to the observer.
     async observed(response is ImapResponse) is int;
 }
 
+// Sees nothing.
 object ImapNoObservation does ImapResponseObserving {
+    // The observer.
     ImapNoObservation();
 
+    // 0.
     async observed(response is ImapResponse) is int {
         0;
     }
 }
 
+// How a command's responses are read: continuations, LOGOUT and observation.
 object ImapReplyMode {
     has continuing is ImapContinuationWriting;
     has logout is bool;
     has observing is ImapResponseObserving;
 
+    // No continuation, not LOGOUT, no observer.
     ImapReplyMode() {
         continuing = ImapNoContinuation();
         logout = false;
         observing = ImapNoObservation();
     }
 
+    // With continuing for +, and BYE allowed when logout.
     ImapReplyMode(continuing is ImapContinuationWriting, logout is bool) {
         self.continuing = continuing;
         self.logout = logout;
         observing = ImapNoObservation();
     }
 
+    // The same with observing.
     ImapReplyMode(
         continuing is ImapContinuationWriting,
         logout is bool,
@@ -55,22 +76,28 @@ object ImapReplyMode {
         self.observing = observing;
     }
 
+    // What answers continuations.
     continuation() is ImapContinuationWriting {
         continuing;
     }
 
+    // Whether BYE is expected.
     logout() is bool {
         logout;
     }
 
+    // The observer.
     observer() is ImapResponseObserving {
         observing;
     }
 }
 
+// Refuses continuation requests.
 object ImapNoContinuation does ImapContinuationWriting {
+    // The refusal.
     ImapNoContinuation();
 
+    // UnexpectedImapContinuation.
     async write() is int {
         throw UnexpectedImapContinuation.unexpected;
     }
@@ -83,6 +110,7 @@ object ImapNoContinuation does ImapContinuationWriting {
 object ImapTag {
     has value is string;
 
+    // Checks origin: 1 to 128 tag characters; InvalidArgument otherwise.
     ImapTag(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 128
             else throw InvalidArgument.because("IMAP tag length outside 1..128");
@@ -92,15 +120,18 @@ object ImapTag {
         value = origin;
     }
 
+    // The tag.
     string() is string {
         value;
     }
 }
 
+// How much one command may read.
 object ImapCommandLimits {
     has responses, wire_bytes, chunk_bytes is int;
     has response is ImapResponseLimits;
 
+    // 4096 responses, 64 MiB, 4 KiB reads, the default response limits.
     ImapCommandLimits() {
         responses = 4096;
         wire_bytes = 67108864;
@@ -108,6 +139,7 @@ object ImapCommandLimits {
         response = ImapResponseLimits();
     }
 
+    // The limits as given.
     ImapCommandLimits(
         responses is int,
         wire_bytes is int,
@@ -122,10 +154,12 @@ object ImapCommandLimits {
         self.response = response;
     }
 
+    // The limits of one response.
     response() is ImapResponseLimits {
         response;
     }
 
+    // Responses, bytes and bytes per read.
     cap Limits {
         responses is int {
             responses;
@@ -167,12 +201,14 @@ hidden object ImapCommandReading {
     }
 }
 
+// The responses of a command and its completion.
 object ImapCommandRead {
     has responses is @ImapResponse;
     has completion is ImapResponse;
     has tail is @byte;
     has count is int;
 
+    // As read.
     ImapCommandRead(
         responses is @ImapResponse,
         completion is ImapResponse,
@@ -188,26 +224,32 @@ object ImapCommandRead {
         count = consumed;
     }
 
+    // The untagged responses, in order.
     responses() is Sequencing<ImapResponse> {
         responses;
     }
 
+    // The tagged completion.
     completion() is ImapResponse {
         completion;
     }
 
+    // Bytes read past it.
     remainder() is @byte {
         tail;
     }
 
+    // Bytes it took.
     consumed() is int {
         count;
     }
 
+    // Whether it completed OK.
     successful() is bool {
         completion.name() == "OK";
     }
 
+    // This read; ImapCommandRejected unless OK.
     require_success() is ImapCommandRead {
         confirm self.successful()
             else throw ImapCommandRejected.response(completion.tag(), completion.name());
@@ -215,6 +257,7 @@ object ImapCommandRead {
     }
 }
 
+// Reads the responses of one command.
 object ImapCommandInput {
     has origin is AsyncReading;
     has tag is ImapTag;
@@ -222,6 +265,8 @@ object ImapCommandInput {
     has limits is ImapCommandLimits;
     has mode is ImapReplyMode;
 
+    // Reads from prefix and origin up to the completion tagged tag, within
+    // limits.
     ImapCommandInput(
         origin is AsyncReading,
         tag is ImapTag,
@@ -237,6 +282,7 @@ object ImapCommandInput {
         mode = ImapReplyMode();
     }
 
+    // The same in mode.
     ImapCommandInput(
         origin is AsyncReading,
         tag is ImapTag,
@@ -253,6 +299,7 @@ object ImapCommandInput {
         self.mode = mode;
     }
 
+    // The responses through completion.
     async read() is ImapCommandRead {
         let collected is MimeItems<ImapResponse> = MimeItems();
         let count = MimePosition(0);
@@ -376,14 +423,19 @@ hidden object ImapCommandPrefixJoin {
     }
 }
 
+// A command's output over a limit; kind says which.
 enum ImapCommandLimitExceeded is Error = (kind(kind is string));
 
+// The command completed NO or BAD; tag and name say which.
 enum ImapCommandRejected is Error = (response(tag is string, name is string));
 
+// A completion with another tag.
 enum UnexpectedImapTag is Error = (detailed(expected is string, actual is string));
 
+// A continuation request nobody asked for.
 enum UnexpectedImapContinuation is Error = (unexpected);
 
+// The server sent BYE.
 enum ImapServerClosed is Error = (bye);
 
 test "tagged rejection remains a completed aligned outcome" {

@@ -1,5 +1,10 @@
 module http/internal/http2_output v1.0.0;
 
+// The single writer of an HTTP/2 connection: a bounded queue of frame groups,
+// each written whole and in order.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_input" take Http2ControlQueuing;
 import "http/internal/http2_frame" take Http2Frame, Http2FrameHeader, Http2FrameRules, Http2Fault,
     Http2FaultScope;
@@ -12,7 +17,9 @@ import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "error" take InvalidState;
 
+// Told when a queued group starts to be written.
 role Http2OutputStarting {
+    // The group started.
     start() is void;
 }
 
@@ -33,6 +40,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
     has count, bytes is Atomic<int>;
     has maximum, byte_limit is int;
 
+    // Writes to origin, queuing at most maximum groups and byte_limit bytes.
     Http2ConnectionOutput(origin is AsyncWriting, maximum is int, byte_limit is int) {
         confirm maximum > 0 && maximum <= 256 && byte_limit >= 9 && byte_limit <= 1048576
             else throw Http2OutputLimit.exceeded;
@@ -50,10 +58,12 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         bytes = Atomic(0);
     }
 
+    // Queues frames; Http2OutputLimit when the queue is full.
     submit(frames is @Http2Frame) is Http2OutputTicket {
         self.submit(frames, Http2OutputUnreserved());
     }
 
+    // The same, telling starting when they start.
     submit(frames is @Http2Frame, starting is Http2OutputStarting) is Http2OutputTicket {
         confirm !stopping.ready() else throw Http2OutputStopped.stopped;
         confirm frames.size() > 0 && frames.size() <= 1024 && count.value() < maximum
@@ -74,10 +84,12 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         ticket;
     }
 
+    // Queues one control frame.
     frame(frame is Http2Frame) is void {
         self.submit([frame]);
     }
 
+    // Queues a header block for stream.
     headers(
         stream is int,
         fields is Sequencing<HpackField>,
@@ -88,6 +100,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         self.headers(stream, fields, budget, fragment, end_stream, Http2OutputUnreserved());
     }
 
+    // The same, telling starting when it starts.
     headers(
         stream is int,
         fields is Sequencing<HpackField>,
@@ -108,20 +121,24 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         self.submit(encoded.frames(), starting);
     }
 
+    // Fires when the queue has room.
     space() is Event {
         space.value();
     }
 
+    // The byte limit of the queue.
     maximum_bytes() is int {
         byte_limit;
     }
 
+    // Writes what is queued, then stops.
     finish() is void {
         stopping.set();
         changed.value().set();
         space.value().set();
     }
 
+    // Takes the queued groups.
     take() is @Http2OutputTicket {
         let queue = jobs.value();
         if queue.size() == 0 {
@@ -133,6 +150,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         [first];
     }
 
+    // ticket is done and its room is free.
     released(ticket is Http2OutputTicket) is void {
         current.replace([]);
         count.replace(count.value() - 1);
@@ -141,6 +159,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         space.replace(Event());
     }
 
+    // Stops at once, failing what is queued.
     abort() is void {
         self.finish();
         for current.value() -> ticket {
@@ -155,6 +174,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
         bytes.replace(0);
     }
 
+    // Writes until finished or aborted; true when it finished cleanly.
     async run() is bool {
         confirm !started.ready() else throw InvalidState.because("HTTP2 wire writer is single-use");
         started.set();
@@ -189,6 +209,7 @@ object Http2ConnectionOutput does Http2ControlQueuing {
     }
 }
 
+// One queued group of frames.
 object Http2OutputTicket {
     has frames is @Http2Frame;
     has amount is int;
@@ -196,6 +217,7 @@ object Http2OutputTicket {
     has starting is Http2OutputStarting;
     has begun is Event;
 
+    // frames taking amount bytes of the queue.
     Http2OutputTicket(frames is @Http2Frame, amount is int, starting is Http2OutputStarting) {
         self.frames = frames;
         self.amount = amount;
@@ -206,27 +228,33 @@ object Http2OutputTicket {
         begun = Event();
     }
 
+    // The frames.
     frames() is @Http2Frame {
         frames;
     }
 
+    // The bytes it takes.
     size() is int {
         amount;
     }
 
+    // Whether it was cancelled before it started.
     cancelled() is bool {
         cancellation.ready();
     }
 
+    // Marks it started.
     begin() is void {
         starting.start();
         begun.set();
     }
 
+    // Whether it started.
     started() is bool {
         begun.ready();
     }
 
+    // Cancels it unless it started.
     cancel() is void {
         if !finished.ready() {
             cancellation.set();
@@ -234,10 +262,12 @@ object Http2OutputTicket {
         }
     }
 
+    // Marks it written.
     completed() is void {
         finished.set();
     }
 
+    // Marks it failed.
     failed() is void {
         if !finished.ready() {
             stopped.set();
@@ -245,6 +275,8 @@ object Http2OutputTicket {
         }
     }
 
+    // Waits for it; true when written, Http2OutputCancelled or
+    // Http2OutputStopped otherwise.
     async delivered() is bool {
         defer self.cancel();
         await finished.wait();
@@ -254,8 +286,11 @@ object Http2OutputTicket {
     }
 }
 
+// The output queue is full.
 enum Http2OutputLimit is Error = (exceeded);
 
+// The output stopped before the frames were written.
 enum Http2OutputStopped is Error = (stopped);
 
+// The frames were cancelled before they were written.
 enum Http2OutputCancelled is Error = (cancelled);

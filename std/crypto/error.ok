@@ -1,22 +1,27 @@
 module crypto/error v1.0.0;
 
+// The failures of digest and crypto modules.
+//
+//     try { cipher.opened(nonce, aad, sealed); }
+//     catch failure is AuthenticationFailed { … }               // tampered or wrong key
+//
+// - InvalidCryptoInput: a key, nonce or other input of the wrong size or form.
+// - AuthenticationFailed: sealed data or its associated data was changed.
+// - CryptoUnavailable: the engine has no provider for the operation.
+//
+// HostOperation and DecimalArgument are the boundary to the runtime's provider;
+// programs do not need them.
+
 import "runtime/host_crypto" as host;
 import "encoding/utf" take Utf8Encoded;
 
-// Typed failures of digest/* and crypto/*, and the internal host boundary.
-//
-// Host cryptography comes from reviewed providers in okkama-native, RustCrypto
-// and aws-lc (RSA); std composes them and never reimplements primitives.
-// HostOperation is the only caller of runtime/host_crypto.crypto:
-// invalid_input becomes InvalidCryptoInput (wrong key/nonce length,
-// parameters, encodings), permission_denied becomes AuthenticationFailed
-// (AEAD tag, RSA-OAEP padding, non-contributory X25519 key) and any other
-// host failure CryptoUnavailable. Messages never contain key or plaintext
-// bytes.
+// An input of the wrong size or form; reason says which.
 enum InvalidCryptoInput is Error = (because(reason is string));
 
+// The data or associated data was changed, or the key is wrong.
 enum AuthenticationFailed is Error = (failed);
 
+// The engine cannot do this; reason says why.
 enum CryptoUnavailable is Error = (because(reason is string));
 
 // Internal: one host operation over byte arguments; integers are decimal ASCII.
@@ -24,11 +29,13 @@ object HostOperation {
     has operation is string;
     has arguments is @@byte;
 
+    // A provider call and its arguments.
     HostOperation(operation is string, arguments is @@byte) {
         self.operation = operation;
         self.arguments = arguments;
     }
 
+    // The call's result.
     bytes() is @byte {
         try {
             host.crypto(operation, arguments);
@@ -54,10 +61,12 @@ object HostOperation {
 object DecimalArgument {
     has value is int;
 
+    // An int as a provider argument.
     DecimalArgument(value is int) {
         self.value = value;
     }
 
+    // Its decimal digits as bytes.
     bytes() is @byte {
         Utf8Encoded(value.string()).bytes();
     }

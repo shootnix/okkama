@@ -18,19 +18,23 @@ import "time/day" take TimeOfDay;
 // instant on a global timeline. Those interpretations require an explicit
 // time-zone object. Results outside Date years 1..9999 throw InvalidDate.
 
+// A date and a wall-clock time with no zone: what a calendar or a form shows.
 object LocalDateTime does Comparing<LocalDateTime> {
     has date_value is Date;
     has time_value is TimeOfDay;
 
+    // date at time.
     LocalDateTime(date is Date, time is TimeOfDay) {
         date_value = date;
         time_value = time;
     }
 
+    // The date.
     date() is Date {
         date_value;
     }
 
+    // The time of day.
     time() is TimeOfDay {
         time_value;
     }
@@ -40,6 +44,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
         date_value.string() + "T" + time_value.string();
     }
 
+    // duration later, by the calendar.
     plus(duration is Duration) is LocalDateTime {
         let ordinal is int = GregorianDay(date_value).number();
         let day_seconds is rat = (time_value::Clock::hour * 3600 +
@@ -81,6 +86,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
         );
     }
 
+    // The time from other to this.
     minus(other is LocalDateTime) is Duration {
         let days is int = DaysBetween(left: other.date(), right: date_value).count();
         let own_seconds is rat = (time_value::Clock::hour * 3600 +
@@ -97,6 +103,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
         );
     }
 
+    // Earlier date-times come first.
     order(other is LocalDateTime) is Order {
         let dates is Order = date_value.order(other.date());
         if dates != Order.equal {

@@ -192,7 +192,7 @@ pub fn module_text(doc: &ModuleDoc, style: &Style) -> String {
             markdown_text(&mut out, &parts.errors, 4, style);
         }
         for (index, item) in errors.iter().enumerate() {
-            if index > 0 {
+            if index > 0 || !parts.errors.trim().is_empty() {
                 out.push('\n');
             }
             item_block(&mut out, item, None, 4, style);

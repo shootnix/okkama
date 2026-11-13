@@ -1,5 +1,16 @@
 module testing/double v1.0.0;
 
+// Test doubles: record the calls a fake receives, and stub answers.
+//
+//     let calls is RecordedCalls<string> = RecordedCalls();
+//     calls.record("sent " + to);
+//     test.is(calls.size(), 1);
+//
+//     let answers = Stub(["first", "second"]);
+//     answers.next();                        // "first"; StubExhausted after the last
+//
+// They work only inside a test.
+
 import "testing/check" take CheckContext;
 import "async/atomic" take Atomic;
 import "collections/sequence" take Sequencing;
@@ -13,24 +24,29 @@ object Recorded<T> {
     has index is BigInt;
     has value is T;
 
+    // value recorded at index.
     Recorded(index is BigInt, value is T) {
         self.index = index;
         self.value = value;
     }
 
+    // Its position, from 0.
     index() is BigInt {
         index;
     }
 
+    // The value.
     value() is T {
         value;
     }
 }
 
+// Values recorded in order.
 object RecordedCalls<T> {
     has cell is Atomic<List<Recorded<T>>>;
     has state is backend.TestState;
 
+    // Nothing recorded.
     RecordedCalls() {
         CheckContext().verify();
         state = backend.test_state_open(65536);
@@ -38,6 +54,7 @@ object RecordedCalls<T> {
         cell = Atomic(empty);
     }
 
+    // Records value.
     record(value is T) is void {
         CheckContext().verify();
         let old = cell.value();
@@ -46,11 +63,13 @@ object RecordedCalls<T> {
         cell.replace(old.prefix(Recorded(index: BigInt(index), value: value)));
     }
 
+    // How many.
     size() is int {
         CheckContext().verify();
         backend.test_state_size(state);
     }
 
+    // The records, in order.
     records() is Sequencing<Recorded<T>> {
         CheckContext().verify();
         let reversed is @Recorded<T> = cell.value().map() -> record {
@@ -62,6 +81,7 @@ object RecordedCalls<T> {
         snapshot;
     }
 
+    // Stops recording.
     close() is void {
         CheckContext().verify();
         backend.test_state_close(state);
@@ -73,10 +93,12 @@ object RecordedCalls<T> {
     }
 }
 
+// Answers given in order.
 object Stub<T> {
     has origin is @T;
     has position is backend.TestState;
 
+    // The answers.
     Stub(values is Sequencing<T>) {
         CheckContext().verify();
         let size = values.size();
@@ -88,17 +110,20 @@ object Stub<T> {
         position = backend.test_state_open(size);
     }
 
+    // How many in all.
     size() is int {
         CheckContext().verify();
         backend.test_state_size(position);
         origin.size();
     }
 
+    // How many are left.
     remaining() is int {
         CheckContext().verify();
         origin.size() - backend.test_state_size(position);
     }
 
+    // The next answer; StubExhausted when none is left.
     next() is T {
         CheckContext().verify();
         let at = try {
@@ -113,6 +138,7 @@ object Stub<T> {
         origin[at];
     }
 
+    // Stops it.
     close() is void {
         CheckContext().verify();
         backend.test_state_close(position);
@@ -123,8 +149,10 @@ object Stub<T> {
     }
 }
 
+// The stub has no answers left.
 enum StubExhausted is Error = (exhausted);
 
+// A double used wrongly; reason says why.
 enum InvalidTestDouble is Error = (because(reason is string));
 
 test "recording snapshots remain immutable" {

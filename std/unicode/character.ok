@@ -20,19 +20,24 @@ import "runtime/unicode_character" take character_name, category_code, character
 // Unicode name. Property values follow the Unicode 16.0.0 stdlib contract;
 // they do not vary with the operating system or selected backend.
 
+// The Unicode General Category of a character.
 enum UnicodeCategory = (uppercase_letter, lowercase_letter, titlecase_letter, modifier_letter, other_letter, nonspacing_mark, spacing_mark, enclosing_mark, decimal_number, letter_number, other_number, connector_punctuation, dash_punctuation, open_punctuation, close_punctuation, initial_punctuation, final_punctuation, other_punctuation, math_symbol, currency_symbol, modifier_symbol, other_symbol, space_separator, line_separator, paragraph_separator, control, format, surrogate, private_use, unassigned);
 
+// What the Unicode Character Database says about one character.
 object UnicodeCharacter {
     has origin is char;
 
+    // The character origin.
     UnicodeCharacter(origin is char) {
         self.origin = origin;
     }
 
+    // Its name, such as LATIN SMALL LETTER E WITH ACUTE; "" when it has none.
     name() is string {
         character_name(origin);
     }
 
+    // Its general category.
     category() is UnicodeCategory {
         match category_code(origin) {
             case "Lu" {
@@ -131,10 +136,13 @@ object UnicodeCharacter {
         }
     }
 
+    // Its canonical combining class, 0 for most characters.
     combining_class() is int {
         character_combining_class(origin);
     }
 
+    // Its numeric value, 5.0 for `5` or 0.5 for `½`; NonNumericCharacter when
+    // it has none.
     numeric_value() is float {
         confirm character_is_numeric(origin)
             else throw NonNumericCharacter.invalid;
@@ -142,6 +150,7 @@ object UnicodeCharacter {
     }
 }
 
+// The character has no numeric value.
 enum NonNumericCharacter is Error = (invalid);
 
 test "properties come from the Unicode database" {

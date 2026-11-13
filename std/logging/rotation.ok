@@ -1,5 +1,10 @@
 module logging/rotation v1.0.0;
 
+// Log files that rotate by size or by time, keeping some backups.
+//
+//     let file = RotatingLogFile(path: Path("app.log"), options: options,
+//         rotation: SizeRotating(BigInt(10485760)), backups: 5, clock: SystemClock());
+
 import "logging/file" take FileLogOptions, LogFileState, ClosedLogFile;
 import "fs/path" take Path, PathStyle;
 import "fs/error" take FileFailure;
@@ -21,33 +26,42 @@ import "fs/stat" take PermissionMode;
 import "testing/time" take ManualClock;
 import "encoding/utf" take Utf8Encoded;
 
+// When and how a log file rotates.
 role Rotating {
+    // Whether to rotate now, given the size and when the file was opened.
     needed(size is BigInt, opened is Instant, now is Instant) is bool;
+    // The suffix of backup index at now.
     suffix(now is Instant, index is int) is string;
 }
 
+// Rotation once a file reaches a size; backups are `.1`, `.2`…
 object SizeRotating does Rotating {
     has limit is BigInt;
 
+    // At limit bytes; InvalidLogRotation below 1.
     SizeRotating(limit is BigInt) {
         confirm limit.sign() > 0
             else throw InvalidLogRotation.because("size limit must be positive");
         self.limit = limit;
     }
 
+    // Whether size reached the limit.
     needed(size is BigInt, opened is Instant, now is Instant) is bool {
         size.order(limit) != Order.less;
     }
 
+    // The index.
     suffix(now is Instant, index is int) is string {
         index.string();
     }
 }
 
+// Rotation once a file is older than an interval; backups carry their time.
 object IntervalRotating does Rotating {
     has interval is Duration;
     has zone is TimeZone;
 
+    // Every interval, times in zone.
     IntervalRotating(interval is Duration, zone is TimeZone) {
         confirm interval::Span::seconds > 0.rat()
             else throw InvalidLogRotation.because("interval must be positive");
@@ -55,10 +69,12 @@ object IntervalRotating does Rotating {
         self.zone = zone;
     }
 
+    // Whether the interval has passed since opened.
     needed(size is BigInt, opened is Instant, now is Instant) is bool {
         now.minus(opened)::Span::seconds >= interval::Span::seconds;
     }
 
+    // The time and index.
     suffix(now is Instant, index is int) is string {
         Rfc3339(origin: now, offset: zone.offset(now)).string().split(":").join("-") + "-" + index.string();
     }
@@ -184,6 +200,7 @@ hidden object LogArchiveCatalog {
     }
 }
 
+// A log file that rotates.
 object RotatingLogFile does Writing, Closing {
     has path is Path;
     has file is LogFileState;
@@ -193,6 +210,7 @@ object RotatingLogFile does Writing, Closing {
     has opened is Atomic<@Instant>;
     has failures is Atomic<@Error>;
 
+    // Appends to path, rotating as rotation says and keeping backups old files.
     RotatingLogFile(
         path is Path,
         options is FileLogOptions,
@@ -213,10 +231,12 @@ object RotatingLogFile does Writing, Closing {
         failures = Atomic(errors);
     }
 
+    // Appends source's bytes.
     write(source is ByteSource) is void {
         self.write(source.bytes());
     }
 
+    // Appends bytes.
     write(bytes is @byte) is void {
         confirm !file.closed() else throw ClosedLogFile.closed;
         if failures.value().size() > 0 {
@@ -239,20 +259,24 @@ object RotatingLogFile does Writing, Closing {
         }
     }
 
+    // Sends what is buffered to the file.
     flush() is void {
         file.flush();
     }
 
+    // Closes and opens the path again, as after an outside rotation.
     reopen() is void {
         file.reopen();
         let empty is @Instant = [];
         opened.replace(empty);
     }
 
+    // Whether it was closed.
     closed() is bool {
         file.closed();
     }
 
+    // Closes it.
     close() is void {
         file.close();
     }
@@ -318,6 +342,7 @@ object RotatingLogFile does Writing, Closing {
     }
 }
 
+// Rotation that cannot work as given; reason says why.
 enum InvalidLogRotation is Error = (because(reason is string));
 
 test "size and interval rotation decide and name the archive" {

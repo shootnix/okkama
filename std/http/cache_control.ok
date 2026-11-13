@@ -1,5 +1,14 @@
 module http/cache_control v1.0.0;
 
+// Cache-Control directives (RFC 9111 §5.2).
+//
+//     let control = CacheControl(response::Head::headers);
+//     control.present("no-store");
+//     control.seconds("max-age");                    // InvalidCacheControl unless one argument
+//
+// Directive names are case-insensitive. Fields are bounded (8192 bytes and 128
+// directives by default).
+
 import "http/header" take Headers, Header, HeaderName, HttpAsciiLowercase;
 import "http/media_type" take HttpMediaOctet, HttpMediaPosition, HttpMediaScanned, HttpMediaItems;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
@@ -24,21 +33,26 @@ hidden object CacheDirective {
     }
 }
 
+// The Cache-Control directives of some fields.
 object CacheControl {
     has directives is @CacheDirective;
 
+    // The directives of headers, within 8192 bytes and 128 directives.
     CacheControl(headers is Headers) {
         directives = CacheControlFields(headers: headers, budget: 8192, entries: 128).values();
     }
 
+    // The directives within these limits.
     CacheControl(headers is Headers, bytes is int, entries is int) {
         directives = CacheControlFields(headers: headers, budget: bytes, entries: entries).values();
     }
 
+    // Whether the directive appears.
     present(name is string) is bool {
         self.count(name) > 0;
     }
 
+    // How many times it appears.
     count(name is string) is int {
         let key = HttpAsciiLowercase(name).string();
         directives.reduce(0) -> total, item {
@@ -51,6 +65,7 @@ object CacheControl {
         };
     }
 
+    // The arguments it was given, in order.
     arguments(name is string) is @string {
         let key = HttpAsciiLowercase(name).string();
         let result is HttpMediaItems<string> = HttpMediaItems();
@@ -64,6 +79,8 @@ object CacheControl {
         result.values();
     }
 
+    // Its delta-seconds argument; InvalidCacheControl unless it appears once
+    // with one.
     seconds(name is string) is int {
         let values = self.arguments(name);
         confirm self.count(name) == 1 && values.size() == 1
@@ -72,13 +89,17 @@ object CacheControl {
     }
 }
 
+// A delta-seconds value: decimal digits.
 object CacheDeltaSeconds {
     has origin is string;
 
+    // The text.
     CacheDeltaSeconds(origin is string) {
         self.origin = origin;
     }
 
+    // The seconds, at most 2147483648; InvalidCacheControl for text that is not
+    // digits.
     seconds() is int {
         confirm origin.length() > 0 && origin.length() <= 8192
             else throw InvalidCacheControl.because("delta-seconds length");
@@ -242,6 +263,7 @@ hidden object CacheControlScanning {
     }
 }
 
+// Cache-Control that cannot be read; reason says why.
 enum InvalidCacheControl is Error = (because(reason is string));
 
 test "cache control keeps duplicate freshness directives" {

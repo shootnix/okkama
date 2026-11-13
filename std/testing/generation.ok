@@ -1,5 +1,12 @@
 module testing/generation v1.0.0;
 
+// Generators of test values for property tests, with shrinking.
+//
+//     let numbers = IntegerGeneration(minimum: -1000, maximum: 1001);     // -1000..1000
+//     let lists = SequenceGeneration(origin: numbers, minimum: 0, maximum: 20);
+//
+// A generated value knows smaller values to try when a property fails.
+
 import "random/source" take Randomizing, PcgRandom;
 import "collections/sequence" take Sequencing;
 import "collections/iteration" take Cursor, IterationEnded;
@@ -7,15 +14,20 @@ import "collections/ordering" take SortedBy;
 import "collections/list" take List, EmptyList;
 import "async/atomic" take Atomic;
 
+// A generator of values.
 role Generation<T> {
+    // A value drawn with random, no larger than size.
     sample(random is Randomizing, size is int) is Generated<T>;
 }
 
 // Reduction values carry their own representation and next reductions. No
 // reflection/stringification service is needed for arbitrary domain T.
 role Generated<T> {
+    // The value.
     value() is T;
+    // Smaller values to try, simplest first.
     reductions() is Sequencing<Generated<T>>;
+    // The value as text, for failure messages.
     string() is string;
 }
 
@@ -118,40 +130,50 @@ hidden object DistinctReductions<T> does Sequencing<Generated<T>> {
     }
 }
 
+// A checked generation size.
 object GenerationSize {
+    // size; InvalidGeneration when negative.
     GenerationSize(size is int) {
         confirm size >= 0 && size <= 65536
             else throw InvalidGeneration.because("size must be 0..65536");
     }
 }
 
+// A value that does not shrink.
 object GeneratedElement<T> does Generated<T> {
     has origin is T;
     has representation is string;
 
+    // value shown as string.
     GeneratedElement(value is T, string is string) {
         confirm string.length() <= 4096 else throw InvalidGeneration.because("reproduction length");
         origin = value;
         representation = string;
     }
 
+    // The value.
     value() is T {
         origin;
     }
 
+    // Its text.
     string() is string {
         representation;
     }
 
+    // None.
     reductions() is Sequencing<Generated<T>> {
         let empty is @Generated<T> = [];
         empty;
     }
 }
 
+// true or false.
 object BooleanGeneration does Generation<bool> {
+    // The generator.
     BooleanGeneration();
 
+    // A boolean.
     sample(random is Randomizing, size is int) is Generated<bool> {
         GenerationSize(size);
         GeneratedBoolean(random.integer(0, 2) == 1);
@@ -195,6 +217,7 @@ hidden object GeneratedBoolean does Generated<bool> {
 object IntegerGeneration does Generation<int> {
     has minimum, maximum, target is int;
 
+    // Integers from minimum up to, not including, maximum.
     IntegerGeneration(minimum is int, maximum is int) {
         confirm minimum < maximum
             else throw InvalidGeneration.because("empty/inverted integer range");
@@ -213,6 +236,8 @@ object IntegerGeneration does Generation<int> {
         };
     }
 
+    // An integer no farther than size from the value nearest 0; it shrinks
+    // toward that value.
     sample(random is Randomizing, size is int) is Generated<int> {
         GenerationSize(size);
         let lower = target.rat() - size.rat();
@@ -259,14 +284,19 @@ hidden object GeneratedInteger does Generated<int> {
             [GeneratedInteger(origin: target, target: target)];
         }
         else {
-            [GeneratedInteger(origin: target, target: target), GeneratedInteger(origin: middle, target: target)];
+            [
+                GeneratedInteger(origin: target, target: target),
+                GeneratedInteger(origin: middle, target: target)
+            ];
         }
     }
 }
 
+// Finite floats in a range.
 object FiniteFloatGeneration does Generation<float> {
     has minimum, maximum, target is float;
 
+    // Floats from minimum to maximum.
     FiniteFloatGeneration(minimum is float, maximum is float) {
         confirm minimum <= maximum else throw InvalidGeneration.because("inverted float range");
         self.minimum = minimum;
@@ -284,6 +314,7 @@ object FiniteFloatGeneration does Generation<float> {
         };
     }
 
+    // A float.
     sample(random is Randomizing, size is int) is Generated<float> {
         GenerationSize(size);
         if size == 0 || minimum == maximum {
@@ -341,14 +372,19 @@ hidden object GeneratedFloat does Generated<float> {
             [GeneratedFloat(origin: target, target: target)];
         }
         else {
-            [GeneratedFloat(origin: target, target: target), GeneratedFloat(origin: middle, target: target)];
+            [
+                GeneratedFloat(origin: target, target: target),
+                GeneratedFloat(origin: middle, target: target)
+            ];
         }
     }
 }
 
+// One of given values.
 object ElementGeneration<T> does Generation<T> {
     has origin is @GeneratedElement<T>;
 
+    // The values.
     ElementGeneration(values is Sequencing<GeneratedElement<T>>) {
         let size = values.size();
         confirm size > 0 && size <= 4096
@@ -359,6 +395,7 @@ object ElementGeneration<T> does Generation<T> {
         origin = snapshot;
     }
 
+    // One of them.
     sample(random is Randomizing, size is int) is Generated<T> {
         GenerationSize(size);
         GeneratedChoice(origin: origin, position: random.integer(0, origin.size()));
@@ -395,11 +432,13 @@ hidden object GeneratedChoice<T> does Generated<T> {
     }
 }
 
+// Values of another generator that meet a condition.
 object FilteredGeneration<T> does Generation<T> {
     has origin is Generation<T>;
     has condition is (T) is bool;
     has attempts is int;
 
+    // Values of origin meeting condition, trying attempts times.
     FilteredGeneration(origin is Generation<T>, condition is (T) is bool, attempts is int) {
         confirm attempts > 0 && attempts <= 10000
             else throw InvalidGeneration.because("attempts must be 1..10000");
@@ -408,6 +447,7 @@ object FilteredGeneration<T> does Generation<T> {
         self.attempts = attempts;
     }
 
+    // A value; GenerationExhausted when none met it.
     sample(random is Randomizing, size is int) is Generated<T> {
         GenerationSize(size);
         for (0..attempts) -> index {
@@ -462,6 +502,7 @@ object SequenceGeneration<T> does Generation<Sequencing<T>> {
     has origin is Generation<T>;
     has minimum, maximum is int;
 
+    // Arrays of origin's values, minimum to maximum long (both included).
     SequenceGeneration(origin is Generation<T>, minimum is int, maximum is int) {
         confirm minimum >= 0 && minimum <= maximum && maximum <= 4096
             else throw InvalidGeneration.because(
@@ -472,6 +513,7 @@ object SequenceGeneration<T> does Generation<Sequencing<T>> {
         self.maximum = maximum;
     }
 
+    // An array; size bounds how far its length goes past minimum.
     sample(random is Randomizing, size is int) is Generated<Sequencing<T>> {
         GenerationSize(size);
         let growth = if size < maximum - minimum {
@@ -666,7 +708,10 @@ hidden object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
     }
 
     cursor() is Cursor<Generated<Sequencing<T>>> {
-        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(origin: self, position: 0);
+        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(
+            origin: self,
+            position: 0
+        );
         cursor;
     }
 }
@@ -695,8 +740,10 @@ hidden object SequenceReductionCursor<T> does Cursor<Generated<Sequencing<T>>> {
     }
 }
 
+// No value met the condition within the attempts.
 enum GenerationExhausted is Error = (attempts(attempts is int));
 
+// A generator that cannot work as given; reason says why.
 enum InvalidGeneration is Error = (because(reason is string));
 
 test "zero complexity generates the admissible integer target" {

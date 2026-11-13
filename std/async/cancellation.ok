@@ -53,35 +53,49 @@ module async/cancellation v1.0.0;
 // `Cancelling` to collaborators. Constructing `CancellationToken` directly is
 // rejected by the runtime; tokens can only come from `cancelling()`.
 
+// A request to stop that work checks: `cancelling.check()` throws once it is
+// requested.
 role Cancelling {
+    // Whether stopping was requested.
     requested() is bool;
+    // Throws Cancelled once stopping was requested.
     check() is void;
+    // Waits until stopping is requested.
     async wait() is Cancelling;
 }
 
+// The side that asks to stop; hand its cancelling() to the work.
 object Cancellation {
+    // A cancellation not yet requested.
     Cancellation() {}
 
+    // The side the work watches.
     cancelling() is Cancelling {
         CancellationToken();
     }
 
+    // Asks the work to stop; asking again does nothing.
     cancel() is void {
         panic "Cancellation.cancel is a VM intrinsic";
     }
 }
 
+// A Cancelling that is never requested, for work nothing will stop.
 object CancellationToken does Cancelling {
+    // A token that is never cancelled.
     CancellationToken() {}
 
+    // false.
     requested() is bool {
         panic "CancellationToken.requested is a VM intrinsic";
     }
 
+    // Does nothing.
     check() is void {
         panic "CancellationToken.check is a VM intrinsic";
     }
 
+    // Waits forever.
     async wait() is Cancelling {
         panic "CancellationToken.wait is a VM intrinsic";
         self;

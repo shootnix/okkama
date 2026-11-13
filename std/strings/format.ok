@@ -8,18 +8,24 @@ module strings/format v1.0.0;
 // Each value after the pattern is turned into text by its own string(), as
 // any `...string` tail does: numbers, bool, char, and objects that answer
 // string(). Formatted(pattern:, values:) takes texts already made.
+
+// A pattern with `{}` slots filled in order: `Formatted("{} of {}", done,
+// total).string()`.
 object Formatted {
     has pattern is string;
     has values is @string;
 
+    // Fills the slots of pattern with values already made into text.
     Formatted(:pattern, :values);
 
+    // Fills the slots of pattern with each value's string().
     Formatted(pattern is string, values is ...string) {
         self.pattern = pattern;
         let listed is @string = values...;
         self.values = listed;
     }
 
+    // The filled text; InvalidFormat when slots and values do not match.
     string() is string {
         let parts is @string = pattern.split("{}");
         confirm parts.size() == values.size() + 1 else throw InvalidFormat.invalid;
@@ -29,6 +35,7 @@ object Formatted {
     }
 }
 
+// A pattern whose `{}` slots do not match the values.
 enum InvalidFormat is Error = (invalid);
 
 test "slots are filled in order and other braces stay" {
@@ -49,9 +56,12 @@ test "slots are filled in order and other braces stay" {
     }
 }
 
+// A value whose string() is "probe", for tests of formatting.
 object FormatProbe {
+    // The probe.
     FormatProbe();
 
+    // "probe".
     string() is string {
         "probe";
     }

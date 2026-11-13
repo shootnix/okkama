@@ -1,5 +1,9 @@
 module http/internal/websocket_frame v1.0.0;
 
+// WebSocket frames (RFC 6455 §5): headers, masking and payloads.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/websocket" take WebSocketFailure;
 import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
@@ -7,10 +11,12 @@ import "http/internal/wire_bytes" take HttpWireBytes;
 import "runtime/binary" take binary_masked_slice;
 import "io/buffer" take ByteBuffer;
 
+// A frame header: opcode, FIN, payload length and whether it is masked.
 object WebSocketFrameHeader {
     has opcode, length is int;
     has final, masked is bool;
 
+    // As given; WebSocketFailure for an opcode or length the protocol refuses.
     WebSocketFrameHeader(opcode is int, final is bool, length is int, masked is bool) {
         confirm opcode == 0
             || opcode == 1
@@ -30,22 +36,27 @@ object WebSocketFrameHeader {
         self.masked = masked;
     }
 
+    // The opcode.
     opcode() is int {
         opcode;
     }
 
+    // The payload length.
     length() is int {
         length;
     }
 
+    // Whether FIN is set.
     final() is bool {
         final;
     }
 
+    // Whether the payload is masked.
     masked() is bool {
         masked;
     }
 
+    // The header's bytes, with mask when masked.
     bytes(mask is @byte) is @byte {
         confirm mask.size() == if masked {
             4;
@@ -109,11 +120,14 @@ object WebSocketHeaderPrefix {
     has origin is @byte;
     has masked is bool;
 
+    // The two bytes; masked says whether frames must be masked.
     WebSocketHeaderPrefix(origin is @byte, masked is bool) {
         self.origin = origin;
         self.masked = masked;
     }
 
+    // Throws WebSocketFailure for reserved bits, an unknown opcode or the wrong
+    // masking.
     checked() is void {
         confirm origin.size() >= 2 else throw WebSocketFailure.because("incomplete frame header");
         let first = origin[0].int();
@@ -137,11 +151,13 @@ object WebSocketHeaderPrefix {
     }
 }
 
+// A frame header read from bytes.
 object ParsedWebSocketFrameHeader {
     has origin is @byte;
     has masked is bool;
     has maximum is int;
 
+    // Reads origin, expecting masking or not, payloads up to maximum bytes.
     ParsedWebSocketFrameHeader(origin is @byte, masked is bool, maximum is int) {
         self.origin = origin;
         self.masked = masked;
@@ -150,6 +166,7 @@ object ParsedWebSocketFrameHeader {
         self.maximum = maximum;
     }
 
+    // The header; WebSocketFailure when it is not valid.
     header() is WebSocketFrameHeader {
         WebSocketHeaderPrefix(origin: origin, masked: masked).checked();
         let first = origin[0].int();
@@ -209,10 +226,12 @@ hidden object WebSocketMaskPosition {
     }
 }
 
+// Bytes XORed with a 4-byte mask.
 object WebSocketMaskedBytes {
     has origin, mask is @byte;
     has offset is int;
 
+    // origin masked with mask, starting at offset in the mask.
     WebSocketMaskedBytes(origin is @byte, mask is @byte, offset is int) {
         confirm mask.size() == 4 && offset >= 0 && offset < 4
             else throw WebSocketFailure.because("mask coordinates");
@@ -221,6 +240,7 @@ object WebSocketMaskedBytes {
         self.offset = offset;
     }
 
+    // The masked bytes; masking twice gives the original.
     bytes() is @byte {
         let output = ByteBuffer();
         defer output.closing().close();
@@ -242,11 +262,13 @@ object WebSocketMaskedBytes {
     }
 }
 
+// A whole frame.
 object WebSocketFrame {
     has opcode is int;
     has final is bool;
     has payload is @byte;
 
+    // A frame of opcode with payload; final sets FIN.
     WebSocketFrame(opcode is int, final is bool, payload is @byte) {
         WebSocketFrameHeader(opcode: opcode, final: final, length: payload.size(), masked: false);
         self.opcode = opcode;
@@ -254,18 +276,22 @@ object WebSocketFrame {
         self.payload = payload;
     }
 
+    // The opcode.
     opcode() is int {
         opcode;
     }
 
+    // Whether FIN is set.
     final() is bool {
         final;
     }
 
+    // The payload, unmasked.
     payload() is @byte {
         payload;
     }
 
+    // The frame's bytes, masked with mask when it is not empty.
     bytes(mask is @byte) is @byte {
         confirm mask.size() == 0 || mask.size() == 4
             else throw WebSocketFailure.because("mask width");

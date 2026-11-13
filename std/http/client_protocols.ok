@@ -1,5 +1,8 @@
 module http/client_protocols v1.0.0;
 
+// Which HTTP version a client speaks on a connection: what ALPN selected on
+// TLS, or the configured one on cleartext. HttpTransport uses it.
+
 import "http/client_policy" take ClientPolicy;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "net/tls" take TlsClientPolicy;
@@ -14,6 +17,7 @@ import "net/tls" take TlsVersion;
 object HttpClientProtocols {
     has h1, h2 is bool;
 
+    // The protocols policy and tls allow.
     HttpClientProtocols(policy is ClientPolicy, tls is TlsClientPolicy) {
         let one = policy.protocols().membership(HttpVersion.http_1_1);
         let two = policy.protocols().membership(HttpVersion.http_2);
@@ -42,6 +46,8 @@ object HttpClientProtocols {
         h2 = two;
     }
 
+    // The version for the ALPN protocol ("" when none); UnsupportedHttpVersion
+    // for one not enabled.
     selected(protocol is string) is HttpVersion {
         if protocol == "h2" {
             confirm h2 else throw UnsupportedHttpVersion.unsupported;
@@ -52,6 +58,8 @@ object HttpClientProtocols {
         HttpVersion.http_1_1;
     }
 
+    // The version for cleartext: HTTP/1.1 when enabled, else HTTP/2 prior
+    // knowledge.
     clear() is HttpVersion {
         if h1 {
             HttpVersion.http_1_1;
@@ -72,11 +80,23 @@ test "the client agrees protocols with TLS and maps ALPN to a version" {
         plain.selected("h2");
     };
     let both is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]);
-    let policy = ClientPolicy(protocols: both, limits: HttpLimits(), timeouts: ClientTimeouts(), connections: 8, access: PublicEndpoints());
-    let modern = HttpClientProtocols(policy: policy, tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2", "http/1.1"]));
+    let policy = ClientPolicy(
+        protocols: both,
+        limits: HttpLimits(),
+        timeouts: ClientTimeouts(),
+        connections: 8,
+        access: PublicEndpoints()
+    );
+    let modern = HttpClientProtocols(
+        policy: policy,
+        tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2", "http/1.1"])
+    );
     test.is(modern.selected("h2") == HttpVersion.http_2, true);
     test.is(modern.selected("http/1.1") == HttpVersion.http_1_1, true);
     test.throws(UnsupportedHttpVersion) {
-        HttpClientProtocols(policy: ClientPolicy(), tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2"]));
+        HttpClientProtocols(
+            policy: ClientPolicy(),
+            tls: TlsClientPolicy(trust: trust, versions: versions, protocols: ["h2"])
+        );
     };
 }

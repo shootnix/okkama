@@ -1,5 +1,20 @@
 module crypto/x509/trust v1.0.0;
 
+// Verifying certificate chains against trusted roots.
+//
+//     let verified = VerifiedCertificateChain(
+//         chain: CertificateChain([leaf, intermediate]),
+//         trust: SystemTrustStore(),
+//         host: DnsCertificateIdentity(HostName("example.com")),
+//         at: SystemClock().instant(),
+//         purpose: CertificatePurpose("1.3.6.1.5.5.7.3.1"),        // TLS server
+//     );
+//     verified.leaf();         // CertificateVerificationFailed says why it is not trusted
+//
+// Roots come from the system, from given certificates or from PEM text; an
+// empty store trusts nothing. Only the TLS server and client purposes are
+// verified.
+
 import "crypto/x509/certificate" take Certificate, CertificateChain, CertificatePurpose,
     CertificateBackendUnavailable, CertificateLimitExceeded;
 import "crypto/x509/value" take InvalidCertificate;
@@ -14,45 +29,59 @@ import "runtime/x509" as x509;
 // Explicit local root selection; an empty store means no trust anchors and
 // never selects system defaults. The role grants no filesystem capability.
 role TrustStore {
+    // The trusted roots.
     certificates() is Sequencing<Certificate>;
 }
 
+// Why a chain was not trusted.
 enum CertificateFailure = (untrusted, invalid_signature, invalid_name, invalid_purpose, unknown_critical_extension, invalid_chain, not_yet_valid, expired);
 
+// A DNS name or an IP address.
 enum CertificateIdentityKind = (dns, ip);
 
+// Whom a certificate must name.
 role CertificateIdentity {
+    // DNS or IP.
     kind() is CertificateIdentityKind;
+    // The name or address.
     string() is string;
 }
 
+// A DNS name a certificate must cover.
 object DnsCertificateIdentity does CertificateIdentity {
     has host is HostName;
 
+    // The host.
     DnsCertificateIdentity(host is HostName) {
         self.host = host;
     }
 
+    // CertificateIdentityKind.dns.
     kind() is CertificateIdentityKind {
         CertificateIdentityKind.dns;
     }
 
+    // The host name.
     string() is string {
         host.ascii();
     }
 }
 
+// An IP address a certificate must cover.
 object IpCertificateIdentity does CertificateIdentity {
     has address is IpAddress;
 
+    // The address.
     IpCertificateIdentity(address is IpAddress) {
         self.address = address;
     }
 
+    // CertificateIdentityKind.ip.
     kind() is CertificateIdentityKind {
         CertificateIdentityKind.ip;
     }
 
+    // The address.
     string() is string {
         address.string();
     }
@@ -67,6 +96,7 @@ object VerifiedCertificateChain {
     has at is Instant;
     has purpose is CertificatePurpose;
 
+    // Verifies chain against trust, for host, at an instant, for purpose.
     VerifiedCertificateChain(
         chain is CertificateChain,
         trust is TrustStore,
@@ -87,6 +117,8 @@ object VerifiedCertificateChain {
         self.purpose = purpose;
     }
 
+    // The verified path to a root; CertificateVerificationFailed or
+    // UnsupportedCertificatePurpose otherwise.
     path() is CertificateChain {
         let identifier = purpose.identifier();
         confirm identifier == "1.3.6.1.5.5.7.3.1" || identifier == "1.3.6.1.5.5.7.3.2"
@@ -132,22 +164,28 @@ object VerifiedCertificateChain {
         CertificateChain(certificates);
     }
 
+    // The verified leaf.
     leaf() is Certificate {
         self.path().certificates().first();
     }
 }
 
+// The chain is not trusted; reason says why.
 enum CertificateVerificationFailed is Error = (because(reason is CertificateFailure));
 
+// A purpose other than TLS server or client.
 enum UnsupportedCertificatePurpose is Error = (identifier(identifier is string));
 
+// A verifier's failure code.
 object CertificateFailureCode {
     has origin is string;
 
+    // The code.
     CertificateFailureCode(origin is string) {
         self.origin = origin;
     }
 
+    // What it means.
     failure() is CertificateFailure {
         if origin == "untrusted" {
             return CertificateFailure.untrusted;
@@ -178,8 +216,10 @@ object CertificateFailureCode {
 // immutable snapshot, allowing its owning client/policy to choose its lifetime.
 // The operating system's trusted roots, read each time they are asked for.
 object SystemTrustStore does TrustStore {
+    // The system's roots.
     SystemTrustStore();
 
+    // Reads them now; SystemTrustUnavailable when they cannot be read.
     certificates() is Sequencing<Certificate> {
         try {
             let sources = x509.system_certificates();
@@ -200,11 +240,14 @@ object SystemTrustStore does TrustStore {
     }
 }
 
+// The system's roots could not be read.
 enum SystemTrustUnavailable is Error = (because(reason is string));
 
+// Roots given as certificates.
 object TrustedCertificates does TrustStore {
     has origin is @Certificate;
 
+    // These roots.
     TrustedCertificates(certificates is Sequencing<Certificate>) {
         let count = certificates.size();
         confirm count >= 0 else throw InvalidTrustStore.because("negative certificate count");
@@ -235,6 +278,7 @@ object TrustedCertificates does TrustStore {
         origin = values;
     }
 
+    // The roots.
     certificates() is Sequencing<Certificate> {
         origin;
     }
@@ -246,6 +290,8 @@ object TrustedCertificates does TrustStore {
 object PemTrustStore does TrustStore {
     has origin is TrustedCertificates;
 
+    // Roots in PEM text: CERTIFICATE blocks only, at most 1024;
+    // InvalidTrustStore otherwise.
     PemTrustStore(source is string) {
         confirm source.length() <= 8388608 else throw TrustStoreLimitExceeded.kind("PEM input");
         confirm pem_invalid_offset(source) == -1
@@ -261,13 +307,16 @@ object PemTrustStore does TrustStore {
         origin = TrustedCertificates(values);
     }
 
+    // The roots.
     certificates() is Sequencing<Certificate> {
         origin.certificates();
     }
 }
 
+// Roots that cannot be read; reason says why.
 enum InvalidTrustStore is Error = (because(reason is string));
 
+// Roots over a limit; kind says which.
 enum TrustStoreLimitExceeded is Error = (kind(kind is string));
 
 test "explicit empty roots do not acquire system trust" {

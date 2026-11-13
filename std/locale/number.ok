@@ -1,10 +1,17 @@
 module locale/number v1.0.0;
 
-// Immutable CLDR 46.1 numeric representations. Values are rounded exactly in
-// decimal arithmetic before applying locale patterns, separators and digits.
-// No process locale or host locale database is consulted; unsupported numeric
-// systems and bounded-input violations throw InvalidLocalizedNumber.
-// Public contracts and budgets: docs/std/locale-number.md.
+// Numbers as a locale writes them, and read back (CLDR 46.1).
+//
+//     let format = NumberFormat(notation: NumberNotation.standard, grouping: NumberGrouping.automatic,
+//         sign: NumberSign.automatic,
+//         precision: NumberPrecision(minimum_integer: 1, minimum_fraction: 2, maximum_fraction: 2, rounding: Rounding.half_even));
+//     LocalizedDecimal(origin: Decimal("1234567.891"), locale: Locale("de"), format: format).string();   // "1.234.567,89"
+//     LocalizedPercent(origin: Decimal("0.25"), locale: Locale("fr"), format: format, scale: PercentScale.percent).string();
+//     LocalizedDecimalFromString(origin: "1.234.567,89", locale: Locale("de"), format: format).decimal();
+//
+// Notations: standard, scientific, engineering and compact ("1.2K"). Digits
+// come from the locale's numbering system (Arabic-Indic for ar, and so on).
+
 import "locale/tag" take Locale, LocaleExtensions;
 import "locale/data" take LocaleFallbacks;
 import "locale/internal/numbers" take CldrNumbers;
@@ -16,14 +23,20 @@ import "strings/parse" take Number;
 import "compare" take Order;
 import "i18n/plural" take PluralNumber, PluralCategoryOf, PluralKind, PluralCategory;
 
+// Standard, scientific, engineering, or compact short or long.
 enum NumberNotation = (standard, scientific, engineering, compact_short, compact_long);
 
+// Whether digits are grouped: never, as the locale does, always, or from two
+// groups up.
 enum NumberGrouping = (never, automatic, always, minimum_two);
 
+// When a sign is shown.
 enum NumberSign = (automatic, always, except_zero, negative_only, never);
 
+// Percent (×100) or per mille (×1000).
 enum PercentScale = (percent, per_mille);
 
+// NaN and the infinities.
 enum NumberSpecial = (not_a_number, positive_infinity, negative_infinity);
 
 // Precision is a policy, not a rounded value. All seven Rounding modes apply.
@@ -31,6 +44,9 @@ object NumberPrecision {
     has minimum_integer, minimum_fraction, maximum_fraction is int;
     has rounding is Rounding;
 
+    // Integer and fraction digits and how to round; InvalidNumberFormat for
+    // minimum_integer outside 1..1024 or minimum_fraction above
+    // maximum_fraction.
     NumberPrecision(
         minimum_integer is int,
         minimum_fraction is int,
@@ -51,6 +67,7 @@ object NumberPrecision {
         self.rounding = rounding;
     }
 
+    // The minimum integer digits, the fraction range and the rounding.
     cap Digits {
         minimum_integer is int {
             minimum_integer;
@@ -70,12 +87,14 @@ object NumberPrecision {
     }
 }
 
+// How a number is written.
 object NumberFormat {
     has notation is NumberNotation;
     has grouping is NumberGrouping;
     has sign is NumberSign;
     has precision is NumberPrecision;
 
+    // notation, grouping, sign and precision.
     NumberFormat(
         notation is NumberNotation,
         grouping is NumberGrouping,
@@ -88,10 +107,12 @@ object NumberFormat {
         self.precision = precision;
     }
 
+    // The precision.
     precision() is NumberPrecision {
         precision;
     }
 
+    // The notation, grouping and sign.
     cap Style {
         notation is NumberNotation {
             notation;
@@ -107,8 +128,10 @@ object NumberFormat {
     }
 }
 
+// A format that cannot be used; reason says why.
 enum InvalidNumberFormat is Error = (because(reason is string));
 
+// Text that is not a number in the locale; reason says why.
 enum InvalidLocalizedNumber is Error = (because(reason is string));
 
 hidden object NumberDataRow {
@@ -175,15 +198,18 @@ hidden object NumberDataRow {
     }
 }
 
+// A CLDR number pattern, taken apart.
 object NumberPattern {
     has values is @string;
 
+    // The pattern's positive and negative forms.
     NumberPattern(values is @string) {
         confirm values.size() == 8
             else throw InvalidLocalizedNumber.because("number pattern shape");
         self.values = values;
     }
 
+    // The text before the number.
     prefix(negative is bool) is string {
         values[if negative {
             2;
@@ -193,6 +219,7 @@ object NumberPattern {
         }];
     }
 
+    // The text after the number.
     suffix(negative is bool) is string {
         values[if negative {
             3;
@@ -202,18 +229,22 @@ object NumberPattern {
         }];
     }
 
+    // The primary group size.
     primary() is int {
         Number(values[4]).int();
     }
 
+    // The secondary group size.
     secondary() is int {
         Number(values[5]).int();
     }
 
+    // The minimum exponent digits.
     exponent_digits() is int {
         Number(values[6]).int();
     }
 
+    // The zeros of a compact pattern.
     zeros() is int {
         Number(values[7]).int();
     }
@@ -222,8 +253,11 @@ object NumberPattern {
 // Bind one selected numeric system and the closest CLDR pattern profile.
 // Symbols can fall back separately when the local pattern uses another system.
 role NumberCompactData {
+    // The magnitudes it has forms for.
     keys() is @string;
+    // Whether it has a form for key.
     has(key is string) is bool;
+    // The form for key.
     value(key is string) is string;
 }
 
@@ -247,16 +281,28 @@ hidden object NumberCompacts does NumberCompactData {
     }
 }
 
+// The number data a locale renders with.
 role NumberRenderingData {
+    // The number symbol of index: decimal separator, group separator, minus and
+    // so on.
     symbol(index is int) is string;
+    // The ten digits of the numbering system.
     digits() is string;
+    // How many integer digits it takes before grouping starts.
     minimum_grouping() is int;
+    // The pattern of a kind: decimal, percent, currency, accounting or
+    // scientific.
     pattern(kind is int) is NumberPattern;
+    // The compact forms, long or short.
     compact(long is bool) is NumberCompactData;
+    // origin fitted into the percent or per-mille pattern, positive or
+    // negative.
     template(origin is string, positive is bool, per_mille is bool) is string;
+    // ASCII digits and symbols in origin replaced by the locale's.
     localized(origin is string) is string;
 }
 
+// The number data of a locale.
 object NumberLocaleData does NumberRenderingData {
     has table is CldrNumbers;
     has symbols, patterns is @string;
@@ -264,6 +310,7 @@ object NumberLocaleData does NumberRenderingData {
     has profile, minimum_grouping is int;
     has system is string;
 
+    // The data of locale.
     NumberLocaleData(locale is Locale) {
         let table = CldrNumbers();
         let chain = LocaleFallbacks(locale);
@@ -326,22 +373,29 @@ object NumberLocaleData does NumberRenderingData {
         minimum_grouping = first.minimum_grouping();
     }
 
+    // The numbering system, such as `latn` or `arab`.
     system() is string {
         system;
     }
 
+    // The number symbol of index: decimal separator, group separator, minus and
+    // so on.
     symbol(index is int) is string {
         symbols[index];
     }
 
+    // The ten digits of the numbering system.
     digits() is string {
         digits;
     }
 
+    // How many integer digits it takes before grouping starts.
     minimum_grouping() is int {
         minimum_grouping;
     }
 
+    // The pattern of a kind: decimal, percent, currency, accounting or
+    // scientific.
     pattern(kind is int) is NumberPattern {
         let start = 9 + kind * 8;
         let values is @string = (start..start + 8).map() -> index {
@@ -350,10 +404,13 @@ object NumberLocaleData does NumberRenderingData {
         NumberPattern(values);
     }
 
+    // The compact forms, long or short.
     compact(long is bool) is NumberCompactData {
         NumberCompacts(table.compact(profile, long));
     }
 
+    // origin fitted into the percent or per-mille pattern, positive or
+    // negative.
     template(origin is string, positive is bool, per_mille is bool) is string {
         let source = if positive {
             origin.replace("{minus}", "{plus}");
@@ -392,11 +449,13 @@ object NumberLocaleData does NumberRenderingData {
     }
 }
 
+// An exact number: coefficient × 10^exponent, with a sign.
 object NumberMagnitude {
     has coefficient is BigInt;
     has exponent is rat;
     has negative is bool;
 
+    // As given.
     NumberMagnitude(coefficient is BigInt, exponent is rat, negative is bool) {
         confirm coefficient.sign() >= 0
             && coefficient.string().length() <= 1024
@@ -409,18 +468,22 @@ object NumberMagnitude {
         self.negative = negative;
     }
 
+    // The coefficient.
     coefficient() is BigInt {
         coefficient;
     }
 
+    // The exponent.
     exponent() is rat {
         exponent;
     }
 
+    // Whether it is negative (−0 too).
     negative() is bool {
         negative;
     }
 
+    // Its value.
     magnitude() is rat {
         if coefficient.sign() == 0 {
             0.rat();
@@ -430,14 +493,17 @@ object NumberMagnitude {
         }
     }
 
+    // It times 10^power.
     scaled(power is rat) is NumberMagnitude {
         NumberMagnitude(coefficient: coefficient, exponent: exponent - power, negative: negative);
     }
 }
 
+// A Decimal as a magnitude.
 object DecimalNumberMagnitude {
     has value is NumberMagnitude;
 
+    // origin times 10^shift; negative_zero keeps −0.
     DecimalNumberMagnitude(origin is Decimal, shift is int, negative_zero is bool) {
         let coefficient = origin.coefficient();
         let absolute = if coefficient.sign() < 0 {
@@ -453,6 +519,7 @@ object DecimalNumberMagnitude {
         );
     }
 
+    // The magnitude.
     magnitude() is NumberMagnitude {
         value;
     }
@@ -465,6 +532,7 @@ object NumberQuantized {
     has scale is int;
     has negative is bool;
 
+    // origin rounded to precision.
     NumberQuantized(origin is NumberMagnitude, precision is NumberPrecision) {
         let absolute = origin.coefficient();
         let shift = origin.exponent() + precision::Digits::maximum_fraction.rat();
@@ -518,18 +586,22 @@ object NumberQuantized {
         negative = origin.negative();
     }
 
+    // The rounded coefficient.
     coefficient() is BigInt {
         coefficient;
     }
 
+    // Whether it is negative.
     negative() is bool {
         negative;
     }
 
+    // Whether it rounded to zero.
     zero() is bool {
         coefficient.sign() == 0;
     }
 
+    // The integer digits.
     whole() is string {
         let text = coefficient.string();
         if text.length() <= scale {
@@ -540,6 +612,7 @@ object NumberQuantized {
         }
     }
 
+    // The fraction digits, at least minimum.
     fraction(minimum is int) is string {
         let text = coefficient.string();
         let fraction = if text.length() <= scale {
@@ -560,6 +633,7 @@ object NumberQuantized {
         fraction.slice(0, end);
     }
 
+    // The number in ASCII, at least minimum fraction digits.
     ascii(minimum is int) is string {
         let fraction = self.fraction(minimum);
         self.whole() + (if fraction == "" {
@@ -570,6 +644,7 @@ object NumberQuantized {
         });
     }
 
+    // The rounded magnitude.
     magnitude() is NumberMagnitude {
         DecimalNumberMagnitude(
             origin: Decimal(coefficient.string() + "e" + (-scale).string()),
@@ -579,15 +654,18 @@ object NumberQuantized {
     }
 }
 
+// A run of zeros.
 object NumberZeroes {
     has count is int;
 
+    // count zeros.
     NumberZeroes(count is int) {
         confirm count >= 0 && count <= 2048
             else throw InvalidLocalizedNumber.because("zero padding budget");
         self.count = count;
     }
 
+    // The zeros.
     string() is string {
         let zeros is @string = (0..count).map() -> index {
             "0";
@@ -731,11 +809,13 @@ hidden object NumberMantissa {
     }
 }
 
+// A number written out, with the pattern it used.
 object NumberRendered {
     has text is string;
     has number is NumberQuantized;
     has frames is @NumberPattern;
 
+    // text for number.
     NumberRendered(text is string, number is NumberQuantized) {
         self.text = text;
         self.number = number;
@@ -743,20 +823,24 @@ object NumberRendered {
         self.frames = frames;
     }
 
+    // The same, with its pattern.
     NumberRendered(text is string, number is NumberQuantized, frame is NumberPattern) {
         self.text = text;
         self.number = number;
         frames = [frame];
     }
 
+    // The text.
     text() is string {
         text;
     }
 
+    // The number.
     number() is NumberQuantized {
         number;
     }
 
+    // Its pattern, or fallback.
     frame(fallback is NumberPattern) is NumberPattern {
         if frames.size() == 0 {
             fallback;
@@ -801,6 +885,7 @@ hidden object NumberExponent {
     }
 }
 
+// Writes a magnitude in a locale.
 object NumberPrinting {
     has origin is NumberMagnitude;
     has locale is Locale;
@@ -808,6 +893,7 @@ object NumberPrinting {
     has data is NumberRenderingData;
     has percent, per_mille is bool;
 
+    // origin in locale with format, as a percent or per mille or not.
     NumberPrinting(
         origin is NumberMagnitude,
         locale is Locale,
@@ -823,6 +909,7 @@ object NumberPrinting {
         data = NumberLocaleData(locale);
     }
 
+    // The same with explicit data.
     NumberPrinting(
         origin is NumberMagnitude,
         locale is Locale,
@@ -839,10 +926,12 @@ object NumberPrinting {
         self.data = data;
     }
 
+    // The text.
     string() is string {
         self.rendering().text();
     }
 
+    // The text with its number and pattern.
     rendering() is NumberRendered {
         let notation = format::Style::notation;
         let scientific = notation == NumberNotation.scientific
@@ -1118,17 +1207,20 @@ object NumberPrinting {
     }
 }
 
+// A Decimal in a locale.
 object LocalizedDecimal {
     has origin is Decimal;
     has locale is Locale;
     has format is NumberFormat;
 
+    // origin as locale writes it with format.
     LocalizedDecimal(origin is Decimal, locale is Locale, format is NumberFormat) {
         self.origin = origin;
         self.locale = locale;
         self.format = format;
     }
 
+    // The text.
     string() is string {
         NumberPrinting(
             origin: DecimalNumberMagnitude(origin: origin, shift: 0, negative_zero: false).magnitude(),
@@ -1140,33 +1232,39 @@ object LocalizedDecimal {
     }
 }
 
+// An int in a locale.
 object LocalizedInteger {
     has origin is int;
     has locale is Locale;
     has format is NumberFormat;
 
+    // origin as locale writes it with format.
     LocalizedInteger(origin is int, locale is Locale, format is NumberFormat) {
         self.origin = origin;
         self.locale = locale;
         self.format = format;
     }
 
+    // The text.
     string() is string {
         LocalizedDecimal(origin: Decimal(origin.string()), locale: locale, format: format).string();
     }
 }
 
+// A BigInt in a locale.
 object LocalizedBigInteger {
     has origin is BigInt;
     has locale is Locale;
     has format is NumberFormat;
 
+    // origin as locale writes it with format.
     LocalizedBigInteger(origin is BigInt, locale is Locale, format is NumberFormat) {
         self.origin = origin;
         self.locale = locale;
         self.format = format;
     }
 
+    // The text.
     string() is string {
         confirm origin.string().length() <= 1025
             else throw InvalidLocalizedNumber.because("integer input limit");
@@ -1174,17 +1272,21 @@ object LocalizedBigInteger {
     }
 }
 
+// A float in a locale.
 object LocalizedFloat {
     has origin is float;
     has locale is Locale;
     has format is NumberFormat;
 
+    // origin as locale writes it with format; NaN and infinities as the locale
+    // names them.
     LocalizedFloat(origin is float, locale is Locale, format is NumberFormat) {
         self.origin = origin;
         self.locale = locale;
         self.format = format;
     }
 
+    // The text.
     string() is string {
         let source = ShortestFloat(origin);
         NumberPrinting(
@@ -1201,12 +1303,14 @@ object LocalizedFloat {
     }
 }
 
+// A percentage in a locale.
 object LocalizedPercent {
     has origin is Decimal;
     has locale is Locale;
     has format is NumberFormat;
     has scale is PercentScale;
 
+    // origin (0.25 for 25 %) as locale writes a percent or per mille.
     LocalizedPercent(
         origin is Decimal,
         locale is Locale,
@@ -1219,6 +1323,7 @@ object LocalizedPercent {
         self.scale = scale;
     }
 
+    // The text.
     string() is string {
         let per_mille = scale == PercentScale.per_mille;
         NumberPrinting(
@@ -1240,17 +1345,20 @@ object LocalizedPercent {
     }
 }
 
+// NaN or an infinity in a locale.
 object LocalizedSpecialNumber {
     has origin is NumberSpecial;
     has locale is Locale;
     has sign is NumberSign;
 
+    // origin with sign as locale writes it.
     LocalizedSpecialNumber(origin is NumberSpecial, locale is Locale, sign is NumberSign) {
         self.origin = origin;
         self.locale = locale;
         self.sign = sign;
     }
 
+    // The text.
     string() is string {
         let data = NumberLocaleData(locale);
         if origin == NumberSpecial.not_a_number {
@@ -1547,33 +1655,39 @@ hidden object NumberReading {
     }
 }
 
+// A Decimal read from a locale's text.
 object LocalizedDecimalFromString {
     has origin is string;
     has locale is Locale;
     has format is NumberFormat;
 
+    // origin written by locale with format.
     LocalizedDecimalFromString(origin is string, locale is Locale, format is NumberFormat) {
         self.origin = origin;
         self.locale = locale;
         self.format = format;
     }
 
+    // The number; InvalidLocalizedNumber for text that is not one.
     decimal() is Decimal {
         NumberReading(origin: origin, locale: locale, format: format).decimal();
     }
 }
 
+// An integer read from a locale's text.
 object LocalizedIntegerFromString {
     has origin is string;
     has locale is Locale;
     has grouping is NumberGrouping;
 
+    // origin written by locale with grouping.
     LocalizedIntegerFromString(origin is string, locale is Locale, grouping is NumberGrouping) {
         self.origin = origin;
         self.locale = locale;
         self.grouping = grouping;
     }
 
+    // The integer; InvalidLocalizedNumber for text that is not one.
     integer() is BigInt {
         let format = NumberFormat(
             notation: NumberNotation.standard,

@@ -21,9 +21,12 @@ import "runtime/fs" take cwd, path_decode;
 // This module deliberately exposes no process-global chdir operation. Supply
 // a DirectoryLocating object explicitly to commands and filesystem objects.
 
+// The directory the process runs in, read when asked; it is never changed.
 object WorkingDirectory does DirectoryLocating {
+    // The working directory.
     WorkingDirectory();
 
+    // Its absolute path.
     path() is Path {
         try {
             Path(path_decode(cwd()));

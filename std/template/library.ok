@@ -1,26 +1,33 @@
 module template/library v1.0.0;
 
+// Named text templates, for partials of section templates.
+//
+//     let partials = TemplateLibrary(["item": TextTemplate("  - {{title}}\n")]);
+//     SectionTemplate(source: "{{#items}}{{>item}}{{/items}}", partials: partials);
+//
+// Names are exact: no trimming or case folding.
+
 import "collections/sequence" take Sequencing;
 import "template/compile" take TextTemplate;
 
-// Exact association between a nonempty Unicode name and a plain template.
-// Names are not paths: no trimming, case folding, normalization or I/O.
-// Declaration/lookup never compiles or renders the retained template.
-// Example: NamedTemplate("header", TextTemplate("Hello {{name}}"));
+// A text template with its name.
 object NamedTemplate {
     has key is string;
     has origin is TextTemplate;
 
+    // value named name; InvalidTemplateName for an empty name.
     NamedTemplate(name is string, value is TextTemplate) {
         confirm name != "" else throw InvalidTemplateName.invalid;
         key = name;
         origin = value;
     }
 
+    // The name.
     name() is string {
         key;
     }
 
+    // The template.
     template() is TextTemplate {
         origin;
     }
@@ -42,10 +49,12 @@ object NamedTemplate {
 object TemplateLibrary {
     has origin is @NamedTemplate;
 
+    // No templates.
     TemplateLibrary() {
         origin = [];
     }
 
+    // The templates, at most 1024; DuplicateTemplate for a repeated name.
     TemplateLibrary(values is Sequencing<NamedTemplate>) {
         origin = TemplateLibrarySnapshot(source: values, maximum: 1024).items();
     }
@@ -66,10 +75,12 @@ object TemplateLibrary {
         origin = TemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
+    // The templates, at most maximum_templates.
     TemplateLibrary(values is Sequencing<NamedTemplate>, maximum_templates is int) {
         origin = TemplateLibrarySnapshot(source: values, maximum: maximum_templates).items();
     }
 
+    // Whether a template has the name.
     membership(name is string) is bool {
         for origin -> item {
             if item.name() == name {
@@ -79,6 +90,7 @@ object TemplateLibrary {
         false;
     }
 
+    // The template of the name; MissingTemplate when none.
     template(name is string) is TextTemplate {
         for origin -> item {
             if item.name() == name {
@@ -88,6 +100,7 @@ object TemplateLibrary {
         throw MissingTemplate.name(name);
     }
 
+    // Every name, in order.
     names() is Sequencing<string> {
         let names is @string = origin.map() -> item {
             item.name();
@@ -126,14 +139,19 @@ hidden object TemplateLibrarySnapshot {
 // Lookup/declaration errors preserve exact names for programmatic diagnostics.
 enum MissingTemplate is Error = (name(name is string));
 
+// Two templates with one name.
 enum DuplicateTemplate is Error = (name(name is string));
 
+// An empty name.
 enum InvalidTemplateName is Error = (invalid);
 
+// A negative limit.
 enum InvalidTemplateLibraryLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidTemplateLibrarySize is Error = (invalid);
 
+// More templates than the limit.
 enum TemplateLibraryLimitExceeded is Error = (exceeded);
 
 // Imported constructors currently fail lookup in root test bodies; successful
@@ -166,7 +184,9 @@ test "empty library permits zero and rejects negative bounds" {
 }
 
 test "a library reads a map of templates by name" {
-    let library = TemplateLibrary(["item": TextTemplate("- {{title}}"), "head": TextTemplate("Order")]);
+    let library = TemplateLibrary(
+        ["item": TextTemplate("- {{title}}"), "head": TextTemplate("Order")]
+    );
     test.ok(library.membership("item"));
     test.is(library.template("head").source(), "Order");
     test.ok(!library.membership("tail"));

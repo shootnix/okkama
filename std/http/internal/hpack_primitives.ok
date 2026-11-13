@@ -1,5 +1,10 @@
 module http/internal/hpack_primitives v1.0.0;
 
+// The HPACK primitives (RFC 7541 §5): prefixed integers and string literals,
+// with Huffman decoding.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Fault, Http2FaultScope;
 import "runtime/hpack" take huffman_decode;
 import "http/internal/wire_bytes" take HttpWireBytes;
@@ -10,6 +15,8 @@ import "io/buffer" take ByteBuffer;
 object HpackInteger {
     has value, prefix, pattern is int;
 
+    // value in a prefix of prefix bits, the other bits of the first byte from
+    // pattern.
     HpackInteger(value is int, prefix is int, pattern is int) {
         confirm value >= 0
             && value <= 4294967295
@@ -36,6 +43,7 @@ object HpackInteger {
         self.pattern = pattern;
     }
 
+    // Its encoding.
     bytes() is @byte {
         let maximum = (1 << prefix) - 1;
         if value < maximum {
@@ -57,19 +65,23 @@ object HpackInteger {
     }
 }
 
+// An integer read at an offset.
 object ParsedHpackInteger {
     has number, following is int;
 
+    // Reads the integer at offset with a prefix of prefix bits.
     ParsedHpackInteger(origin is @byte, offset is int, prefix is int) {
         let parsed = HpackIntegerInput(origin: origin, offset: offset, prefix: prefix).number();
         number = parsed.int();
         following = parsed.following();
     }
 
+    // Its value; Http2Fault past 2³²−1 or the end of origin.
     int() is int {
         number;
     }
 
+    // The offset after it.
     following() is int {
         following;
     }
@@ -143,25 +155,30 @@ hidden object HpackIntegerInput {
     }
 }
 
+// A string literal, written without Huffman coding.
 object HpackString {
     has origin is @byte;
 
+    // The bytes.
     HpackString(origin is @byte) {
         confirm origin.size() <= 1048576
             else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK string budget");
         self.origin = origin;
     }
 
+    // Its encoding: the length and the bytes.
     bytes() is @byte {
         let prefix = HpackInteger(value: origin.size(), prefix: 7, pattern: 0).bytes();
         HttpWireBytes(chunks: [prefix, origin], maximum: prefix.size() + origin.size()).bytes();
     }
 }
 
+// A string literal read at an offset.
 object ParsedHpackString {
     has data is @byte;
     has following is int;
 
+    // Reads the literal at offset, at most maximum bytes once decoded.
     ParsedHpackString(origin is @byte, offset is int, maximum is int) {
         confirm maximum >= 0 && maximum <= 1048576
             else throw Http2Fault.detailed(
@@ -198,19 +215,23 @@ object ParsedHpackString {
         following = start + count;
     }
 
+    // Its bytes, Huffman-decoded when flagged.
     bytes() is @byte {
         data;
     }
 
+    // The offset after it.
     following() is int {
         following;
     }
 }
 
+// Huffman-coded bytes (RFC 7541 Appendix B), decoded.
 object HpackHuffman {
     has origin is @byte;
     has maximum is int;
 
+    // origin to decode into at most maximum bytes.
     HpackHuffman(origin is @byte, maximum is int) {
         confirm origin.size() <= 1048576 && maximum >= 0 && maximum <= 1048576
             else throw Http2Fault.detailed(
@@ -223,6 +244,8 @@ object HpackHuffman {
         self.maximum = maximum;
     }
 
+    // The decoded bytes; Http2Fault for invalid coding or more than maximum
+    // bytes.
     bytes() is @byte {
         let result is @byte = try {
             huffman_decode(origin, maximum);

@@ -1,5 +1,9 @@
 module http/internal/http2_reading v1.0.0;
 
+// Reading HTTP/2 frames from a stream, one at a time.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take ParsedHttp2FrameHeader, Http2Frame, Http2FrameRules,
     Http2HeaderRules, Http2Fault, Http2FaultScope;
 
@@ -12,16 +16,19 @@ import "io/decorators" take InvalidReading;
 object Http2FrameReading {
     has waiting is Future<Http2Frame>;
 
+    // Reads from origin, payloads up to 16384 bytes.
     Http2FrameReading(origin is AsyncReading) {
         let input = Http2FrameInput(origin: origin, maximum: 16384);
         waiting = input.reading();
     }
 
+    // Reads from origin, payloads up to maximum bytes.
     Http2FrameReading(origin is AsyncReading, maximum is int) {
         let input = Http2FrameInput(origin: origin, maximum: maximum);
         waiting = input.reading();
     }
 
+    // The frame; EndOfHttp2Frames at a clean end of input.
     async frame() is Http2Frame {
         let group is FutureGroup<Http2Frame> = FutureGroup();
         let cleanup = Http2FrameSettlement(group);
@@ -126,4 +133,5 @@ hidden object Http2FrameSettlement {
     }
 }
 
+// The input ended between frames.
 enum EndOfHttp2Frames is Error = (reached);

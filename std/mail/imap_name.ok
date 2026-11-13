@@ -1,5 +1,16 @@
 module mail/imap_name v1.0.0;
 
+// IMAP mailbox names and their modified UTF-7 (RFC 3501 §5.1.3).
+//
+//     let name = ImapMailboxName("Отправленные");
+//     name.wire_name();                          // "&BB4EQgQ,BEAEMAQyBDsENQQ9BD0ESwQ1-"
+//     name.quoted();                             // the command argument
+//     ImapUtf7Decoded("&BB4EQgQ,BEAEMAQyBDsENQQ9BD0ESwQ1-").string();
+//
+// Only the canonical encoding is accepted when decoding; ASCII controls are
+// refused in names. Quoting protects syntax, not LIST wildcards. By default a
+// name has at most 4096 characters.
+
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, Utf16Decoded, ByteOrder,
     InvalidUtf16;
 import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
@@ -7,20 +18,17 @@ import "mime/media_type" take MimePosition;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
-// Bounded, eager IMAP4rev1 mailbox-name values. No connection or negotiation.
-// Modified UTF-7 uses UTF-16BE, comma instead of slash, no Base64 padding,
-// &- for ampersand and maximal runs of non-printable/non-ASCII scalars.
-// Decoding accepts only this canonical form. Codecs preserve all Unicode
-// scalars without normalization; ImapMailboxName rejects ASCII controls.
-// Quoting protects syntax, not LIST wildcard interpretation or authorization.
+// How long a mailbox name may be.
 object ImapNameLimits {
     has scalars, wire_bytes is int;
 
+    // 4096 characters, 32 KiB encoded.
     ImapNameLimits() {
         scalars = 4096;
         wire_bytes = 32768;
     }
 
+    // The limits as given.
     ImapNameLimits(scalars is int, wire_bytes is int) {
         confirm scalars >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("IMAP name limits must be nonnegative");
@@ -28,6 +36,7 @@ object ImapNameLimits {
         self.wire_bytes = wire_bytes;
     }
 
+    // Characters and encoded bytes.
     cap Limits {
         scalars is int {
             scalars;
@@ -55,25 +64,31 @@ hidden object ImapUtf7Encoded {
     }
 }
 
+// A name decoded from modified UTF-7.
 object ImapUtf7Decoded {
     has value is string;
 
+    // The encoded name, within the default limits.
     ImapUtf7Decoded(origin is string) {
         value = ImapUtf7Parser(origin: origin, limits: ImapNameLimits()).string();
     }
 
+    // The same within limits.
     ImapUtf7Decoded(origin is string, limits is ImapNameLimits) {
         value = ImapUtf7Parser(origin: origin, limits: limits).string();
     }
 
+    // The name; InvalidImapUtf7 for an encoding that is not canonical.
     string() is string {
         value;
     }
 }
 
+// A mailbox name.
 object ImapMailboxName {
     has value, wire, argument is string;
 
+    // The name; InvalidImapMailboxName for an ASCII control.
     ImapMailboxName(origin is string) {
         let prepared = ImapNameValue(origin: origin, limits: ImapNameLimits());
         value = origin;
@@ -81,6 +96,7 @@ object ImapMailboxName {
         argument = prepared.quoted();
     }
 
+    // The same within limits.
     ImapMailboxName(origin is string, limits is ImapNameLimits) {
         let prepared = ImapNameValue(origin: origin, limits: limits);
         value = origin;
@@ -88,23 +104,29 @@ object ImapMailboxName {
         argument = prepared.quoted();
     }
 
+    // The name.
     string() is string {
         value;
     }
 
+    // The name in modified UTF-7.
     wire_name() is string {
         wire;
     }
 
+    // The encoded name as a command argument, quoted when needed.
     quoted() is string {
         argument;
     }
 }
 
+// Text that is not canonical modified UTF-7; offset says where.
 enum InvalidImapUtf7 is Error = (located(offset is int, reason is string));
 
+// A name with a character it may not hold; offset says where.
 enum InvalidImapMailboxName is Error = (at(offset is int));
 
+// A name over a limit; kind says which.
 enum ImapNameLimitExceeded is Error = (kind(kind is string));
 
 hidden object ImapUtf7Encoder {

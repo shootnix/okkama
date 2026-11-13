@@ -1,5 +1,33 @@
 module http/server v1.0.0;
 
+// An HTTP server: a listener, a handler and a policy.
+//
+//     object Hello does Handling {
+//         Hello();
+//
+//         async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+//             ResponseHandling(Response(status: Status.ok, content: TextBody(text: "hello")));
+//         }
+//     }
+//
+//     let listener = await TcpListening(port: 8080).listener();
+//     let server = HttpServer(listener: listener, handling: Hello()).started();
+//     …
+//     await server.drain(limit: Duration(seconds: 5));
+//
+// The server speaks HTTP/1.1 under ServerPolicy() unless told otherwise; with
+// tls: it speaks HTTPS and offers its protocols by ALPN, h2 first. With url: it
+// also takes WebSocket upgrades, whose Origin must match that URL. started()
+// serves in the background; drain() stops accepting, lets requests in flight
+// finish within the limit and closes. Applications usually build on web/server,
+// which adds routing, replies and middleware.
+//
+// # Errors
+//
+// - BadRequest: a request the server answered with 400 itself.
+// - HttpServerBodyTimedOut: a request body paused longer than the policy
+//   allows.
+
 import "http/http2_server" take Http2ServerSession;
 import "http/server_policy" take ServerPolicy, ServerTimeouts;
 import "http/handler" take Handling, HandlingResult, HandlingKind, ResponseHandling;
@@ -45,9 +73,7 @@ import "collections/set" take Set, OrderedSet;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 
-// Owned listener. In cleartext a single explicit protocol selects HTTP/1.1 or
-// prior-knowledge H2; with tls: (#209) the server speaks HTTPS and offers the
-// protocols of its policy by ALPN, h2 first.
+// An HTTP server on one listener.
 object HttpServer does Closing {
     has state is HttpServerState;
     has background is FutureGroup<HttpServer>;
@@ -164,6 +190,7 @@ object HttpServer does Closing {
         background = FutureGroup();
     }
 
+    // The address it listens on.
     local_endpoint() is IpEndpoint {
         state.local_endpoint();
     }
@@ -175,27 +202,33 @@ object HttpServer does Closing {
         }
     }
 
+    // Whether it was closed.
     closed() is bool {
         state.closed();
     }
 
+    // Stops serving and closes the listener at once; drain() is the gentle way.
     close() is void {
         state.close();
     }
 
+    // Serves until it is stopped; started() does this in the background.
     async serve() is HttpServer {
         await state.run();
         self;
     }
 
+    // Stops taking new connections; those open go on.
     stop_accepting() is void {
         state.stop_accepting();
     }
 
+    // Waits until no connection is left.
     async drained() is bool {
         await state.drained();
     }
 
+    // Waits until serving has stopped.
     async settled() is bool {
         await state.settled();
     }
@@ -1253,6 +1286,7 @@ hidden object HttpServerTimedInput does AsyncReading {
     }
 }
 
+// A request the server answered with 400 itself; reason says why.
 enum BadRequest is Error = (because(reason is string));
 
 hidden object HttpServerObservedInput does AsyncReading {
@@ -1307,13 +1341,16 @@ hidden object HttpServerContinueInput does AsyncReading {
     }
 }
 
+// A request body paused longer than the policy allows.
 enum HttpServerBodyTimedOut is Error = (elapsed);
 
+// Draining a server within a limit.
 object ServerDrain {
     has server is HttpServer;
     has limit is Duration;
     has clock is Timing;
 
+    // Drains server within limit, measured by clock.
     ServerDrain(server is HttpServer, limit is Duration, clock is Timing) {
         confirm limit::Span::seconds >= 0.rat()
             else throw BadRequest.because("negative drain deadline");
@@ -1322,6 +1359,7 @@ object ServerDrain {
         self.clock = clock;
     }
 
+    // Stops accepting, waits for requests in flight up to limit, then closes.
     async drain() is ServerDrain {
         let cleanup = HttpServerDrainCleanup(server);
         defer await cleanup.close();

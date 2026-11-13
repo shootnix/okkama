@@ -33,10 +33,12 @@ import "time/iso" take IsoDate;
 // measured, instead of returning partial weeks. Year(2028).leap() tells a
 // leap year.
 
+// A month of a year, for calendar views; ordered by time.
 object YearMonth does Comparing<YearMonth> {
     has year_value is int;
     has month_value is int;
 
+    // Month 1 to 12 of year 1 to 9999; anything else is InvalidYearMonth.
     YearMonth(year is int, month is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidYearMonth.because("year must be within 1..9999");
@@ -57,6 +59,7 @@ object YearMonth does Comparing<YearMonth> {
         }
     }
 
+    // Earlier months come first.
     order(other is YearMonth) is Order {
         if year_value != other::Calendar::year {
             year_value.order(other::Calendar::year);
@@ -67,15 +70,20 @@ object YearMonth does Comparing<YearMonth> {
     }
 }
 
+// The dates of one month, in order: `MonthDates(origin: YearMonth(2026,
+// 8)).size()` is 31.
 object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
     has origin is YearMonth;
 
+    // The dates of origin.
     MonthDates(:origin);
 
+    // Walks the dates.
     cursor() is Cursor<Date> {
         MonthDateCursor(origin: self, position: 0);
     }
 
+    // How many days the month has.
     size() is int {
         match origin::Calendar::month {
             case 2 {
@@ -95,6 +103,7 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
         }
     }
 
+    // The date at index, from 0.
     item(index is int) is Date {
         confirm index >= 0 && index < self.size()
             else throw OutOfRange.because("month date index is outside the sequence");
@@ -105,10 +114,12 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
         );
     }
 
+    // The first of the month.
     first() is Date {
         self.item(0);
     }
 
+    // The last day of the month.
     last() is Date {
         self.item(self.size() - 1);
     }
@@ -140,21 +151,26 @@ hidden object MonthDateCursor does Cursor<Date> {
     }
 }
 
+// Seven dates from start.
 object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
     has first_date is Date;
 
+    // The week that begins on start.
     CalendarWeek(start is Date) {
         self.first_date = start;
     }
 
+    // Walks the seven dates.
     cursor() is Cursor<Date> {
         CalendarWeekCursor(origin: self, position: 0);
     }
 
+    // Always 7.
     size() is int {
         7;
     }
 
+    // The date at index, 0 to 6.
     item(index is int) is Date {
         confirm index >= 0 && index < 7
             else throw OutOfRange.because("calendar week index is outside the sequence");
@@ -166,10 +182,12 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
         GregorianDay(start + index).date();
     }
 
+    // The first day.
     first() is Date {
         first_date;
     }
 
+    // The seventh day.
     last() is Date {
         self.item(6);
     }
@@ -201,19 +219,24 @@ hidden object CalendarWeekCursor does Cursor<Date> {
     }
 }
 
+// A month laid out as whole weeks, as a wall calendar shows it; edge weeks hold
+// days of the months around it.
 object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Date>>, Sizing {
     has origin is YearMonth;
     has first_weekday is Weekday;
 
+    // The weeks of origin, each starting on first_weekday.
     CalendarMonth(origin is YearMonth, first_weekday is Weekday) {
         self.origin = origin;
         self.first_weekday = first_weekday;
     }
 
+    // Walks the weeks.
     cursor() is Cursor<Sequencing<Date>> {
         CalendarMonthCursor(origin: self, position: 0);
     }
 
+    // How many weeks: 4 to 6.
     size() is int {
         let layout = CalendarMonthLayout(
             origin: origin,
@@ -223,6 +246,7 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
         layout.size();
     }
 
+    // The week at index.
     item(index is int) is Sequencing<Date> {
         confirm index >= 0 && index < self.size()
             else throw OutOfRange.because("calendar month row is outside the sequence");
@@ -235,10 +259,12 @@ object CalendarMonth does Sequencing<Sequencing<Date>>, Iterating<Sequencing<Dat
         );
     }
 
+    // The week holding the first of the month.
     first() is Sequencing<Date> {
         self.item(0);
     }
 
+    // The week holding the last day of the month.
     last() is Sequencing<Date> {
         self.item(self.size() - 1);
     }
@@ -298,11 +324,14 @@ hidden object CalendarMonthLayout {
     }
 }
 
+// An ISO 8601 week: Monday to Sunday, numbered within its week-based year.
 object IsoWeek does Comparing<IsoWeek> {
     has year_value is int;
     has week_value is int;
     has start is int;
 
+    // Week 1 to 52 or 53 of year; a week the year does not have is
+    // InvalidIsoWeek.
     IsoWeek(year is int, week is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidIsoWeek.because("ISO week year must be within 1..9999");
@@ -341,14 +370,17 @@ object IsoWeek does Comparing<IsoWeek> {
         }
     }
 
+    // Its Monday.
     first() is Date {
         GregorianDay(start).date();
     }
 
+    // Its Sunday.
     last() is Date {
         GregorianDay(start + 6).date();
     }
 
+    // Earlier weeks come first.
     order(other is IsoWeek) is Order {
         if year_value != other::Calendar::year {
             year_value.order(other::Calendar::year);
@@ -363,12 +395,14 @@ object IsoWeek does Comparing<IsoWeek> {
 object Year {
     has origin is int;
 
+    // The year, 1 to 9999.
     Year(year is int) {
         confirm year >= 1 && year <= 9999
             else throw InvalidYearMonth.because("year must be within 1..9999");
         origin = year;
     }
 
+    // Whether February has 29 days.
     leap() is bool {
         origin % 4 == 0 && (origin % 100 != 0 || origin % 400 == 0);
     }
@@ -406,10 +440,13 @@ hidden object WeekdayIndex {
     }
 }
 
+// A year or month out of range.
 enum InvalidYearMonth is Error = (because(reason is string));
 
+// A calendar grid that would leave years 1 to 9999.
 enum InvalidCalendarMonth is Error = (because(reason is string));
 
+// A week the year does not have.
 enum InvalidIsoWeek is Error = (because(reason is string));
 
 test "a year knows whether it is leap" {

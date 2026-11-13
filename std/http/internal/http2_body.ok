@@ -1,5 +1,10 @@
 module http/internal/http2_body v1.0.0;
 
+// Bodies of HTTP/2 streams: a buffer per stream filled by DATA frames and read
+// by the application, returning flow-control credit as it is read.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/body" take BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened, UnknownBodyLength,
     TrailersUnavailable;
 import "http/header" take Headers, Header, HeaderName;
@@ -21,10 +26,15 @@ import "error" take InvalidState;
 // Owner charges connection DATA before calling data(), and queues returned
 // credit synchronously. Buffer owns only this stream's storage/read lifetime.
 role Http2BodyEvents {
+    // amount bytes of stream were read; stream_update says whether to update
+    // the stream window too.
     credit(stream is int, amount is int, stream_update is bool) is void;
+    // amount bytes of stream were dropped; cancel says whether to reset the
+    // stream.
     discard(stream is int, amount is int, cancel is bool) is void;
 }
 
+// The incoming body of one stream.
 object Http2BodyBuffer does BodyReading {
     has stream, maximum is int;
     has events is Http2BodyEvents;
@@ -40,6 +50,9 @@ object Http2BodyBuffer does BodyReading {
     has failure is Atomic<@Error>;
     has end is Atomic<Headers>;
 
+    // The body of stream, buffering up to maximum bytes with an initial window,
+    // reporting to events; expected is a declared length, empty a body that
+    // must be empty.
     Http2BodyBuffer(
         stream is int,
         initial is int,
@@ -87,7 +100,9 @@ object Http2BodyBuffer does BodyReading {
         configured = Event();
         needs_fields = Event();
         state = buffer.buffer_state_create([]);
-        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial));
+        window = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial)
+        );
         received = Atomic(0);
         changed = Atomic(Event());
         stopped = Event();
@@ -100,6 +115,7 @@ object Http2BodyBuffer does BodyReading {
         end = Atomic(Headers());
     }
 
+    // Sets the declared length and whether the body must be empty.
     configure(expected is @BigInt, empty is bool) is void {
         self.check();
         confirm !configured.ready() && received.value() == 0 && !ended.ready()
@@ -134,31 +150,38 @@ object Http2BodyBuffer does BodyReading {
         configured.set();
     }
 
+    // The stream.
     stream() is int {
         stream;
     }
 
+    // Requires the head before any data.
     require_fields() is void {
         needs_fields.set();
     }
 
+    // How many bytes it may still take.
     remaining() is int {
         window.value().remaining();
     }
 
+    // Whether the reader closed it.
     closed() is bool {
         stopped.ready();
     }
 
+    // Whether the stream ended on the wire.
     wire_ended() is bool {
         ended.ready();
     }
 
+    // The trailers; TrailersUnavailable before the end.
     trailers() is Headers {
         confirm eof.ready() else throw TrailersUnavailable.unavailable;
         end.value();
     }
 
+    // Throws the failure that ended it, if any.
     check() is void {
         for failure.value() -> error {
             throw error;
@@ -166,11 +189,13 @@ object Http2BodyBuffer does BodyReading {
         confirm !stopped.ready() else throw BodyClosed.closed;
     }
 
+    // Wakes a waiting reader.
     wake() is void {
         changed.value().set();
         changed.replace(Event());
     }
 
+    // Checks the declared length against total; Http2Fault when they differ.
     exact(total is int) is void {
         if !empty.value() {
             for expected.value() -> length {
@@ -185,6 +210,7 @@ object Http2BodyBuffer does BodyReading {
         }
     }
 
+    // Returns amount bytes of window.
     credit(amount is int) is void {
         if amount > 0 {
             window.replace(window.value().credited(amount));
@@ -192,6 +218,7 @@ object Http2BodyBuffer does BodyReading {
         }
     }
 
+    // Takes a DATA payload.
     data(data is Http2DataPayload) is void {
         self.check();
         confirm data.stream() == stream
@@ -254,6 +281,7 @@ object Http2BodyBuffer does BodyReading {
         self.wake();
     }
 
+    // Ends the body with trailers.
     ending(trailers is Headers) is void {
         self.check();
         confirm !ended.ready()
@@ -269,6 +297,7 @@ object Http2BodyBuffer does BodyReading {
         self.wake();
     }
 
+    // Ends the body with error.
     fail(error is Error) is void {
         if !stopped.ready() && !eof.ready() {
             failure.replace([error]);
@@ -278,6 +307,7 @@ object Http2BodyBuffer does BodyReading {
         }
     }
 
+    // Closes it, resetting the stream if the body did not end.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -286,6 +316,7 @@ object Http2BodyBuffer does BodyReading {
         }
     }
 
+    // Drops what is buffered; cancel resets the stream.
     release(cancel is bool) is void {
         if !released.ready() {
             let unread = buffer.buffer_state_size(state);
@@ -295,6 +326,7 @@ object Http2BodyBuffer does BodyReading {
         }
     }
 
+    // At most limit bytes; [] at the end.
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.check();
@@ -353,11 +385,13 @@ hidden object Http2BodyReadCleanup {
     }
 }
 
+// The body of a stream as a one-shot opening.
 object Http2IncomingBody does BodyOpening {
     has origin is Http2BodyBuffer;
     has known is @BigInt;
     has opened is Atomic<bool>;
 
+    // origin, with its declared length if known.
     Http2IncomingBody(origin is Http2BodyBuffer, known is @BigInt) {
         confirm known.size() <= 1;
         self.origin = origin;
@@ -365,11 +399,13 @@ object Http2IncomingBody does BodyOpening {
         opened = Atomic(false);
     }
 
+    // The declared length; UnknownBodyLength without one.
     length() is BigInt {
         confirm known.size() == 1 else throw UnknownBodyLength.unknown;
         known[0];
     }
 
+    // false.
     replayable() is bool {
         false;
     }
@@ -379,6 +415,7 @@ object Http2IncomingBody does BodyOpening {
         Maybe<@byte>.none;
     }
 
+    // origin the first time; BodyAlreadyOpened after.
     reading() is BodyReading {
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
         origin;
@@ -391,10 +428,12 @@ object Http2IncomingBody does BodyOpening {
     }
 }
 
+// The Content-Length of a stream's head.
 object Http2BodyLength {
     has origin is Headers;
     has stream is int;
 
+    // The fields of stream.
     Http2BodyLength(origin is Headers, stream is int) {
         confirm stream > 0 && stream <= 2147483647
             else throw Http2Fault.detailed(
@@ -407,6 +446,8 @@ object Http2BodyLength {
         self.stream = stream;
     }
 
+    // The length if one valid Content-Length is given, else none; Http2Fault
+    // for a bad one.
     known() is @BigInt {
         let values = origin.values(HeaderName("content-length"));
         if values.size() == 0 {
@@ -451,9 +492,11 @@ object Http2BodyLength {
     }
 }
 
+// Trailer fields of a stream.
 object Http2Trailers {
     has headers is Headers;
 
+    // fields received on stream.
     Http2Trailers(fields is @HpackField, stream is int) {
         let section = Http2FieldSection(origin: fields, allowed: [], request: false, stream: stream);
         let headers = section.headers();
@@ -475,6 +518,8 @@ object Http2Trailers {
         self.headers = headers;
     }
 
+    // The trailers; Http2Fault for a pseudo-field or a field that may not be a
+    // trailer.
     headers() is Headers {
         headers;
     }

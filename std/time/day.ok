@@ -21,12 +21,14 @@ import "compare" take Comparing, Order;
 // seconds are timeline events and are deliberately not encoded as civil field
 // values. Nanoseconds are integral and never rounded.
 
+// A wall-clock time within a day, nanosecond exact.
 object TimeOfDay does Comparing<TimeOfDay> {
     has hour_value is int;
     has minute_value is int;
     has second_value is int;
     has nanosecond_value is int;
 
+    // hour 0 to 23, minute 0 to 59, second 0 to 59, nanosecond 0 to 999999999.
     TimeOfDay(hour is int, minute is int, second is int, nanosecond is int) {
         confirm hour >= 0 && hour <= 23
             else throw InvalidTimeOfDay.because("hour must be within 0..23");
@@ -92,6 +94,7 @@ object TimeOfDay does Comparing<TimeOfDay> {
         }
     }
 
+    // Earlier times come first.
     order(other is TimeOfDay) is Order {
         if hour_value != other::Clock::hour {
             hour_value.order(other::Clock::hour);
@@ -112,6 +115,7 @@ object TimeOfDay does Comparing<TimeOfDay> {
     }
 }
 
+// A time outside the day.
 enum InvalidTimeOfDay is Error = (because(message is string));
 
 test "times of day are checked and ordered" {

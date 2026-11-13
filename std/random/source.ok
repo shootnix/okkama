@@ -35,28 +35,39 @@ import "runtime/system" take secure_random, secure_integer, secure_float;
 // Integer ranges are always non-empty and half-open [start, stop). Random byte
 // requests are capped at 16 MiB per call.
 
+// A source of random numbers and bytes; pass one in, so tests can use a seeded
+// one.
 role Randomizing {
+    // An int from start up to, not including, stop.
     integer(start is int, stop is int) is int;
+    // A float from 0.0 up to, not including, 1.0.
     float() is float;
+    // size random bytes, at most 16 MiB at once.
     bytes(size is int) is @byte;
 }
 
+// A seeded, reproducible PCG32 generator; not for secrets.
 object PcgRandom does Randomizing {
     has state is PcgState;
 
+    // The generator for seed; the same seed gives the same numbers on every
+    // engine.
     PcgRandom(seed is int) {
         state = pcg_state(seed);
     }
 
+    // An int from start up to, not including, stop.
     integer(start is int, stop is int) is int {
         confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
         pcg_integer(state, start, stop);
     }
 
+    // A float from 0.0 up to, not including, 1.0.
     float() is float {
         pcg_float(state);
     }
 
+    // size random bytes.
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
             else throw InvalidRandomSize.detailed(size, 16777216);
@@ -64,9 +75,12 @@ object PcgRandom does Randomizing {
     }
 }
 
+// The operating system's cryptographic generator: for keys, tokens and nonces.
 object SecureRandom does Randomizing {
+    // The system generator.
     SecureRandom();
 
+    // An int from start up to, not including, stop.
     integer(start is int, stop is int) is int {
         confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
         try {
@@ -77,6 +91,7 @@ object SecureRandom does Randomizing {
         }
     }
 
+    // A float from 0.0 up to, not including, 1.0.
     float() is float {
         try {
             secure_float();
@@ -86,6 +101,7 @@ object SecureRandom does Randomizing {
         }
     }
 
+    // size secure random bytes.
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
             else throw InvalidRandomSize.detailed(size, 16777216);
@@ -93,13 +109,16 @@ object SecureRandom does Randomizing {
     }
 }
 
+// Secure random bytes in one call: `SecureBytes(32).bytes()`.
 object SecureBytes {
     has amount is int;
 
+    // size bytes, at most 16 MiB.
     SecureBytes(size is int) {
         amount = size;
     }
 
+    // The bytes, drawn once.
     bytes() is @byte {
         if amount == 0 {
             [];
@@ -118,10 +137,13 @@ object SecureBytes {
     }
 }
 
+// An empty range: stop is not above start.
 enum InvalidRandomRange is Error = (detailed(start is int, stop is int));
 
+// A size below zero or above the maximum.
 enum InvalidRandomSize is Error = (detailed(requested is int, maximum is int));
 
+// The system generator could not answer.
 enum UnavailableRandom is Error = (unavailable);
 
 test "a seeded source repeats the published PCG32 sequence" {

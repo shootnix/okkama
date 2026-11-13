@@ -20,10 +20,13 @@ import "runtime/number_text" take int_parse_valid, int_parse, float_parse_valid,
 object Number {
     has source is string;
 
+    // A number written as text; nothing is read until asked.
     Number(origin is string) {
         source = origin;
     }
 
+    // The text as an int in base: 2 to 36, 10 unless told, or 0 to read a 0x,
+    // 0o or 0b prefix; InvalidInteger when it is not one.
     int(base is int = 10) is int {
         confirm source.length() > 0
             && source != "-"
@@ -49,6 +52,7 @@ object Number {
         float_parse(source);
     }
 
+    // The text as an exact rat: `1.25` or `5/4`; InvalidRational otherwise.
     rat() is rat {
         confirm source.length() > 0 else throw InvalidRational.source(source);
         let parts is @string = source.split("/");
@@ -200,10 +204,13 @@ object Number {
 object Truth {
     has source is string;
 
+    // A truth value written as text.
     Truth(origin is string) {
         source = origin;
     }
 
+    // true for exactly "true", false for exactly "false"; InvalidBoolean
+    // otherwise.
     bool() is bool {
         match source {
             case "true" {
@@ -236,12 +243,17 @@ object Truth {
     }
 }
 
+// Text that is not an integer.
 enum InvalidInteger is Error = (source(source is string));
 
+// Text that is not a finite float.
 enum InvalidFloat is Error = (source(source is string));
 
+// Text that is not an exact rat.
 enum InvalidRational is Error = (source(source is string));
 
+// Text that is neither true nor false.
 enum InvalidBoolean is Error = (source(source is string));
 
+// Text that is not a byte, 0 to 255.
 enum InvalidByte is Error = (source(source is string));

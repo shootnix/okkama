@@ -1,13 +1,22 @@
 module runtime/testing v1.0.0;
 
+// The native layer under testing/context, testing/double: the calls those
+// modules make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+
+// The state of a running test.
 native object TestState;
 
+// Opens a state with a limit.
 native test_state_open(limit is int) is TestState;
 
+// The next value.
 native test_state_next(state is TestState) is int;
 
+// How many.
 native test_state_size(state is TestState) is int;
 
+// Closes it.
 native test_state_close(state is TestState) is bool;
 
 // Immutable contextual flag only; never expose test state as a first-class value.

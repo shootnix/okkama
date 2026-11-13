@@ -1,14 +1,5 @@
 module xml/parse v1.0.0;
 
-import "xml/name" take XmlName, InvalidXml;
-import "xml/node" take XmlNode, XmlElement, XmlText, XmlComment, XmlProcessingInstruction,
-    XmlAttribute, XmlDocument, MissingXmlAttribute, MissingXmlElement;
-import "collections/list" take List, EmptyList;
-import "async/atomic" take Atomic;
-import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
-    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_attribute_count,
-    xml_attribute_name, xml_attribute_value;
-
 // XML text read into a tree (#144):
 //
 //     let feed = ParsedXml(text).document();
@@ -26,16 +17,29 @@ import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_even
 // bindings rather than attributes, so what the tree writes reads back the
 // same. A document that is not well formed is InvalidXml at its character
 // offset.
+
+import "xml/name" take XmlName, InvalidXml;
+import "xml/node" take XmlNode, XmlElement, XmlText, XmlComment, XmlProcessingInstruction,
+    XmlAttribute, XmlDocument, MissingXmlAttribute, MissingXmlElement;
+import "collections/list" take List, EmptyList;
+import "async/atomic" take Atomic;
+import "runtime/xml" take XmlEventsState, xml_events, xml_events_error, xml_events_offset,
+    xml_event_count, xml_event_kind, xml_event_name, xml_event_text, xml_attribute_count,
+    xml_attribute_name, xml_attribute_value;
+
+// XML text read into a tree when document() is asked.
 object ParsedXml {
     has origin is string;
     has maximum_depth, maximum_events is int;
 
+    // Text within depth 256 and 1048576 events.
     ParsedXml(origin is string) {
         self.origin = origin;
         maximum_depth = 256;
         maximum_events = 1048576;
     }
 
+    // Text within these limits.
     ParsedXml(origin is string, maximum_depth is int, maximum_events is int) {
         confirm maximum_depth > 0 && maximum_events > 0
             else throw InvalidXml.located(0, "limits must be positive");
@@ -44,6 +48,7 @@ object ParsedXml {
         self.maximum_events = maximum_events;
     }
 
+    // The tree; InvalidXml says where the text is wrong.
     document() is XmlDocument {
         let state = xml_events(origin, maximum_depth, maximum_events);
         let error = xml_events_error(state);

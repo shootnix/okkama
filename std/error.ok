@@ -6,10 +6,15 @@ module error v1.0.0;
 //     confirm width > 0 else throw InvalidArgument.because("width must be positive");
 //     catch InvalidArgument.because(reason) { report(reason); }
 
+// An argument a call cannot take; reason says why.
 enum InvalidArgument is Error = (because(reason is string));
 
+// A call the object cannot answer in its present state, such as reading after
+// close.
 enum InvalidState is Error = (because(reason is string));
 
+// An index or offset outside what is there.
 enum OutOfRange is Error = (because(reason is string));
 
+// Something this object or platform does not do.
 enum UnsupportedOperation is Error = (because(reason is string));

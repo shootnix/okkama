@@ -1,5 +1,9 @@
 module db/read v1.0.0;
 
+// Reading values out of rows: one reader per column, with the conversions
+// db/row offers, and Maybe and Presence for NULL and missing columns. Row uses
+// it.
+
 import "db/value" take DbValue, ObservedDbValue, DbValueKind, InvalidDbValue, DbNativeValue,
     DbNativeKind, WrongDbValue;
 import "numbers/bigint" take BigInt;
@@ -9,6 +13,7 @@ import "db/value" take DbInteger, DbDecimal, DbFloating, DbText;
 
 // Narrow input protocol keeps readers independent of the Row implementation.
 role RowValues {
+    // The value of a column.
     value(name is string) is DbValue;
 }
 
@@ -64,6 +69,7 @@ object DbPage {
     has texts is @string;
     has blobs is @@byte;
 
+    // An empty page.
     DbPage() {
         width = 0;
         let empty is @int = [];
@@ -77,6 +83,7 @@ object DbPage {
         blobs = no_blobs;
     }
 
+    // A page of rows width cells wide.
     DbPage(
         width is int,
         kinds is @int,
@@ -95,6 +102,7 @@ object DbPage {
         self.blobs = blobs;
     }
 
+    // Cells per row.
     width() is int {
         width;
     }
@@ -104,14 +112,17 @@ object DbPage {
         kinds.size();
     }
 
+    // The native kind code of a cell.
     kind(at is int) is int {
         kinds[at];
     }
 
+    // An integer cell.
     integer(at is int) is int {
         values[at];
     }
 
+    // A text cell.
     text(at is int) is string {
         texts[values[at]];
     }
@@ -150,25 +161,30 @@ enum DbReaderSource = (cell(state is native_db.DbCellState), protocol(origin is 
     at is int
 ));
 
+// Reads one column's value as a type.
 object DbColumnReader {
     has name is string;
     has source is DbReaderSource;
 
+    // Reads origin, the column name.
     DbColumnReader(name is string, origin is DbValue) {
         self.name = name;
         source = DbReaderSource.protocol(origin);
     }
 
+    // Reads a native cell.
     DbColumnReader(name is string, state is native_db.DbCellState) {
         self.name = name;
         source = DbReaderSource.cell(state);
     }
 
+    // Reads cell at of page.
     DbColumnReader(name is string, page is DbPage, at is int) {
         self.name = name;
         source = DbReaderSource.page(page, at);
     }
 
+    // The value.
     cell() is DbValue {
         match source {
             case DbReaderSource.protocol(origin) {
@@ -183,6 +199,8 @@ object DbColumnReader {
         }
     }
 
+    // An integer as int; RowValueFailure for another kind, NULL or a value
+    // outside int.
     int() is int {
         match source {
             case DbReaderSource.page(page, at) {
@@ -199,6 +217,7 @@ object DbColumnReader {
         }
     }
 
+    // The same without the fast path.
     checked_int() is int {
         try {
             let state = self.native_cell();
@@ -212,6 +231,7 @@ object DbColumnReader {
         }
     }
 
+    // An integer as BigInt; RowValueFailure otherwise.
     integer() is BigInt {
         try {
             let state = self.native_cell();
@@ -223,6 +243,7 @@ object DbColumnReader {
         }
     }
 
+    // A decimal; RowValueFailure otherwise.
     decimal() is Decimal {
         try {
             let state = self.native_cell();
@@ -234,6 +255,7 @@ object DbColumnReader {
         }
     }
 
+    // A float; RowValueFailure otherwise.
     floating() is float {
         try {
             let state = self.native_cell();
@@ -245,6 +267,7 @@ object DbColumnReader {
         }
     }
 
+    // A boolean; RowValueFailure otherwise.
     boolean() is bool {
         try {
             let state = self.native_cell();
@@ -256,6 +279,7 @@ object DbColumnReader {
         }
     }
 
+    // An integer 0 or 1 as a bool; RowValueFailure otherwise.
     flag() is bool {
         try {
             let state = self.native_cell();
@@ -270,6 +294,7 @@ object DbColumnReader {
         }
     }
 
+    // Text; RowValueFailure otherwise.
     text() is string {
         match source {
             case DbReaderSource.page(page, at) {
@@ -286,6 +311,7 @@ object DbColumnReader {
         }
     }
 
+    // The same without the fast path.
     checked_text() is string {
         try {
             let state = self.native_cell();
@@ -297,6 +323,7 @@ object DbColumnReader {
         }
     }
 
+    // Bytes; RowValueFailure otherwise.
     bytes() is @byte {
         try {
             let state = self.native_cell();
@@ -341,13 +368,16 @@ object DbColumnReader {
     }
 }
 
+// Reads a column that may be NULL (none) or missing.
 object DbPresenceReader {
     has origin is Presence<DbColumnReader>;
 
+    // Reads origin.
     DbPresenceReader(origin is Presence<DbColumnReader>) {
         self.origin = origin;
     }
 
+    // The value, or none for NULL, missing for no such column.
     cell() is Presence<DbValue> {
         match origin {
             case Presence.some(column) {
@@ -362,6 +392,7 @@ object DbPresenceReader {
         }
     }
 
+    // An integer as int, or none for NULL, missing for no such column.
     int() is Presence<int> {
         match origin {
             case Presence.some(column) {
@@ -376,6 +407,7 @@ object DbPresenceReader {
         }
     }
 
+    // An integer as BigInt, or none for NULL, missing for no such column.
     integer() is Presence<BigInt> {
         match origin {
             case Presence.some(column) {
@@ -390,6 +422,7 @@ object DbPresenceReader {
         }
     }
 
+    // A decimal, or none for NULL, missing for no such column.
     decimal() is Presence<Decimal> {
         match origin {
             case Presence.some(column) {
@@ -404,6 +437,7 @@ object DbPresenceReader {
         }
     }
 
+    // A float, or none for NULL, missing for no such column.
     floating() is Presence<float> {
         match origin {
             case Presence.some(column) {
@@ -418,6 +452,7 @@ object DbPresenceReader {
         }
     }
 
+    // A boolean, or none for NULL, missing for no such column.
     boolean() is Presence<bool> {
         match origin {
             case Presence.some(column) {
@@ -432,6 +467,8 @@ object DbPresenceReader {
         }
     }
 
+    // An integer 0 or 1 as a bool, or none for NULL, missing for no such
+    // column.
     flag() is Presence<bool> {
         match origin {
             case Presence.some(column) {
@@ -446,6 +483,7 @@ object DbPresenceReader {
         }
     }
 
+    // Text, or none for NULL, missing for no such column.
     text() is Presence<string> {
         match origin {
             case Presence.some(column) {
@@ -460,6 +498,7 @@ object DbPresenceReader {
         }
     }
 
+    // Bytes, or none for NULL, missing for no such column.
     bytes() is Presence<@byte> {
         match origin {
             case Presence.some(column) {
@@ -475,50 +514,63 @@ object DbPresenceReader {
     }
 }
 
+// Reads a column that may be NULL.
 object DbMaybeReader {
     has origin is DbPresenceReader;
 
+    // Reads origin.
     DbMaybeReader(origin is DbPresenceReader) {
         self.origin = origin;
     }
 
+    // The value, or none for NULL.
     cell() is Maybe<DbValue> {
         origin.cell().fold();
     }
 
+    // An integer as int, or none for NULL.
     int() is Maybe<int> {
         origin.int().fold();
     }
 
+    // An integer as BigInt, or none for NULL.
     integer() is Maybe<BigInt> {
         origin.integer().fold();
     }
 
+    // A decimal, or none for NULL.
     decimal() is Maybe<Decimal> {
         origin.decimal().fold();
     }
 
+    // A float, or none for NULL.
     floating() is Maybe<float> {
         origin.floating().fold();
     }
 
+    // A boolean, or none for NULL.
     boolean() is Maybe<bool> {
         origin.boolean().fold();
     }
 
+    // An integer 0 or 1 as a bool, or none for NULL.
     flag() is Maybe<bool> {
         origin.flag().fold();
     }
 
+    // Text, or none for NULL.
     text() is Maybe<string> {
         origin.text().fold();
     }
 
+    // Bytes, or none for NULL.
     bytes() is Maybe<@byte> {
         origin.bytes().fold();
     }
 }
 
+// A column read as the wrong type, or NULL read as a value; column, expected,
+// actual kind and cause say how.
 enum RowValueFailure is Error = (located(
     column is string,
     expected is string,
@@ -569,5 +621,8 @@ test "a column reader converts one cell strictly and names the column on failure
         }
     };
     test.is(column, "hello:int");
-    test.is(DbColumnReader(name: "n", origin: DbInteger(5)).cell().kind() == DbValueKind.integer, true);
+    test.is(
+        DbColumnReader(name: "n", origin: DbInteger(5)).cell().kind() == DbValueKind.integer,
+        true
+    );
 }

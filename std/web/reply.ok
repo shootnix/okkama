@@ -45,12 +45,14 @@ object TextReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // text as UTF-8 with status (200 unless told) and headers.
     TextReply(text is string, status is Status = Status.ok, headers is Headers = Headers()) {
         self.text = text;
         code = BodyStatus(status).status();
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         ReplyResponse(
             status: code,
@@ -67,12 +69,14 @@ object HtmlReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // html as UTF-8 with status and headers.
     HtmlReply(html is string, status is Status = Status.ok, headers is Headers = Headers()) {
         self.html = html;
         code = BodyStatus(status).status();
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         ReplyResponse(
             status: code,
@@ -89,12 +93,14 @@ object JsonReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // value as compact JSON with status and headers.
     JsonReply(value is Json, status is Status = Status.ok, headers is Headers = Headers()) {
         self.value = value;
         code = BodyStatus(status).status();
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         ReplyResponse(
             status: code,
@@ -111,6 +117,7 @@ object CreatedReply does Responding {
     has value is Json;
     has given is Headers;
 
+    // 201 with location and value as JSON.
     CreatedReply(location is string, value is Json, headers is Headers = Headers()) {
         confirm location != ""
             else throw InvalidReply.because("a created reply requires a location");
@@ -119,6 +126,7 @@ object CreatedReply does Responding {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         let fields = given.addition(Header(name: "Location", value: location));
         ReplyResponse(
@@ -137,6 +145,7 @@ object RedirectReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // To location with status, 303 See Other unless told.
     RedirectReply(
         location is string,
         status is Status = Status.see_other,
@@ -151,6 +160,7 @@ object RedirectReply does Responding {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         EmptyReplyResponse(
             status: code,
@@ -163,10 +173,12 @@ object RedirectReply does Responding {
 object NoContentReply does Responding {
     has given is Headers;
 
+    // 204 with headers.
     NoContentReply(headers is Headers = Headers()) {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         EmptyReplyResponse(status: Status.no_content, headers: given).response();
     }
@@ -179,6 +191,7 @@ object BytesReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // bytes as media_type with status and headers.
     BytesReply(
         bytes is @byte,
         media_type is string,
@@ -191,6 +204,7 @@ object BytesReply does Responding {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         ReplyResponse(status: code, media: media, content: bytes, headers: given).response();
     }
@@ -206,6 +220,7 @@ object StreamReply does Responding {
     has code is Status;
     has given is Headers;
 
+    // body as media_type with status and headers.
     StreamReply(
         body is BodyOpening,
         media_type is string,
@@ -218,6 +233,7 @@ object StreamReply does Responding {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         OpenedReplyResponse(
             status: code,
@@ -240,11 +256,13 @@ object EventsReply does Responding {
     has events is Receiving<ServerEvent>;
     has given is Headers;
 
+    // Sends each event received from events until it closes.
     EventsReply(events is Receiving<ServerEvent>, headers is Headers = Headers()) {
         self.events = events;
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         let stream = EventStreamHeaders().headers().entries();
         let fixed is @Header = (0..stream.size()).map() -> index {
@@ -273,6 +291,7 @@ object FileReply does Responding {
     has path is string;
     has given is Headers;
 
+    // The file at path below root, for request.
     FileReply(
         request is WebRequest,
         root is FileRoot,
@@ -285,6 +304,7 @@ object FileReply does Responding {
         given = headers;
     }
 
+    // The response it makes.
     response() is Response {
         let files = StaticFiles(root: root, media: StandardMediaTypes(), policy: StaticPolicy());
         let answer = files.file_response(request.request(), path);

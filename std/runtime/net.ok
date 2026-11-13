@@ -1,11 +1,18 @@
 module runtime/net v1.0.0;
 
+// The native layer under net/ip, net/multicast, net/tcp, net/udp: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+//
 // Private numeric address conversion through the existing core.net provider.
 // These two declarations do not resolve hostnames or allocate sockets. Their
 // versioned endpoint envelope is consumed and validated only inside net/ip;
 // application code uses IpAddress and receives plain packed address bytes.
+
+// text as an address of family with port, in the runtime's envelope.
 native ip_parse(family is int, text is string, port is int) is @byte;
 
+// The address in origin as text.
 native ip_format(origin is @byte) is string;
 
 test "numeric address conversion uses the existing provider" {

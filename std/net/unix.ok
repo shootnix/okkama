@@ -1,5 +1,14 @@
 module net/unix v1.0.0;
 
+// Exact filesystem address for the current host. UTF-8 byte length (including
+// room for a terminating NUL) is checked before sockaddr packing. No socket or
+// filesystem I/O, normalization, existence check or absolute conversion occurs.
+// Relative paths remain relative; PathStyle never translates their text here.
+// Named filesystem addresses only: abstract and unnamed addresses are separate.
+//
+//     let address=UnixAddress(Path("run/service.sock"));
+//     address.string(); // "run/service.sock"
+
 import "fs/path" take Path;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/stream" take AsyncReading, AsyncWriting, ByteSource, InvalidReadLimit;
@@ -9,17 +18,11 @@ import "error" take InvalidArgument;
 import "runtime/network";
 import "io/decorators" take ByteSnapshot;
 
-// Exact filesystem address for the current host. UTF-8 byte length (including
-// room for a terminating NUL) is checked before sockaddr packing. No socket or
-// filesystem I/O, normalization, existence check or absolute conversion occurs.
-// Relative paths remain relative; PathStyle never translates their text here.
-// Named filesystem addresses only: abstract and unnamed addresses are separate.
-//
-//     let address=UnixAddress(Path("run/service.sock"));
-//     address.string(); // "run/service.sock"
+// A Unix socket path on this host.
 object UnixAddress {
     has origin is Path;
 
+    // The socket at origin.
     UnixAddress(origin is Path) {
         try {
             network.unix_path_valid(Utf8Encoded(origin.string()).bytes());
@@ -36,33 +39,40 @@ object UnixAddress {
         self.origin = origin;
     }
 
+    // Its path.
     path() is Path {
         origin;
     }
 
+    // Its path as text.
     string() is string {
         origin.string();
     }
 }
 
+// This platform has no Unix sockets.
 enum UnixSocketsUnsupported is Error = (unsupported);
 
 // An unnamed endpoint is an observation, never an empty filesystem Path.
 object UnixEndpoint {
     has addresses is @UnixAddress;
 
+    // An unnamed end, as a socket pair has.
     UnixEndpoint() {
         addresses = [];
     }
 
+    // The end at address.
     UnixEndpoint(address is UnixAddress) {
         addresses = [address];
     }
 
+    // Whether it has an address.
     named() is bool {
         addresses.size() > 0;
     }
 
+    // Its address; InvalidArgument when it is unnamed.
     address() is UnixAddress {
         confirm self.named() else throw InvalidArgument.because("Unix endpoint is unnamed");
         addresses[0];
@@ -74,15 +84,18 @@ object UnixError {
     has operation is NetworkOperation;
     has failure is NativeFailure;
 
+    // The failure of operation.
     UnixError(operation is NetworkOperation, failure is NativeFailure) {
         self.operation = operation;
         self.failure = failure;
     }
 
+    // Whether it is a Unix socket failure.
     applicable() is bool {
         NetworkError(operation: operation, failure: failure).applicable();
     }
 
+    // The error.
     error() is Error {
         confirm self.applicable() else throw InvalidArgument.because("not a terminal Unix failure");
         if failure.code() == "unsupported" {
@@ -121,6 +134,8 @@ object UnixConnection {
     has state is network.SocketState;
     has ends is ConnectionEndpoints<UnixEndpoint>;
 
+    // Made by UnixConnecting, UnixListener and UnixPaired; not constructed
+    // directly.
     UnixConnection(state is network.SocketState) {
         self.state = state;
         ends = try {
@@ -139,22 +154,27 @@ object UnixConnection {
         };
     }
 
+    // Its two ends.
     endpoints() is ConnectionEndpoints<UnixEndpoint> {
         ends;
     }
 
+    // The reading side.
     input() is AsyncReading {
         UnixReading(self);
     }
 
+    // The writing side.
     output() is AsyncWriting {
         UnixWriting(self);
     }
 
+    // Whether the connection is closed.
     closed() is bool {
         network.closed(state);
     }
 
+    // Closes the connection; closing again does nothing.
     close() is void {
         try {
             network.close(state);
@@ -172,6 +192,7 @@ object UnixConnection {
         network.close(state);
     }
 
+    // Used by input() and output(); programs read and write through those.
     async read_bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
@@ -186,6 +207,7 @@ object UnixConnection {
         }
     }
 
+    // Used by input() and output(); programs read and write through those.
     async write_bytes(source is ByteSource) is bool {
         confirm !self.closed() else throw NetworkClosed.closed;
         let payload = source.bytes();
@@ -203,57 +225,71 @@ object UnixConnection {
     }
 }
 
+// The reading side of a Unix connection.
 object UnixReading does AsyncReading {
     has owner is UnixConnection;
 
+    // Made by input(); not constructed directly.
     UnixReading(owner is UnixConnection) {
         self.owner = owner;
     }
 
+    // At most limit bytes; [] at the end.
     async bytes(limit is int) is @byte {
         await owner.read_bytes(limit);
     }
 }
 
+// The writing side of a Unix connection.
 object UnixWriting does AsyncWriting {
     has owner is UnixConnection;
 
+    // Made by output(); not constructed directly.
     UnixWriting(owner is UnixConnection) {
         self.owner = owner;
     }
 
+    // Writes the bytes of source.
     async write(source is ByteSource) is AsyncWriting {
         await owner.write_bytes(source);
         self;
     }
 
+    // Writes the bytes.
     async write(bytes is @byte) is AsyncWriting {
         await owner.write_bytes(ByteSnapshot(bytes));
         self;
     }
 }
 
+// Two connected ends, as UnixPaired makes them.
 object UnixPair {
     has left is UnixConnection;
     has right is UnixConnection;
 
+    // The two ends.
     UnixPair(first is UnixConnection, second is UnixConnection) {
         left = first;
         right = second;
     }
 
+    // One end.
     first() is UnixConnection {
         left;
     }
 
+    // The other end.
     second() is UnixConnection {
         right;
     }
 }
 
+// A pair of connected Unix sockets, for talking to a child or within a test.
 object UnixPaired {
+    // A pair to make.
     UnixPaired();
 
+    // Makes the pair.
     async result() is UnixPair {
         try {
             let states = network.unix_pair();
@@ -284,13 +320,16 @@ object UnixPaired {
     }
 }
 
+// A connection to a Unix socket.
 object UnixConnecting {
     has remote is UnixAddress;
 
+    // To remote.
     UnixConnecting(remote is UnixAddress) {
         self.remote = remote;
     }
 
+    // Connects.
     async connection() is UnixConnection {
         try {
             UnixConnection(await network.unix_connect(Utf8Encoded(remote.string()).bytes()));
@@ -305,15 +344,18 @@ object UnixConnecting {
     }
 }
 
+// A Unix socket to listen on.
 object UnixListening {
     has local is UnixAddress;
     has backlog is int;
 
+    // At local with backlog waiting connections.
     UnixListening(local is UnixAddress, backlog is int) {
         self.local = local;
         self.backlog = backlog;
     }
 
+    // Opens the listener.
     async listener() is UnixListener {
         try {
             UnixListener(network.unix_listen(Utf8Encoded(local.string()).bytes(), backlog));
@@ -328,10 +370,12 @@ object UnixListening {
     }
 }
 
+// An open Unix socket listener.
 object UnixListener {
     has state is network.ListenerState;
     has local is UnixAddress;
 
+    // Made by UnixListening; not constructed directly.
     UnixListener(state is network.ListenerState) {
         self.state = state;
         local = try {
@@ -347,14 +391,17 @@ object UnixListener {
         };
     }
 
+    // Where it listens.
     local_address() is UnixAddress {
         local;
     }
 
+    // Whether the listener is closed.
     closed() is bool {
         network.unix_listener_closed(state);
     }
 
+    // Closes the listener; closing again does nothing.
     close() is void {
         try {
             network.unix_listener_close(state);
@@ -368,6 +415,7 @@ object UnixListener {
         }
     }
 
+    // The next connection.
     async connection() is UnixConnection {
         try {
             UnixConnection(await network.unix_accept(state));

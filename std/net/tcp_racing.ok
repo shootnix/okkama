@@ -1,5 +1,10 @@
 module net/tcp_racing v1.0.0;
 
+// Happy Eyeballs over numeric candidates (RFC 8305): attempts start a stagger
+// apart, families interleave, and the first connection wins while the others
+// are cancelled and closed. The engine lives in net/tcp, where
+// TcpConnecting(host:, port:) races the resolver's addresses the same way.
+
 import "net/tcp" take TcpConnection, TcpOptions, TcpEndpointRace, InvalidTcpRace;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
@@ -7,17 +12,17 @@ import "collections/sequence" take Sequencing;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 
-// Happy Eyeballs over numeric candidates (RFC 8305): attempts start a stagger
-// apart, families interleave, and the first connection wins while the others
-// are cancelled and closed. The engine lives in net/tcp, where
-// TcpConnecting(host:, port:) races the resolver's addresses the same way.
+// Happy Eyeballs (RFC 8305): attempts on several addresses, started a stagger
+// apart, the first to connect wins.
 object TcpRacing {
     has race is TcpEndpointRace;
 
+    // Races origins with the default stagger.
     TcpRacing(origins is Sequencing<IpEndpoint>) {
         race = TcpEndpointRace(origins);
     }
 
+    // Races origins delay apart with options on clock.
     TcpRacing(
         origins is Sequencing<IpEndpoint>,
         options is TcpOptions,
@@ -27,6 +32,7 @@ object TcpRacing {
         race = TcpEndpointRace(origins: origins, options: options, delay: delay, clock: clock);
     }
 
+    // The first connection made; the others are closed.
     async connection() is TcpConnection {
         await race.connection();
     }

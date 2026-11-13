@@ -1,15 +1,19 @@
 module http/http2_tls v1.0.0;
 
+// HTTP/2 over TLS needs `h2` selected by ALPN; the list offered is not enough.
+
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 
 // Actual negotiated ALPN, never the advertised protocol list.
 object Http2TlsProtocol {
     has selected is string;
 
+    // The ALPN protocol selected.
     Http2TlsProtocol(selected is string) {
         self.selected = selected;
     }
 
+    // HTTP/2 for `h2`; UnsupportedHttpVersion otherwise.
     version() is HttpVersion {
         confirm selected == "h2" else throw UnsupportedHttpVersion.unsupported;
         HttpVersion.http_2;

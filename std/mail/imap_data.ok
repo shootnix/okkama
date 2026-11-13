@@ -1,5 +1,16 @@
 module mail/imap_data v1.0.0;
 
+// The structure of an untagged response: atoms, quoted strings, literals and
+// parenthesized lists.
+//
+//     for ParsedImapData(response).entries() -> value {
+//         if value.kind() == ImapValueKind.list { value.entries(); }
+//         else { value.string(); }
+//     }
+//
+// NIL, "" and () stay distinct; absent() tells NIL. Literals stay bytes. By
+// default 8192 tokens nested at most 64 deep.
+
 import "mail/imap_response" take ParsedImapResponse;
 
 import "mail/imap_response" take ImapResponse, ImapResponseKind, ImapResponsePartKind;
@@ -9,21 +20,23 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument, InvalidState;
 
-// Bounded structural data from one framed untagged response. Literal payloads
-// remain byte strings; NIL, empty quoted strings and empty lists stay distinct.
-// This layer parses structure, not the meaning of extension attributes.
+// An atom, a quoted string, a literal, a literal8 or a list.
 enum ImapValueKind = (atom, quoted, literal, literal8, list);
 
+// A token of the scanner.
 enum ImapTokenKind = (atom, quoted, literal, literal8, opening, closing);
 
+// How large a structure may be.
 object ImapDataLimits {
     has tokens, depth is int;
 
+    // 8192 tokens, depth 64.
     ImapDataLimits() {
         tokens = 8192;
         depth = 64;
     }
 
+    // The limits as given.
     ImapDataLimits(tokens is int, depth is int) {
         confirm tokens >= 0 && depth >= 0
             else throw InvalidArgument.because("IMAP data limits must be nonnegative");
@@ -31,6 +44,7 @@ object ImapDataLimits {
         self.depth = depth;
     }
 
+    // Tokens and depth.
     cap Limits {
         tokens is int {
             tokens;
@@ -42,11 +56,13 @@ object ImapDataLimits {
     }
 }
 
+// One value of a response.
 object ImapValue {
     has kind is ImapValueKind;
     has content is @byte;
     has entries is @ImapValue;
 
+    // As given.
     ImapValue(kind is ImapValueKind, content is @byte, entries is @ImapValue) {
         confirm (kind == ImapValueKind.list && content.size() == 0)
             || (kind != ImapValueKind.list && entries.size() == 0)
@@ -58,74 +74,91 @@ object ImapValue {
         self.entries = entries;
     }
 
+    // Its kind.
     kind() is ImapValueKind {
         kind;
     }
 
+    // Its bytes; InvalidState for a list.
     bytes() is @byte {
         confirm kind != ImapValueKind.list
             else throw InvalidState.because("IMAP list has no scalar bytes");
         content;
     }
 
+    // Its bytes as UTF-8.
     string() is string {
         Utf8Decoded(self.bytes()).string();
     }
 
+    // The values of a list; InvalidState for a scalar.
     entries() is Sequencing<ImapValue> {
         confirm kind == ImapValueKind.list
             else throw InvalidState.because("IMAP scalar is not a list");
         entries;
     }
 
+    // Whether it is NIL.
     absent() is bool {
         kind == ImapValueKind.atom && ImapDataUpper(self.string()).string() == "NIL";
     }
 }
 
+// The values of an untagged response.
 object ParsedImapData {
     has entries is @ImapValue;
 
+    // Reads origin within the default limits.
     ParsedImapData(origin is ImapResponse) {
         entries = ImapDataParsing(origin: origin, limits: ImapDataLimits()).entries();
     }
 
+    // Reads origin within limits.
     ParsedImapData(origin is ImapResponse, limits is ImapDataLimits) {
         entries = ImapDataParsing(origin: origin, limits: limits).entries();
     }
 
+    // Every value of the line, from `*` on; InvalidImapData for bad structure.
     entries() is Sequencing<ImapValue> {
         entries;
     }
 }
 
+// A response whose structure is not valid; reason says why.
 enum InvalidImapData is Error = (because(reason is string));
 
+// A structure over a limit; kind says which.
 enum ImapDataLimitExceeded is Error = (kind(kind is string));
 
+// One token; used inside mail/imap_data.
 object ImapDataToken {
     has kind is ImapTokenKind;
     has bytes is @byte;
 
+    // As given.
     ImapDataToken(kind is ImapTokenKind, bytes is @byte) {
         self.kind = kind;
         self.bytes = bytes;
     }
 
+    // Its kind.
     kind() is ImapTokenKind {
         kind;
     }
 
+    // Its bytes.
     bytes() is @byte {
         bytes;
     }
 }
 
+// Tokens gathered while scanning.
 object ImapDataTokens {
     has entries is MimeItems<ImapDataToken>;
     has count is int;
     has limits is ImapDataLimits;
 
+    // None yet, within limits.
     ImapDataTokens(limits is ImapDataLimits) {
         let empty is MimeItems<ImapDataToken> = MimeItems();
         entries = empty;
@@ -133,6 +166,7 @@ object ImapDataTokens {
         self.limits = limits;
     }
 
+    // These tokens and one more.
     following(token is ImapDataToken) is ^ImapDataTokens {
         confirm count < limits::Limits::tokens else throw ImapDataLimitExceeded.kind("tokens");
         let appended = entries.following(token);
@@ -140,6 +174,7 @@ object ImapDataTokens {
         ^count = count + 1;
     }
 
+    // The tokens.
     entries() is @ImapDataToken {
         entries.entries();
     }
@@ -224,15 +259,18 @@ hidden object ImapDataParsing {
     }
 }
 
+// Scans response text into tokens.
 object ImapDataLexing {
     has origin is string;
     has initial is ImapDataTokens;
 
+    // Scans origin after initial.
     ImapDataLexing(origin is string, initial is ImapDataTokens) {
         self.origin = origin;
         self.initial = initial;
     }
 
+    // The tokens.
     tokens() is ImapDataTokens {
         let tokens = initial;
         let at = MimePosition(0);
@@ -321,15 +359,18 @@ object ImapDataLexing {
     }
 }
 
+// Builds values from tokens.
 object ImapDataTree {
     has tokens is @ImapDataToken;
     has limits is ImapDataLimits;
 
+    // Over tokens, within limits.
     ImapDataTree(tokens is @ImapDataToken, limits is ImapDataLimits) {
         self.tokens = tokens;
         self.limits = limits;
     }
 
+    // The value starting at at, depth deep.
     item(at is int, depth is int) is ImapParsedValue {
         confirm at < tokens.size() else throw InvalidImapData.because("missing data value");
         let token = tokens[at];
@@ -373,31 +414,38 @@ object ImapDataTree {
     }
 }
 
+// A value and where parsing goes on.
 object ImapParsedValue {
     has value is ImapValue;
     has after is int;
 
+    // As given.
     ImapParsedValue(value is ImapValue, after is int) {
         self.value = value;
         self.after = after;
     }
 
+    // The value.
     parsed() is ImapValue {
         value;
     }
 
+    // The next token index.
     after() is int {
         after;
     }
 }
 
+// ASCII uppercase.
 object ImapDataUpper {
     has origin is string;
 
+    // The text.
     ImapDataUpper(origin is string) {
         self.origin = origin;
     }
 
+    // origin with a-z raised.
     string() is string {
         let bytes is @byte = Utf8Encoded(origin).bytes().map() -> octet {
             let code = octet.int();

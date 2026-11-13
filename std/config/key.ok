@@ -1,5 +1,11 @@
 module config/key v1.0.0;
 
+// Setting keys: names made of parts, written `server.port`.
+//
+//     let key = SettingKey("server", "port");
+//     key.string();                                          // "server.port"
+//     SettingKeyFromString(origin: "server/port", separator: "/").key();
+
 import "collections/sequence" take Sequencing;
 import "compare" take Comparing, Order;
 
@@ -7,6 +13,7 @@ import "compare" take Comparing, Order;
 object SettingKey does Comparing<SettingKey> {
     has parts is @string;
 
+    // A key of these parts, none empty.
     SettingKey(segments is Sequencing<string>) {
         let size = segments.size();
         confirm size > 0 && size <= 64
@@ -41,14 +48,17 @@ object SettingKey does Comparing<SettingKey> {
         parts = snapshot;
     }
 
+    // Its parts.
     segments() is Sequencing<string> {
         parts;
     }
 
+    // The parts joined with `.`.
     string() is string {
         parts.join(".");
     }
 
+    // Orders part by part.
     order(other is SettingKey) is Order {
         let right = other.segments();
         let count = if parts.size() < right.size() {
@@ -74,14 +84,17 @@ object SettingKey does Comparing<SettingKey> {
     }
 }
 
+// A key read from text with a separator.
 object SettingKeyFromString {
     has origin, separator is string;
 
+    // origin split at separator.
     SettingKeyFromString(origin is string, separator is string) {
         self.origin = origin;
         self.separator = separator;
     }
 
+    // The key; InvalidSettingKey for an empty part.
     key() is SettingKey {
         confirm separator != "" else throw InvalidSettingKey.because("empty key separator");
         confirm origin.length() <= 4096
@@ -90,13 +103,17 @@ object SettingKeyFromString {
     }
 }
 
+// A key with no parts or an empty part.
 enum InvalidSettingKey is Error = (because(reason is string));
 
 test "a setting key is its segments; the string form is for diagnostics" {
     let key = SettingKeyFromString(origin: "db.pool.size", separator: ".").key();
     test.is(key.segments().size(), 3);
     test.is(key.string(), "db.pool.size");
-    test.is(SettingKeyFromString(origin: "DB__POOL", separator: "__").key().segments().last(), "POOL");
+    test.is(
+        SettingKeyFromString(origin: "DB__POOL", separator: "__").key().segments().last(),
+        "POOL"
+    );
     test.is(SettingKey("a.b").order(SettingKey("a", "b")) == Order.equal, false);
     test.is(SettingKey("a").order(SettingKey("a", "b")), Order.less);
     test.is(SettingKey("b").order(SettingKey("a", "z")), Order.greater);

@@ -1,5 +1,14 @@
 module db/statement v1.0.0;
 
+// Statements: SQL text with bound values, and what running one did.
+//
+//     let done = await db.execution(Statement(text: "DELETE FROM sessions WHERE expires < ?", values: [DbInteger(now)]));
+//     done.affected() else BigInt(0);
+//
+// Statements are bounded by DbLimits: 1024 values, 8 MiB of values and 1 MiB of
+// SQL by default. Most code passes SQL and values to execution() and query()
+// directly.
+
 import "db/value" take DbValue, ObservedDbValue;
 import "runtime/db" as native_db;
 import "db/error" take AffectedRowsUnknown;
@@ -8,15 +17,18 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "numbers/bigint" take BigInt;
 import "async/atomic" take Atomic;
 
+// How large a statement may be.
 object DbLimits {
     has values, bytes, sql_bytes is int;
 
+    // 1024 values, 8 MiB of values, 1 MiB of SQL.
     DbLimits() {
         values = 1024;
         bytes = 8388608;
         sql_bytes = 1048576;
     }
 
+    // The limits as given.
     DbLimits(values is int, bytes is int, sql_bytes is int) {
         confirm values >= 0
             && values <= 1024
@@ -30,6 +42,7 @@ object DbLimits {
         self.sql_bytes = sql_bytes;
     }
 
+    // Values, bytes of values and bytes of SQL.
     cap Limits {
         values is int {
             values;
@@ -45,10 +58,12 @@ object DbLimits {
     }
 }
 
+// Values checked against the limits once.
 object DbValueSnapshot {
     has origin is @DbValue;
     has cells is @native_db.DbCellState;
 
+    // values within limits; DbBoundaryLimit beyond them.
     DbValueSnapshot(values is Sequencing<DbValue>, limits is DbLimits) {
         let count = values.size();
         confirm count >= 0 && count <= limits::Limits::values
@@ -70,26 +85,31 @@ object DbValueSnapshot {
         };
     }
 
+    // The values.
     values() is @DbValue {
         origin;
     }
 
+    // Their native cells.
     cells() is @native_db.DbCellState {
         cells;
     }
 }
 
+// SQL text and the values bound to its placeholders.
 object Statement {
     has text is string;
     has values is @DbValue;
     has cells is @native_db.DbCellState;
 
+    // SQL without values.
     Statement(text is string) {
         self.text = DbSqlText(origin: text, limits: DbLimits()).string();
         values = [];
         cells = [];
     }
 
+    // SQL with values, within the default limits.
     Statement(text is string, values is Sequencing<DbValue>) {
         let limits = DbLimits();
         self.text = DbSqlText(origin: text, limits: limits).string();
@@ -98,6 +118,7 @@ object Statement {
         cells = snapshot.cells();
     }
 
+    // The same within limits.
     Statement(text is string, values is Sequencing<DbValue>, limits is DbLimits) {
         self.text = DbSqlText(origin: text, limits: limits).string();
         let snapshot = DbValueSnapshot(values: values, limits: limits);
@@ -105,14 +126,17 @@ object Statement {
         cells = snapshot.cells();
     }
 
+    // The SQL.
     text() is string {
         text;
     }
 
+    // The values.
     values() is Sequencing<DbValue> {
         values;
     }
 
+    // Their native cells.
     cells() is @native_db.DbCellState {
         cells;
     }
@@ -136,18 +160,22 @@ hidden object DbSqlText {
     }
 }
 
+// What a statement did.
 object Execution {
     has count is Maybe<BigInt>;
 
+    // Rows affected unknown.
     Execution() {
         count = Maybe.none;
     }
 
+    // affected rows.
     Execution(affected is BigInt) {
         confirm affected.sign() >= 0 else throw InvalidExecution.invalid;
         count = Maybe.some(affected);
     }
 
+    // The rows affected, or none when the database does not say.
     affected() is Maybe<BigInt> {
         count;
     }
@@ -157,15 +185,19 @@ object Execution {
         count ?? .some(_): true !! .none: false;
     }
 
+    // The count; AffectedRowsUnknown when it is not known.
     affected_rows() is BigInt {
         count else throw AffectedRowsUnknown.unknown;
     }
 }
 
+// A statement over a limit; kind says which.
 enum DbBoundaryLimit is Error = (kind(kind is string));
 
+// A statement that cannot be built.
 enum InvalidStatement is Error = (invalid);
 
+// An affected-row count that is not valid.
 enum InvalidExecution is Error = (invalid);
 
 test "statement parameters remain distinct from SQL text" {

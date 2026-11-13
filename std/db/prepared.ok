@@ -1,78 +1,109 @@
 module db/prepared v1.0.0;
 
+// Prepared statements: SQL parsed once, run many times with new values.
+//
+//     let add = await db.prepared("INSERT INTO notes(title, body) VALUES (?, ?)");
+//     await add.execution(DbText("groceries"), DbText("tea, milk"));
+//     await add.execution(DbText("ideas"), DbNull());
+//     add.close();
+
 import "db/value" take DbValue;
 import "db/statement" take Statement, Execution;
 import "db/row" take RowReading, DbQuery;
 import "collections/sequence" take Sequencing;
 import "db/transaction" take Transaction, TransactionOptions;
 
+// Something that prepares statements.
 role DbPreparing {
+    // Prepares text.
     async prepared(text is string) is PreparedStatement;
 }
 
+// Something that prepares statements and opens transactions that can too.
 role DbPreparedOpening {
+    // Prepares text.
     async prepared(text is string) is PreparedStatement;
+    // Opens a transaction that can prepare statements.
     async prepared_transaction(options is TransactionOptions) is DbPreparedTransaction;
 }
 
+// A prepared statement.
 role PreparedStatement {
+    // Runs it with values; for statements without rows.
     async execution(values is Sequencing<DbValue>) is Execution;
+    // The same, the values one by one.
     async execution(values is ...DbValue) is Execution;
+    // Runs it with values and reads its rows.
     async rows(values is Sequencing<DbValue>) is RowReading;
+    // The same, the values one by one.
     async rows(values is ...DbValue) is RowReading;
+    // Whether it was closed.
     closed() is bool;
+    // Releases it.
     close() is void;
 }
 
+// A statement prepared on first use.
 object Prepared {
     has origin is DbPreparing;
     has text is string;
 
+    // text, to prepare on origin.
     Prepared(origin is DbPreparing, text is string) {
         self.origin = origin;
         self.text = Statement(text).text();
     }
 
+    // The prepared statement.
     async statement() is PreparedStatement {
         await origin.prepared(text);
     }
 }
 
+// A transaction that can also prepare statements.
 object DbPreparedTransaction does Transaction, DbPreparing {
     has origin is Transaction;
     has preparation is DbPreparing;
 
+    // origin, preparing with preparation.
     DbPreparedTransaction(origin is Transaction, preparation is DbPreparing) {
         self.origin = origin;
         self.preparation = preparation;
     }
 
+    // Whether it is still open.
     active() is bool {
         origin.active();
     }
 
+    // Runs statement.
     async execution(statement is Statement) is Execution {
         await origin.execution(statement);
     }
 
+    // Runs statement and reads its rows.
     async rows(statement is Statement) is RowReading {
         await origin.rows(statement);
     }
 
+    // Prepares text inside the transaction.
     async prepared(text is string) is PreparedStatement {
         await preparation.prepared(text);
     }
 
+    // Commits.
     async commit() is Transaction {
         await origin.commit();
         self;
     }
 
+    // Rolls back.
     async rollback() is Transaction {
         await origin.rollback();
         self;
     }
 
+    // Runs sql with values.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution {
         await origin.execution(sql, values);
     }
@@ -83,6 +114,7 @@ object DbPreparedTransaction does Transaction, DbPreparing {
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         origin.query(sql, values);
     }

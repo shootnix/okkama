@@ -1,5 +1,8 @@
 module http/websocket_handshake v1.0.0;
 
+// The WebSocket opening handshake (RFC 6455 §4): the client's Upgrade request,
+// the server's 101, and subprotocols. The client and server modules use it.
+
 import "http/method" take Method;
 import "http/websocket" take WebSocketFailure;
 import "http/message" take Request, Response;
@@ -38,9 +41,12 @@ hidden object WebSocketAccept {
     }
 }
 
+// Subprotocol names, as Sec-WebSocket-Protocol lists them.
 object WebSocketProtocols {
     has origin is @string;
 
+    // The names, at most 32; WebSocketFailure for one that is not a token, or a
+    // repeat.
     WebSocketProtocols(origin is @string) {
         confirm origin.size() <= 32 else throw WebSocketFailure.because("subprotocol count");
         for (0..origin.size()) -> index {
@@ -61,10 +67,12 @@ object WebSocketProtocols {
         self.origin = origin;
     }
 
+    // The names, in order.
     values() is @string {
         origin;
     }
 
+    // The names joined with `, `.
     string() is string {
         (0..origin.size()).reduce("") -> joined, index {
             joined + if index == 0 {
@@ -76,6 +84,7 @@ object WebSocketProtocols {
         };
     }
 
+    // Whether value is one of them.
     contains(value is string) is bool {
         origin.reduce(false) -> found, item {
             found || item == value;
@@ -151,12 +160,19 @@ hidden object WebSocketHandshakeFields {
     }
 }
 
+// The client's half of the handshake.
 object WebSocketClientHandshake {
     has request is Request;
     has accept is WebSocketAccept;
     has offered is WebSocketProtocols;
 
-    WebSocketClientHandshake(url is UrlParts, protocols is @string, headers is Headers, nonce is @byte) {
+    // A handshake to url offering protocols, with headers and a 16-byte nonce.
+    WebSocketClientHandshake(
+        url is UrlParts,
+        protocols is @string,
+        headers is Headers,
+        nonce is @byte
+    ) {
         let parts = url;
         confirm parts::Parts::scheme == "ws" || parts::Parts::scheme == "wss"
             else throw WebSocketFailure.because("WebSocket URL required");
@@ -164,9 +180,11 @@ object WebSocketClientHandshake {
             && parts.host_kind() != UrlHostKind.empty
             && parts.host_kind() != UrlHostKind.future
             else throw WebSocketFailure.because("WebSocket authority required");
-        confirm parts::Parts::userinfo == Maybe<string>.none && parts::Parts::fragment == Maybe<string>.none
+        confirm parts::Parts::userinfo == Maybe<string>.none
+            && parts::Parts::fragment == Maybe<string>.none
             else throw WebSocketFailure.because("WebSocket URL userinfo or fragment");
-        confirm (parts::Parts::port else 1) > 0 else throw WebSocketFailure.because("WebSocket port");
+        confirm (parts::Parts::port else 1) > 0
+            else throw WebSocketFailure.because("WebSocket port");
         confirm url.string().length() <= 8192
             else throw WebSocketFailure.because("WebSocket URL budget");
         WebSocketHandshakeFields(headers);
@@ -204,7 +222,9 @@ object WebSocketClientHandshake {
             fields;
         }
         else {
-            fields.addition(Header(name: HeaderName("Sec-WebSocket-Protocol"), value: checked.string()));
+            fields.addition(
+                Header(name: HeaderName("Sec-WebSocket-Protocol"), value: checked.string())
+            );
         };
         WebSocketHandshakeFields(complete);
         request = Request(
@@ -224,10 +244,13 @@ object WebSocketClientHandshake {
         offered = checked;
     }
 
+    // The GET with Upgrade, the key and the protocols.
     request() is Request {
         request;
     }
 
+    // The subprotocol response chose ("" for none); WebSocketFailure when the
+    // answer is not a valid 101 for this key.
     selected(response is Response) is string {
         confirm response::Head::status == Status.switching_protocols
             && response::Head::version == HttpVersion.http_1_1
@@ -259,6 +282,7 @@ object WebSocketServerHandshake {
     has accept is WebSocketAccept;
     has offered is WebSocketProtocols;
 
+    // Checks request as an upgrade; WebSocketFailure when it is not one.
     WebSocketServerHandshake(request is Http1RequestHead) {
         confirm request::Head::method == Method.get
             && request::Head::version == HttpVersion.http_1_1
@@ -277,10 +301,12 @@ object WebSocketServerHandshake {
         offered = WebSocketProtocols(fields.tokens("Sec-WebSocket-Protocol"));
     }
 
+    // The subprotocols the client offered.
     protocols() is @string {
         offered.values();
     }
 
+    // The 101 that accepts it with protocol ("" for none).
     response(protocol is string) is Response {
         confirm protocol == "" || offered.contains(protocol)
             else throw WebSocketFailure.because("unoffered subprotocol");

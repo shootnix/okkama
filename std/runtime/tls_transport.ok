@@ -1,9 +1,16 @@
 module runtime/tls_transport v1.0.0;
 
+// The native layer under net/stream, net/tls: the calls those modules make into
+// the host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 import "runtime/network" take SocketState;
 
+// A TLS client connection over a socket.
 native object TlsState;
 
+// A TLS client on origin, with allowed versions, ALPN protocols and the server
+// name for SNI.
 native client(origin is SocketState, versions is int, protocols is @string, server is string) is TlsState;
 
 // A TLS server over an accepted connection (#209): the certificate chain (DER,
@@ -17,24 +24,36 @@ native server(
     key is @byte
 ) is TlsState;
 
+// Closes the connection.
 native close(origin is TlsState) is bool;
 
+// Whether it is closed.
 native closed(origin is TlsState) is bool;
 
+// Runs the handshake.
 native async handshake(origin is TlsState) is bool;
 
+// Verifies the peer's chain against roots for the DNS or IP identity host at a
+// time.
 native authorize(origin is TlsState, roots is @@byte, kind is string, host is string, at is string) is bool;
 
+// At most limit bytes; [] at the end.
 native async read(origin is TlsState, limit is int) is @byte;
 
+// Writes all of source.
 native async write(origin is TlsState, source is @byte) is bool;
 
+// Sends close_notify.
 native async shutdown(origin is TlsState) is bool;
 
+// The peer's certificate chain, as DER.
 native peer(origin is TlsState) is @@byte;
 
+// The negotiated TLS version.
 native version(origin is TlsState) is string;
 
+// The negotiated cipher suite.
 native cipher(origin is TlsState) is string;
 
+// The ALPN protocol selected, or "".
 native protocol(origin is TlsState) is string;

@@ -41,22 +41,37 @@ import "async/atomic" take Atomic;
 //
 // Run: okkama run -t std/toml/value.ok
 
+// A TOML value.
 role TomlValue {
+    // Calls the visitor's one callback for its kind.
     accept(to is TomlVisitor) is void;
 }
 
+// Something that takes TOML values one kind at a time.
 role TomlVisitor {
+    // A string.
     text(value is string) is void;
+    // An integer.
     integer(value is int) is void;
+    // A finite float.
     real(value is float) is void;
+    // inf or -inf.
     infinity(negative is bool) is void;
+    // nan.
     not_a_number() is void;
+    // A boolean.
     boolean(value is bool) is void;
+    // An array's values.
     elements(values is Sequencing<TomlValue>) is void;
+    // A table's members.
     members(values is Sequencing<TomlMember>) is void;
+    // A local date.
     local_date(value is TomlLocalDate) is void;
+    // A local time.
     local_time(value is TomlLocalTime) is void;
+    // A local date-time.
     local_datetime(value is TomlLocalDateTime) is void;
+    // An offset date-time.
     offset_datetime(value is TomlOffsetDateTime) is void;
 
     // Test-only observer with independent expected coordinates. Assertions use
@@ -117,37 +132,46 @@ role TomlVisitor {
     }
 }
 
+// A TOML string.
 object TomlString does TomlValue {
     has origin is string;
 
+    // The string.
     TomlString(value is string) {
         origin = value;
     }
 
+    // Calls the visitor's string callback.
     accept(to is TomlVisitor) is void {
         to.text(origin);
     }
 }
 
+// A TOML integer.
 object TomlInteger does TomlValue {
     has origin is int;
 
+    // The integer.
     TomlInteger(value is int) {
         origin = value;
     }
 
+    // Calls the visitor's integer callback.
     accept(to is TomlVisitor) is void {
         to.integer(origin);
     }
 }
 
+// A TOML float.
 object TomlFloat does TomlValue {
     has origin is float;
 
+    // A finite float.
     TomlFloat(value is float) {
         origin = value;
     }
 
+    // Calls the visitor's float callback.
     accept(to is TomlVisitor) is void {
         to.real(origin);
     }
@@ -161,10 +185,12 @@ object TomlFloat does TomlValue {
 object TomlInfinity does TomlValue {
     has sign is bool;
 
+    // inf, or -inf when negative.
     TomlInfinity(negative is bool) {
         sign = negative;
     }
 
+    // `inf` or `-inf`.
     string() is string {
         if sign {
             "-inf";
@@ -174,56 +200,70 @@ object TomlInfinity does TomlValue {
         }
     }
 
+    // Calls the visitor's infinity callback.
     accept(to is TomlVisitor) is void {
         to.infinity(sign);
     }
 }
 
+// TOML's nan.
 object TomlNaN does TomlValue {
+    // nan.
     TomlNaN();
 
+    // `nan`.
     string() is string {
         "nan";
     }
 
+    // Calls the visitor's not_a_number callback.
     accept(to is TomlVisitor) is void {
         to.not_a_number();
     }
 }
 
+// A TOML boolean.
 object TomlBoolean does TomlValue {
     has origin is bool;
 
+    // true or false.
     TomlBoolean(value is bool) {
         origin = value;
     }
 
+    // Calls the visitor's boolean callback.
     accept(to is TomlVisitor) is void {
         to.boolean(origin);
     }
 }
 
+// A table member: a name and a value.
 object TomlMember {
     has key is string;
     has origin is TomlValue;
 
+    // name holding value.
     TomlMember(name is string, value is TomlValue) {
         key = name;
         origin = value;
     }
 
+    // Its name.
     name() is string {
         key;
     }
 
+    // Its value.
     value() is TomlValue {
         origin;
     }
 }
 
+// A TOML array.
 object TomlArray does TomlValue {
     has origin is @TomlValue;
 
+    // The values, at most 10000.
     TomlArray(values is Sequencing<TomlValue>) {
         let size = values.size();
         confirm size >= 0 else throw InvalidTomlSize.invalid;
@@ -246,6 +286,7 @@ object TomlArray does TomlValue {
         origin = snapshot;
     }
 
+    // The values, at most maximum_items.
     TomlArray(values is Sequencing<TomlValue>, maximum_items is int) {
         confirm maximum_items >= 0 else throw InvalidTomlLimit.invalid;
         let size = values.size();
@@ -257,10 +298,12 @@ object TomlArray does TomlValue {
         origin = snapshot;
     }
 
+    // Its values.
     values() is Sequencing<TomlValue> {
         origin;
     }
 
+    // Calls the visitor's elements callback.
     accept(to is TomlVisitor) is void {
         to.elements(origin);
     }
@@ -285,6 +328,7 @@ object TomlTable does TomlValue {
     has origin is @TomlMember;
     has positions is %string:int;
 
+    // The members, at most 1024; a repeated name is DuplicateTomlMember.
     TomlTable(members is Sequencing<TomlMember>) {
         let size = members.size();
         confirm size >= 0 else throw InvalidTomlSize.invalid;
@@ -309,6 +353,7 @@ object TomlTable does TomlValue {
         positions = TomlNames(snapshot).positions();
     }
 
+    // The members, at most maximum_members.
     TomlTable(members is Sequencing<TomlMember>, maximum_members is int) {
         confirm maximum_members >= 0 else throw InvalidTomlLimit.invalid;
         let size = members.size();
@@ -321,36 +366,44 @@ object TomlTable does TomlValue {
         positions = TomlNames(snapshot).positions();
     }
 
+    // Its members, in order.
     members() is Sequencing<TomlMember> {
         origin;
     }
 
+    // Whether it has a member of that name.
     membership(name is string) is bool {
         positions.has(name);
     }
 
+    // The member's value; MissingTomlMember when there is none.
     value(name is string) is TomlValue {
         confirm positions.has(name) else throw MissingTomlMember.name(name);
         let index = positions[name];
         origin[index].value();
     }
 
+    // Calls the visitor's members callback.
     accept(to is TomlVisitor) is void {
         to.members(origin);
     }
 
+    // The member as a string; TomlKindMismatch for another kind.
     text(name is string) is string {
         TomlRead(name: name, value: self.value(name)).text();
     }
 
+    // The member as an int.
     int(name is string) is int {
         TomlRead(name: name, value: self.value(name)).int();
     }
 
+    // The member as a float.
     float(name is string) is float {
         TomlRead(name: name, value: self.value(name)).float();
     }
 
+    // The member as true or false.
     boolean(name is string) is bool {
         TomlRead(name: name, value: self.value(name)).boolean();
     }
@@ -365,30 +418,37 @@ object TomlTable does TomlValue {
         TomlRead(name: name, value: self.value(name)).tables();
     }
 
+    // The member's strings.
     texts(name is string) is @string {
         TomlRead(name: name, value: self.value(name)).texts();
     }
 
+    // The member's ints.
     ints(name is string) is @int {
         TomlRead(name: name, value: self.value(name)).ints();
     }
 
+    // The member's floats.
     floats(name is string) is @float {
         TomlRead(name: name, value: self.value(name)).floats();
     }
 
+    // The member's booleans.
     booleans(name is string) is @bool {
         TomlRead(name: name, value: self.value(name)).booleans();
     }
 
+    // The member as a local date.
     local_date(name is string) is TomlLocalDate {
         TomlRead(name: name, value: self.value(name)).local_date();
     }
 
+    // The member as a local time.
     local_time(name is string) is TomlLocalTime {
         TomlRead(name: name, value: self.value(name)).local_time();
     }
 
+    // The member as a local date-time.
     local_date_time(name is string) is TomlLocalDateTime {
         TomlRead(name: name, value: self.value(name)).local_date_time();
     }
@@ -411,11 +471,13 @@ object TomlMaybeReader {
     has table is TomlTable;
     has name is string;
 
+    // Made by TomlTable.maybe(name); not constructed directly.
     TomlMaybeReader(table is TomlTable, name is string) {
         self.table = table;
         self.name = name;
     }
 
+    // The member as a string, or none.
     text() is Maybe<string> {
         if table.membership(name) {
             return Maybe.some(table.text(name));
@@ -423,6 +485,7 @@ object TomlMaybeReader {
         Maybe<string>.none;
     }
 
+    // The member as an int, or none.
     int() is Maybe<int> {
         if table.membership(name) {
             return Maybe.some(table.int(name));
@@ -430,6 +493,7 @@ object TomlMaybeReader {
         Maybe<int>.none;
     }
 
+    // The member as a float, or none.
     float() is Maybe<float> {
         if table.membership(name) {
             return Maybe.some(table.float(name));
@@ -437,6 +501,7 @@ object TomlMaybeReader {
         Maybe<float>.none;
     }
 
+    // The member as true or false, or none.
     boolean() is Maybe<bool> {
         if table.membership(name) {
             return Maybe.some(table.boolean(name));
@@ -444,6 +509,7 @@ object TomlMaybeReader {
         Maybe<bool>.none;
     }
 
+    // The member as a table, or none.
     get() is Maybe<TomlTable> {
         if table.membership(name) {
             return Maybe.some(table.get(name));
@@ -451,6 +517,7 @@ object TomlMaybeReader {
         Maybe<TomlTable>.none;
     }
 
+    // The member's tables, or none.
     tables() is Maybe<@TomlTable> {
         if table.membership(name) {
             return Maybe.some(table.tables(name));
@@ -458,6 +525,7 @@ object TomlMaybeReader {
         Maybe<@TomlTable>.none;
     }
 
+    // The member's strings, or none.
     texts() is Maybe<@string> {
         if table.membership(name) {
             return Maybe.some(table.texts(name));
@@ -465,6 +533,7 @@ object TomlMaybeReader {
         Maybe<@string>.none;
     }
 
+    // The member's ints, or none.
     ints() is Maybe<@int> {
         if table.membership(name) {
             return Maybe.some(table.ints(name));
@@ -472,6 +541,7 @@ object TomlMaybeReader {
         Maybe<@int>.none;
     }
 
+    // The member as an offset date-time, or none.
     date_time() is Maybe<TomlOffsetDateTime> {
         if table.membership(name) {
             return Maybe.some(table.date_time(name));
@@ -752,14 +822,19 @@ hidden object TomlCapture does TomlVisitor {
     }
 }
 
+// No member has that name.
 enum MissingTomlMember is Error = (name(name is string));
 
+// Two members with one name.
 enum DuplicateTomlMember is Error = (name(name is string));
 
+// A negative limit.
 enum InvalidTomlLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidTomlSize is Error = (invalid);
 
+// More items or members than the limit.
 enum TomlLimitExceeded is Error = (exceeded);
 
 // Syntax-level Gregorian dates include year 0000, unlike time/date.Date.
@@ -767,6 +842,7 @@ enum TomlLimitExceeded is Error = (exceeded);
 object TomlLocalDate does TomlValue {
     has yyyy, mm, dd is int;
 
+    // The date; year 0 to 9999, a day the month has.
     TomlLocalDate(year is int, month is int, day is int) {
         confirm year >= 0 && year <= 9999 && month >= 1 && month <= 12
             else throw InvalidTomlDate.invalid;
@@ -808,6 +884,7 @@ object TomlLocalDate does TomlValue {
         }
     }
 
+    // `YYYY-MM-DD`.
     string() is string {
         let year = yyyy.string();
         let month = mm.string();
@@ -817,6 +894,7 @@ object TomlLocalDate does TomlValue {
             ("00" + day).slice(day.length(), day.length() + 2);
     }
 
+    // Calls the visitor's local_date callback.
     accept(to is TomlVisitor) is void {
         to.local_date(self);
     }
@@ -828,6 +906,7 @@ object TomlLocalDate does TomlValue {
 object TomlLocalTime does TomlValue {
     has hh, mm, ss, ns is int;
 
+    // The time; second 60 is allowed for a leap second.
     TomlLocalTime(hour is int, minute is int, second is int, nanosecond is int) {
         confirm hour >= 0
             && hour <= 23
@@ -863,6 +942,7 @@ object TomlLocalTime does TomlValue {
         }
     }
 
+    // `HH:MM:SS`, with the fraction when there is one.
     string() is string {
         let hour = hh.string();
         let minute = mm.string();
@@ -888,32 +968,39 @@ object TomlLocalTime does TomlValue {
             };
     }
 
+    // Calls the visitor's local_time callback.
     accept(to is TomlVisitor) is void {
         to.local_time(self);
     }
 }
 
+// A TOML local date-time.
 object TomlLocalDateTime does TomlValue {
     has date_value is TomlLocalDate;
     has time_value is TomlLocalTime;
 
+    // date at time.
     TomlLocalDateTime(date is TomlLocalDate, time is TomlLocalTime) {
         date_value = date;
         time_value = time;
     }
 
+    // The date.
     date() is TomlLocalDate {
         date_value;
     }
 
+    // The time.
     time() is TomlLocalTime {
         time_value;
     }
 
+    // `YYYY-MM-DDTHH:MM:SS`.
     string() is string {
         date_value.string() + "T" + time_value.string();
     }
 
+    // Calls the visitor's local_datetime callback.
     accept(to is TomlVisitor) is void {
         to.local_datetime(self);
     }
@@ -925,12 +1012,14 @@ object TomlOffset {
     has amount is int;
     has certain is bool;
 
+    // An offset of minutes from UTC.
     TomlOffset(minutes is int) {
         confirm minutes > -1440 && minutes < 1440 else throw InvalidTomlOffset.invalid;
         amount = minutes;
         certain = true;
     }
 
+    // An offset; unknown is written `-00:00`.
     TomlOffset(minutes is int, known is bool) {
         confirm minutes > -1440 && minutes < 1440 && (known || minutes == 0)
             else throw InvalidTomlOffset.invalid;
@@ -949,6 +1038,7 @@ object TomlOffset {
         }
     }
 
+    // `Z`, `+02:00` or `-00:00`.
     string() is string {
         if !certain {
             "-00:00";
@@ -977,36 +1067,45 @@ object TomlOffset {
     }
 }
 
+// A TOML offset date-time.
 object TomlOffsetDateTime does TomlValue {
     has date_time is TomlLocalDateTime;
     has displacement is TomlOffset;
 
+    // local at offset.
     TomlOffsetDateTime(local is TomlLocalDateTime, offset is TomlOffset) {
         date_time = local;
         displacement = offset;
     }
 
+    // The local date-time.
     local() is TomlLocalDateTime {
         date_time;
     }
 
+    // The offset.
     offset() is TomlOffset {
         displacement;
     }
 
+    // The RFC 3339 text.
     string() is string {
         date_time.string() + displacement.string();
     }
 
+    // Calls the visitor's offset_datetime callback.
     accept(to is TomlVisitor) is void {
         to.offset_datetime(self);
     }
 }
 
+// A date the calendar does not have.
 enum InvalidTomlDate is Error = (invalid);
 
+// A time outside the day.
 enum InvalidTomlTime is Error = (invalid);
 
+// An offset of a day or more.
 enum InvalidTomlOffset is Error = (invalid);
 
 test "typed scalar dispatch" {

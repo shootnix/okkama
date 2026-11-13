@@ -100,7 +100,9 @@ args.output.write_text('''module locale/internal/currencies v1.0.0;
 import "runtime/cldr" take cldr_fields;
 import "strings/parse" take Number;
 
+// ISO 4217 and CLDR currency data: codes, digits, symbols and names.
 object CldrCurrencies {
+    // The data.
     CldrCurrencies();
 
     // ISO 4217 minor units ("0", "2", "3", "4" or "N.A."); empty for an
@@ -154,7 +156,9 @@ object CldrCurrencies {
     }
 }
 
+// Which characters count as letters next to a currency symbol (CLDR currency spacing).
 object CurrencySymbolLetters {
+    // The data.
     CurrencySymbolLetters();
 
     // Is a one-character text a letter at a currency symbol's boundary?

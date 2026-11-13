@@ -1,5 +1,17 @@
 module strings/join v1.0.0;
 
+// Strings joined with a separator, within limits.
+//
+//     Joined(separator: ", ", values: names).string();      // "Ada, Grace"
+//
+//     let parts = JoinedParts(separator: "/", maximum_items: 64, maximum_length: 4096)
+//         .following("usr")
+//         .following("local");
+//     parts.string();                                        // "usr/local"
+//
+// Without limits, Joined takes up to 10000 items and 1048576 characters. Past a
+// limit, JoinLimitExceeded says which.
+
 import "collections/iteration" take Iterating;
 import "collections/list" take List, EmptyList;
 
@@ -10,6 +22,7 @@ object Joined {
     has values is Iterating<string>;
     has maximum_items, maximum_length is int;
 
+    // values with separator between them.
     Joined(separator is string, values is Iterating<string>) {
         self.separator = separator;
         self.values = values;
@@ -17,6 +30,7 @@ object Joined {
         maximum_length = 1048576;
     }
 
+    // values with separator between them, within these limits.
     Joined(
         separator is string,
         values is Iterating<string>,
@@ -30,6 +44,7 @@ object Joined {
         self.maximum_length = maximum_length;
     }
 
+    // The joined text.
     string() is string {
         values.reduce(JoinedParts(separator: separator, maximum_items: maximum_items, maximum_length: maximum_length)) -> parts, value {
             parts.following(value);
@@ -44,6 +59,7 @@ object JoinedParts {
     has used is int = 0;
     has values is List<string>;
 
+    // No parts yet, within these limits.
     JoinedParts(separator is string, maximum_items is int, maximum_length is int) {
         confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
         self.separator = separator;
@@ -53,6 +69,7 @@ object JoinedParts {
         values = empty;
     }
 
+    // These parts and value after them.
     following(value is string) is ^JoinedParts {
         confirm values.size() < maximum_items else throw JoinLimitExceeded.kind(JoinLimit.items);
         let gap = if values.size() > 0 {
@@ -68,6 +85,7 @@ object JoinedParts {
         ^values = values.prefix(value);
     }
 
+    // The parts joined.
     string() is string {
         let backwards is @string = values.map() -> value {
             value;
@@ -79,10 +97,13 @@ object JoinedParts {
     }
 }
 
+// Which limit was passed: the number of items or the length.
 enum JoinLimit = (items, length);
 
+// A negative limit.
 enum InvalidJoinLimits is Error = (invalid);
 
+// Too many items or too long a result.
 enum JoinLimitExceeded is Error = (kind(kind is JoinLimit));
 
 test "joined keeps order and its separator" {

@@ -60,11 +60,13 @@ object SessionValue {
     has name is string;
     has value is string;
 
+    // A name and value stored in a session.
     SessionValue(name is string, value is string) {
         self.name = name;
         self.value = value;
     }
 
+    // The name and value.
     cap Pair {
         name is string {
             name;
@@ -78,8 +80,11 @@ object SessionValue {
 
 // Where the values of sessions are kept between requests, by session id.
 role SessionStoring {
+    // The values of session id, or none when it is gone.
     async values(id is string) is Maybe<%string:string>;
+    // Stores the values of session id.
     async save(id is string, values is %string:string) is void;
+    // Forgets session id.
     async remove(id is string) is void;
 }
 
@@ -92,6 +97,7 @@ object MemorySessions does SessionStoring {
     has clock is Timing;
     has lifetime is Duration;
 
+    // Sessions kept in memory for lifetime (7 days unless told).
     MemorySessions(clock is Timing = SystemClock(), lifetime is Duration = Duration(days: 7)) {
         let none_yet is %string:%string:string = [:];
         entries = Atomic(none_yet);
@@ -101,6 +107,7 @@ object MemorySessions does SessionStoring {
         self.lifetime = lifetime;
     }
 
+    // The values of session id, or none when it expired.
     async values(id is string) is Maybe<%string:string> {
         let known = entries.value();
         if !known.has(id) {
@@ -114,6 +121,7 @@ object MemorySessions does SessionStoring {
         Maybe.some(known[id]);
     }
 
+    // Stores the values of session id.
     async save(id is string, values is %string:string) is void {
         let now = clock.instant();
         let live = if entries.value().size() < 10000 {
@@ -133,6 +141,7 @@ object MemorySessions does SessionStoring {
         expiries.replace(expiries.value() + [id: now + lifetime]);
     }
 
+    // Forgets session id.
     async remove(id is string) is void {
         self.forget(id);
     }
@@ -154,6 +163,7 @@ object Sessions {
     has lifetime is Duration;
     has random is Randomizing;
 
+    // Sessions signed with key and kept in store, under cookie, for lifetime.
     Sessions(
         key is SecretBytes,
         store is SessionStoring = MemorySessions(),
@@ -255,8 +265,10 @@ object Sessions {
     }
 }
 
+// A key too short, or a bad cookie name.
 enum InvalidSessions is Error = (because(reason is string));
 
+// The session has no value of that name.
 enum MissingSessionValue is Error = (name(name is string));
 
 // One session as an endpoint sees it.
@@ -266,6 +278,7 @@ object Session {
     has field is SetCookie;
     has token is string;
 
+    // Made by Sessions; not constructed directly.
     Session(id is string, values is %string:string, cookie is SetCookie, token is string) {
         self.id = id;
         self.values = values;
@@ -273,6 +286,7 @@ object Session {
         self.token = token;
     }
 
+    // Its id.
     id() is string {
         id;
     }
@@ -315,10 +329,12 @@ object Session {
 object CsrfProtection does Surrounding {
     has sessions is Sessions;
 
+    // Refuses unsafe requests without the session's CSRF token.
     CsrfProtection(sessions is Sessions) {
         self.sessions = sessions;
     }
 
+    // Checks the token of POST, PUT, PATCH and DELETE requests.
     async around(request is WebRequest, inner is async (WebRequest) is Responding) is Responding {
         let method = request.method();
         if method == Method.get

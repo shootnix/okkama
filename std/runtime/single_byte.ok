@@ -1,19 +1,30 @@
 module runtime/single_byte v1.0.0;
 
+// The native layer under encoding/single_byte, http/http1_chunk,
+// http/http1_head: the calls those modules make into the host runtime. Programs
+// use those modules instead; these declarations may change with the runtime.
+//
 // Portable ASCII and ISO-8859-1 boundary for encoding/single_byte.
 // Backend locale, native code pages and operating-system defaults never
 // participate in these operations.
 
+// How many characters of origin ASCII can hold.
 native ascii_representable_prefix(origin is string) is int;
 
+// origin in ASCII.
 native ascii_encode(origin is string) is @byte;
 
+// How many bytes of origin are ASCII.
 native ascii_valid_prefix(origin is @byte) is int;
 
+// ASCII bytes as text.
 native ascii_decode(origin is @byte) is string;
 
+// How many characters of origin Latin-1 can hold.
 native latin1_representable_prefix(origin is string) is int;
 
+// origin in Latin-1.
 native latin1_encode(origin is string) is @byte;
 
+// Latin-1 bytes as text.
 native latin1_decode(origin is @byte) is string;

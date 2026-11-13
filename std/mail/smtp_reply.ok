@@ -1,5 +1,16 @@
 module mail/smtp_reply v1.0.0;
 
+// SMTP replies (RFC 5321 §4.2): a code and lines of text.
+//
+//     let reply = SmtpReply(code: 250, lines: ["mail.example.test", "PIPELINING", "SIZE 35882577"]);
+//     reply.bytes();                         // "250-mail.example.test\r\n250-PIPELINING\r\n250 SIZE…"
+//     let decoder = SmtpReplyDecoder().fed(chunk);
+//     if decoder.complete() { decoder.reply(); }
+//
+// Replies are ASCII and bounded: 512 bytes per line, 100 lines and 64 KiB by
+// default. The decoder takes chunks as they arrive and stops at the final line;
+// finish() says when the input ended too early.
+
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems, MimePosition;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -9,24 +20,18 @@ import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument, InvalidState;
 
-// Bounded ASCII SMTP reply values and incremental framing (RFC 5321).
-// No network effects. Defaults: 512 octets per CRLF line, 100 lines, 64 KiB.
-// SmtpReply eagerly snapshots its source once; bytes() uses canonical framing.
-// ParsedSmtpReply requires exactly one complete reply. Decoder.fed(chunk)
-// returns a successor, stops at the first final line and retains remainder().
-// Each chunk and accumulated reply are separately bounded by wire_bytes.
-// Empty chunks do not mean EOF: finish() diagnoses truncation. Completed
-// decoders reject further feed; old versions remain independent. All scratch
-// buffers are owned/closed; replies and decoders own no external resources.
+// How large a reply may be.
 object SmtpReplyLimits {
     has line_bytes, lines, wire_bytes is int;
 
+    // 512 bytes per line, 100 lines, 64 KiB.
     SmtpReplyLimits() {
         line_bytes = 512;
         lines = 100;
         wire_bytes = 65536;
     }
 
+    // The limits as given.
     SmtpReplyLimits(line_bytes is int, lines is int, wire_bytes is int) {
         confirm line_bytes >= 0 && lines >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("SMTP reply limits must be nonnegative");
@@ -35,6 +40,7 @@ object SmtpReplyLimits {
         self.wire_bytes = wire_bytes;
     }
 
+    // Bytes per line, lines and bytes in all.
     cap Limits {
         line_bytes is int {
             line_bytes;
@@ -50,29 +56,37 @@ object SmtpReplyLimits {
     }
 }
 
+// One reply.
 object SmtpReply does ByteSource {
     has value is SmtpReplyValue;
 
+    // code (200-559, second digit 0-5) with lines, within the default limits;
+    // InvalidSmtpReply otherwise.
     SmtpReply(code is int, lines is Sequencing<string>) {
         value = SmtpReplyValue(code: code, lines: lines, limits: SmtpReplyLimits());
     }
 
+    // The same within limits.
     SmtpReply(code is int, lines is Sequencing<string>, limits is SmtpReplyLimits) {
         value = SmtpReplyValue(code: code, lines: lines, limits: limits);
     }
 
+    // The code.
     code() is int {
         value.code();
     }
 
+    // The lines of text.
     lines() is Sequencing<string> {
         value.lines();
     }
 
+    // The lines joined with newlines.
     text() is string {
         value.text();
     }
 
+    // The reply on the wire.
     bytes() is @byte {
         value.bytes();
     }
@@ -104,11 +118,13 @@ hidden object ParsedSmtpReply {
     }
 }
 
+// Reads a reply from chunks.
 object SmtpReplyDecoder {
     has state is SmtpReplyProgress;
     has limits is SmtpReplyLimits;
     has tail is @byte;
 
+    // Nothing read yet, the default limits.
     SmtpReplyDecoder() {
         let bounds = SmtpReplyLimits();
         limits = bounds;
@@ -116,12 +132,15 @@ object SmtpReplyDecoder {
         tail = [];
     }
 
+    // Nothing read yet, within limits.
     SmtpReplyDecoder(limits is SmtpReplyLimits) {
         self.limits = limits;
         state = SmtpReplyProgress(limits);
         tail = [];
     }
 
+    // This decoder after chunk; InvalidSmtpReply for bad text, an error once
+    // complete.
     fed(chunk is @byte) is ^SmtpReplyDecoder {
         confirm !state.complete() else throw InvalidState.because("SMTP reply decoder is complete");
         confirm chunk.size() <= limits::Limits::wire_bytes
@@ -142,33 +161,40 @@ object SmtpReplyDecoder {
         ^tail = rest;
     }
 
+    // Whether the final line arrived.
     complete() is bool {
         state.complete();
     }
 
+    // Bytes the reply took.
     consumed() is int {
         state.consumed();
     }
 
+    // The reply; InvalidSmtpReply before it is complete.
     reply() is SmtpReply {
         confirm state.complete() else throw InvalidState.because("SMTP reply is incomplete");
         state.reply();
     }
 
+    // The reply at the end of input; InvalidSmtpReply when it was cut short.
     finish() is SmtpReply {
         confirm state.complete()
             else throw InvalidSmtpReply.located(state.consumed(), "truncated SMTP reply");
         state.reply();
     }
 
+    // Bytes past the reply.
     remainder() is @byte {
         confirm state.complete() else throw InvalidState.because("SMTP reply is incomplete");
         tail;
     }
 }
 
+// Text that is not a reply; offset and reason say where and why.
 enum InvalidSmtpReply is Error = (located(offset is int, reason is string));
 
+// A reply over a limit; kind says which.
 enum SmtpLimitExceeded is Error = (kind(kind is string));
 
 hidden object SmtpReplyValue {

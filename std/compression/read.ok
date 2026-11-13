@@ -1,10 +1,5 @@
 module compression/read v1.0.0;
 
-import "compression/state" take Compressing, Decompressing, CompressionOutput;
-import "io/stream" take Reading, Closing, InvalidReadLimit;
-import "io/buffer" take ByteBuffer;
-import "error" take InvalidArgument, InvalidState;
-
 // Consuming byte streams over caller-owned input and codecs. Constructors bind
 // dependencies without reading/writing/finishing them; optional chunk_size is
 // positive (InvalidArgument otherwise), default 8192. bytes(limit) requires a
@@ -28,13 +23,22 @@ import "error" take InvalidArgument, InvalidState;
 // Invalid read limits do not poison the adapter. close is idempotent; destroy
 // releases owned buffers through the retained internal stream. No borrowed source
 // or codec is closed. These streams do not implement iteration/cursors.
+
+import "compression/state" take Compressing, Decompressing, CompressionOutput;
+import "io/stream" take Reading, Closing, InvalidReadLimit;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidArgument, InvalidState;
+
+// A Reading whose bytes are origin's, compressed as they are read.
 object CompressedReading does Reading, Closing {
     has stream is CompressionReading;
 
+    // origin through compressor, 65536 bytes at a time.
     CompressedReading(origin is Reading, compressor is Compressing) {
         stream = CompressionReading(flow: CompressingFlow(origin, compressor), chunk_size: 8192);
     }
 
+    // origin through compressor, chunk_size bytes at a time.
     CompressedReading(origin is Reading, compressor is Compressing, chunk_size is int) {
         stream = CompressionReading(
             flow: CompressingFlow(origin, compressor),
@@ -42,26 +46,32 @@ object CompressedReading does Reading, Closing {
         );
     }
 
+    // At most limit compressed bytes; [] at the end.
     bytes(limit is int) is @byte {
         stream.bytes(limit);
     }
 
+    // Closes the codec; origin stays open.
     close() is void {
         stream.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         stream.closed();
     }
 }
 
+// A Reading whose bytes are origin's, decompressed as they are read.
 object DecompressedReading does Reading, Closing {
     has stream is CompressionReading;
 
+    // origin through decompressor, 65536 bytes at a time.
     DecompressedReading(origin is Reading, decompressor is Decompressing) {
         stream = CompressionReading(flow: DecompressingFlow(origin, decompressor), chunk_size: 8192);
     }
 
+    // origin through decompressor, chunk_size bytes at a time.
     DecompressedReading(origin is Reading, decompressor is Decompressing, chunk_size is int) {
         stream = CompressionReading(
             flow: DecompressingFlow(origin, decompressor),
@@ -69,14 +79,17 @@ object DecompressedReading does Reading, Closing {
         );
     }
 
+    // At most limit decompressed bytes; [] at the end.
     bytes(limit is int) is @byte {
         stream.bytes(limit);
     }
 
+    // Closes the codec; origin stays open.
     close() is void {
         stream.close();
     }
 
+    // Whether it is closed.
     closed() is bool {
         stream.closed();
     }
@@ -175,10 +188,15 @@ hidden object CompressionReading does Reading, Closing {
 // deliberately provide no close action. The fake echoes [1,2,255], delaying all
 // output until finish; it is an isolated test double, not a wire codec.
 role CompressionFlow {
+    // At most limit bytes of the input.
     input(limit is int) is @byte;
+    // Feeds the codec.
     write(origin is @byte) is void;
+    // The codec's ready output.
     output() is Reading;
+    // Finishes the codec.
     finish() is void;
+    // Whether the codec is finished.
     finished() is bool;
 
     fake {

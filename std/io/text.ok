@@ -1,20 +1,31 @@
 module io/text v1.0.0;
 
+// Text written to any byte output as UTF-8.
+//
+//     let out = Utf8Output(origin: file.binary());
+//     out.writeln("name,total");
+//     out.write(name, ",", total.string());
+//
+// Utf8Output borrows its Writing: it neither flushes nor closes it.
+
 import "io/stream" take Writing, WritingText;
 import "encoding/utf" take Utf8Encoded;
 import "io/buffer" take ByteBuffer;
 
-// A borrowed UTF-8 output capability. No implicit flush or close.
+// Text written to a Writing as strict UTF-8.
 object Utf8Output does WritingText {
     has origin is Writing;
 
+    // Writes to origin, which stays the caller's.
     Utf8Output(:origin);
 
+    // Writes the strings as UTF-8, one after another.
     write(values is ...string) is void {
         let text is @string = values...;
         origin.write(Utf8Encoded(text.join("")).bytes());
     }
 
+    // Writes the strings as UTF-8 and then one LF.
     writeln(values is ...string) is void {
         let text is @string = values...;
         self.write(text.join("") + "\n");

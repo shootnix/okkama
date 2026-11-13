@@ -1,67 +1,92 @@
 module testing/error v1.0.0;
 
+// Checking that code throws, and what.
+//
+//     Throwing(action: () is int { Number("x").int(); }, matching: ErrorTextMatching("InvalidInteger.source(\"x\")")).check();
+//     await AsyncThrowing(action: async () is bool { await client.get(url); }, matching: AnyErrorMatching()).check();
+//
+// test.throws(Type) covers the usual case; these match on the message too.
+
 import "testing/check" take Checking, AsyncChecking, CheckContext, InvalidCheck;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 
+// What a thrown error should look like.
 role ErrorMatching {
+    // Whether origin is one.
     match(origin is Error) is bool;
+    // What it expects, for failure messages.
     description() is string;
 }
 
+// Any error.
 object AnyErrorMatching does ErrorMatching {
+    // The matching.
     AnyErrorMatching();
 
+    // true.
     match(origin is Error) is bool {
         true;
     }
 
+    // `any error`.
     description() is string {
         "any typed Error";
     }
 }
 
+// An error whose text is exactly a string.
 object ErrorTextMatching does ErrorMatching {
     has expected is string;
 
+    // Errors whose text is expected.
     ErrorTextMatching(expected is string) {
         self.expected = expected;
     }
 
+    // Whether origin's text is it.
     match(origin is Error) is bool {
         origin.text() == expected;
     }
 
+    // What it expects.
     description() is string {
         "error text " + expected;
     }
 }
 
+// An error whose text has a match of a pattern.
 object ErrorRegexMatching does ErrorMatching {
     has pattern is Regex;
 
+    // Errors whose text matches pattern.
     ErrorRegexMatching(pattern is Regex) {
         self.pattern = pattern;
     }
 
+    // Whether pattern is found in origin's text.
     match(origin is Error) is bool {
         RegexMatches(origin: origin.text(), regex: pattern).found();
     }
 
+    // What it expects.
     description() is string {
         "error matching " + pattern::Source::expression;
     }
 }
 
+// Code that should throw.
 object Throwing<R> does Checking {
     has action is () is R;
     has matching is ErrorMatching;
 
+    // action should throw an error matching.
     Throwing(action is () is R, matching is ErrorMatching) {
         self.action = action;
         self.matching = matching;
     }
 
+    // Fails when it returns, or throws something else.
     check() is void {
         CheckContext().verify();
         try {
@@ -76,15 +101,18 @@ object Throwing<R> does Checking {
     }
 }
 
+// Async code that should throw.
 object AsyncThrowing<R> does AsyncChecking {
     has action is async () is R;
     has matching is ErrorMatching;
 
+    // action should throw an error matching.
     AsyncThrowing(action is async () is R, matching is ErrorMatching) {
         self.action = action;
         self.matching = matching;
     }
 
+    // Fails when it returns, or throws something else.
     async check() is void {
         CheckContext().verify();
         try {
