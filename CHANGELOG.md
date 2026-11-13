@@ -96,6 +96,7 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   inputs running and a later request got `NoFutures`. Now, as on Sparrow,
   the request cancels the unfinished inputs, waits for their cleanup and
   fails with the cancellation, and every later request fails the same way.
+  The JVM backend's runtime follows the same rule.
 - **A `FutureCompletions` request no longer hangs when another request
   polls first (#547).** A request woken by a settled input was dropped
   from the waiting requests if another request served the stream before it
