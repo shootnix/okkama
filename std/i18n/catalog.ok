@@ -207,7 +207,11 @@ object MessageCatalog does Translating {
         let snapshot is @MessageEntry = (0..size).map() -> index {
             let entry = entries.item(index);
             let key = entry.key();
-            let copied = MessageKey(context: key::Key::context, identity: key::Key::identity, has_context: key::Key::has_context);
+            let copied = MessageKey(
+                context: key::Key::context,
+                identity: key::Key::identity,
+                has_context: key::Key::has_context
+            );
             if entry.plural() {
                 PluralMessage(key: copied, forms: entry.forms(), kind: entry.kind());
             }
@@ -338,5 +342,10 @@ enum InvalidMessageCatalog is Error = (because(reason is string));
 
 test "catalog retains exact translation including empty text" {
     let key = MessageKey(context: "", identity: "hello");
-    test.is(MessageCatalog(locale: Locale("en"), entries: [SingularMessage(key: key, text: "")]).text(key), "");
+    test.is(
+        MessageCatalog(locale: Locale("en"), entries: [SingularMessage(key: key, text: "")]).text(
+            key
+        ),
+        ""
+    );
 }
