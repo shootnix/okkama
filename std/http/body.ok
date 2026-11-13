@@ -286,7 +286,12 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
         }
         let complete = Event();
         let group is FutureGroup<@byte> = FutureGroup();
-        let cleanup = BodyReadCleanup(origin: self, complete: complete, pending: pending, group: group);
+        let cleanup = BodyReadCleanup(
+            origin: self,
+            complete: complete,
+            pending: pending,
+            group: group
+        );
         defer await cleanup.close();
         let waiting = input.bytes(limit);
         pending.replace([waiting]);
@@ -424,4 +429,3 @@ async test "a body in memory is read in pieces, then ends with its trailers" {
     let nothing = await EmptyBody().reading().bytes(8);
     test.is(nothing.size(), 0);
 }
-
