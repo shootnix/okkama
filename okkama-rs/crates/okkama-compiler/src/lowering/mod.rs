@@ -146,6 +146,65 @@ fn settle_where_needed(ctx: &mut ctx::Ctx<'_, '_>, functions: &mut [ir::Function
     }
 }
 
+/// The `once let` slots left for the whole program (#520): their value type
+/// may reach a resource only through a function value or a role, and that is
+/// decided now, from every closure's captures and every specialization.
+fn check_once_lets(ctx: &ctx::Ctx<'_, '_>, functions: &[ir::Function]) -> std::result::Result<(), (usize, LoweringError)> {
+    if ctx.once_checks.is_empty() {
+        return Ok(());
+    }
+    let mut closures: Vec<(ir::FnSig, Vec<ir::Type>)> = Vec::new();
+    for function in functions {
+        for inst in function.blocks.iter().flat_map(|block| &block.insts) {
+            if let (ir::InstKind::FnClosure { captures, .. }, Some(result)) = (&inst.kind, inst.result) {
+                if let ir::Type::Fn(sig) = &function.values[result.0] {
+                    let captured = captures.iter().map(|value| function.values[value.0].clone()).collect();
+                    closures.push(((**sig).clone(), captured));
+                }
+            }
+        }
+    }
+    let settled = ctx.settled_plain_types(&closures);
+    for (ty, site, span, module) in &ctx.once_checks {
+        if !settled.is_plain(ty) {
+            return Err((
+                *module,
+                LoweringError::invalid(
+                    *span,
+                    format!(
+                        "once let cannot keep a resource: its value would outlive the scope that releases it ({site} keeps {}, which reaches one through a function value or a role)",
+                        source_type(ctx, ty)
+                    ),
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A lowered type in source notation for a diagnostic: `@Named`, not
+/// `array<role#0>`.
+fn source_type(ctx: &ctx::Ctx<'_, '_>, ty: &ir::Type) -> String {
+    match ty {
+        ir::Type::Object(object) | ir::Type::Successor(object) => ctx.objects[object.0].name.clone(),
+        ir::Type::Role(role) => ctx.roles[role.0].name.clone(),
+        ir::Type::Array(element) => format!("@{}", source_type(ctx, element)),
+        ir::Type::Map(key, value) => format!("%{}:{}", source_type(ctx, key), source_type(ctx, value)),
+        ir::Type::Fn(sig) => {
+            let params: Vec<String> = sig.params.iter().map(|param| source_type(ctx, param)).collect();
+            let result = match &sig.result {
+                ir::ResultType::Value(value) => source_type(ctx, value),
+                ir::ResultType::Void => "void".to_string(),
+            };
+            format!("({}) is {}", params.join(", "), result)
+        }
+        ir::Type::Int => "int".to_string(),
+        ir::Type::Str => "string".to_string(),
+        ir::Type::Bool => "bool".to_string(),
+        other => other.to_string(),
+    }
+}
+
 pub fn lower_program(program: &ast::Program) -> Result<ir::Module> {
     let modules = vec![crate::analysis::SourceModule {
         path: modules::module_path(program),
@@ -430,6 +489,7 @@ fn lower_analyzed(
         next += 1;
     }
     ctx.current = None;
+    check_once_lets(&ctx, &functions)?;
     settle_where_needed(&mut ctx, &mut functions);
     let owners: Vec<usize> = (0..functions.len()).map(|index| ctx.task_module(index)).collect();
     let mut module = ctx.module(program, imports, functions);

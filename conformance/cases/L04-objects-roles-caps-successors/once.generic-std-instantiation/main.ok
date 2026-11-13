@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "testing/generation" take IntegerGeneration, FilteredGeneration;
+
+main() is int {
+    let numbers = IntegerGeneration(minimum: 0, maximum: 10);
+    let even = FilteredGeneration(origin: numbers, condition: (n is int) is bool { n % 2 == 0; }, attempts: 100);
+    Stdout().writeln("built");
+    0;
+}

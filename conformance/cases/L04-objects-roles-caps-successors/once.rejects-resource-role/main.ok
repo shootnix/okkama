@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Named { name() is string; }
+
+object Lease does Named {
+    has label is string;
+    Lease(:label);
+    name() is string { label; }
+    destroy { Stdout().writeln("release " + label); }
+}
+
+object Plain does Named {
+    Plain();
+    name() is string { "plain"; }
+}
+
+object Registry {
+    has first is Named;
+    Registry(:first);
+    names() is @Named {
+        once let kept is @Named = [first];
+        kept;
+    }
+}
+
+main() is int {
+    let registry = Registry(first: Lease(label: "db"));
+    Stdout().writeln(registry.names().size());
+    0;
+}

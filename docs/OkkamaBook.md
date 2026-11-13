@@ -2459,7 +2459,12 @@ The rules keep the stored value right for every later call:
   or a function value are trusted: that the input answers the same each time
   is part of the contract.
 - The value holds no resource (an object with `destroy`), because it would
-  outlive the scope that releases it.
+  outlive the scope that releases it. A function value or a role value
+  counts as a resource only if it can hold one in this program: a function
+  type when some closure of that type captures a resource, a role when some
+  object that does it is a resource. The compiler decides this over the
+  whole program, so a generic library may keep a closure or a role value in
+  a `once let` for every caller that passes plain ones (#520).
 
 A slot is not part of the object's value. `==`, map keys and `Dumper` ignore
 it, so an object compares equal before and after its first answer. A

@@ -1373,10 +1373,19 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let slot_ty = self.ctx.objects[object.0].fields[field].1.clone();
         let ty = self.local_type(local, span)?;
         if !self.ctx.is_plain(&ty) {
-            return Err(LoweringError::invalid(
-                span,
-                "once let cannot keep a resource: its value would outlive the scope that releases it",
-            ));
+            // A type that reaches an object with `destroy` directly is refused
+            // now. One that may reach a resource only through a function
+            // value or a role is judged when the whole program is lowered,
+            // with its closures and specializations (#520).
+            if !self.ctx.plain_but_for_values(&ty) {
+                return Err(LoweringError::invalid(
+                    span,
+                    "once let cannot keep a resource: its value would outlive the scope that releases it",
+                ));
+            }
+            let module = self.ctx.current.map(|task| self.ctx.task_module(task)).unwrap_or(0);
+            let site = self.ctx.objects[object.0].name.clone();
+            self.ctx.once_checks.push((ty.clone(), site, span, module));
         }
         let slot = self.b.emit(InstKind::OnceLoad { object: receiver, field }, slot_ty.clone(), span);
         let tag = self.b.emit(InstKind::VariantTag(slot), Type::Int, span);

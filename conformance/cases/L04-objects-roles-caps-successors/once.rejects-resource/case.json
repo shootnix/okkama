@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.once.rejects-resource",
+  "title": "a once let cannot keep a resource",
+  "purpose": "An object with destroy kept in a slot would outlive the scope that releases it.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.ONCE-LET",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "#491, #520: a once let value must not reach a resource."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-once-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #520",
+    "expected_basis": "An object with destroy kept in a slot would outlive the scope that releases it."
+  },
+  "status": "mandatory"
+}

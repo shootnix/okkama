@@ -10,6 +10,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **A generic library may keep a closure in a `once let` (#520).**
+  `FilteredGeneration` from `testing/generation` did not compile:
+  `SortedBy.ranked` keeps its sorted entries in a `once let`, and the
+  entries held a closure. The rule had counted every function value and
+  every role value as a possible resource. Now the compiler decides over
+  the whole program:
+  - a function type is a resource only when some closure of that type
+    captures one;
+  - a role is a resource only when some object that does it is one.
+
+  A `once let` that would keep a resource is still refused, now with the
+  type it keeps (`Cache keeps () is string, which reaches one through a
+  function value or a role`). Book §18.6; conformance `L04.once.*` (five new
+  cases).
+
 - **Linux packages link against glibc 2.17 again (#545).** 0.5.5 called
   `preadv2` (#121) and `renameat2` (#126) through glibc, which has them only
   since 2.26 and 2.28, so the manylinux2014 build of the 0.5.5 packages failed.
