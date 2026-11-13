@@ -379,9 +379,19 @@ pub fn rename_noreplace(source: &std::path::Path, target: &std::path::Path) -> s
     let (from, to) = (c_path(source)?, c_path(target)?);
     #[cfg(target_os = "linux")]
     {
+        // The system call, not glibc's wrapper: the Linux packages are linked
+        // against glibc 2.17, which has no renameat2 (2.28; #545). Kernels
+        // before 3.15 answer ENOSYS and the fallback below takes over.
         // SAFETY: both paths are NUL-terminated strings that outlive the call.
         let result = unsafe {
-            libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+            libc::syscall(
+                libc::SYS_renameat2,
+                libc::AT_FDCWD,
+                from.as_ptr(),
+                libc::AT_FDCWD,
+                to.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
         };
         if result == 0 {
             return Ok(());
