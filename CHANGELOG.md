@@ -21,7 +21,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     of executed adopts, 11-ownership 11% of its time;
   - `tests/ownership-corpus`: 96 programs and 427 checks of Book chapter 20
     with identical results on both engines; pending checks wait on #578–#581
-    (#560).
+    (#560);
+  - `OKKAMA_TRACE_DESTROY=FILE` gives the IR engine the same destroy trace
+    as Sparrow, numbered the same way, so one program can be compared across
+    engines (#561).
+
+### Fixed
+
+- **Sparrow keeps AllFutures results until the awaiting scope ends (#580).**
+  The results sequence had no identity, so the awaiting scope did not adopt
+  the resources in it and later calls destroyed them early, in creation
+  order. They now live as long as the scope and are destroyed in reverse
+  order, as on the IR engine. Found by the ownership corpus.
 
 ## [0.5.8] — 2026-11-14
 
