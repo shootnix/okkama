@@ -117,7 +117,6 @@ object Certificate {
     extensions() is CertificateExtensions {
         CertificateExtensions(facts);
     }
-
 }
 
 hidden object CertificateName {
@@ -296,7 +295,11 @@ object CertificateExtensions {
     items() is Sequencing<CertificateExtension> {
         let records = x509.certificate_extensions(facts);
         let values is @CertificateExtension = records.map() -> record {
-            CertificateExtension(identifier: record[0], critical: record[1] == "1", origin: HexDecoded(record[2]).bytes());
+            CertificateExtension(
+                identifier: record[0],
+                critical: record[1] == "1",
+                origin: HexDecoded(record[2]).bytes()
+            );
         };
         values;
     }
