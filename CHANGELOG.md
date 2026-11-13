@@ -38,6 +38,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   writes from the array itself. Writing 64 bytes: 37 → 28 ns; 64 KiB:
   6.4 → 4.7 µs; a `writeln` of a short line: 188 → 162 ns.
 
+- **base85 looks symbols up in a table, in one pass (#551).** Decoding
+  64 KiB: 3.37 → 0.29 ms. Accepted inputs, offsets and the canonical-tail
+  rule are unchanged. Implemented by Codex, reviewed and verified by
+  Claude.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in
