@@ -672,17 +672,22 @@ fn completion(host: &HostRef, none: usize, state: Rc<Completions>) -> Outcome {
         }
     }
     match sched::await_future(&waiter) {
-        Err(failure) => {
-            if sched::is_cancelled(&failure) && waiter.running() {
-                state
-                    .waiters
-                    .borrow_mut()
-                    .retain(|other| !Rc::ptr_eq(other, &waiter));
-                abort(&state, failure.clone());
+        // A cancelled request (its waiter cancelled with it, or failed by
+        // another request's abort) cancels the stream, waits for every input
+        // to be cleaned up, and fails with the stream's cancellation, cleanup
+        // failures attached; so does every later request (#548), as on the
+        // Sparrow core. A waiter that was handed a completion keeps it.
+        Err(failure) if sched::is_cancelled(&failure) && waiter.state() != sched::State::Done => {
+            state.waiters.borrow_mut().retain(|other| !Rc::ptr_eq(other, &waiter));
+            abort(&state, failure.clone());
+            if state.aborted.borrow().is_none() {
+                let cleanup = sched::promise();
+                state.waiters.borrow_mut().push_back(cleanup.clone());
+                let _ = sched::await_future(&cleanup);
             }
-            Err(failure)
+            Err(state.aborted.borrow().clone().unwrap_or(failure))
         }
-        ok => ok,
+        outcome => outcome,
     }
 }
 

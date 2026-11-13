@@ -83,6 +83,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **IR and Sparrow agree on a cancellation that comes after an `await` has
+  completed (#546).** When a task's awaited future had already settled and
+  the task was waiting only for its turn to run on, the IR engine turned
+  that finished `await` into `Cancelled`; Sparrow let it finish and raised
+  the cancellation at the next `await`. The owner chose Sparrow's rule, and
+  IR now follows it: a pending cancellation is raised at the task's next
+  `await`, before that future starts. `AllFutures` therefore reports the
+  same secondary failures on both engines.
+- **A cancelled `FutureCompletions` request cancels the stream on IR too
+  (#548).** On IR, cancelling a waiting `completion()` left the stream's
+  inputs running and a later request got `NoFutures`. Now, as on Sparrow,
+  the request cancels the unfinished inputs, waits for their cleanup and
+  fails with the cancellation, and every later request fails the same way.
 - **A `FutureCompletions` request no longer hangs when another request
   polls first (#547).** A request woken by a settled input was dropped
   from the waiting requests if another request served the stream before it

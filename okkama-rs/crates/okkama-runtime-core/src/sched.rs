@@ -82,8 +82,12 @@ pub struct Task {
     future: Option<Future>,
     /// Future, которого задача сейчас ждёт.
     awaiting: RefCell<Option<Future>>,
-    /// Отмена доставляется в ближайшей точке приостановки.
+    /// Отмена запрошена и ещё не доставлена.
     cancel_pending: Cell<bool>,
+    /// Отмена доставлена в текущее ожидание: задача поднимет Cancelled, когда
+    /// продолжится (#546). Ожидание, чей Future уже завершился, закончено:
+    /// отмена тогда ждёт следующего `await`, как в ядре Sparrow.
+    cancel_now: Cell<bool>,
     /// Нижняя граница стека корутины (0 — неизвестна).
     floor: Cell<usize>,
     /// Активные входы в машинный код на стеке задачи: такой стек нельзя
@@ -107,6 +111,7 @@ impl Task {
             future: None,
             awaiting: RefCell::new(None),
             cancel_pending: Cell::new(false),
+            cancel_now: Cell::new(false),
             floor: Cell::new(0),
             native: Cell::new(0),
             queued: Cell::new(false),
@@ -517,6 +522,7 @@ pub fn start(future: &Future, starter: Option<Rc<Task>>) {
         future: Some(future.clone()),
         awaiting: RefCell::new(None),
         cancel_pending: Cell::new(false),
+        cancel_now: Cell::new(false),
         floor: Cell::new(0),
         native: Cell::new(0),
         queued: Cell::new(false),
@@ -584,8 +590,15 @@ pub fn settle(promise: &Future, outcome: Outcome) {
 
 /// `await`: запуск холодного Future, затем ожидание исхода.
 pub fn await_future(future: &Future) -> Outcome {
-    future.observe();
     let me = current();
+    // A cancellation requested while this task was not waiting, or after the
+    // future it waited for had settled, is raised at its next `await`,
+    // before that future starts (#546), as on the Sparrow core.
+    if me.cancel_pending.get() && !me.cancel_now.get() && !me.yielder.get().is_null() {
+        me.cancel_pending.set(false);
+        return Err(cancelled_failure());
+    }
+    future.observe();
     start(future, Some(me.clone()));
     while future.state.get() == State::Running {
         future
@@ -595,7 +608,7 @@ pub fn await_future(future: &Future) -> Outcome {
         *me.awaiting.borrow_mut() = Some(future.clone());
         suspend();
         me.awaiting.borrow_mut().take();
-        if me.cancel_pending.get() {
+        if me.cancel_now.replace(false) {
             me.cancel_pending.set(false);
             future
                 .waiters
@@ -661,9 +674,12 @@ pub fn cancel(future: &Future) {
     let Some(inner) = awaiting else {
         return;
     };
-    if Rc::ptr_eq(&task, &current()) || inner.shielded.get() {
+    // The awaited future has settled: the task is about to resume with its
+    // outcome, so the cancellation waits for its next `await` (#546).
+    if Rc::ptr_eq(&task, &current()) || inner.shielded.get() || inner.state.get() != State::Running {
         return;
     }
+    task.cancel_now.set(true);
     let started_here = inner
         .starter
         .borrow()
@@ -1369,7 +1385,8 @@ mod tests {
     }
 
     /// A task woken twice before it runs (completion, then cancellation)
-    /// runs once; a reset drops the queue.
+    /// runs once; its await had completed, so it finishes with the value and
+    /// the cancellation waits for a next await (#546); a reset drops the queue.
     #[test]
     fn a_task_woken_twice_runs_once_and_reset_drops_the_queue() {
         reset();
@@ -1390,7 +1407,8 @@ mod tests {
         with(|s| assert_eq!(s.ready.borrow().len(), 1));
         dispatch();
         assert_eq!(runs.get(), 1);
-        assert!(task.cancelled());
+        assert_eq!(task.state(), State::Done);
+        assert!(!task.cancelled());
         reset();
 
         let gate = promise();
@@ -1406,18 +1424,22 @@ mod tests {
     }
 
     /// When async main returns, a task it woke has not run; shutdown cancels
-    /// it and its cleanup runs, as on Sparrow.
+    /// it. Its await had already completed, so it runs on with the value and
+    /// the cancellation is raised at its next await (#546), as on Sparrow.
     #[test]
     fn a_task_woken_by_a_finished_root_is_cancelled_by_shutdown() {
         reset();
         let log = Rc::new(RefCell::new(Vec::new()));
         let gate = promise();
-        let (child_gate, child_log) = (gate.clone(), log.clone());
+        let never = promise();
+        let (child_gate, child_never, child_log) = (gate.clone(), never.clone(), log.clone());
         let child = cold(
             Box::new(move || {
                 let outcome = await_future(&child_gate);
                 child_log.borrow_mut().push(if outcome.is_err() { "child cancelled" } else { "child woke" });
-                outcome
+                let next = await_future(&child_never);
+                child_log.borrow_mut().push(if next.is_err() { "next await cancelled" } else { "next await ran" });
+                next
             }),
             Vec::new(),
         );
@@ -1432,7 +1454,7 @@ mod tests {
             Vec::new(),
         );
         assert!(run_main(&root).is_ok());
-        assert_eq!(*log.borrow(), ["root returns", "child cancelled"]);
+        assert_eq!(*log.borrow(), ["root returns", "child woke", "next await cancelled"]);
         reset();
     }
 
