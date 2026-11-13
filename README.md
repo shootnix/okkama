@@ -138,7 +138,7 @@ main() is int {
 ```
 
 ```sh
-okkama hello.ok                   # run (IR interpreter)
+okkama hello.ok                   # run (Sparrow JIT)
 okkama -t hello.ok                # run the file's `test` blocks
 okkama fmt -w hello.ok            # format in place
 okkama lint hello.ok              # errors, warnings, lint findings
@@ -487,7 +487,11 @@ and `any`, and the class behind them cannot be named outside its module. What it
 deliberately does not do: an old immutable state stays valid, so "authorize
 twice" is a job for durable state and idempotency.
 
-## Three engines, one language
+## Sparrow by default
+
+Sparrow is the default for source programs and inline tests (`okkama run -t`).
+`--engine ir` and `OKKAMA_ENGINE=ir` remain available while the switch is
+validated; the IR engine is scheduled for removal in 0.6.0 (#584).
 
 The compiler lowers Okkama to one intermediate representation
 (OIR-1) and runs it on any of three engines with
@@ -496,20 +500,20 @@ identical results — output, errors and exit status. The
 `std/` hold them to that.
 
 ```sh
-okkama hello.ok                              # IR interpreter (default), in-process
-okkama run --engine sparrow hello.ok         # Sparrow: whole-function Cranelift JIT
+okkama hello.ok                              # Sparrow JIT (default), in-process
+okkama run --engine ir hello.ok              # IR interpreter (explicit compatibility option)
 okkama run --engine jvm hello.ok             # JVM class files, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
 
-| | IR interpreter | Sparrow (JIT) | JVM |
+| | Sparrow (JIT) | IR interpreter | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | 12 ms | **11 ms** | 53 ms |
-| `fib(32)`, 7 M calls | 1.29 s | **30 ms** | 188 ms |
-| Mandelbrot (float) | 0.55 s | **28 ms** | 147 ms |
-| 1 M successor steps | 0.93 s | **25 ms** | 131 ms |
-| 6-module application | 1.62 s | **96 ms** | 365 ms |
-| Peak memory, application | 10 MB | 13 MB | 259 MB |
+| Start-up (`hello`) | **11 ms** | 12 ms | 53 ms |
+| `fib(32)`, 7 M calls | **30 ms** | 1.29 s | 188 ms |
+| Mandelbrot (float) | **28 ms** | 0.55 s | 147 ms |
+| 1 M successor steps | **25 ms** | 0.93 s | 131 ms |
+| 6-module application | **96 ms** | 1.62 s | 365 ms |
+| Peak memory, application | 13 MB | 10 MB | 259 MB |
 | Needs | nothing | nothing | JDK |
 
 Median of ten cold runs on an Apple M2 Max (0.5.6, release build, start-up

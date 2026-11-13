@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run every example and compare its output with NAME.expected.
 
-    examples/check.py [--engine ir|sparrow|jvm ...] [PATH ...]
+    examples/check.py [--engine sparrow|ir|jvm ...] [PATH ...]
 
 Each example runs in a fresh temporary directory, with the std of this
-checkout, on every engine given (default: ir and sparrow). Only the Python
+checkout, on every engine given (default: sparrow and ir). Only the Python
 standard library is used.
 """
 import os
@@ -22,7 +22,7 @@ while "--engine" in args:
     at = args.index("--engine")
     engines.append(args[at + 1])
     del args[at:at + 2]
-engines = engines or ["ir", "sparrow"]
+engines = engines or ["sparrow", "ir"]
 roots = [os.path.abspath(path) for path in args] or [HERE]
 examples = sorted(
     os.path.join(folder, name)

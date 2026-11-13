@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Sparrow is the default engine (#584, step 1).** `okkama run`, source-file
+  shorthand, inline tests (`run -t`) and the conformance adapter now select
+  Sparrow. Engine lists put Sparrow first. Explicit `--engine ir`, engine
+  environment overrides and all IR gate configurations remain available
+  until the switch is proven, ahead of IR retirement in 0.6.0.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

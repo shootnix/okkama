@@ -82,7 +82,7 @@ def probe():
     os.makedirs(target_dir(), exist_ok=True)
     cache = os.path.join(target_dir(), "ocs-probe.json")
     fingerprint = source_fingerprint(root) if os.path.isdir(root) else None
-    engine = os.environ.get("OCS_RUST_ENGINE", "ir")
+    engine = os.environ.get("OCS_RUST_ENGINE", "sparrow")
     with open(os.path.join(target_dir(), "ocs-probe.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         engines = {}

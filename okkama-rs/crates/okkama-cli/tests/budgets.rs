@@ -43,7 +43,7 @@ fn every_budget_stops_the_ir_engine_and_the_jvm_as_it_stops_the_core() {
         (SPIN, &["--timeout", "1"], "Execution interrupted"),
     ];
     for (source, budget, report) in cases {
-        for engine in ["ir", "sparrow", "jvm"] {
+        for engine in ["sparrow", "ir", "jvm"] {
             let output = run(engine, source, budget);
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert_eq!(output.status.code(), Some(1), "{engine} {budget:?}: {stderr}");
@@ -64,7 +64,7 @@ const CAUGHT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nobj
 /// program can catch, and its cleanup does not run.
 #[test]
 fn steps_are_counted_alike_and_running_out_cannot_be_caught() {
-    for engine in ["ir", "sparrow", "jvm"] {
+    for engine in ["sparrow", "ir", "jvm"] {
         let enough = run(engine, DEEP, &["--max-steps", "336", "--timeout", "60"]);
         assert_eq!(enough.status.code(), Some(0), "{engine}: {}", String::from_utf8_lossy(&enough.stderr));
         let short = run(engine, DEEP, &["--max-steps", "335", "--timeout", "60"]);
@@ -127,13 +127,13 @@ const DEEP_FOREVER: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    
 /// instead of rendering a line per frame.
 #[test]
 fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
-    for engine in ["ir", "sparrow", "jvm"] {
+    for engine in ["sparrow", "ir", "jvm"] {
         let started = std::time::Instant::now();
         let output = run(engine, DEEP_FOREVER, &["--max-memory", "64M", "--timeout", "60"]);
         assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution budget exhausted: memory", "{engine}");
         assert!(started.elapsed().as_secs() < 30, "{engine}: {:?}", started.elapsed());
     }
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let path = std::env::temp_dir().join(format!("budgets-trace-{}-{engine}.ok", std::process::id()));
         std::fs::write(&path, DEEP_FAILURE).unwrap();
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -163,7 +163,7 @@ const SORT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimpor
 /// not see the stop.
 #[test]
 fn a_long_sort_stops_for_the_timeout() {
-    for engine in ["ir", "sparrow"] {
+    for engine in ["sparrow", "ir"] {
         let started = std::time::Instant::now();
         let output = run(engine, SORT, &["--timeout", "1"]);
         assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution interrupted", "{engine}");
@@ -183,7 +183,7 @@ const ARGON2: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimp
 #[test]
 fn long_host_operations_stop_for_the_timeout() {
     for (name, source) in [("pbkdf2", PBKDF2), ("argon2", ARGON2)] {
-        for engine in ["ir", "sparrow"] {
+        for engine in ["sparrow", "ir"] {
             let started = std::time::Instant::now();
             let output = run(engine, source, &["--timeout", "1"]);
             assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution interrupted", "{name} {engine}");

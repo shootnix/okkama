@@ -3,7 +3,7 @@
 Реализация языка Okkama на Rust: компилятор (лексер, парсер, анализ,
 lowering в OIR-1), бэкенды JVM и Sparrow, IR-интерпретатор, VM Sparrow с JIT
 (Cranelift) и сборщиком циклов, рантайм и natives std, LSP, форматтер и
-линтер. Все три движка — JVM, IR, Sparrow — исполняют весь язык и std
+линтер. Все три движка — Sparrow, IR, JVM — исполняют весь язык и std
 одинаково: это проверяют conformance-набор (`../conformance`) и сверка
 движков (`tools/engines/parity.py`).
 
@@ -101,8 +101,9 @@ Sparrow — ядро `sparrow-core` (версия Tomato) со своими зн
 переменные живут между вводами, а побочные эффекты прошлых вводов не
 повторяются. Замыкания и Future между вводами не переносятся. Команды —
 `:vars`, `:decls`, `:reset`, `:help`, `:quit`. `okkama run` по умолчанию
-исполняет IR-интерпретатором в Rust-процессе; `--engine sparrow|jvm` или
-`OKKAMA_ENGINE=ir|sparrow|jvm` выбирает другой движок.
+исполняет через Sparrow (JIT) в Rust-процессе, в том числе с `-t`;
+`--engine ir|jvm` или `OKKAMA_ENGINE=sparrow|ir|jvm` выбирает движок.
+IR сохранён для проверки перехода; его удаление запланировано в 0.6.0 (#584).
 Известные границы — в [compatibility.md](docs/compatibility.md#движки-ir-и-sparrow-расхождения-с-jvm).
 
 [План полного рантайма, GC и JIT](docs/sparrow-runtime-roadmap.md).

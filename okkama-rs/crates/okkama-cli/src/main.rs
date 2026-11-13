@@ -64,7 +64,7 @@ USAGE:
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
     okkama exec [BUDGETS] <FILE.spb>
     okkama run [-t [--filter TEXT]...] <FILE> [FILE.ok...] [ARGS...]
-    okkama run --engine ir|sparrow <FILE> [FILE.ok...]
+    okkama run --engine sparrow|ir <FILE> [FILE.ok...]
     okkama <FILE.ok> [FILE.ok...]
     okkama help [COMMAND]
     okkama --version
@@ -84,8 +84,8 @@ COMMANDS:
     ir        Lower a source module to IR and print its functions
     build     Lower a source module and invoke the selected backend
     exec      Execute a Sparrow bytecode file in this process
-    run       Run a program: the IR interpreter by default, `--engine sparrow`
-              (VM with JIT) or `--engine jvm` (build classes and run `java`)
+    run       Run a program on Sparrow (JIT) by default; `--engine ir`
+              selects the IR interpreter, `--engine jvm` builds and runs Java
 
 Use `-` as FILE to read the source from standard input. `check`, `ir` and
 `build` accept several FILE paths: the files of one module (spec §5.1) share
@@ -114,12 +114,12 @@ BUILD OPTIONS:
     --budgeted            JVM: count steps (`java -Dokkama.steps=N`)
 
 RUN OPTIONS:
-    --engine ir           Execute IR inside the Rust process (default)
-    --engine sparrow      Compile to Sparrow and execute it on the core (JIT)
+    --engine sparrow      Compile to Sparrow and execute it with JIT (default)
+    --engine ir           Execute IR inside the Rust process
     --engine jvm          Compile to JVM classes and execute them with `java`
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
-                          OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
+                          OKKAMA_ENGINE=sparrow|ir|jvm sets the default.
     --filter TEXT         With -t: run only the tests whose name contains
                           TEXT (literally, case-sensitive); repeated, the
                           tests that contain any of the texts
@@ -1404,7 +1404,7 @@ fn build_command(args: &[String]) -> Outcome {
     }
 }
 
-/// `okkama run`: по умолчанию IR-интерпретатор в процессе (все три движка
+/// `okkama run`: по умолчанию Sparrow (JIT) в процессе (все три движка
 /// исполняют язык и std одинаково; `OKKAMA_ENGINE` меняет умолчание);
 /// --engine jvm собирает классы и запускает java с потоками и кодом выхода
 /// программы. Файлы модуля — первый и следующие
@@ -1418,10 +1418,10 @@ fn run_command(args: &[String]) -> Outcome {
     let mut limits = sparrow_core::budget::Limits::default();
     let mut budgeted = false;
     let mut engine = match default.as_str() {
-        "ir" => "ir",
         "sparrow" => "sparrow",
+        "ir" => "ir",
         "jvm" => "jvm",
-        _ => "ir",
+        _ => "sparrow",
     };
     while let Some(first) = rest.first() {
         match first.as_str() {
@@ -1435,10 +1435,10 @@ fn run_command(args: &[String]) -> Outcome {
             }
             "--engine" => {
                 let Some(value) = rest.get(1) else {
-                    return Outcome::usage("--engine needs a value: ir, sparrow or jvm");
+                    return Outcome::usage("--engine needs a value: sparrow, ir or jvm");
                 };
-                if !matches!(value.as_str(), "ir" | "sparrow" | "jvm") {
-                    return Outcome::usage("unknown engine (use ir, sparrow or jvm)");
+                if !matches!(value.as_str(), "sparrow" | "ir" | "jvm") {
+                    return Outcome::usage("unknown engine (use sparrow, ir or jvm)");
                 }
                 engine = value;
                 rest = &rest[1..];

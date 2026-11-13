@@ -23,7 +23,10 @@ okkama build test.ok --target sparrow -o out.spb
 sparrow out.spb
 ```
 
-`run` исполняет исходник Rust-интерпретатором. `build` создаёт выбранный
+`run` по умолчанию исполняет исходник через Sparrow (JIT), включая тесты
+с `run -t`. `--engine ir` сохраняет выбор IR-интерпретатора до его
+запланированного удаления в 0.6.0; `OKKAMA_ENGINE` меняет умолчание.
+`build` создаёт выбранный
 байткод; бинарник `sparrow` исполняет `.spb` в рантайме Sparrow (его
 текущая версия называется Tomato). `--backend` остаётся алиасом
 `--target`. `sparrow check out.spb` проверяет файл без выполнения.
@@ -32,7 +35,7 @@ sparrow out.spb
 
 Ограничить запуск — для недоверенных программ и сервисов — умеет каждый
 движок: Sparrow (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`),
-движок IR (`okkama run`) и JVM (`okkama run --engine jvm`). Все бюджеты
+движок IR (`okkama run --engine ir`) и JVM (`okkama run --engine jvm`). Все бюджеты
 по умолчанию выключены и тогда ничего не стоят:
 
 ```sh

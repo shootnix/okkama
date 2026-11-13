@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 OKKAMA = os.path.join(ROOT, "okkama-rs", "target", "release", "okkama")
 # A test declaration: async or not, at module scope or inside an object.
 TEST = re.compile(r'\s*(async\s+)?test "')
-ENGINES = ("ir", "sparrow")
+ENGINES = ("sparrow", "ir")
 # Lines of a failing module's output kept for the report.
 TAIL = 60
 
