@@ -46,6 +46,9 @@ pub struct Io {
     shared: Arc<Shared>,
     /// Native request of each waiting driver frame (frames are roots).
     pub requests: HashMap<Word, u64>,
+    /// The buffer the last poll emptied, kept for the next one (#442), so a
+    /// busy server does not allocate a vector of woken frames per poll.
+    spare: Vec<Word>,
 }
 
 impl Io {
@@ -75,20 +78,34 @@ impl Io {
         Waker::from(Arc::new(FrameWaker { frame, shared: self.shared.clone() }))
     }
 
-    fn take_woken(&self) -> Vec<Word> {
-        if !self.shared.pending.swap(false, Ordering::Acquire) {
-            return Vec::new();
+    /// The frames woken since the last poll, in the order their wakers
+    /// fired and each once (#442): a socket can fire its waker several times
+    /// before the scheduler looks. The vectors swap, so neither side
+    /// allocates on a busy loop.
+    fn take_woken(&mut self) -> Vec<Word> {
+        let mut woken = std::mem::take(&mut self.spare);
+        if self.shared.pending.swap(false, Ordering::Acquire) {
+            std::mem::swap(&mut *self.shared.woken.lock().expect("woken frames"), &mut woken);
+            dedupe_in_order(&mut woken);
         }
-        std::mem::take(&mut *self.shared.woken.lock().expect("woken frames"))
+        woken
+    }
+
+    /// Keep an emptied buffer for the next poll.
+    fn recycle(&mut self, mut buffer: Vec<Word>) {
+        buffer.clear();
+        self.spare = buffer;
     }
 }
 
 impl Runtime {
     /// Wake frames whose wakers fired, without blocking.
     pub fn poll_io(&mut self) {
-        for frame in self.io.take_woken() {
+        let woken = self.io.take_woken();
+        for &frame in &woken {
             self.wake(frame);
         }
+        self.io.recycle(woken);
     }
 
     /// Block until a native request or a timer can make progress; false when
@@ -159,5 +176,46 @@ impl Runtime {
             self.wake(frame);
         }
         true
+    }
+}
+
+/// Drop repeated frames, keeping the first of each in place. A poll usually
+/// sees one to a few frames, so a short list is checked pairwise.
+fn dedupe_in_order(frames: &mut Vec<Word>) {
+    if frames.len() < 2 {
+        return;
+    }
+    if frames.len() <= 16 {
+        let mut kept = 0;
+        for index in 0..frames.len() {
+            let frame = frames[index];
+            if !frames[..kept].contains(&frame) {
+                frames[kept] = frame;
+                kept += 1;
+            }
+        }
+        frames.truncate(kept);
+    } else {
+        let mut seen = std::collections::HashSet::with_capacity(frames.len());
+        frames.retain(|frame| seen.insert(*frame));
+    }
+}
+
+#[cfg(test)]
+mod woken_tests {
+    use super::dedupe_in_order;
+
+    #[test]
+    fn repeated_wakes_collapse_in_first_order() {
+        let mut short = vec![5, 3, 5, 9, 3, 3];
+        dedupe_in_order(&mut short);
+        assert_eq!(short, vec![5, 3, 9]);
+        let mut long: Vec<u64> = (0..40).chain(0..40).chain([7, 99]).collect();
+        dedupe_in_order(&mut long);
+        let expected: Vec<u64> = (0..40).chain([99]).collect();
+        assert_eq!(long, expected);
+        let mut one = vec![4];
+        dedupe_in_order(&mut one);
+        assert_eq!(one, vec![4]);
     }
 }
