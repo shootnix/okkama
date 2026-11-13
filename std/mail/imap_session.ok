@@ -407,14 +407,18 @@ object ImapSession does Closing {
         await CreatedImapMailbox(origin: self, name: name).mailbox();
     }
 
+    // RENAME name to to; the new name.
     async renamed(name is ImapMailboxName, to is ImapMailboxName) is ImapMailboxName {
         await RenamedImapMailbox(origin: self, source: name, destination: to).mailbox();
     }
 
+    // DELETE name; the name.
     async deleted(name is ImapMailboxName) is ImapMailboxName {
         await ImapMailboxDeletion(origin: self, name: name).delete();
     }
 
+    // APPEND message with flags to mailbox; the UID it got when the server
+    // says.
     async appended(mailbox is ImapMailboxName, message is MailMessage, flags is MailFlags) is ImapAssignedUids {
         await AppendedMail(origin: self, mailbox: mailbox, message: message, flags: flags).uids();
     }
