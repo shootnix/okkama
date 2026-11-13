@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Lease {
+    has name is string;
+    Lease(:name);
+    label() is string { name; }
+    destroy { Stdout().writeln("release " + name); }
+}
+
+object Cache {
+    has make is () is string;
+    Cache(:make);
+    value() is string {
+        once let kept = make;
+        kept();
+    }
+}
+
+main() is int {
+    let lease = Lease(name: "db");
+    let cache = Cache(make: () is string { lease.label(); });
+    Stdout().writeln(cache.value());
+    0;
+}

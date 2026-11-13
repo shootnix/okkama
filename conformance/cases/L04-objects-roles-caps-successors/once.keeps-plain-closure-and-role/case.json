@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.once.keeps-plain-closure-and-role",
+  "title": "a once let keeps a closure and a role value that hold no resource",
+  "purpose": "A function value or a role value is a resource only if one of its kind can hold one in this program.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.ONCE-LET",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 a true\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-once-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #520",
+    "expected_basis": "A function value or a role value is a resource only if one of its kind can hold one in this program."
+  },
+  "status": "mandatory"
+}

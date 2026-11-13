@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Lease {
+    has name is string;
+    Lease(:name);
+    label() is string { name; }
+    destroy { Stdout().writeln("release " + name); }
+}
+
+object Holder {
+    Holder();
+    lease() is Lease {
+        once let kept = Lease(name: "db");
+        kept;
+    }
+}
+
+main() is int {
+    Stdout().writeln(Holder().lease().label());
+    0;
+}

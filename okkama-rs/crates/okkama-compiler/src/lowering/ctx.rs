@@ -238,6 +238,11 @@ pub(super) struct Ctx<'r, 'a> {
     /// as `any`, captured by a function value or owns a capability somewhere
     /// in the program (#328): then values of those types may too.
     pub dynamic_async: bool,
+    /// `once let` whose value type is plain only if function values and
+    /// role values turn out plain (#520): checked when every body is lowered,
+    /// with the closures and specializations of the whole program. Each is
+    /// (value type, object, action, span, module of the task).
+    pub once_checks: Vec<(Type, String, Span, usize)>,
     plain_roles: Vec<bool>,
     /// Plain-ность объявлений ролей по всем объявлениям объектов программы
     /// (не только уже специализированным): роль, которую делает объект с
@@ -304,6 +309,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             async_roles: Vec::new(),
             settle_types: Vec::new(),
             dynamic_async: false,
+            once_checks: Vec::new(),
         }
     }
 
@@ -1508,6 +1514,93 @@ impl<'r, 'a> Ctx<'r, 'a> {
         }
     }
 
+    /// Whether the type may be plain once function and role values are
+    /// judged with the whole program (#520): `is_plain` with every function
+    /// value and every role taken as plain. A type that fails even this
+    /// reaches an object with `destroy` directly and is refused at once.
+    pub fn plain_but_for_values(&self, ty: &Type) -> bool {
+        let objects = self.settled_objects(&|_| true, &|_| true);
+        settled_plain(ty, &objects, &|_| true, &|_| true, &|id| self.variant_plain(id, &objects))
+    }
+
+    /// A variant is plain when the objects of all its cases are.
+    fn variant_plain(&self, id: usize, objects: &[bool]) -> bool {
+        self.variants
+            .get(id)
+            .is_none_or(|variant| variant.cases.iter().all(|(_, object)| objects.get(object.0).copied().unwrap_or(true)))
+    }
+
+    /// Plainness when every body is lowered (#520). A function value is
+    /// created only by `fn.closure` (a lambda or a bound action) with a
+    /// snapshot of its captures, so values of one signature are plain when
+    /// every closure of that signature captures only plain values. A role
+    /// value holds only an object whose specialization exists by now, as
+    /// for `async destroy` (#328), so a role is plain when every object that
+    /// does it is. `any` and capabilities stay conservative. A fixed point:
+    /// closures capture closures and objects hold roles.
+    pub fn settled_plain_types(&self, closures: &[(ir::FnSig, Vec<Type>)]) -> SettledPlain {
+        let mut fns: HashMap<ir::FnSig, bool> = closures.iter().map(|(sig, _)| (sig.clone(), true)).collect();
+        let mut roles = vec![true; self.roles.len()];
+        loop {
+            let fn_plain = |sig: &ir::FnSig| fns.get(sig).copied().unwrap_or(true);
+            let role_plain = |role: usize| roles.get(role).copied().unwrap_or(true);
+            let objects = self.settled_objects(&fn_plain, &role_plain);
+            let mut changed = false;
+            let mut next_roles = roles.clone();
+            for (index, object) in self.objects.iter().enumerate() {
+                if !objects[index] {
+                    for (role, _) in &object.does {
+                        if next_roles[role.0] {
+                            next_roles[role.0] = false;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            let mut next_fns = fns.clone();
+            let variant_plain = |id: usize| self.variant_plain(id, &objects);
+            for (sig, captures) in closures {
+                if next_fns[sig] && !captures.iter().all(|ty| settled_plain(ty, &objects, &fn_plain, &role_plain, &variant_plain)) {
+                    next_fns.insert(sig.clone(), false);
+                    changed = true;
+                }
+            }
+            if !changed {
+                let variants = (0..self.variants.len()).map(|id| self.variant_plain(id, &objects)).collect();
+                return SettledPlain { objects, roles, fns, variants };
+            }
+            roles = next_roles;
+            fns = next_fns;
+        }
+    }
+
+    /// Objects without `destroy` whose fields are plain, given how function
+    /// and role values are judged.
+    fn settled_objects(&self, fn_plain: &dyn Fn(&ir::FnSig) -> bool, role_plain: &dyn Fn(usize) -> bool) -> Vec<bool> {
+        let mut objects = vec![true; self.objects.len()];
+        // One snapshot per pass: a field is judged by the previous pass, and
+        // the table only ever turns true into false, so it settles.
+        loop {
+            let snapshot = objects.clone();
+            let variant_plain = |id: usize| self.variant_plain(id, &snapshot);
+            let mut changed = false;
+            for (index, object) in self.objects.iter().enumerate() {
+                let plain = object.destroy.is_none()
+                    && object
+                        .fields
+                        .iter()
+                        .all(|(_, ty, _)| settled_plain(ty, &snapshot, fn_plain, role_plain, &variant_plain));
+                if objects[index] && !plain {
+                    objects[index] = false;
+                    changed = true;
+                }
+            }
+            if !changed {
+                return objects;
+            }
+        }
+    }
+
     // ----- сборка модуля -----
 
     pub fn module(
@@ -1644,6 +1737,52 @@ fn module_path(program: &ast::Program) -> String {
 
 /// Plain-ность типа анализа на уровне объявлений: параметры типа plain
 /// (их подстановку учитывают аргументы), коробки и функции — нет.
+/// Plainness of a whole lowered program (#520): see
+/// `Ctx::settled_plain_types`.
+pub struct SettledPlain {
+    objects: Vec<bool>,
+    roles: Vec<bool>,
+    fns: HashMap<ir::FnSig, bool>,
+    variants: Vec<bool>,
+}
+
+impl SettledPlain {
+    pub fn is_plain(&self, ty: &Type) -> bool {
+        settled_plain(
+            ty,
+            &self.objects,
+            &|sig| self.fns.get(sig).copied().unwrap_or(true),
+            &|role| self.roles.get(role).copied().unwrap_or(true),
+            &|id| self.variants.get(id).copied().unwrap_or(true),
+        )
+    }
+}
+
+/// `Ctx::is_plain` with given tables for objects and given judgements of
+/// function and role values.
+fn settled_plain(
+    ty: &Type,
+    objects: &[bool],
+    fn_plain: &dyn Fn(&ir::FnSig) -> bool,
+    role_plain: &dyn Fn(usize) -> bool,
+    variant_plain: &dyn Fn(usize) -> bool,
+) -> bool {
+    match ty {
+        Type::Object(object) | Type::Successor(object) => objects.get(object.0).copied().unwrap_or(true),
+        Type::Role(role) => role_plain(role.0),
+        Type::Variant(id) => variant_plain(id.0),
+        Type::Array(element) | Type::Builder(element) => {
+            settled_plain(element, objects, fn_plain, role_plain, variant_plain)
+        }
+        Type::Map(_, value) | Type::MapBuilder(_, value) => {
+            settled_plain(value, objects, fn_plain, role_plain, variant_plain)
+        }
+        Type::Fn(sig) => fn_plain(sig),
+        Type::Any | Type::Cap(_) => false,
+        _ => true,
+    }
+}
+
 fn decl_plain_ty(ty: &Ty, objects: &[bool], roles: &[bool]) -> bool {
     match ty {
         Ty::Object(object, args) => {

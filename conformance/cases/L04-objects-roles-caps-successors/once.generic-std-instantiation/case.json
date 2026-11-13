@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.once.generic-std-instantiation",
+  "title": "a generic std object with a once let instantiated with a plain closure",
+  "purpose": "FilteredGeneration keeps a closure; SortedBy.ranked keeps entries holding it in a once let (#520).",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.ONCE-LET",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "built\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#186-once-let"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #520",
+    "expected_basis": "FilteredGeneration keeps a closure; SortedBy.ranked keeps entries holding it in a once let (#520)."
+  },
+  "status": "mandatory"
+}
