@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.confirm.index-else",
+  "title": "the else after an index in a confirm condition belongs to confirm",
+  "purpose": "An index at the end of a confirm condition does not take the confirm's else as its fallback (#521); a parenthesized fallback inside the condition and a fallback outside confirm keep working.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.CONFIRM",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok guarded 42\nshort by throw\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #521",
+    "expected_basis": "#521: confirm owns the top-level else of its condition; an index fallback needs parentheses there."
+  },
+  "status": "mandatory"
+}

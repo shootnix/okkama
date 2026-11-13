@@ -106,6 +106,11 @@ pub(crate) struct Parser<'s> {
     /// to the `for`, not to a functional call. Every nested expression
     /// (parentheses, arguments, indices, blocks) clears it.
     for_source: bool,
+    /// While parsing the top level of a `confirm` condition: an `else` there
+    /// belongs to the `confirm`, not to an index fallback, so
+    /// `confirm size >= pair[1] else panic "short";` keeps its handler (#521).
+    /// Every nested expression clears it: `(xs[i] else 0)` is a fallback.
+    confirm_condition: bool,
     /// Recovering mode (editors): errors go to `errors` and parsing goes on.
     recovering: bool,
     errors: Vec<Diagnostic>,
@@ -128,6 +133,7 @@ impl<'s> Parser<'s> {
             max_depth: options.max_nesting,
             external_cap_owner: None,
             for_source: false,
+            confirm_condition: false,
             recovering: false,
             errors: Vec::new(),
             damaged: false,
@@ -229,6 +235,7 @@ impl<'s> Parser<'s> {
             self.damaged = false;
             self.external_cap_owner = None;
             self.for_source = false;
+            self.confirm_condition = false;
             match self.module_item() {
                 Ok(item) if !self.damaged => items.push(item),
                 Ok(_) => {}

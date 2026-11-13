@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Short is Error = (because(reason is string));
+
+object Check {
+    has pair is @int;
+    Check(:pair);
+
+    throws(size is int) is string {
+        confirm size >= pair[1]
+            else throw Short.because("short by throw");
+        "ok";
+    }
+
+    // A fallback inside the condition is written in parentheses.
+    guarded(size is int) is string {
+        confirm size >= (pair[5] else 0) else throw Short.because("never");
+        "guarded";
+    }
+
+    // Outside confirm the index fallback works as before.
+    fallback() is int {
+        pair[9] else 42;
+    }
+}
+
+main() is int {
+    let check = Check(pair: [0, 32]);
+    Stdout().writeln(check.throws(40), " ", check.guarded(1), " ", check.fallback());
+    let refused = try {
+        check.throws(10);
+    }
+    catch Short.because(reason) {
+        reason;
+    };
+    Stdout().writeln(refused);
+    0;
+}

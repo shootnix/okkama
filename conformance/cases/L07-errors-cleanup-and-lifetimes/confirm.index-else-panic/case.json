@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.confirm.index-else-panic",
+  "title": "a confirm ending in an index panics with its own handler",
+  "purpose": "Before #521 the else was taken as the index fallback, the handler was lost and the program failed with a generic confirm failure instead of the panic.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CONFIRM",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "panic"
+      ]
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #521",
+    "expected_basis": "#521: a false condition runs the confirm's panic handler."
+  },
+  "status": "mandatory"
+}
