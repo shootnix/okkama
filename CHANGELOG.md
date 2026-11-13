@@ -20,6 +20,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   0.112 ms instead of 0.115–0.121 ms, 8 350 requests/s instead of
   7 650–8 200; keep-alive is unchanged.
 
+- **Sparrow stops sweeping the pages of a past burst (#435).** A program
+  that once held many objects kept every small-object page for good, and
+  each later collection swept them all. A sweep now keeps the empty pages
+  the next cycle can fill and frees the rest. A program that held a million
+  objects and then ran a long steady phase takes 0.70 s instead of 1.95 s.
+  Resident memory stays where it was, because mimalloc keeps the freed
+  pages for reuse.
+
 ### Fixed
 
 - **The `else` of `confirm` after an index is the confirm's (#521).**
