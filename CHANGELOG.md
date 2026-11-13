@@ -6,6 +6,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three
+  developer-only aids that measure how much of ownership the compiler can
+  decide statically and check every later change against today's runtime:
+  - `OKKAMA_OWNERSHIP_REPORT=FILE` writes a census of where the owner of
+    every value with a `destroy` is: its scope, the result, an aggregate, or
+    unknown with a reason (#553);
+  - `OKKAMA_OWNERSHIP_PROTOTYPE=1` removes callee-root adopts of parameters
+    that every caller already owns (OH-09), and `SPARROW_TRACE_DESTROY=FILE`
+    traces every destroyed identity (#555). Over 1 030 programs the traces
+    are identical; std loses 12.9% of its static region operations and 20.5%
+    of executed adopts, 11-ownership 11% of its time;
+  - `tests/ownership-corpus`: 96 programs and 427 checks of Book chapter 20
+    with identical results on both engines; pending checks wait on #578–#581
+    (#560).
+
 ## [0.5.8] — 2026-11-14
 
 0.5.8 removes allocations that grow with the input from the encodings, the
