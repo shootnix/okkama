@@ -1,5 +1,16 @@
 module http/cookie_policy v1.0.0;
 
+// Which cookies go where: domain and path matching (RFC 6265bis) and the
+// context of a request.
+//
+//     CookieDomainMatch(cookie: "example.com", request: "www.example.com", address: false).matches();  // true
+//     CookiePathMatch(cookie: "/docs", request: "/docs/web").matches();                               // true
+//     ParsedSetCookie(origin: field, url: url, reference: now).cookie();
+//
+// The caller supplies the context (the site and whether the request is
+// top-level); nothing here guesses a browser's frames. Cookie jars and
+// CookieExchanging use these rules.
+
 import "http/cookie" take Cookie, CookieAttributes, CookieExpiry, CookieFlag, SameSite,
     InvalidCookie;
 import "http/cookie_date" take ParsedCookieDate, InvalidCookieDate;
@@ -21,6 +32,7 @@ object CookieContext {
     has method is Method;
     has key is string;
 
+    // A request from site, top-level or not, with method.
     CookieContext(site is UrlParts, top_level is bool, method is Method) {
         let checked = CookieOrigin(site);
         self.site = site;
@@ -29,10 +41,12 @@ object CookieContext {
         key = checked::Origin::site;
     }
 
+    // The site.
     site() is UrlParts {
         site;
     }
 
+    // Whether it is top-level, the method, and the site key.
     cap Context {
         top_level is bool {
             top_level;
@@ -48,11 +62,13 @@ object CookieContext {
     }
 }
 
+// The cookie view of an http or https URL: its domain, site, path and security.
 object CookieOrigin {
     has origin is UrlParts;
     has domain, site, path is string;
     has address, secure is bool;
 
+    // The origin of a URL; InvalidCookie for another scheme or no host.
     CookieOrigin(origin is UrlParts) {
         let parts = origin;
         let scheme = parts::Parts::scheme;
@@ -100,10 +116,13 @@ object CookieOrigin {
         };
     }
 
+    // The URL.
     url() is UrlParts {
         origin;
     }
 
+    // The domain, the site, the default path, whether the host is an address,
+    // and whether it is https.
     cap Origin {
         domain is string {
             domain;
@@ -155,14 +174,17 @@ hidden object CookieDefaultPath {
     }
 }
 
+// Whether a cookie path matches a request path.
 object CookiePathMatch {
     has cookie, request is string;
 
+    // The cookie's path and the request's.
     CookiePathMatch(cookie is string, request is string) {
         self.cookie = cookie;
         self.request = request;
     }
 
+    // Equal paths, or a prefix ending at `/`.
     matches() is bool {
         if cookie == request {
             return true;
@@ -177,16 +199,20 @@ object CookiePathMatch {
     }
 }
 
+// Whether a cookie domain matches a request host.
 object CookieDomainMatch {
     has cookie, request is string;
     has address is bool;
 
+    // The cookie's domain and the request's host; address when the host is an
+    // IP.
     CookieDomainMatch(cookie is string, request is string, address is bool) {
         self.cookie = cookie;
         self.request = request;
         self.address = address;
     }
 
+    // The same host, or a subdomain of a name (never of an address).
     matches() is bool {
         if cookie == request {
             return true;
@@ -203,12 +229,15 @@ object ParsedSetCookie {
     has url is UrlParts;
     has reference is Instant;
 
+    // A Set-Cookie value received from url; reference turns Max-Age into an
+    // instant.
     ParsedSetCookie(origin is string, url is UrlParts, reference is Instant) {
         self.origin = origin;
         self.url = url;
         self.reference = reference;
     }
 
+    // The cookie; InvalidCookie when the field or the URL does not allow it.
     cookie() is Cookie {
         confirm origin.length() <= 8192
             else throw InvalidCookie.because("Set-Cookie source limit exceeded");

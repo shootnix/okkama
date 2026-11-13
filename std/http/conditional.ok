@@ -1,5 +1,20 @@
 module http/conditional v1.0.0;
 
+// Conditional and range requests (RFC 9110 §13, §14): entity tags and byte
+// ranges.
+//
+//     let etag = EntityTag(value: "v42", weak: false);
+//     etag.string();                                                 // "\"v42\""
+//     ParsedEntityTags(headers.text("If-None-Match")).tags().weak_matches(etag);
+//
+//     let ranges = ByteRanges("bytes=0-99,-100");
+//     ranges.satisfiable(BigInt(1000));
+//     for ranges.ranges(BigInt(1000)) -> range { range.string(); }   // "0-99", "900-999"
+//
+// `*` in If-Match or If-None-Match matches any existing representation; whether
+// there is one is for the caller to say. Lists are bounded by ConditionalLimits
+// (8192 bytes and 128 entries by default).
+
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/single_byte" take Latin1Encoded, UnrepresentableLatin1Character;
@@ -15,6 +30,8 @@ object EntityTag {
     has opaque is string;
     has weak is bool;
 
+    // The tag value (without quotes), strong or weak; InvalidEntityTag for a
+    // character etagc refuses.
     EntityTag(value is string, weak is bool) {
         let bytes = try {
             Latin1Encoded(value).bytes();
@@ -31,6 +48,7 @@ object EntityTag {
         self.weak = weak;
     }
 
+    // The tag as a field writes it: `"v"` or `W/"v"`.
     string() is string {
         let prefix = if weak {
             "W/";
@@ -41,14 +59,17 @@ object EntityTag {
         prefix + "\"" + opaque + "\"";
     }
 
+    // Both strong and equal.
     strong_matches(other is EntityTag) is bool {
         !weak && !other::Tag::weak && opaque == other::Tag::opaque;
     }
 
+    // Equal, strong or weak.
     weak_matches(other is EntityTag) is bool {
         opaque == other::Tag::opaque;
     }
 
+    // The value and whether it is weak.
     cap Tag {
         opaque is string {
             opaque;
@@ -60,14 +81,17 @@ object EntityTag {
     }
 }
 
+// How large a tag or range list may be.
 object ConditionalLimits {
     has bytes, entries is int;
 
+    // 8192 bytes and 128 entries.
     ConditionalLimits() {
         bytes = 8192;
         entries = 128;
     }
 
+    // The limits as given.
     ConditionalLimits(bytes is int, entries is int) {
         confirm bytes >= 0 && entries >= 0
             else throw InvalidArgument.because("conditional budgets must be nonnegative");
@@ -75,6 +99,7 @@ object ConditionalLimits {
         self.entries = entries;
     }
 
+    // The limits.
     cap Limits {
         bytes is int {
             bytes;
@@ -92,29 +117,35 @@ object EntityTags {
     has origin is @EntityTag;
     has wildcard is bool;
 
+    // `*`: any existing representation.
     EntityTags() {
         origin = [];
         wildcard = true;
     }
 
+    // These tags.
     EntityTags(values is Sequencing<EntityTag>) {
         origin = EntityTagSnapshot(values: values, limits: ConditionalLimits()).values();
         wildcard = false;
     }
 
+    // These tags, within limits.
     EntityTags(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
         origin = EntityTagSnapshot(values: values, limits: limits).values();
         wildcard = false;
     }
 
+    // Whether it is `*`.
     wildcard() is bool {
         wildcard;
     }
 
+    // The tags; none for `*`.
     values() is Sequencing<EntityTag> {
         origin;
     }
 
+    // `*`, or the tags joined with `, `.
     string() is string {
         if wildcard {
             "*";
@@ -127,6 +158,7 @@ object EntityTags {
         }
     }
 
+    // Whether `*`, or a tag strongly matches other.
     strong_matches(other is EntityTag) is bool {
         if wildcard {
             return true;
@@ -136,6 +168,7 @@ object EntityTags {
         };
     }
 
+    // Whether `*`, or a tag weakly matches other.
     weak_matches(other is EntityTag) is bool {
         if wildcard {
             return true;
@@ -146,20 +179,24 @@ object EntityTags {
     }
 }
 
+// An If-Match or If-None-Match value read into tags.
 object ParsedEntityTags {
     has origin is string;
     has limits is ConditionalLimits;
 
+    // Reads origin within the default limits.
     ParsedEntityTags(origin is string) {
         self.origin = origin;
         limits = ConditionalLimits();
     }
 
+    // Reads origin within limits.
     ParsedEntityTags(origin is string, limits is ConditionalLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The tags; InvalidEntityTag says where the text is wrong.
     tags() is EntityTags {
         confirm origin.length() <= limits::Limits::bytes
             else throw ConditionalLimitExceeded.kind("bytes");
@@ -288,15 +325,18 @@ hidden object EntityTagSnapshot {
 object ConditionalItems<T> {
     has reversed is List<T>;
 
+    // No items.
     ConditionalItems() {
         let empty is List<T> = EmptyList();
         reversed = empty;
     }
 
+    // These items and one more.
     following(item is T) is ^ConditionalItems<T> {
         ^reversed = reversed.prefix(item);
     }
 
+    // The items.
     values() is @T {
         let reverse is @T = reversed.map() -> item {
             item;
@@ -341,6 +381,7 @@ hidden object ConditionalPosition {
 object ByteRange {
     has start, end is BigInt;
 
+    // From start to end, both included.
     ByteRange(start is BigInt, end is BigInt) {
         confirm start.sign() >= 0 && end.order(start) != Order.less
             else throw InvalidRange.because("invalid inclusive coordinates");
@@ -348,34 +389,43 @@ object ByteRange {
         self.end = end;
     }
 
+    // The first position.
     start() is BigInt {
         start;
     }
 
+    // The last position.
     end() is BigInt {
         end;
     }
 
+    // How many bytes.
     size() is BigInt {
         ((end - start) + BigInt(1));
     }
 
+    // `start-end`.
     string() is string {
         start.string() + "-" + end.string();
     }
 }
 
+// A Range value: `bytes=` and ranges, suffixes or open ends.
 object ByteRanges {
     has origin is @ByteRangeSpec;
 
+    // Reads origin within the default limits; InvalidRange for text that is not
+    // a range.
     ByteRanges(origin is string) {
         self.origin = ByteRangeParsing(origin: origin, limits: ConditionalLimits()).values();
     }
 
+    // Reads origin within limits.
     ByteRanges(origin is string, limits is ConditionalLimits) {
         self.origin = ByteRangeParsing(origin: origin, limits: limits).values();
     }
 
+    // The value as a field writes it.
     string() is string {
         let parts is @string = origin.map() -> entry {
             entry.string();
@@ -383,6 +433,7 @@ object ByteRanges {
         "bytes=" + parts.join(", ");
     }
 
+    // Whether any range falls within size bytes.
     satisfiable(size is BigInt) is bool {
         confirm size.sign() >= 0
             else throw InvalidRange.because("negative or unknown representation size");
@@ -391,6 +442,7 @@ object ByteRanges {
         };
     }
 
+    // The ranges within size bytes, sorted and merged.
     ranges(size is BigInt) is Sequencing<ByteRange> {
         confirm size.sign() >= 0
             else throw InvalidRange.because("negative or unknown representation size");
@@ -632,10 +684,13 @@ hidden object CoalescedByteRanges {
     }
 }
 
+// A Range value that is not valid; reason says why.
 enum InvalidRange is Error = (because(reason is string));
 
+// Text that is not an entity tag; offset says where.
 enum InvalidEntityTag is Error = (located(offset is int, reason is string));
 
+// More bytes or entries than the limits; kind says which.
 enum ConditionalLimitExceeded is Error = (kind(kind is string));
 
 test "entity tag comparison respects validator strength" {

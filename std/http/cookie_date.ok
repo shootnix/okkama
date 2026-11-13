@@ -1,5 +1,13 @@
 module http/cookie_date v1.0.0;
 
+// Cookie dates: the forgiving Expires grammar of RFC 6265bis.
+//
+//     ParsedCookieDate("Wed, 21 Oct 2015 07:28:00 GMT").instant();
+//     ParsedCookieDate("21-Oct-15 07:28:00").instant();
+//
+// Weekdays and zone names are ignored and two-digit years get a fixed century
+// (70-99 → 19xx, 00-69 → 20xx). No locale or clock is read.
+
 import "time/clock" take Instant;
 import "time/date" take Date, InvalidDate;
 import "time/day" take TimeOfDay, InvalidTimeOfDay;
@@ -16,10 +24,12 @@ import "encoding/single_byte" take Latin1Encoded, UnrepresentableLatin1Character
 object ParsedCookieDate {
     has origin is string;
 
+    // The text of an Expires attribute.
     ParsedCookieDate(origin is string) {
         self.origin = origin;
     }
 
+    // The instant; InvalidCookieDate when the text has no date.
     instant() is Instant {
         confirm origin.length() <= 4096
             else throw InvalidCookieDate.because("source limit exceeded");
@@ -173,6 +183,7 @@ hidden object CookieDateDecimal {
     }
 }
 
+// Text without a valid cookie date; reason says why.
 enum InvalidCookieDate is Error = (because(reason is string));
 
 test "cookie date does not validate weekday" {

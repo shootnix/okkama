@@ -1,38 +1,55 @@
 module http/auth_challenge v1.0.0;
 
+// WWW-Authenticate challenges (RFC 9110 §11): the schemes a server offers.
+//
+//     for AuthenticationChallenges(response::Head::headers.text("WWW-Authenticate")).values() -> challenge {
+//         challenge::Challenge::scheme;                  // "digest", lowercase
+//         challenge.parameter("realm");
+//     }
+//
+// Input is bounded: 8192 bytes, 32 challenges and 32 parameters each, by
+// default.
+
 import "http/header" take HttpAsciiLowercase;
 import "http/media_type" take HttpMediaOctet, HttpMediaPosition, HttpMediaScanned, HttpMediaItems;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
 import "io/buffer" take ByteBuffer;
 
+// One `name=value` parameter of a challenge.
 object AuthenticationParameter {
     has name, value is string;
     has quoted is bool;
 
+    // The parameter; quoted says whether its value was quoted.
     AuthenticationParameter(name is string, value is string, quoted is bool) {
         self.name = HttpAsciiLowercase(name).string();
         self.value = value;
         self.quoted = quoted;
     }
 
+    // Its name, lowercase.
     name() is string {
         name;
     }
 
+    // Its value, unquoted.
     value() is string {
         value;
     }
 
+    // Whether it was quoted.
     quoted() is bool {
         quoted;
     }
 }
 
+// One challenge: a scheme and either parameters or a token68.
 object AuthenticationChallenge {
     has scheme is string;
     has parameters is @AuthenticationParameter;
     has token is string;
 
+    // The challenge as given.
     AuthenticationChallenge(
         scheme is string,
         parameters is @AuthenticationParameter,
@@ -43,6 +60,7 @@ object AuthenticationChallenge {
         token = token68;
     }
 
+    // Whether it has the parameter.
     present(name is string) is bool {
         let key = HttpAsciiLowercase(name).string();
         parameters.reduce(false) -> found, parameter {
@@ -50,6 +68,7 @@ object AuthenticationChallenge {
         };
     }
 
+    // The parameter's value; InvalidAuthenticationChallenge when absent.
     parameter(name is string) is string {
         let key = HttpAsciiLowercase(name).string();
         for parameters -> parameter {
@@ -60,6 +79,7 @@ object AuthenticationChallenge {
         throw InvalidAuthenticationChallenge.because("missing parameter");
     }
 
+    // Whether the parameter was quoted.
     quoted(name is string) is bool {
         let key = HttpAsciiLowercase(name).string();
         for parameters -> parameter {
@@ -70,6 +90,7 @@ object AuthenticationChallenge {
         throw InvalidAuthenticationChallenge.because("missing parameter");
     }
 
+    // The scheme, lowercase, and the token68 ("" for none).
     cap Challenge {
         scheme is string {
             scheme;
@@ -81,9 +102,11 @@ object AuthenticationChallenge {
     }
 }
 
+// The challenges of a WWW-Authenticate value.
 object AuthenticationChallenges {
     has origin is @AuthenticationChallenge;
 
+    // Reads origin within 8192 bytes, 32 challenges and 32 parameters.
     AuthenticationChallenges(origin is string) {
         self.origin = AuthenticationChallengeScanning(
             origin: origin,
@@ -93,6 +116,7 @@ object AuthenticationChallenges {
         ).values();
     }
 
+    // Reads origin within these limits.
     AuthenticationChallenges(origin is string, bytes is int, challenges is int, parameters is int) {
         self.origin = AuthenticationChallengeScanning(
             origin: origin,
@@ -102,6 +126,7 @@ object AuthenticationChallenges {
         ).values();
     }
 
+    // The challenges, in order.
     values() is @AuthenticationChallenge {
         origin;
     }
@@ -347,6 +372,7 @@ hidden object AuthenticationChallengeScanning {
     }
 }
 
+// Text that is not a challenge list; reason says why.
 enum InvalidAuthenticationChallenge is Error = (because(reason is string));
 
 test "Authentication fields separate challenge schemes from quoted commas" {

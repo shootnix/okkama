@@ -1,5 +1,14 @@
 module http/cookie_client v1.0.0;
 
+// Sending and keeping cookies around a client.
+//
+//     let client = CookieExchanging(origin: HttpClient(), jar: MemoryCookieJar(), contexts: FirstPartyCookies());
+//     await client.response(Request(url: "https://example.com/"));
+//
+// HttpClient(cookies: jar) does this for you. The jar's cookies go out in one
+// Cookie field; the Set-Cookie fields of every hop are kept. A Cookie field the
+// caller set is refused unless CallerCookiePolicy says to keep or replace it.
+
 import "http/exchange" take ClientResponse, Exchanging;
 import "http/message" take Request;
 import "http/target" take RequestTargetKind;
@@ -17,13 +26,18 @@ import "http/method" take Method;
 import "http/header" take Headers;
 import "url/value" take ParsedUrl;
 
+// What decides the cookie context of a request.
 role CookieContextualizing {
+    // The context of request.
     context(request is Request) is CookieContext;
 }
 
+// Every request is first-party and top-level, as for a plain HTTP client.
 object FirstPartyCookies does CookieContextualizing {
+    // The policy.
     FirstPartyCookies();
 
+    // The request's own site, top-level; the target must be absolute.
     context(request is Request) is CookieContext {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
@@ -35,14 +49,19 @@ object FirstPartyCookies does CookieContextualizing {
     }
 }
 
+// What to do with a Cookie field the caller set: refuse it, send it instead of
+// the jar's, or replace it with the jar's.
 enum CallerCookiePolicy = (reject, preserve, replace);
 
+// A client that sends and keeps cookies.
 object CookieExchanging does Exchanging {
     has origin is Exchanging;
     has jar is CookieStoring;
     has contexts is CookieContextualizing;
     has conflict is CallerCookiePolicy;
 
+    // Sends through origin with jar; a caller's Cookie field is
+    // CallerCookieConflict.
     CookieExchanging(origin is Exchanging, jar is CookieStoring, contexts is CookieContextualizing) {
         self.origin = origin;
         self.jar = jar;
@@ -50,6 +69,7 @@ object CookieExchanging does Exchanging {
         conflict = CallerCookiePolicy.reject;
     }
 
+    // The same, with conflict deciding about a caller's Cookie field.
     CookieExchanging(
         origin is Exchanging,
         jar is CookieStoring,
@@ -62,6 +82,7 @@ object CookieExchanging does Exchanging {
         self.conflict = conflict;
     }
 
+    // Sends request with the jar's cookies and keeps what came back.
     async response(request is Request) is ClientResponse {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
@@ -162,8 +183,10 @@ hidden object CookieRequestPairs {
     }
 }
 
+// The request already had a Cookie field.
 enum CallerCookieConflict is Error = (conflict);
 
+// A cookie exchange went over a limit; reason says which.
 enum CookieExchangeLimit is Error = (because(reason is string));
 
 test "first-party cookies use the current request site and method" {

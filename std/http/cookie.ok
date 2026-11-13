@@ -1,8 +1,20 @@
 module http/cookie v1.0.0;
 
-// Absolute expiry is explicit. A session cookie has no instant, including no
-// epoch sentinel. Construction neither queries a clock nor rounds a timestamp.
-// Max-Age/Expires interpretation and cookie storage policy are separate consumers.
+// Cookies (RFC 6265bis): Set-Cookie on the way out, Cookie on the way in.
+//
+//     Response(status: Status.ok, headers: Headers(
+//         SetCookie(name: "sid", value: token),
+//         SetCookie(name: "theme", value: "dark", max_age: Duration(days: 30)),
+//     ));
+//     Headers(ExpiredCookie("sid"));                     // removes it
+//
+//     let cookies = RequestCookies(request);
+//     cookies.text("sid");                               // MissingCookie when absent
+//     cookies.maybe("theme").text() else "light";
+//
+// SetCookie(name, value) is safe by default: Path=/, Secure, HttpOnly and
+// SameSite=Lax. Build a Cookie with CookieAttributes to say otherwise. A cookie
+// without an expiry is a session cookie. Values are redacted in diagnostics.
 
 import "time/clock" take Instant;
 import "encoding/utf" take Utf8Encoded;
@@ -18,31 +30,40 @@ import "collections/set" take Set, OrderedSet;
 import "collections/iteration" take Cursor;
 import "collections/sequence" take Sequencing;
 
+// When a cookie expires: an instant, or none for a session cookie.
 object CookieExpiry {
     has origin is @Instant;
 
+    // A session cookie: no expiry.
     CookieExpiry() {
         origin = [];
     }
 
+    // Expires at origin.
     CookieExpiry(origin is Instant) {
         self.origin = [origin];
     }
 
+    // Whether it has an instant.
     persistent() is bool {
         origin.size() == 1;
     }
 
+    // The instant; MissingCookieExpiry for a session cookie.
     instant() is Instant {
         confirm self.persistent() else throw MissingCookieExpiry.missing;
         origin[0];
     }
 }
 
+// A session cookie has no expiry instant.
 enum MissingCookieExpiry is Error = (missing);
 
+// Secure, HttpOnly and Partitioned.
 enum CookieFlag = (secure, http_only, partitioned);
 
+// The SameSite attribute; cross_site is written `None`, unspecified is left
+// out.
 enum SameSite = (unspecified, strict, lax, cross_site);
 
 // Names retain case; the prefix checks follow the case-insensitive consumer
@@ -55,6 +76,8 @@ object CookieAttributes {
     has same_site is SameSite;
     has secure, http_only, partitioned is bool;
 
+    // No attributes at all: no domain, no path, a session cookie, no SameSite,
+    // no flags.
     CookieAttributes() {
         domain = "";
         path = "";
@@ -65,6 +88,7 @@ object CookieAttributes {
         partitioned = false;
     }
 
+    // The attributes as given.
     CookieAttributes(
         domain is string,
         path is string,
@@ -112,10 +136,12 @@ object CookieAttributes {
         partitioned = checked.partitioned();
     }
 
+    // When it expires.
     expiry() is CookieExpiry {
         expiry;
     }
 
+    // Its flags.
     flags() is Set<CookieFlag> {
         let all = [CookieFlag.secure, CookieFlag.http_only, CookieFlag.partitioned];
         let selected is @CookieFlag = all.filter() -> flag {
@@ -137,6 +163,7 @@ object CookieAttributes {
         OrderedSet(selected);
     }
 
+    // The attributes as Set-Cookie writes them, each after `; `.
     string() is string {
         let date = if expiry.persistent() {
             let wire = try {
@@ -193,6 +220,7 @@ object CookieAttributes {
             });
     }
 
+    // The Domain, the Path and SameSite.
     cap Attributes {
         domain is string {
             domain;
@@ -208,10 +236,12 @@ object CookieAttributes {
     }
 }
 
+// A cookie: a name, a value and attributes.
 object Cookie {
     has name, value is string;
     has attributes is CookieAttributes;
 
+    // The cookie; InvalidCookie for a name or value Set-Cookie cannot carry.
     Cookie(name is string, value is string, attributes is CookieAttributes) {
         confirm name.length() + value.length() <= 4096
             else throw InvalidCookie.because("cookie pair source limit exceeded");
@@ -250,18 +280,22 @@ object Cookie {
         self.attributes = attributes;
     }
 
+    // Its name.
     name() is string {
         name;
     }
 
+    // Its value.
     value() is string {
         value;
     }
 
+    // Its attributes.
     attributes() is CookieAttributes {
         attributes;
     }
 
+    // `name=value`, as a Cookie field sends it.
     pair() is string {
         if name == "" {
             value;
@@ -271,10 +305,12 @@ object Cookie {
         }
     }
 
+    // The Set-Cookie value: the pair and the attributes.
     string() is string {
         self.pair() + attributes.string();
     }
 
+    // `cookie name=<redacted>`, for logs.
     diagnostic() is string {
         "cookie " + name + "=<redacted>";
     }
@@ -427,11 +463,13 @@ object SetCookie does HeaderField {
     has cookie is Cookie;
     has seconds is @int;
 
+    // A session cookie with Path=/, Secure, HttpOnly and SameSite=Lax.
     SetCookie(name is string, value is string) {
         cookie = Cookie(name: name, value: value, attributes: SafeCookieAttributes().attributes());
         seconds = [];
     }
 
+    // The same, kept for max_age (whole seconds); InvalidCookie when negative.
     SetCookie(name is string, value is string, max_age is Duration) {
         let whole = max_age::Span::seconds.int();
         confirm whole >= 0 else throw InvalidCookie.because("Max-Age cannot be negative");
@@ -439,11 +477,13 @@ object SetCookie does HeaderField {
         seconds = [whole];
     }
 
+    // cookie as it is.
     SetCookie(cookie is Cookie) {
         self.cookie = cookie;
         seconds = [];
     }
 
+    // The Set-Cookie field.
     header() is Header {
         let age = if seconds.size() == 1 {
             "; Max-Age=" + seconds[0].string();
@@ -460,11 +500,13 @@ object SetCookie does HeaderField {
 object ExpiredCookie does HeaderField {
     has cookie is Cookie;
 
+    // Removes the cookie name; InvalidCookie for an empty name.
     ExpiredCookie(name is string) {
         confirm name != "" else throw InvalidCookie.because("an expired cookie needs its name");
         cookie = Cookie(name: name, value: "", attributes: SafeCookieAttributes().attributes());
     }
 
+    // The Set-Cookie field.
     header() is Header {
         Header(name: "Set-Cookie", value: cookie.string() + "; Max-Age=0");
     }
@@ -496,6 +538,7 @@ hidden object SafeCookieAttributes {
 object RequestCookies {
     has request is Request;
 
+    // The cookies request sent.
     RequestCookies(request is Request) {
         self.request = request;
     }
@@ -548,15 +591,18 @@ object CookieMaybeReader {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by RequestCookies.maybe(name); not constructed directly.
     CookieMaybeReader(name is string, value is Maybe<string>) {
         self.name = name;
         self.value = value;
     }
 
+    // The value, or none.
     text() is Maybe<string> {
         value;
     }
 
+    // The value as a decimal integer, or none; InvalidCookie for another form.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -630,8 +676,10 @@ hidden object CookieFieldPairs {
     }
 }
 
+// The request sent no cookie of that name.
 enum MissingCookie is Error = (name(name is string));
 
+// A cookie that cannot be written or read; reason says why.
 enum InvalidCookie is Error = (because(reason is string));
 
 test "session expiry has no absolute instant" {
