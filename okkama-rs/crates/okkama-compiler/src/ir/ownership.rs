@@ -6,10 +6,8 @@
 //! aliases do not introduce sites. Owners describe escape from the function,
 //! not the first binding's precise lexical region. No region is rewritten.
 //!
-//! Provenance includes identities inside aggregates. Managed projections and
-//! aggregate copies are unknown because field selection is not modeled.
-//! Unknown operations are sinks;
-//! parameters and opaque origins never prove a region operation static.
+//! Provenance distinguishes roots, contents, and borrowed child projections.
+//! Unknown operations are sinks; parameters and opaque origins never prove a region operation static.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
@@ -20,17 +18,20 @@ use super::{Function, InstKind, Module, TermKind, Type, ValueId, cfg};
 pub struct Escape {
     pub result: bool,
     pub result_field: bool,
+    /// The result borrows a child, not the parameter identity.
+    pub result_part: bool,
     pub reasons: BTreeSet<String>,
 }
 
 impl Escape {
     pub fn escapes(&self) -> bool {
-        self.result || self.result_field || !self.reasons.is_empty()
+        self.result || self.result_field || self.result_part || !self.reasons.is_empty()
     }
 
     fn join(&mut self, other: &Self) {
         self.result |= other.result;
         self.result_field |= other.result_field;
+        self.result_part |= other.result_part;
         self.reasons.extend(other.reasons.iter().cloned());
     }
 }
@@ -56,6 +57,8 @@ pub struct Creation {
     pub value: usize,
     pub kind: String,
     pub owner: Owner,
+    /// Origin IDs retained without acquiring a second owner.
+    pub borrowed_contents: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,7 +147,7 @@ pub fn analyze(module: &Module) -> Report {
             top_unknown: (0..module.functions.len().min(50)).collect(),
         };
     }
-    let plain = Plain::of(module);
+    let plain = CensusPlain::of(module);
     let mut destructors = HashMap::new();
     for ty in module.functions.iter().flat_map(|function| &function.values) {
         destructors.entry(ty.clone()).or_insert_with(|| destroyers(module, ty));
@@ -190,6 +193,16 @@ pub fn analyze(module: &Module) -> Report {
 fn callees(module: &Module, function: &Function, kind: &InstKind) -> Vec<usize> {
     match kind {
         InstKind::Call { func, .. } => vec![func.0],
+        InstKind::FnClosure { func, .. } => vec![func.0],
+        InstKind::CallFn { callee, .. } => match definition(function, *callee) {
+            Some(InstKind::FnClosure { func, .. }) => vec![func.0],
+            _ => Vec::new(),
+        },
+        InstKind::CallCap { cap, field } => {
+            let Type::Cap(id) = function.values[cap.0] else { return Vec::new() };
+            module.caps.get(id.0).and_then(|cap| cap.fields.get(*field))
+                .map_or_else(Vec::new, |(_, func)| vec![func.0])
+        }
         InstKind::CallRole { receiver, slot, .. } => {
             let Type::Role(role) = function.values[receiver.0] else { return Vec::new() };
             module.objects.iter().flat_map(|object| &object.does)
@@ -271,31 +284,71 @@ fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
     ordered
 }
 
-fn opaque_reason(function: &Function) -> Option<&'static str> {
+fn definition(function: &Function, value: ValueId) -> Option<&InstKind> {
+    function.blocks.iter().flat_map(|block| &block.insts)
+        .find(|inst| inst.result == Some(value)).map(|inst| &inst.kind)
+}
+
+// Deferred values retain resources independently of their result type.
+struct CensusPlain(HashMap<Type, bool>);
+
+impl CensusPlain {
+    fn of(module: &Module) -> Self {
+        let plain = Plain::of(module);
+        fn retains_deferred(module: &Module, ty: &Type, seen: &mut BTreeSet<usize>) -> bool {
+            match ty {
+                Type::Future(_) | Type::Fn(_) => true,
+                Type::Array(element) | Type::Builder(element) => retains_deferred(module, element, seen),
+                Type::Map(_, value) | Type::MapBuilder(_, value) => retains_deferred(module, value, seen),
+                Type::Object(id) | Type::Successor(id) => seen.insert(id.0)
+                    && module.objects[id.0].fields.iter().any(|field| retains_deferred(module, &field.ty, seen)),
+                Type::Role(role) => module.objects.iter().enumerate().any(|(id, object)| {
+                    object.does.iter().any(|witness| witness.role == *role)
+                        && retains_deferred(module, &Type::Object(super::ObjectId(id)), seen)
+                }),
+                Type::Variant(id) => module.variants[id.0].cases.iter().any(|(_, object)| {
+                    retains_deferred(module, &Type::Object(*object), seen)
+                }),
+                _ => false,
+            }
+        }
+        Self(module.functions.iter().flat_map(|f| &f.values).map(|ty| {
+            (ty.clone(), plain.ty(ty) && !retains_deferred(module, ty, &mut BTreeSet::new()))
+        }).collect())
+    }
+
+    fn ty(&self, ty: &Type) -> bool {
+        self.0[ty]
+    }
+}
+
+fn opaque_reason(function: &Function) -> Option<String> {
     if let Some((name, _)) = function.intrinsic() {
         return Some(if name.starts_with("okkama.atomic.") {
-            "atomic"
+            "atomic".to_string()
         } else if name.starts_with("okkama.channel.") {
-            "channel"
+            "channel".to_string()
         } else if name.starts_with("okkama.scope.") || name.starts_with("okkama.collect.") {
-            "future"
+            "future".to_string()
         } else {
-            "native"
+            format!("intrinsic:{name}")
         });
     }
-    if function.extern_symbol().is_some() || function.blocks.is_empty() {
-        Some("native")
-    } else if function.is_async() {
-        Some("async")
+    if let Some(symbol) = function.extern_symbol() {
+        Some(format!("native:{symbol}"))
+    } else if function.blocks.is_empty() {
+        Some(format!("native:{}", function.symbol))
     } else {
         None
     }
 }
 
 // Each origin is a parameter, an instruction result, or an opaque block input.
-// Bits distinguish the root identity from an identity nested in the value.
+// Child reads cannot prove that the container itself escapes.
 const DIRECT: u8 = 1;
 const INSIDE: u8 = 2;
+const PART: u8 = 4;
+const BORROW: u8 = 8;
 type Facts = BTreeMap<usize, u8>;
 
 #[derive(Clone, Copy)]
@@ -303,6 +356,8 @@ enum EdgeKind {
     Alias,
     Store,
     Read,
+    Contents,
+    Borrow,
 }
 
 struct Flow {
@@ -313,13 +368,16 @@ struct Flow {
     opaque: BTreeSet<usize>,
     sinks: Vec<(usize, String)>,
     returns: Vec<usize>,
+    // Borrowing is harmless until a deferred value escapes.
+    deferred: BTreeMap<usize, String>,
+    awaited: Vec<(usize, usize)>,
 }
 
 impl Flow {
     fn build(
         module: &Module,
         index: usize,
-        plain: &Plain,
+        plain: &CensusPlain,
         summaries: &[Summary],
         destructors: &HashMap<Type, Vec<usize>>,
     ) -> Self {
@@ -329,15 +387,17 @@ impl Flow {
             facts: vec![Facts::new(); count], edges: vec![Vec::new(); count],
             effects: vec![Escape::default(); count], sites: BTreeMap::new(),
             opaque: BTreeSet::new(), sinks: Vec::new(), returns: Vec::new(),
+            deferred: BTreeMap::new(), awaited: Vec::new(),
         };
         for &parameter in &function.params {
             if !plain.ty(&function.values[parameter.0]) {
                 flow.facts[parameter.0].insert(parameter.0, DIRECT);
                 if let Some(reason) = opaque_reason(function) {
-                    flow.sink(parameter, reason);
+                    flow.sink(parameter, &reason);
                 }
             }
         }
+        let mut await_results = BTreeMap::new();
         for (block_index, block) in function.blocks.iter().enumerate() {
             for (instruction, inst) in block.insts.iter().enumerate() {
                 let result = inst.result.filter(|value| !plain.ty(&function.values[value.0]));
@@ -367,7 +427,44 @@ impl Flow {
                     | InstKind::MapGet { map: from, .. } => {
                         if let Some(to) = result {
                             flow.edge(*from, to, EdgeKind::Read);
-                            flow.unknown(&operands, result, &format!("other:{}", name(&inst.kind)));
+                        }
+                    }
+                    InstKind::ArraySlice { array, .. } | InstKind::ArrayRemove { array, .. }
+                    | InstKind::ArrayDifference { array, .. } => {
+                        site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            flow.edge(*array, to, EdgeKind::Contents);
+                        }
+                    }
+                    InstKind::ArrayReplace { array, value, .. } => {
+                        site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            flow.edge(*array, to, EdgeKind::Contents);
+                            flow.edge(*value, to, EdgeKind::Store);
+                        }
+                    }
+                    InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => {
+                        site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            for &part in parts {
+                                flow.edge(part, to, EdgeKind::Contents);
+                            }
+                        }
+                    }
+                    InstKind::MapDifference { map, .. } | InstKind::MapKeys(map)
+                    | InstKind::MapValues(map) => {
+                        site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            flow.edge(*map, to, EdgeKind::Contents);
+                        }
+                    }
+                    InstKind::ObjNext { object, updates } => {
+                        site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            flow.edge(*object, to, EdgeKind::Contents);
+                            for &(_, value) in updates {
+                                flow.edge(value, to, EdgeKind::Store);
+                            }
                         }
                     }
                     InstKind::BuilderPush { builder, value }
@@ -380,66 +477,95 @@ impl Flow {
                     InstKind::BuilderAppend { builder, array } => {
                         if let Some(to) = result {
                             flow.edge(*builder, to, EdgeKind::Alias);
-                            flow.edge(*array, to, EdgeKind::Store);
-                            flow.unknown(&operands, result, "other:builderappend");
+                            flow.edge(*array, to, EdgeKind::Contents);
                         }
                     }
-                    InstKind::Call { .. } | InstKind::CallRole { .. } => {
+                    InstKind::BuilderAppendRange { builder, .. } => {
+                        if let Some(to) = result {
+                            flow.edge(*builder, to, EdgeKind::Alias);
+                        }
+                    }
+                    InstKind::CapMake(owner) => {
+                        if let Some(to) = result {
+                            // Lowered caps represent their owner, not a fresh identity.
+                            flow.edge(*owner, to, EdgeKind::Alias);
+                        }
+                    }
+                    InstKind::Call { .. } | InstKind::CallRole { .. }
+                    | InstKind::CallCap { .. } | InstKind::CallFn { .. } => {
                         let targets = callees(module, function, &inst.kind);
-                        let role = matches!(inst.kind, InstKind::CallRole { .. });
-                        let disagree = role && targets.windows(2).any(|pair| summaries[pair[0]] != summaries[pair[1]]);
+                        let mut arguments = operands.clone();
+                        if let InstKind::CallFn { callee, args } = &inst.kind
+                            && let Some(InstKind::FnClosure { captures, .. }) = definition(function, *callee)
+                        {
+                            arguments = captures.iter().chain(args).copied().collect();
+                        }
                         if targets.is_empty() {
-                            flow.unknown(&operands, result, "role-call");
+                            let reason = match inst.kind {
+                                InstKind::CallCap { .. } => "cap",
+                                InstKind::CallFn { .. } => "indirect-call",
+                                _ => "role-call",
+                            };
+                            if reason == "cap" {
+                                if let Some(to) = result { flow.sink(to, reason); }
+                            } else {
+                                flow.unknown(&arguments, result, reason);
+                            }
                             site = Some("call.result".to_string());
                         }
                         for target in targets {
-                            let callee = &module.functions[target];
-                            let summary = &summaries[target];
-                            if let Some(reason) = opaque_reason(callee) {
-                                flow.unknown(&operands, result, reason);
-                                site = Some("call.result".to_string());
-                                continue;
-                            }
-                            for (&argument, escape) in operands.iter().zip(&summary.parameters) {
-                                for reason in &escape.reasons {
-                                    flow.sink(argument, reason);
-                                }
+                            if module.functions[target].is_async() {
+                                site = Some("call.future".to_string());
                                 if let Some(to) = result {
-                                    if escape.result {
-                                        flow.edge(argument, to, EdgeKind::Alias);
+                                    for &argument in &arguments {
+                                        flow.edge(argument, to, EdgeKind::Borrow);
                                     }
-                                    if escape.result_field {
-                                        flow.edge(argument, to, EdgeKind::Store);
-                                    }
+                                    flow.deferred.insert(to.0, "future".to_string());
                                 }
-                            }
-                            if summary.fresh {
+                            } else if flow.call(&module.functions[target], &summaries[target], &arguments, result) {
                                 site = Some("call.result".to_string());
                             }
-                            if let Some(to) = result {
-                                if summary.opaque_result {
-                                    flow.facts[to.0].insert(to.0, DIRECT);
-                                    flow.opaque.insert(to.0);
-                                }
-                                for reason in &summary.result_reasons {
-                                    flow.sink(to, reason);
-                                }
-                            }
-                        }
-                        if disagree {
-                            flow.unknown(&operands, result, "role-call");
                         }
                     }
-                    InstKind::FnClosure { .. } | InstKind::CallFn { .. } => {
-                        flow.unknown(&operands, result, "closure");
+                    InstKind::FnClosure { captures, .. } => {
                         site = Some(name(&inst.kind));
+                        if let Some(to) = result {
+                            for &capture in captures {
+                                flow.edge(capture, to, EdgeKind::Borrow);
+                            }
+                            flow.deferred.insert(to.0, "closure".to_string());
+                        }
                     }
                     InstKind::AnyBox(_) => {
                         flow.unknown(&operands, result, "any");
                         site = Some(name(&inst.kind));
                     }
-                    InstKind::Await(_) | InstKind::FutSpawn(_) | InstKind::Fut { .. }
-                    | InstKind::WorkerSpawn { .. } | InstKind::WorkerBind { .. } => {
+                    InstKind::Await(future) => {
+                        if let Some(InstKind::Call { func, args }) = definition(function, *future)
+                            && module.functions[func.0].is_async()
+                        {
+                            let fresh = flow.call(&module.functions[func.0], &summaries[func.0], args, result);
+                            if let Some(to) = result {
+                                // Repeated awaits reuse the future's cached identity.
+                                if let Some(&previous) = await_results.get(future) {
+                                    flow.edge(previous, to, EdgeKind::Alias);
+                                } else {
+                                    await_results.insert(*future, to);
+                                    if fresh { site = Some("await.result".to_string()); }
+                                }
+                                flow.awaited.push((future.0, to.0));
+                            }
+                        } else {
+                            flow.unknown(&operands, result, "future");
+                            site = Some(name(&inst.kind));
+                        }
+                    }
+                    InstKind::FutSpawn(_) | InstKind::WorkerSpawn { .. }
+                    | InstKind::WorkerBind { .. } => {
+                        flow.unknown(&operands, result, "spawn");
+                        site = Some(name(&inst.kind));
+                    }
+                    InstKind::Fut { .. } => {
                         flow.unknown(&operands, result, "future");
                         site = Some(name(&inst.kind));
                     }
@@ -457,19 +583,41 @@ impl Flow {
                     // These operations only observe their operands and produce plain values.
                     InstKind::ValCompare { .. } | InstKind::ArrayLen(_) | InstKind::MapLen(_)
                     | InstKind::MapHas { .. } | InstKind::VariantTag(_) | InstKind::ObjPending { .. }
-                    | InstKind::BuilderAppendRange { .. } => {}
-                    _ => {
+                    | InstKind::Const(_) | InstKind::IntBinary { .. } | InstKind::IntUnary { .. }
+                    | InstKind::IntCompare { .. } | InstKind::BoolNot(_) | InstKind::BoolCompare { .. }
+                    | InstKind::StrConcat { .. } | InstKind::StrCompare { .. } | InstKind::Str { .. }
+                    | InstKind::ArrayJoin { .. } | InstKind::IntAbs(_) | InstKind::IntSign(_)
+                    | InstKind::ByteBinary { .. } | InstKind::ByteNot(_) | InstKind::ByteFrom { .. }
+                    | InstKind::ByteCompare { .. } | InstKind::CharCompare { .. }
+                    | InstKind::EnumCase { .. } | InstKind::EnumCompare { .. }
+                    | InstKind::Float { .. } | InstKind::FloatCompare { .. } | InstKind::FloatSign(_)
+                    | InstKind::Rat { .. } | InstKind::RatCompare { .. } | InstKind::RatSign(_)
+                    | InstKind::RatPart { .. } | InstKind::RangeNew { .. } | InstKind::RangePart { .. }
+                    | InstKind::Bits { .. } => {}
+                    // Mutation and error chains need ownership across scopes.
+                    InstKind::ObjInit { .. } | InstKind::OnceStore { .. }
+                    | InstKind::FailCaused { .. } | InstKind::FailSecondary { .. } => {
                         let reason = format!("other:{}", name(&inst.kind));
                         flow.unknown(&operands, result, &reason);
                         site = Some(name(&inst.kind));
                     }
                 }
+                if !matches!(inst.kind, InstKind::Await(_) | InstKind::FutSpawn(_)
+                    | InstKind::Fut { .. } | InstKind::WorkerSpawn { .. } | InstKind::WorkerBind { .. }
+                    | InstKind::RegionEnter | InstKind::RegionAdopt { .. } | InstKind::RegionTrack { .. }
+                    | InstKind::RegionTransfer { .. } | InstKind::RegionLeave { .. }
+                    | InstKind::RegionSettle { .. } | InstKind::RegionUnwind { .. }
+                    | InstKind::RegionSettleUnwind { .. })
+                {
+                    for &operand in &operands {
+                        if matches!(function.values[operand.0], Type::Future(_)) {
+                            flow.sink(operand, "future");
+                        }
+                    }
+                }
                 if let (Some(value), Some(kind)) = (result, site) {
                     flow.facts[value.0].insert(value.0, DIRECT);
                     flow.sites.insert(value.0, (block_index, instruction, kind));
-                    if function.is_async() {
-                        flow.sink(value, "async");
-                    }
                 }
             }
             for target in block.term.kind.targets().into_iter().chain(block.unwind.as_ref()) {
@@ -488,10 +636,6 @@ impl Flow {
                         && !plain.ty(&function.values[to.0])
                     {
                         flow.edge(*from, to, EdgeKind::Read);
-                        flow.sink(*from, match block.term.kind {
-                            TermKind::ArrayLookup { .. } => "other:arraylookup",
-                            _ => "other:maplookup",
-                        });
                     }
                 }
                 TermKind::Catch { handler, .. } => {
@@ -517,6 +661,33 @@ impl Flow {
         }
         flow.solve();
         flow
+    }
+
+    fn call(&mut self, callee: &Function, summary: &Summary, arguments: &[ValueId], result: Option<ValueId>) -> bool {
+        if let Some(reason) = opaque_reason(callee) {
+            self.unknown(arguments, result, &reason);
+            return true;
+        }
+        for (&argument, escape) in arguments.iter().zip(&summary.parameters) {
+            for reason in &escape.reasons {
+                self.sink(argument, reason);
+            }
+            if let Some(to) = result {
+                if escape.result { self.edge(argument, to, EdgeKind::Alias); }
+                if escape.result_field { self.edge(argument, to, EdgeKind::Store); }
+                if escape.result_part { self.edge(argument, to, EdgeKind::Read); }
+            }
+        }
+        if let Some(to) = result {
+            if summary.opaque_result {
+                self.facts[to.0].insert(to.0, DIRECT);
+                self.opaque.insert(to.0);
+            }
+            for reason in &summary.result_reasons {
+                self.sink(to, reason);
+            }
+        }
+        summary.fresh || summary.opaque_result
     }
 
     fn edge(&mut self, from: ValueId, to: ValueId, kind: EdgeKind) {
@@ -546,8 +717,9 @@ impl Flow {
                 for (origin, bits) in self.facts[from].clone() {
                     let bits = match kind {
                         EdgeKind::Alias => bits,
-                        EdgeKind::Store => INSIDE,
-                        EdgeKind::Read => DIRECT | INSIDE,
+                        EdgeKind::Store => (if bits & (DIRECT | INSIDE) != 0 { INSIDE } else { 0 }) | (bits & (PART | BORROW)),
+                        EdgeKind::Read | EdgeKind::Contents => PART,
+                        EdgeKind::Borrow => (if bits & (DIRECT | INSIDE | BORROW) != 0 { BORROW } else { 0 }) | (bits & PART),
                     };
                     let previous = self.facts[to].entry(origin).or_default();
                     changed |= *previous | bits != *previous;
@@ -559,16 +731,36 @@ impl Flow {
                 }
             }
         }
-        for &(value, ref reason) in &self.sinks {
-            for &origin in self.facts[value].keys() {
-                self.effects[origin].reasons.insert(reason.clone());
-            }
-        }
         for &value in &self.returns {
             for (&origin, &bits) in &self.facts[value] {
                 self.effects[origin].result |= bits & DIRECT != 0;
-                self.effects[origin].result_field |= bits & INSIDE != 0;
+                self.effects[origin].result_field |= bits & (INSIDE | BORROW) != 0;
+                self.effects[origin].result_part |= bits & PART != 0;
             }
+        }
+        let mut processed = 0;
+        loop {
+            while processed < self.sinks.len() {
+                let (value, reason) = &self.sinks[processed];
+                for (&origin, &bits) in &self.facts[*value] {
+                    self.effects[origin].reasons.insert(if bits == PART { "child".to_string() } else { reason.clone() });
+                }
+                processed += 1;
+            }
+            let escaped: Vec<_> = self.deferred.iter().filter(|(origin, _)| self.effects[**origin].escapes())
+                .map(|(&origin, reason)| (origin, reason.clone())).collect();
+            for (origin, reason) in escaped {
+                self.deferred.remove(&origin);
+                self.sink(ValueId(origin), &reason);
+            }
+            // An escaped future no longer has a locally owned result.
+            for &(future, result) in &self.awaited {
+                for reason in &self.effects[future].reasons {
+                    let sink = (result, reason.clone());
+                    if !self.sinks.contains(&sink) { self.sinks.push(sink); }
+                }
+            }
+            if processed == self.sinks.len() { break; }
         }
     }
 
@@ -578,10 +770,15 @@ impl Flow {
             ..Summary::default()
         };
         for &value in &self.returns {
-            for &origin in self.facts[value].keys() {
-                summary.fresh |= self.sites.contains_key(&origin);
-                summary.opaque_result |= self.opaque.contains(&origin);
-                summary.result_reasons.extend(self.effects[origin].reasons.iter().cloned());
+            for (&origin, &bits) in &self.facts[value] {
+                if bits == PART && !function.params.contains(&ValueId(origin)) {
+                    summary.opaque_result = true;
+                    summary.result_reasons.insert("child".to_string());
+                } else {
+                    summary.fresh |= self.sites.contains_key(&origin);
+                    summary.opaque_result |= self.opaque.contains(&origin);
+                    summary.result_reasons.extend(self.effects[origin].reasons.iter().cloned());
+                }
             }
         }
         summary
@@ -589,8 +786,10 @@ impl Flow {
 
     fn owner(&self, value: usize, containers: Vec<usize>) -> Owner {
         let effect = &self.effects[value];
-        if !effect.reasons.is_empty() {
-            return Owner::Unknown(effect.reasons.clone());
+        if !effect.reasons.is_empty() || effect.result_part {
+            let mut reasons = effect.reasons.clone();
+            if effect.result_part { reasons.insert("child".to_string()); }
+            return Owner::Unknown(reasons);
         }
         if effect.result {
             return Owner::Result;
@@ -614,12 +813,13 @@ impl Flow {
         }
     }
 
-    fn report(&self, index: usize, function: &Function, plain: &Plain, parameters: Vec<Escape>) -> FunctionReport {
+    fn report(&self, index: usize, function: &Function, plain: &CensusPlain, parameters: Vec<Escape>) -> FunctionReport {
         let mut report = FunctionReport {
             function: index, symbol: function.symbol.clone(), parameters,
             creations: Vec::new(), region_ops: Vec::new(), totals: Totals::default(),
         };
         let mut containers: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+        let mut borrows: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
         for facts in &self.facts {
             for (&container, &bits) in facts {
                 if bits & DIRECT == 0 || !self.sites.contains_key(&container) {
@@ -628,6 +828,9 @@ impl Flow {
                 for (&value, &bits) in facts {
                     if value != container && bits & INSIDE != 0 {
                         containers.entry(value).or_default().insert(container);
+                    }
+                    if value != container && bits & (PART | BORROW) != 0 {
+                        borrows.entry(container).or_default().insert(value);
                     }
                 }
             }
@@ -648,7 +851,8 @@ impl Flow {
                     }
                 }
             }
-            report.creations.push(Creation { block, instruction, value, kind: kind.clone(), owner });
+            let borrowed_contents = borrows.remove(&value).unwrap_or_default().into_iter().collect();
+            report.creations.push(Creation { block, instruction, value, kind: kind.clone(), owner, borrowed_contents });
         }
         let members = region_members(function);
         for (block_index, block) in function.blocks.iter().enumerate() {
@@ -666,8 +870,8 @@ impl Flow {
                 };
                 values.insert(value.0);
                 let statically_owned = values.iter().all(|&value| plain.ty(&function.values[value])
-                    || (!self.facts[value].is_empty() && self.facts[value].keys().all(|origin| {
-                        owners.get(origin).is_some_and(|owner| !matches!(owner, Owner::Unknown(_)))
+                    || (!self.facts[value].is_empty() && self.facts[value].iter().all(|(origin, bits)| {
+                        *bits & PART == 0 && owners.get(origin).is_some_and(|owner| !matches!(owner, Owner::Unknown(_)))
                     })));
                 if statically_owned {
                     report.totals.region_static += 1;
@@ -757,8 +961,8 @@ impl Report {
     pub fn to_json(&self) -> String {
         let functions = self.functions.iter().map(|function| {
             let parameters = function.parameters.iter().map(|parameter| format!(
-                "{{\"escapes\":{},\"result\":{},\"result_field\":{},\"reasons\":{}}}",
-                parameter.escapes(), parameter.result, parameter.result_field, reasons_json(&parameter.reasons)
+                "{{\"escapes\":{},\"result\":{},\"result_field\":{},\"result_part\":{},\"reasons\":{}}}",
+                parameter.escapes(), parameter.result, parameter.result_field, parameter.result_part, reasons_json(&parameter.reasons)
             )).collect::<Vec<_>>().join(",");
             let creations = function.creations.iter().map(|site| {
                 let owner = match &site.owner {
@@ -769,7 +973,7 @@ impl Report {
                     })),
                     Owner::Unknown(reasons) => format!("\"class\":\"unknown\",\"reasons\":{}", reasons_json(reasons)),
                 };
-                format!("{{\"block\":{},\"instruction\":{},\"value\":{},\"kind\":{},{owner}}}", site.block, site.instruction, site.value, quoted(&site.kind))
+                format!("{{\"block\":{},\"instruction\":{},\"value\":{},\"kind\":{},\"borrowed_contents\":{:?},{owner}}}", site.block, site.instruction, site.value, quoted(&site.kind), site.borrowed_contents)
             }).collect::<Vec<_>>().join(",");
             let regions = function.region_ops.iter().map(|op| format!(
                 "{{\"block\":{},\"instruction\":{},\"kind\":{},\"values\":{:?},\"static\":{}}}",
@@ -778,7 +982,12 @@ impl Report {
             format!("{{\"function\":{},\"symbol\":{},\"totals\":{},\"parameters\":[{parameters}],\"creations\":[{creations}],\"region_ops\":[{regions}]}}",
                 function.function, quoted(&function.symbol), function.totals.json())
         }).collect::<Vec<_>>().join(",");
-        format!("{{\"schema\":1,\"site_basis\":\"instructions-including-fresh-call-results\",\"totals\":{},\"top_unknown\":{:?},\"functions\":[{functions}]}}\n", self.totals.json(), self.top_unknown)
+        let split = |genuine| self.totals.reasons.iter().filter(|(reason, _)| {
+            matches!(reason.as_str(), "atomic" | "channel" | "spawn" | "future" | "any" | "child" | "closure" | "indirect-call") == genuine
+        }).map(|(reason, count)| format!("{}:{count}", quoted(reason))).collect::<Vec<_>>().join(",");
+        let genuine = split(true);
+        let model = split(false);
+        format!("{{\"reasons_genuine\":{{{genuine}}},\"reasons_model\":{{{model}}},\"schema\":1,\"site_basis\":\"instructions-including-fresh-call-results\",\"totals\":{},\"top_unknown\":{:?},\"functions\":[{functions}]}}\n", self.totals.json(), self.top_unknown)
     }
 }
 

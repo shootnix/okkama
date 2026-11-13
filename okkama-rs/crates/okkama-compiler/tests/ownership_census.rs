@@ -104,7 +104,7 @@ fn captured_and_boxed_resources_are_unknown() {
         boxed() is any {{ Res(n: 2); }} invoke(f is () is Res) is Res {{ f(); }} }} main() is int {{ 0; }}"));
     assert!(has_reason(function(&report, "Escape.closure"), "closure"));
     assert!(has_reason(function(&report, "Escape.boxed"), "any"));
-    assert!(has_reason(function(&report, "Escape.invoke"), "closure"));
+    assert!(has_reason(function(&report, "Escape.invoke"), "indirect-call"));
     assert!(function(&report, "Escape.closure").creations.iter().all(|site| matches!(site.owner, Owner::Unknown(_))));
 }
 
@@ -186,13 +186,16 @@ fn recursive_sinks_propagate_to_callers() {
 }
 
 #[test]
-fn roles_union_implementations_and_flag_disagreement() {
+fn roles_union_implementations_with_different_summaries() {
     let report = census(&format!("{RES} role Choose {{ pick(r is Res) is Res; }} \
         object Alias does Choose {{ Alias(); pick(r is Res) is Res {{ r; }} }} \
         object Fresh does Choose {{ Fresh(); pick(r is Res) is Res {{ Res(n: 2); }} }} \
         object Use {{ Use(); run(c is Choose) is Res {{ c.pick(Res(n: 1)); }} }} \
         main() is int {{ 0; }}"));
-    assert!(has_reason(function(&report, "Use.run"), "role-call"));
+    let run = function(&report, "Use.run");
+    assert_eq!(run.totals.unknown, 0, "{run:?}");
+    assert_eq!(run.creations.len(), 2);
+    assert!(run.creations.iter().all(|site| site.owner == Owner::Result));
 }
 
 #[test]
@@ -210,17 +213,18 @@ fn managed_projections_do_not_claim_the_parent_escapes() {
     let report = census(&format!("{RES} object Box {{ has item is Res; Box(:item); \
         item() is Res {{ item; }} }} object Use {{ Use(); \
         run() is Res {{ Box(item: Res(n: 1)).item(); }} }} main() is int {{ 0; }}"));
-    assert!(has_reason(function(&report, "Use.run"), "other:objget"));
+    assert!(has_reason(function(&report, "Use.run"), "child"));
     assert_eq!(function(&report, "Use.run").totals.result, 0);
 }
 
 #[test]
-fn async_frames_and_settle_keep_are_conservative() {
+fn async_frames_and_settle_keep_use_ordinary_scoping() {
     let report = census("module app v1.0.0; object Conn { Conn(); async destroy {} } \
         object Job { Job(); async run() is Conn { Conn(); } } main() is int { 0; }");
     let run = function(&report, "Job.run");
-    assert!(has_reason(run, "async"));
-    assert!(run.region_ops.iter().any(|op| op.kind == "regionsettle" && !op.statically_owned));
+    assert_eq!(run.totals.unknown, 0, "{run:?}");
+    assert_eq!(run.creations[0].owner, Owner::Result);
+    assert!(run.region_ops.iter().any(|op| op.kind == "regionsettle" && op.statically_owned));
 }
 
 #[test]
@@ -236,7 +240,10 @@ fn variants_maps_successors_and_builders_preserve_contents() {
             Owner::Aggregate { owner: AggregateOwner::Result, .. })), "{found:?}");
         assert_eq!(found.totals.unknown, 0, "{found:?}");
     }
-    assert!(has_reason(function(&report, "Holder.next"), "other:objnext"));
+    let next = function(&report, "Holder.next");
+    assert_eq!(next.totals.unknown, 0, "{next:?}");
+    assert!(next.parameters[0].result_part);
+    assert!(next.creations.iter().any(|site| site.kind == "objnext" && site.owner == Owner::Result));
 }
 
 #[test]
@@ -248,7 +255,7 @@ fn native_managed_results_are_unknown() {
     ctor.attrs.push(ir::Attr::Extern("test_resource".to_string()));
     ir::verify(&module).expect("opaque constructor verifies");
     let report = ownership::analyze(&module);
-    assert!(has_reason(function(&report, "main"), "native"));
+    assert!(has_reason(function(&report, "main"), "native:test_resource"));
     assert_eq!(function(&report, "main").totals.scope, 0);
 }
 
@@ -287,4 +294,225 @@ fn branch_arguments_preserve_all_possible_origins() {
     let run = function(&report, "Choose.run");
     assert_eq!(run.creations.len(), 2);
     assert!(run.creations.iter().all(|site| site.owner == Owner::Result));
+}
+
+#[test]
+fn local_field_reads_borrow_without_escaping_the_container() {
+    let report = census(&format!("{RES} object Box {{ has item is Res; Box(:item); \
+        inspect() is int {{ item.read(); }} item() is Res {{ item; }} }} \
+        main() is int {{ let b = Box(item: Res(n: 1)); b.item().read(); b.inspect(); }}"));
+    let main = function(&report, "main");
+    assert_eq!(main.totals.unknown, 0, "{main:?}");
+    assert_eq!(main.creations.last().unwrap().owner, Owner::Scope);
+    assert!(!function(&report, "Box.inspect").parameters[0].escapes());
+    assert!(function(&report, "Box.item").parameters[0].result_part);
+    assert!(!function(&report, "Box.item").parameters[0].result);
+}
+
+#[test]
+fn collection_copies_borrow_contents_and_preserve_source_owners() {
+    let report = census(&format!("{RES} object Holder {{ has r is Res; Holder(:r); \
+        next() is ^Holder {{ ^r = r; }} read() is int {{ r.read(); }} }} main() is int {{ \
+        let a = [Res(n: 1)]; let slice = a.slice(0, 1); let joined = a + slice; \
+        let m = [\"x\": Res(n: 2)]; let merged = m + m; \
+        let h = Holder(r: Res(n: 3)); let successor = h.next(); successor.read(); 0; }}"));
+    let main = function(&report, "main");
+    assert_eq!(main.totals.unknown, 0, "{main:?}");
+    for kind in ["arraynew", "arrayslice", "arrayconcat", "mapnew", "mapmerge"] {
+        let site = main.creations.iter().find(|site| site.kind == kind).unwrap();
+        assert_eq!(site.owner, Owner::Scope, "{site:?}");
+        if matches!(kind, "arrayslice" | "arrayconcat" | "mapmerge") {
+            assert!(!site.borrowed_contents.is_empty(), "{site:?}");
+        }
+    }
+    let copies: Vec<_> = main.creations.iter().filter(|site| matches!(site.kind.as_str(),
+        "arrayslice" | "arrayconcat" | "mapmerge")).map(|site| site.value).collect();
+    assert!(main.creations.iter().all(|site| match &site.owner {
+        Owner::Aggregate { containers, .. } => containers.iter().all(|id| !copies.contains(id)),
+        _ => true,
+    }));
+    let next = function(&report, "Holder.next");
+    let successor = next.creations.iter().find(|site| site.kind == "objnext").unwrap();
+    assert_eq!(successor.owner, Owner::Result);
+    assert!(!successor.borrowed_contents.is_empty());
+}
+
+#[test]
+fn caps_apply_the_computed_fields_owner_summary() {
+    let report = census(&format!("{RES} object Box {{ has item is Res; Box(:item); \
+        cap View {{ item is Res {{ item; }} count is int {{ item.read(); }} }} }} \
+        main() is int {{ let b = Box(item: Res(n: 1)); let cap = b::View; \
+        cap::item.read(); cap::count; }}"));
+    let main = function(&report, "main");
+    assert_eq!(main.totals.unknown, 0, "{main:?}");
+    assert_eq!(main.creations.last().unwrap().owner, Owner::Scope);
+}
+
+#[test]
+fn direct_async_await_applies_the_callee_summary() {
+    let report = census(&format!("{RES} object Job {{ Job(); \
+        async read(r is Res) is int {{ r.read(); }} \
+        async alias(r is Res) is Res {{ r; }} \
+        async make() is Res {{ Res(n: 2); }} \
+        async local() is int {{ let r = Res(n: 1); await self.read(r); }} \
+        async returned() is Res {{ await self.alias(Res(n: 3)); }} \
+        async fresh() is Res {{ await self.make(); }} }} main() is int {{ 0; }}"));
+    for symbol in ["Job.local", "Job.returned", "Job.fresh"] {
+        let found = function(&report, symbol);
+        assert_eq!(found.totals.unknown, 0, "{found:?}");
+    }
+    assert!(function(&report, "Job.local").creations.iter().all(|site| !matches!(site.owner, Owner::Result)));
+    assert!(function(&report, "Job.returned").creations.iter().any(|site| site.owner == Owner::Result));
+    assert!(function(&report, "Job.fresh").creations.iter().any(|site| site.kind == "await.result" && site.owner == Owner::Result));
+}
+
+#[test]
+fn local_closures_borrow_captures_and_resolve_direct_calls() {
+    let report = census(&format!("{RES} object Use {{ Use(); \
+        ignore(f is () is int) is int {{ 0; }} }} main() is int {{ \
+        let r = Res(n: 1); let f = () is int {{ r.read(); }}; \
+        f(); Use().ignore(f); 0; }}"));
+    let main = function(&report, "main");
+    assert_eq!(main.totals.unknown, 0, "{main:?}");
+    assert!(main.creations.iter().any(|site| site.kind == "fnclosure" && site.owner == Owner::Scope));
+    assert!(main.creations.iter().all(|site| site.owner == Owner::Scope), "{main:?}");
+}
+
+#[test]
+fn escaped_read_results_stay_child_through_stores_and_sinks() {
+    let report = census(&format!("{RES} object Box {{ has r is Res; Box(:r); item() is Res {{ r; }} }} \
+        object Use {{ Use(); stored() is @Res {{ let b = Box(r: Res(n: 1)); [b.item()]; }} \
+        sunk() is int {{ let b = Box(r: Res(n: 2)); let boxed is any = b.item(); 0; }} \
+        copied() is @Res {{ let a = [Res(n: 3)]; a.slice(0, 1); }} }} main() is int {{ 0; }}"));
+    for symbol in ["Use.stored", "Use.sunk", "Use.copied"] {
+        let found = function(&report, symbol);
+        assert!(has_reason(found, "child"), "{found:?}");
+        assert!(found.creations.iter().filter(|site| site.kind == "call.result")
+            .all(|site| matches!(&site.owner, Owner::Unknown(reasons) if reasons.contains("child"))));
+    }
+}
+
+#[test]
+fn lookup_terminators_borrow_on_both_local_and_returned_paths() {
+    let report = census(&format!("{RES} object Use {{ Use(); \
+        array() is Res {{ let a = [Res(n: 1)]; a.first(); }} \
+        map() is Res {{ let m = [\"x\": Res(n: 2)]; m[\"x\"] else Res(n: 3); }} }} \
+        main() is int {{ let a = [Res(n: 1)]; a.first().read(); \
+        let m = [\"x\": Res(n: 2)]; let r = m[\"x\"] else Res(n: 3); r.read(); }}"));
+    assert_eq!(function(&report, "main").totals.unknown, 0);
+    for symbol in ["Use.array", "Use.map"] {
+        assert!(has_reason(function(&report, symbol), "child"));
+    }
+}
+
+#[test]
+fn future_storage_return_and_spawn_keep_retained_resources_unknown() {
+    let report = census(&format!("{RES} object Job {{ Job(); \
+        async read(r is Res) is int {{ r.read(); }} \
+        returned() is Future<int> {{ self.read(Res(n: 1)); }} \
+        stored() is int {{ let futures = [self.read(Res(n: 2))]; 0; }} \
+        passed() is int {{ self.ignore(self.read(Res(n: 3))); }} \
+        ignore(f is Future<int>) is int {{ 0; }} \
+        async spawned() is int {{ let f = spawn Job().read(Res(n: 4)); await f; }} }} \
+        main() is int {{ 0; }}"));
+    for symbol in ["Job.returned", "Job.stored", "Job.passed"] {
+        assert!(has_reason(function(&report, symbol), "future"));
+    }
+    assert!(has_reason(function(&report, "Job.spawned"), "spawn"));
+    assert!(!report.totals.reasons.contains_key("async"));
+}
+
+#[test]
+fn resolved_closures_apply_capture_and_argument_effects() {
+    let report = census(&format!("{RES} object Use {{ Use(); \
+        alias() is Res {{ let r = Res(n: 1); let f = (v is Res) is Res {{ r.read(); v; }}; f(Res(n: 2)); }} \
+        sink() is int {{ let r = Res(n: 3); let f = () is any {{ r; }}; f(); 0; }} }} \
+        main() is int {{ 0; }}"));
+    let alias = function(&report, "Use.alias");
+    assert_eq!(alias.totals.unknown, 0, "{alias:?}");
+    assert_eq!(alias.totals.result, 1);
+    assert!(has_reason(function(&report, "Use.sink"), "any"));
+}
+
+#[test]
+fn json_splits_genuine_reasons_from_named_model_gaps() {
+    let mut module = module(&format!("{RES} object Use {{ Use(); boxed() is any {{ Res(n: 1); }} }} \
+        main() is int {{ let r = Res(n: 2); 0; }}"));
+    let ctor = module.functions.iter_mut().find(|function| function.symbol == "Res.new#0").unwrap();
+    ctor.blocks.clear();
+    ctor.attrs.push(ir::Attr::Extern("test_resource".to_string()));
+    ir::verify(&module).unwrap();
+    let report = ownership::analyze(&module);
+    let json = report.to_json();
+    assert!(json.contains(&format!("\"reasons_genuine\":{{\"any\":{}}}", report.totals.reasons["any"])));
+    assert!(json.contains(&format!("\"reasons_model\":{{\"native:test_resource\":{}}}", report.totals.reasons["native:test_resource"])));
+    assert!(json.contains("\"schema\":1"));
+    assert!(json.contains("\"borrowed_contents\":"));
+    assert!(json.contains("\"result_part\":"));
+}
+
+#[test]
+fn role_summary_joins_sinks_and_requires_visible_implementations() {
+    let text = format!("{RES} role Read {{ read(r is Res) is int; }} \
+        object First does Read {{ First(); read(r is Res) is int {{ r.read(); }} }} \
+        object Second does Read {{ Second(); read(r is Res) is int {{ let box is any = r; 0; }} }} \
+        object Use {{ Use(); run(c is Read) is int {{ c.read(Res(n: 1)); }} }} main() is int {{ 0; }}");
+    let mut module = module(&text);
+    let report = ownership::analyze(&module);
+    assert!(has_reason(function(&report, "Use.run"), "any"));
+    assert!(!has_reason(function(&report, "Use.run"), "role-call"));
+    for object in &mut module.objects { object.does.clear(); }
+    ir::verify(&module).unwrap();
+    let report = ownership::analyze(&module);
+    assert!(has_reason(function(&report, "Use.run"), "role-call"));
+}
+
+#[test]
+fn intrinsic_model_gaps_include_the_exact_intrinsic_name() {
+    let module = linked("import \"compare\" take Comparing, Order;",
+        "object Ranked does Comparing<Ranked> { Ranked(); \
+         order(other is Ranked) is Order { Order.equal; } destroy {} } \
+         main() is int { let sorted = [Ranked(), Ranked()].ordering(); 0; }");
+    let report = ownership::analyze(&module);
+    assert!(has_reason(function(&report, "main"), "intrinsic:okkama.array.ordering"));
+    assert!(!report.totals.reasons.contains_key("native"));
+}
+
+#[test]
+fn replacement_removal_difference_and_builder_copies_do_not_sink_sources() {
+    let report = census(&format!("{RES} main() is int {{ \
+        let r = Res(n: 1); let a = [r]; let b = a.replaced(0, Res(n: 2)); \
+        let c = a.removed_at(0); let d = a - [r]; \
+        let m = [\"r\": r]; let n = m - [\"r\": r]; let values = m.values(); \
+        let reversed = a.reversed(); let combined is @Res = (0..2).reduce([]) -> acc, i {{ acc + a; }}; 0; }}"));
+    let main = function(&report, "main");
+    assert_eq!(main.totals.unknown, 0, "{main:?}");
+    for kind in ["arrayreplace", "arrayremove", "arraydifference", "mapdifference", "mapvalues"] {
+        assert!(main.creations.iter().any(|site| site.kind == kind && !site.borrowed_contents.is_empty()), "{kind}: {main:?}");
+    }
+}
+
+#[test]
+fn observing_a_future_and_spawning_workers_stays_dynamic() {
+    let report = census(&format!("{RES} object Job {{ Job(); async read(r is Res) is int {{ r.read(); }} \
+        observe() is int {{ let f = self.read(Res(n: 1)); f.done(); 0; }} }} \
+        async main() is int {{ await spawn Res(n: 2).read(); }}"));
+    assert!(has_reason(function(&report, "Job.observe"), "future"));
+    assert!(has_reason(function(&report, "main"), "spawn"));
+}
+
+#[test]
+fn repeated_awaits_share_identity_and_escaped_futures_taint_results() {
+    let report = census(&format!("{RES} object Job {{ Job(); async make() is Res {{ Res(n: 1); }} \
+        async repeated() is Res {{ let f = self.make(); let a = await f; a.read(); await f; }} \
+        async stored() is Res {{ let f = self.make(); let futures = [f]; await f; }} }} \
+        main() is int {{ 0; }}"));
+    let repeated = function(&report, "Job.repeated");
+    assert_eq!(repeated.totals.unknown, 0, "{repeated:?}");
+    let results: Vec<_> = repeated.creations.iter().filter(|site| site.kind == "await.result").collect();
+    assert_eq!(results.len(), 1, "{repeated:?}");
+    assert_eq!(results[0].owner, Owner::Result);
+    let stored = function(&report, "Job.stored");
+    assert!(stored.creations.iter().filter(|site| site.kind == "await.result")
+        .all(|site| matches!(&site.owner, Owner::Unknown(reasons) if reasons.contains("future"))), "{stored:?}");
 }
