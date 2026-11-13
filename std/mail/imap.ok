@@ -1,12 +1,16 @@
 module mail/imap v1.0.0;
 
-// Eager CAPABILITY advertisement snapshots, not negotiated session state.
-// Unknown atom tokens and duplicates retain source order/spelling. names() and
-// features() deduplicate; AUTH mechanisms retain first advertisement order.
-// Require IMAP4rev1 or IMAP4rev2, without inferring either revision's implicit
-// features. Replace the snapshot after TLS/authentication; never merge it.
-// ParsedImapCapabilities accepts one complete untagged line, not a greeting,
-// response code, ENABLED response or tagged command completion.
+// IMAP capabilities (RFC 3501, RFC 9051): what a CAPABILITY response
+// advertises.
+//
+//     let capabilities = ParsedImapCapabilities(line).capabilities();
+//     capabilities.features().membership(ImapFeature.idle);
+//     capabilities.authentication();          // ["PLAIN", "XOAUTH2"], in order
+//
+// IMAP4rev1 or IMAP4rev2 is required; the features either implies are not
+// assumed. Unknown tokens are kept as spelled. After STARTTLS or login the
+// server's capabilities change: read them again rather than merging. By default
+// 256 tokens of 256 bytes, 64 KiB in all.
 
 import "collections/sequence" take Sequencing;
 import "collections/set" take Set, OrderedSet;
@@ -16,17 +20,21 @@ import "io/stream" take ByteSource;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument;
 
+// The capabilities std knows by name.
 enum ImapFeature = (imap4rev1, imap4rev2, start_tls, login_disabled, idle, uid_plus, move, enable, utf8_accept, utf8_only, literal_plus, literal_minus, sasl_ir, condstore, qresync, namespace, unselect, binary);
 
+// How large a capability list may be.
 object ImapCapabilityLimits {
     has tokens, token_bytes, wire_bytes is int;
 
+    // 256 tokens of at most 256 bytes, 64 KiB in all.
     ImapCapabilityLimits() {
         tokens = 256;
         token_bytes = 256;
         wire_bytes = 65536;
     }
 
+    // The limits as given.
     ImapCapabilityLimits(tokens is int, token_bytes is int, wire_bytes is int) {
         confirm tokens >= 0 && token_bytes >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("IMAP capability limits must be nonnegative");
@@ -35,6 +43,7 @@ object ImapCapabilityLimits {
         self.wire_bytes = wire_bytes;
     }
 
+    // Tokens, bytes per token and bytes in all.
     cap Limits {
         tokens is int {
             tokens;
@@ -50,78 +59,97 @@ object ImapCapabilityLimits {
     }
 }
 
+// One capability token, such as `IDLE` or `AUTH=PLAIN`.
 object ImapCapability {
     has original, name is string;
 
+    // Checks origin as an atom; InvalidImapCapabilities otherwise.
     ImapCapability(origin is string) {
         original = origin;
         name = ImapCapabilityToken(origin: origin, limits: ImapCapabilityLimits()).name();
     }
 
+    // The same within limits.
     ImapCapability(origin is string, limits is ImapCapabilityLimits) {
         original = origin;
         name = ImapCapabilityToken(origin: origin, limits: limits).name();
     }
 
+    // The token as spelled.
     string() is string {
         original;
     }
 
+    // The token, uppercase.
     name() is string {
         name;
     }
 }
 
+// A capability list.
 object ImapCapabilities does ByteSource {
     has value is ImapCapabilitySnapshot;
 
+    // The tokens; InvalidImapCapabilities without IMAP4rev1 or IMAP4rev2.
     ImapCapabilities(entries is Sequencing<string>) {
         value = ImapCapabilitySnapshot(origin: entries, limits: ImapCapabilityLimits());
     }
 
+    // The same within limits.
     ImapCapabilities(entries is Sequencing<string>, limits is ImapCapabilityLimits) {
         value = ImapCapabilitySnapshot(origin: entries, limits: limits);
     }
 
+    // Every token, in order.
     tokens() is Sequencing<ImapCapability> {
         value.tokens();
     }
 
+    // The token names, uppercase, each once.
     names() is Set<string> {
         value.names();
     }
 
+    // The known features advertised.
     features() is Set<ImapFeature> {
         value.features();
     }
 
+    // The SASL mechanisms of the AUTH= tokens, in order.
     authentication() is Sequencing<string> {
         value.authentication();
     }
 
+    // The list as an untagged CAPABILITY response.
     bytes() is @byte {
         value.bytes();
     }
 }
 
+// A CAPABILITY response read from bytes.
 object ParsedImapCapabilities {
     has value is ImapCapabilities;
 
+    // One untagged CAPABILITY line, within the default limits.
     ParsedImapCapabilities(origin is @byte) {
         value = ImapCapabilityLine(origin: origin, limits: ImapCapabilityLimits()).capabilities();
     }
 
+    // The same within limits.
     ParsedImapCapabilities(origin is @byte, limits is ImapCapabilityLimits) {
         value = ImapCapabilityLine(origin: origin, limits: limits).capabilities();
     }
 
+    // The capabilities; InvalidImapCapabilities for another line.
     capabilities() is ImapCapabilities {
         value;
     }
 }
 
+// A capability list that is not valid; reason says why.
 enum InvalidImapCapabilities is Error = (because(reason is string));
 
+// A list over a limit; kind says which.
 enum ImapCapabilityLimitExceeded is Error = (kind(kind is string));
 
 hidden object ImapCapabilityToken {

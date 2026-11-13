@@ -1,8 +1,16 @@
 module mail/imap_state v1.0.0;
 
-// SELECT's UNSEEN response code is a first sequence number, not an unseen count.
-// Optional observations remain explicit. EXPUNGE invalidates a nonzero RECENT
-// observation and adjusts/invalidates the first-unseen sequence conservatively.
+// What SELECT or EXAMINE reports about a mailbox, kept up to date by later
+// responses.
+//
+//     let inbox = await session.mailbox(ImapMailboxName("INBOX"));
+//     let state = await inbox.state();
+//     state.messages();                       // EXISTS
+//     state.uid_validity();
+//     if state.has_first_unseen() { state.first_unseen(); }
+//
+// UNSEEN in SELECT is the number of the first unseen message, not a count.
+// RECENT and UIDNEXT are optional. An EXPUNGE adjusts the counts.
 
 import "mail/imap_response" take ParsedImapResponse;
 import "encoding/utf" take Utf8Encoded;
@@ -16,9 +24,11 @@ import "mail/mailbox" take MailFlags;
 import "numbers/bigint" take BigInt;
 import "error" take InvalidState;
 
+// The state of the selected mailbox.
 object ImapMailboxState {
     has value is ImapSelectionProgress;
 
+    // Reads the responses of a SELECT or EXAMINE; read_only for EXAMINE.
     ImapMailboxState(result is ImapCommandRead, read_only is bool) {
         result.require_success();
         let progress = ImapSelectionProgress(read_only);
@@ -31,50 +41,62 @@ object ImapMailboxState {
         value = progress;
     }
 
+    // How many messages.
     messages() is int {
         value.messages();
     }
 
+    // Whether RECENT is known.
     has_recent() is bool {
         value.has_recent();
     }
 
+    // How many are recent; InvalidState when not known.
     recent() is int {
         value.recent();
     }
 
+    // Whether the first unseen message is known.
     has_first_unseen() is bool {
         value.has_first_unseen();
     }
 
+    // The first unseen message; InvalidState when not known.
     first_unseen() is ImapSequence {
         value.first_unseen();
     }
 
+    // UIDVALIDITY.
     uid_validity() is ImapUidValidity {
         value.uid_validity();
     }
 
+    // Whether UIDNEXT is known.
     has_uid_next() is bool {
         value.has_uid_next();
     }
 
+    // UIDNEXT; InvalidState when not known.
     uid_next() is ImapUid {
         value.uid_next();
     }
 
+    // The flags the mailbox uses.
     flags() is MailFlags {
         value.flags();
     }
 
+    // Whether it was opened read-only.
     read_only() is bool {
         value.read_only();
     }
 
+    // Whether UIDs survive sessions (no UIDNOTSTICKY).
     persistent_uids() is bool {
         value.persistent_uids();
     }
 
+    // This state after response.
     observed(response is ImapResponse) is ^ImapMailboxState {
         let progress = value.observed(response);
         progress.validate();
