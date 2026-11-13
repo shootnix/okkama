@@ -156,7 +156,12 @@ object WebSocketClientHandshake {
     has accept is WebSocketAccept;
     has offered is WebSocketProtocols;
 
-    WebSocketClientHandshake(url is UrlParts, protocols is @string, headers is Headers, nonce is @byte) {
+    WebSocketClientHandshake(
+        url is UrlParts,
+        protocols is @string,
+        headers is Headers,
+        nonce is @byte
+    ) {
         let parts = url;
         confirm parts::Parts::scheme == "ws" || parts::Parts::scheme == "wss"
             else throw WebSocketFailure.because("WebSocket URL required");
@@ -164,9 +169,11 @@ object WebSocketClientHandshake {
             && parts.host_kind() != UrlHostKind.empty
             && parts.host_kind() != UrlHostKind.future
             else throw WebSocketFailure.because("WebSocket authority required");
-        confirm parts::Parts::userinfo == Maybe<string>.none && parts::Parts::fragment == Maybe<string>.none
+        confirm parts::Parts::userinfo == Maybe<string>.none
+            && parts::Parts::fragment == Maybe<string>.none
             else throw WebSocketFailure.because("WebSocket URL userinfo or fragment");
-        confirm (parts::Parts::port else 1) > 0 else throw WebSocketFailure.because("WebSocket port");
+        confirm (parts::Parts::port else 1) > 0
+            else throw WebSocketFailure.because("WebSocket port");
         confirm url.string().length() <= 8192
             else throw WebSocketFailure.because("WebSocket URL budget");
         WebSocketHandshakeFields(headers);
@@ -204,7 +211,9 @@ object WebSocketClientHandshake {
             fields;
         }
         else {
-            fields.addition(Header(name: HeaderName("Sec-WebSocket-Protocol"), value: checked.string()));
+            fields.addition(
+                Header(name: HeaderName("Sec-WebSocket-Protocol"), value: checked.string())
+            );
         };
         WebSocketHandshakeFields(complete);
         request = Request(

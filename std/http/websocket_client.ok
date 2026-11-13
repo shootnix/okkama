@@ -1,7 +1,8 @@
 module http/websocket_client v1.0.0;
 
 import "http/status" take StatusCode, Status, StatusClass;
-import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure, TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
+import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure,
+    TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
 import "http/websocket_handshake" take WebSocketClientHandshake;
 import "http/websocket_session" take WebSocketSession;
 import "http/internal/websocket_upgrade" take WebSocketOpeningCleanup, WebSocketPrefixedInput;
@@ -11,12 +12,14 @@ import "http/http1_head" take Http1Limits;
 import "http/http1_reading" take Http1ResponseHeadReading;
 import "http/http1_message_writing" take Http1RequestWriting;
 import "http/body" take EmptyBody;
-import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal, HttpUnpublishedTcp, HttpUnpublishedTls;
+import "http/connection" take HttpAcquisitionCleanup, HttpTcpDisposal, HttpTlsDisposal,
+    HttpUnpublishedTcp, HttpUnpublishedTls;
 import "net/tcp" take TcpConnection, TcpOptions, TcpListening;
 import "net/tcp_racing" take TcpRacing;
 import "net/dns" take Resolving, FixedResolution, SystemResolution;
 import "net/tls" take TlsClientPolicy, TlsClientHandshake, TlsConnection;
-import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity, TrustStore, SystemTrustStore;
+import "crypto/x509/trust" take CertificateIdentity, DnsCertificateIdentity, IpCertificateIdentity,
+    TrustStore, SystemTrustStore;
 import "url/value" take UrlParts, UrlHostKind, ParsedUrl;
 import "random/source" take SecureRandom;
 import "time/clock" take Timing, SystemClock;
@@ -94,7 +97,15 @@ object WebSocketConnecting {
         policy is WebSocketPolicy = WebSocketPolicy(),
         clock is Timing = SystemClock()
     ) {
-        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: TlsClientPolicy(trust), policy: policy, clock: clock).outcome();
+        waiting = WebSocketStart(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            resolver: resolver,
+            tls: TlsClientPolicy(trust),
+            policy: policy,
+            clock: clock
+        ).outcome();
     }
 
     WebSocketConnecting(
@@ -106,7 +117,15 @@ object WebSocketConnecting {
         policy is WebSocketPolicy,
         clock is Timing
     ) {
-        waiting = WebSocketStart(url: url, protocols: protocols, headers: headers, resolver: resolver, tls: tls, policy: policy, clock: clock).outcome();
+        waiting = WebSocketStart(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            resolver: resolver,
+            tls: tls,
+            policy: policy,
+            clock: clock
+        ).outcome();
     }
 
     async connection() is WebSocketConnection {
@@ -173,8 +192,20 @@ hidden object WebSocketStart {
             query: parts::Parts::query,
             fragment: Maybe<string>.none,
         );
-        let route = HttpEndpointSelection(url: transport, resolver: resolver, access: policy.access());
-        let operation = WebSocketOpening(url: url, protocols: protocols, headers: headers, route: route, tls: tls, policy: policy, clock: clock);
+        let route = HttpEndpointSelection(
+            url: transport,
+            resolver: resolver,
+            access: policy.access()
+        );
+        let operation = WebSocketOpening(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            route: route,
+            tls: tls,
+            policy: policy,
+            clock: clock
+        );
         let bounded is Within<WebSocketSession> = Within(
             origin: operation.open(),
             limit: policy.opening_timeout(),
@@ -213,13 +244,23 @@ object WebSocketOpening {
 
     async open() is WebSocketSession {
         let random = SecureRandom();
-        let handshake = WebSocketClientHandshake(url: url, protocols: protocols, headers: headers, nonce: random.bytes(16));
+        let handshake = WebSocketClientHandshake(
+            url: url,
+            protocols: protocols,
+            headers: headers,
+            nonce: random.bytes(16)
+        );
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -246,9 +287,19 @@ object WebSocketOpening {
             let empty is @Future<TlsConnection> = [];
             let pending = Atomic(empty);
             let taken = Event();
-            let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTlsDisposal().release);
+            let cleanup = HttpAcquisitionCleanup(
+                group: group,
+                pending: pending,
+                taken: taken,
+                dispose: HttpTlsDisposal().release
+            );
             defer await cleanup.close();
-            let waiting = TlsClientHandshake(origin: tcp, server: identity, policy: tls, clock: clock).connection();
+            let waiting = TlsClientHandshake(
+                origin: tcp,
+                server: identity,
+                policy: tls,
+                clock: clock
+            ).connection();
             pending.replace([waiting]);
             group.start(waiting);
             let secure = await waiting;
@@ -298,7 +349,12 @@ object WebSocketOpening {
         let prefix = Atomic(empty);
         let count = Atomic(0);
         loop {
-            let pending = Http1ResponseHeadReading(origin: input, prefix: prefix.value(), limits: Http1Limits(), chunk_bytes: 4096).head();
+            let pending = Http1ResponseHeadReading(
+                origin: input,
+                prefix: prefix.value(),
+                limits: Http1Limits(),
+                chunk_bytes: 4096
+            ).head();
             let received = await pending;
             let status = received.head()::Head::status;
             if StatusCode(status).class() == StatusClass.informational
@@ -336,7 +392,11 @@ hidden object ShoutingEcho does Handling, WebSocketHandling {
         WebSocketHandlingResult(origin: upgrade, application: self);
     }
 
-    async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
+    async handle(
+        connection is WebSocketConnection,
+        request is Request,
+        context is HttpRequestContext
+    ) is WebSocketHandling {
         try {
             loop {
                 let message = await connection.message();
@@ -360,15 +420,25 @@ async test "a WebSocket client talks to a server over loopback and closes cleanl
     let clock = SystemClock();
     // WebSocket upgrades need the server's own URL to check the Origin against.
     let own = ParsedUrl("http://127.0.0.1:" + listener::Local::port.string() + "/").parts();
-    let server = HttpServer(listener: listener, handling: ShoutingEcho(), policy: ServerPolicy(), clock: clock, url: own).started();
-        let url = ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/echo").parts();
+    let server = HttpServer(
+        listener: listener,
+        handling: ShoutingEcho(),
+        policy: ServerPolicy(),
+        clock: clock,
+        url: own
+    ).started();
+    let url = ParsedUrl("ws://127.0.0.1:" + server::Local::port.string() + "/echo").parts();
     let policy = WebSocketPolicy(
         limits: WebSocketLimits(),
         opening: Duration(seconds: 5),
         closing: Duration(seconds: 2),
         access: AllEndpoints(),
     );
-    let connection = await WebSocketConnecting(url: url, resolver: FixedResolution(), policy: policy).connection();
+    let connection = await WebSocketConnecting(
+        url: url,
+        resolver: FixedResolution(),
+        policy: policy
+    ).connection();
     await connection.send(TextWebSocketMessage("hello"));
     test.is((await connection.message()).text(), "HELLO");
     await connection.send(BinaryWebSocketMessage([1.byte(), 2.byte()]));
