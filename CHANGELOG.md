@@ -27,6 +27,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   case variants is unchanged. Implemented by Codex, reviewed and verified
   by Claude.
 
+- **Encoding validity checks no longer build output they discard (#459).**
+  UTF valid-prefix checks, and base85 and quoted-printable invalid-offset
+  checks, scan without collecting text or bytes. UTF-16 decoding of 64k
+  characters: 405 → 311 µs. Implemented by Codex, reviewed and verified by
+  Claude.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in
