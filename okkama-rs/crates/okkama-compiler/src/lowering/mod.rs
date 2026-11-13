@@ -565,6 +565,9 @@ fn lower_analyzed(
             ),
         ));
     }
+    if let Some(path) = std::env::var_os("OKKAMA_OWNERSHIP_REPORT") {
+        let _ = std::fs::write(path, ir::ownership::analyze(&module).to_json());
+    }
     Ok((module, analysis.warnings.clone()))
 }
 
