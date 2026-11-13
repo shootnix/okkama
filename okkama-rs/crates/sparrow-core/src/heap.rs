@@ -96,6 +96,8 @@ const COLLECTION_FLOOR: usize = 1 << 20;
 /// [`SPARE_CAPACITY`] words.
 const SPARE_PAYLOADS: usize = 64;
 pub const SPARE_CAPACITY: usize = 512;
+/// Empty pages kept beyond what the next cycle needs (#435).
+const EMPTY_PAGES_SLACK: usize = 16;
 
 #[inline]
 pub fn header(kind: u8, repr: Repr, payload: u32) -> u64 {
@@ -1333,6 +1335,36 @@ impl Heap {
         }
     }
 
+    /// Keep as many empty pages as the next cycle can fill before its
+    /// collection, plus a few, and free the rest (#435): after a burst the
+    /// heap shrinks back instead of keeping, and sweeping, its high-water
+    /// pages for the life of the program. Kept pages offer their cells like
+    /// any other; the allocator returns freed ones to the system.
+    fn release_empty_pages(&mut self, empty: Vec<(usize, Word, usize)>) {
+        let keep = self.threshold / PAGE_BYTES + EMPTY_PAGES_SLACK;
+        let mut freed = Vec::new();
+        for (count, (index, chain, bytes)) in empty.into_iter().enumerate() {
+            if count < keep || self.stress {
+                self.reserve[self.pages[index].class].push((chain, bytes));
+            } else {
+                freed.push(index);
+            }
+        }
+        if freed.is_empty() {
+            return;
+        }
+        let mut index = 0;
+        let mut next = freed.iter().peekable();
+        self.pages.retain(|_| {
+            let drop = next.peek() == Some(&&index);
+            if drop {
+                next.next();
+            }
+            index += 1;
+            !drop
+        });
+    }
+
     /// Overwrite every free cell past its link (collector stress).
     fn poison(&mut self) {
         for (class, &size) in CLASSES.iter().enumerate() {
@@ -1359,7 +1391,10 @@ impl Heap {
         }
         let mut live = 0;
         let mut external_live = 0;
-        for page in &mut self.pages {
+        // Pages with no live cell (#435): their chains wait until the end of
+        // the sweep decides how many empty pages the next cycle needs.
+        let mut empty: Vec<(usize, Word, usize)> = Vec::new();
+        for (index, page) in self.pages.iter_mut().enumerate() {
             let size = CLASSES[page.class];
             let base = page.memory.as_mut_ptr() as Word;
             let cells = page.memory.len() / size;
@@ -1386,7 +1421,9 @@ impl Heap {
                 unsafe { *((address + 8) as *mut u64) = chain };
                 chain = address;
             }
-            if chain != 0 {
+            if kept == 0 {
+                empty.push((index, chain, cells * size * 8));
+            } else if chain != 0 {
                 self.reserve[page.class].push((chain, (cells - kept) * size * 8));
             }
         }
@@ -1428,6 +1465,7 @@ impl Heap {
         let external_live = external_live + nodes_live;
         self.external_live = external_live;
         self.threshold = if self.stress { 0 } else { (live + external_live).max(COLLECTION_FLOOR) };
+        self.release_empty_pages(empty);
         self.collections += 1;
     }
 }
@@ -1620,6 +1658,29 @@ mod tests {
         }
         assert!(heap.stats().collections >= 10, "{:?}", heap.stats());
         assert!(heap.stats().pages <= warmed + 1, "{warmed} pages after warm-up: {:?}", heap.stats());
+    }
+
+    #[test]
+    fn empty_pages_after_a_burst_are_released() {
+        // #435: a burst keeps many objects alive, then they all die. The heap
+        // keeps only the pages the next cycle can fill, not its high water.
+        let mut heap = Heap::new(layouts());
+        let mut head = UNBOUND;
+        for n in 0..400_000 {
+            let value = heap.int(n);
+            head = heap.object_new(0, &[head, value]);
+        }
+        heap.collect(|visit| visit(head, Repr::Ref));
+        let peak = heap.stats().pages;
+        assert!(peak > 100, "{peak} pages at the peak");
+        heap.collect(|_| {});
+        let after = heap.stats().pages;
+        let keep = COLLECTION_FLOOR / PAGE_BYTES + EMPTY_PAGES_SLACK;
+        assert!(after <= keep, "{after} pages kept, at most {keep}; {peak} at the peak");
+        // The kept pages still serve allocations, and the heap works on.
+        let kept = heap.allocate_text("after the burst");
+        heap.collect(|visit| visit(kept, Repr::Ref));
+        assert_eq!(heap.text(kept), "after the burst");
     }
 
     #[test]
