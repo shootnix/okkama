@@ -408,41 +408,53 @@ role XmlRpcResult {
     fault() is XmlRpcFault;
 }
 
-hidden object XmlRpcSuccess does XmlRpcResult {
+// A call that returned a value: what an XmlRpcCalling answers on success,
+// XmlRpcSuccess(XmlRpcText("Hello")) (#516).
+object XmlRpcSuccess does XmlRpcResult {
     has origin is XmlRpcValue;
 
+    // The result origin.
     XmlRpcSuccess(origin is XmlRpcValue) {
         self.origin = origin;
     }
 
+    // XmlRpcResultKind.success.
     kind() is XmlRpcResultKind {
         XmlRpcResultKind.success;
     }
 
+    // The value.
     value() is XmlRpcValue {
         origin;
     }
 
+    // WrongXmlRpcResult: a success has no fault.
     fault() is XmlRpcFault {
         throw WrongXmlRpcResult.mismatch;
     }
 }
 
-hidden object XmlRpcFailure does XmlRpcResult {
+// A call that failed with a fault, XmlRpcFailure(XmlRpcFault(code: -32601,
+// message: "Unknown method")) (#516).
+object XmlRpcFailure does XmlRpcResult {
     has origin is XmlRpcFault;
 
+    // The fault origin.
     XmlRpcFailure(origin is XmlRpcFault) {
         self.origin = origin;
     }
 
+    // XmlRpcResultKind.fault.
     kind() is XmlRpcResultKind {
         XmlRpcResultKind.fault;
     }
 
+    // WrongXmlRpcResult: a fault has no value.
     value() is XmlRpcValue {
         throw WrongXmlRpcResult.mismatch;
     }
 
+    // The fault.
     fault() is XmlRpcFault {
         origin;
     }
