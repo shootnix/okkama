@@ -64,9 +64,12 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
             Ok((runtime.heap.allocate_bytes(&bytes), Repr::Ref))
         }
         Native::StdoutWrite | Native::StderrWrite => {
-            let bytes = runtime.heap.byte_view(arguments[0]).into_owned();
+            // Written straight from the array's bytes (#458): writing touches
+            // no heap object, so the borrow outlives nothing it depends on.
+            let bytes = runtime.heap.byte_view(arguments[0]);
+            let length = bytes.len();
             if let Some(limit) = runtime.limits.output {
-                let written = runtime.budget.written.saturating_add(bytes.len() as u64);
+                let written = runtime.budget.written.saturating_add(length as u64);
                 if written > limit {
                     return Err(Refusal::Exhausted(crate::budget::Exhausted::Output));
                 }
@@ -80,8 +83,9 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
                 okkama_runtime_core::stdout::flush()
                     .and_then(|()| std::io::Write::write_all(&mut std::io::stderr().lock(), &bytes))
             };
+            drop(bytes);
             match written {
-                Ok(()) => Ok((runtime.heap.int(bytes.len() as i64), Repr::Int)),
+                Ok(()) => Ok((runtime.heap.int(length as i64), Repr::Int)),
                 Err(error) => Err(Refusal::Failure(FailureKind::Program(error.to_string()))),
             }
         }
