@@ -36,6 +36,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   2.08 s. Futures no longer carry a completion-order stamp; notifications
   give the order. Async micro-benchmarks are within ±2%.
 
+- **`join` builds its string in place (#447).** It cloned the separator,
+  grew a temporary `String` part by part and copied it into the heap. Now
+  the lengths are summed first and the parts copied once into a string of
+  the right size; the ASCII flag comes from the parts' flags. Three short
+  parts: 65 → 32 ns; one part: 33 → 18 ns; Cyrillic: 82 → 54 ns; 1 000
+  parts: 7.2–7.7 → 5.9 µs. A result past the 4 GiB a string can hold is
+  now an error instead of a truncated length.
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request

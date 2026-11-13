@@ -1281,17 +1281,10 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             }
             Ok(runtime.heap.allocate_array(repr, &items))
         }
-        I::ArrayJoin { array, separator, .. } => {
-            let separator = runtime.heap.text(value(separator)).to_owned();
-            let mut text = String::new();
-            for (i, &element) in runtime.heap.elements(value(array)).iter().enumerate() {
-                if i != 0 {
-                    text.push_str(&separator);
-                }
-                text.push_str(runtime.heap.text(element));
-            }
-            Ok(runtime.text_new(&text))
-        }
+        I::ArrayJoin { array, separator, .. } => runtime
+            .heap
+            .allocate_join(value(array), value(separator))
+            .ok_or_else(|| "join: the result would pass the 4 GiB a string can hold".to_string()),
         I::BuilderNew { dst } => {
             let repr = match runtime.ty(function, dst.0) {
                 Some(Type::Builder(element)) => runtime.kind_of(*element).repr(),
