@@ -46,11 +46,13 @@ object Factory {
 }
 
 async main() is int {
-    let t = Tap(4);
+    let t = Tap(10);
     let log = Atomic("");
     defer log.close();
     {
         let cold = Factory().make(log);
+        t.note("escaping unstarted future transfers fresh dependencies: " + log.value());
+        t = t.is(log.value(), "", "escaping unstarted future transfers fresh dependencies");
     }
 
     t.note("never-awaited future releases dependencies once: " + log.value());
@@ -59,6 +61,8 @@ async main() is int {
     {
         let cold = Factory().make(log);
         cold.cancel();
+        t.note("cancel request alone does not run resource cleanup: " + log.value());
+        t = t.is(log.value(), "", "cancel request alone does not run resource cleanup");
         try {
             await cold;
         } catch e is Cancelled {
@@ -82,5 +86,20 @@ async main() is int {
 
     t.note("outer owner retains borrowed future dependencies: " + log.value());
     t = t.is(log.value(), "AR", "outer owner retains borrowed future dependencies");
+    log.replace("");
+    {
+        let cold = Factory().make(log);
+        let first = await cold;
+        t.note("escaped future result: " + first);
+        t = t.is(first, "RA", "escaped future runs with live dependencies");
+        let second = await cold;
+        t.note("repeated await result: " + second);
+        t = t.is(second, "RA", "repeated await uses cached result");
+        t.note("await keeps dependencies in future owner: " + log.value());
+        t = t.is(log.value(), "", "await keeps dependencies in future owner");
+    }
+
+    t.note("awaited future releases dependencies once in reverse order: " + log.value());
+    t = t.is(log.value(), "AR", "awaited future releases dependencies once in reverse order");
     t.done();
 }

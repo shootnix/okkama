@@ -1,7 +1,8 @@
 //! Stackless async: the heap frame of an async call is also its Future.
 //!
 //! Frame words after the header: state, result, failure, waiter, awaiting,
-//! resume point, flags, then every register of the function. An async body is
+//! resume point, flags, then every register of the function, an optional driver
+//! slot, and retained copies of the arguments (registers can be reused). An async body is
 //! compiled as `(ctx, frame) -> 0 | 1` (completed or pending): it starts at
 //! resume point 0 with its parameters in the frame, and a suspended `await` at
 //! `pc` re-enters at `pc + 1` with every register reloaded. Whoever runs a body
@@ -115,7 +116,8 @@ impl Runtime {
         self.count(|r| format!("future {}", r.loaded.program.functions[function].symbol));
         let source = &self.loaded.program.functions[function];
         let registers = source.registers.len();
-        let words = 1 + FIXED_WORDS + registers + usize::from(self.loaded.functions[function].driver);
+        let retained = FIXED_WORDS + registers + usize::from(self.loaded.functions[function].driver);
+        let words = 1 + retained + source.params.len();
         self.heap.counted("async frame", 0, words);
         let frame = self.heap.allocate(words);
         // SAFETY: fresh storage of `words` words.
@@ -129,8 +131,9 @@ impl Runtime {
                 set(frame, REGISTERS + register as u64 * 8, word::UNBOUND_RAW);
             }
         }
-        for (param, &argument) in source.params.iter().zip(arguments) {
+        for (index, (param, &argument)) in source.params.iter().zip(arguments).enumerate() {
             set(frame, REGISTERS + u64::from(param.0) * 8, argument);
+            set(frame, (1 + retained + index) as u64 * 8, argument);
         }
         frame
     }

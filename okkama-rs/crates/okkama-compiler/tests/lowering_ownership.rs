@@ -349,3 +349,74 @@ fn only_bodies_that_may_own_an_async_destroy_settle() {
     }
     assert!(!settles(&captured, "Job.plain"), "{captured}");
 }
+
+#[test]
+fn cold_future_tracks_adopts_and_keeps_retained_dependencies() {
+    let module = module(r#"
+        module app v1.0.0;
+        object Res {
+            Res();
+            async read(arg is Res) is string { "ok"; }
+            destroy {}
+        }
+        object Box {
+            has cold is Future<string>;
+            Box(:cold);
+        }
+        object Factory {
+            Factory();
+            make() is Future<string> { Res().read(Res()); }
+            boxed() is Box { Box(cold: self.make()); }
+        }
+        main() is int { let cold = Factory().make(); let boxed = Factory().boxed(); 0; }
+    "#);
+    let make = function(&module, "Factory.make");
+    let tracks: Vec<_> = make.blocks.iter().flat_map(|block| &block.insts).filter_map(|inst| {
+        if let InstKind::RegionTrack { region, value } = inst.kind { Some((region, value)) } else { None }
+    }).collect();
+    // Receiver, argument and Future all belong to the same lexical region;
+    // both normal closes keep the escaping result, including the root close.
+    assert_eq!(tracks.len(), 4, "{module}");
+    assert_ne!(tracks[3].0, tracks[0].0, "the root tracks the body result");
+    assert_eq!(tracks[3].1, tracks[2].1);
+    assert!(tracks[..3].iter().all(|(region, _)| *region == tracks[0].0), "{module}");
+    assert!(matches!(make.values[tracks[2].1.0], ir::Type::Future(_)), "{module}");
+    for inst in make.blocks.iter().flat_map(|block| &block.insts) {
+        if let InstKind::RegionLeave { keep, .. } = inst.kind {
+            assert!(keep.is_some_and(|value| matches!(make.values[value.0], ir::Type::Future(_))), "{module}");
+        }
+    }
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::RegionAdopt { .. })), 2, "{module}");
+    // A wrapper with only a Future field is not plain either.
+    let boxed = function(&module, "Factory.boxed");
+    assert!(count(boxed, |kind| matches!(kind, InstKind::RegionTrack { .. })) >= 2, "{module}");
+}
+
+#[test]
+fn cold_future_corpus_lowers_with_stdlib() {
+    use okkama_compiler::lowering::{LoadedModule, ModuleLoader, lower_linked};
+    use std::path::PathBuf;
+
+    struct CorpusLoader(PathBuf);
+    impl ModuleLoader for CorpusLoader {
+        fn load(&mut self, path: &str, _importer: &str) -> Result<Option<LoadedModule>, String> {
+            let file = ["std", "t/support"].into_iter()
+                .map(|root| self.0.join(root).join(format!("{path}.ok")))
+                .find(|file| file.is_file());
+            let Some(file) = file else { return Ok(None); };
+            let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
+            let id = file.to_string_lossy().into_owned();
+            let source = SourceFile::new(id.clone(), text).unwrap();
+            let program = syntax::parse(&source, &ParseOptions::default()).unwrap();
+            Ok(Some(LoadedModule { id, source, program: prune::strip_test_items(program) }))
+        }
+    }
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let path = root.join("tests/ownership-corpus/cold-futures.ok");
+    let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
+    let program = syntax::parse(&source, &ParseOptions::default()).unwrap();
+    let module = lower_linked(&program, source.name(), &mut CorpusLoader(root)).unwrap();
+    ir::verify(&module).unwrap();
+}

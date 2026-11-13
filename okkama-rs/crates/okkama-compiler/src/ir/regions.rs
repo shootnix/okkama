@@ -259,7 +259,8 @@ impl Plain {
             Type::Array(element) | Type::Builder(element) => self.ty(element),
             Type::Map(_, value) | Type::MapBuilder(_, value) => self.ty(value),
             Type::Fn(_) => self.functions,
-            Type::Any | Type::Cap(_) => false,
+            // Even a Future of a plain result retains its receiver and arguments.
+            Type::Any | Type::Cap(_) | Type::Future(_) => false,
             _ => true,
         }
     }

@@ -11,17 +11,18 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 
 ## Inventory and validation
 
-- Main directory: **96 programs, 427 TAP assertions** (36 handwritten programs
-  with 187 assertions, plus 60 generated programs with 240 assertions).
+- Main directory: **96 programs, 433 TAP assertions** (36 handwritten programs
+  with 193 assertions, plus 60 generated programs with 240 assertions).
 - 94 main programs expect exit code 0 with all TAP assertions passing.
 - Two main programs intentionally exit 1 after two passing cleanup assertions
   each: `panic-unwind.ok` and `secondary-failures.ok`.
-- `pending/`: four programs with 10 assertions tied to #578–#581. Discover
+- `pending/`: three programs with 8 assertions tied to #579–#581. Discover
   these separately; never treat them as ordinary passing oracle inputs.
 - `rejected/`: six compile-negative fixtures, not executable oracle inputs.
-- Across main and pending: 100 executable programs, 437 assertions. All
+- Across main and pending: 99 executable programs, 441 assertions. All
   original assertions are retained exactly once; only the four incorrect
-  expectations listed below changed.
+  expectations listed below changed. #578 also adds four checks for running
+  an escaped Future, cached reuse, and cleanup at its owner’s exit.
 - Claude's original 0.5.8 IR/Sparrow results: 849 passing and 25 failing
   check executions (437 checks on each engine). Those saved results were
   inspected without running programs. Existing passing expectations remain
@@ -29,12 +30,12 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 - Regeneration command: `python3 tests/ownership-corpus/gen.py`. All 60
   generated files reproduce byte for byte after the import-path migration;
   their only change from the old location is `../support/tap` → `tap`.
-- All 100 executable files passed the checker after relocation; all six
+- At relocation, all 100 executable files passed the checker; all six
   negative fixtures were rejected for their intended rule. TAP plans match
   literal assertion counts.
-- No programs, cargo, Docker, release gate or benchmarks were run in this
-  revision. Runtime verification of the revised sources belongs to oracle
-  runner #562; comparison here is against the saved original observations.
+- No programs, cargo, Docker, release gate or benchmarks were run in the
+  original corpus relocation. Whole-corpus runtime verification belongs to
+  oracle runner #562; the #578 in-process checks are recorded below.
 
 Programs import `tap` from `t/support` through `OKKAMA_IMPORT_DIRS`; oracle
 runner #562 will set it. From the repository root, check a positive file with:
@@ -83,7 +84,6 @@ expectations (`B`, `D`, `ACB`, `ED`) are unchanged.
 
 | Pending file | Original checks | Unchanged expectations | Status |
 | --- | --- | --- | --- |
-| [578-cold-futures.ok](pending/578-cold-futures.ok) | `cold-futures` 1, 3 | `""`, `""` | #578: escaping cold Future loses fresh receiver and arguments; both engines |
 | [579-async-results.ok](pending/579-async-results.ok) | `async-results` 6 | `"LR"` | #579: discarded awaited result is never destroyed; both engines |
 | [580-all-futures.ok](pending/580-all-futures.ok) | `all-futures` 1–3 | `""`, `""`, `"BA"` | #580: Sparrow releases results early and in creation order; IR passes |
 | [581-future-completions.ok](pending/581-future-completions.ok) | `future-completions` 1–4 | `""`, `""`, `""`, `"BA"` | #581: open cached-outcome ownership semantics; expectations follow its proposal |
@@ -93,8 +93,8 @@ Each pending header names its ticket and quotes the relevant Book sentence.
 rule about the owner across multiple consumers. Other pending expectations
 remain Book requirements despite runtime disagreement.
 
-Main `cold-futures` retains original checks 2, 4–6; main `async-results`
-retains 1–5; main `all-futures` retains 4–6. Necessary setup is preserved or
+Main `cold-futures` now contains all six original checks plus four #578
+regressions; main `async-results` retains 1–5; main `all-futures` retains 4–6. Necessary setup is preserved or
 repeated in the pending fixture; passing assertions are not moved or removed.
 All of `future-completions` is pending, so there is no empty main file.
 
@@ -137,7 +137,7 @@ order.
 | [caps.ok](caps.ok) | 4 | 16.3, 19, 20.2: caps retain hidden resources and original snapshot |
 | [roles-generics.ok](roles-generics.ok) | 5 | 22, 25, 20.2: role returns, generic wrappers, any transport |
 | [async-results.ok](async-results.ok) | 5 | 20.2, 31.5: result transfer across suspension and repeated awaits |
-| [cold-futures.ok](cold-futures.ok) | 4 | 20.2, 31.5: lazy futures retain receiver and arguments before startup |
+| [cold-futures.ok](cold-futures.ok) | 10 | 20.2, 31.5: lazy futures retain receiver and arguments before startup |
 | [spawn-cancellation.ok](spawn-cancellation.ok) | 5 | 15, 20.3, 31.5: cooperative spawn, cancellation waits for child cleanup |
 | [future-group.ok](future-group.ok) | 5 | 20.2–20.3, 31.5; async/scope: supervised resources and duplicate registration |
 | [all-futures.ok](all-futures.ok) | 3 | 20.2, 31.5; async/collect: empty collector and failure/cancellation cleanup; result graph in #580 |
@@ -318,7 +318,7 @@ results corroborate the four corrections; open disagreements stay in pending/.
    the cleanup sequence; Claude must inspect stderr to validate the primary
    and secondary diagnostic carrier behavior.
 
-## Completion record
+## Original corpus relocation completion record
 
 - [x] Move the entire corpus, generator, README and rejected fixtures out of `t/`.
 - [x] Use `tap` through `OKKAMA_IMPORT_DIRS` and document runner #562's setup.
@@ -332,5 +332,21 @@ results corroborate the four corrections; open disagreements stay in pending/.
   original saved results; document old/new expectations and ticket mapping.
 - [x] Remove `.corpus-run/` after inspecting its results. No commit made.
 
-Revised runtime execution remains assigned to oracle runner #562 and was not
-performed here. Tickets #578–#580 and the semantics question #581 remain open.
+## #578 cold Future dependencies
+
+- [x] Treat Future and aggregates containing Future as non-plain during lowering
+  and region elision, preserving track/adopt and keep across both function scopes.
+- [x] Walk Sparrow Future retained arguments and cached results. Keep arguments
+  separately from reusable registers, trace them for GC, and exclude mutable
+  Future graphs from ownership summaries.
+- [x] Verify eight in-process regressions on both IR and Sparrow: never started,
+  cancelled before startup, repeated await, borrowed dependencies, object fields,
+  escape after completion, duplicate identity, and cached result escape.
+- [x] Verify IR graph transfer/deduplication/order with a focused unit test and
+  lowering/region keeps with a focused integration test.
+- [x] Restore both original pending checks to `cold-futures.ok`, add four await
+  checks, and lower the actual corpus file with stdlib in-process. Its TAP plan
+  is 10; main/pending inventories are 433/8 assertions with matching plans.
+
+Whole-corpus execution in Docker remains assigned to Claude / oracle runner
+#562. #579–#580 and the semantics question #581 are outside this fix.
