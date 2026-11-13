@@ -118,8 +118,7 @@ impl Heap {
             }
             FsMkdir | FsMkdirAll | FsChmod => {
                 let mode = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|v| (0..=0o777).contains(v))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid permission mode"))?
                     as u32;
@@ -186,8 +185,8 @@ impl Heap {
             }
             FsChown => {
                 use num_traits::ToPrimitive;
-                let owner = crate::host::native_file::big(self.integer(a[1])?);
-                let group = crate::host::native_file::big(self.integer(a[2])?);
+                let owner = self.bigint(a[1])?.into_owned();
+                let group = self.bigint(a[2])?.into_owned();
                 if owner < (-1).into() || group < (-1).into() {
                     return Err(fail(n, "invalid_input", "Invalid owner or group"));
                 }

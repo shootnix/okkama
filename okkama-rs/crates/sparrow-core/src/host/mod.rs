@@ -381,15 +381,37 @@ impl Heap {
     pub fn allocate_text(&mut self, value: String) -> Result<Slot, Error> {
         Ok(Slot { bits: self.core_mut().allocate_text(&value), tag: STR })
     }
+    /// The integer as an owned value: a big one's digits are copied into a
+    /// new `Rc`. For a value kept past the call; readers use the views below.
     pub fn integer(&self, slot: Slot) -> Result<Integer, Error> {
+        Ok(match self.integer_view(slot)? {
+            crate::heap::Integer::Small(n) => Integer::Small(n),
+            crate::heap::Integer::Big(n) => Integer::Big(Rc::new(n.clone())),
+        })
+    }
+    /// The integer borrowed from the heap, with no copy of the digits
+    /// (#451). The borrow of the heap keeps it from outliving an
+    /// allocation, a collection or a suspension.
+    pub fn integer_view(&self, slot: Slot) -> Result<crate::heap::Integer<'_>, Error> {
         match slot.kind() {
-            SMALL => Ok(Integer::Small(slot.bits as i64)),
-            BIG => Ok(match self.core().integer(slot.bits) {
-                crate::heap::Integer::Small(n) => Integer::Small(n),
-                crate::heap::Integer::Big(n) => Integer::Big(Rc::new(n.clone())),
-            }),
+            SMALL => Ok(crate::heap::Integer::Small(slot.bits as i64)),
+            BIG => Ok(self.core().integer(slot.bits)),
             _ => Err(Error("expected integer slot".into())),
         }
+    }
+    /// The integer as an `i64` when it fits, None when it does not.
+    pub fn int64(&self, slot: Slot) -> Result<Option<i64>, Error> {
+        Ok(match self.integer_view(slot)? {
+            crate::heap::Integer::Small(n) => Some(n),
+            crate::heap::Integer::Big(n) => n.to_i64(),
+        })
+    }
+    /// The integer as a `BigInt`: a big one borrowed, a small one converted.
+    pub fn bigint(&self, slot: Slot) -> Result<std::borrow::Cow<'_, BigInt>, Error> {
+        Ok(match self.integer_view(slot)? {
+            crate::heap::Integer::Small(n) => std::borrow::Cow::Owned(BigInt::from(n)),
+            crate::heap::Integer::Big(n) => std::borrow::Cow::Borrowed(n),
+        })
     }
     pub(crate) fn allocate(&mut self, value: BigInt) -> Result<Slot, Error> {
         if let Some(value) = value.to_i64() {

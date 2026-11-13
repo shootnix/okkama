@@ -44,6 +44,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   parts: 7.2–7.7 → 5.9 µs. A result past the 4 GiB a string can hold is
   now an error instead of a truncated length.
 
+- **Natives read big integers without copying their digits (#451).** A
+  native that only inspected an integer argument copied a big one's digits
+  into a new `Rc`, and several then copied them again into a `BigInt`. The
+  host now lends the heap's integer (`integer_view`, `int64`, `bigint`);
+  a copy is made only for a value the native keeps. `IntegerBytes` of a
+  200-bit value: 242 → 175 ns; of a 4 000-bit value: 1 460 → 1 350 ns.
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request

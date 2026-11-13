@@ -79,8 +79,7 @@ impl Heap {
             }
             NumberTextIntParse | NumberTextIntParseValid => {
                 let parsed = self
-                    .integer(args[1])?
-                    .to_i64()
+                    .int64(args[1])?
                     .and_then(|radix| int_parse(self.text(args[0]).ok()?, radix));
                 if native == NumberTextIntParseValid {
                     return Ok(Outcome::Value(Slot::boolean(parsed.is_some())));

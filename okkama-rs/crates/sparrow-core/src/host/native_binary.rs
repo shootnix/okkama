@@ -22,11 +22,9 @@ pub(crate) fn handles(native: Native) -> bool {
 fn failed(native: Native) -> Error {
     Error(format!("Native invocation \"{}\" failed", native.symbol()))
 }
-fn big(heap: &Heap, value: Slot) -> Result<BigInt, Error> {
-    Ok(match heap.integer(value)? {
-        Integer::Small(n) => BigInt::from(n),
-        Integer::Big(n) => (*n).clone(),
-    })
+/// The integer borrowed from the heap: a big one's digits are not copied (#451).
+fn big(heap: &Heap, value: Slot) -> Result<std::borrow::Cow<'_, BigInt>, Error> {
+    heap.bigint(value)
 }
 fn fits(native: Native, value: &BigInt, size: &BigInt, signedness: &str) -> Result<bool, Error> {
     if size <= &BigInt::from(0) {
@@ -65,7 +63,7 @@ fn from_bytes(native: Native, bytes: &[u8], signedness: &str) -> Result<BigInt, 
     }
 }
 fn width(heap: &Heap, native: Native, value: Slot) -> Result<u32, Error> {
-    match heap.integer(value)?.to_i64() {
+    match heap.int64(value)? {
         Some(32) => Ok(32),
         Some(64) => Ok(64),
         _ => Err(failed(native)),
@@ -160,16 +158,13 @@ impl Heap {
                 let bytes = self.native_bytes(args[0])?;
                 let mask = self.native_bytes(args[1])?;
                 let phase = self
-                    .integer(args[2])?
-                    .to_i64()
+                    .int64(args[2])?
                     .filter(|n| (0..=3).contains(n));
                 let begin = self
-                    .integer(args[3])?
-                    .to_i64()
+                    .int64(args[3])?
                     .filter(|n| *n >= 0 && *n as usize <= bytes.len());
                 let count = self
-                    .integer(args[4])?
-                    .to_i64()
+                    .int64(args[4])?
                     .filter(|n| (0..=65536).contains(n));
                 if let (Some(phase), Some(begin), Some(count)) = (phase, begin, count)
                     && mask.len() == 4 && count as usize <= bytes.len() - begin as usize {

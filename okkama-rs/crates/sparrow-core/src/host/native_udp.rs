@@ -224,17 +224,16 @@ impl Heap {
         }
         if matches!(n, NetworkSocket | NetworkUdpBound) {
             let (v6, kind, endpoint, reuse, broadcast, dual) = if n == NetworkSocket {
-                let v6 = match self.integer(a[0])?.to_i64() {
+                let v6 = match self.int64(a[0])? {
                     Some(1) => false,
                     Some(2) => true,
                     _ => return Err(invalid("unsupported", "IP address family is not supported")),
                 };
                 let kind = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|v| (0..=2).contains(v))
                     .ok_or_else(|| invalid("invalid_input", "Unknown portable socket type"))?;
-                let protocol = self.integer(a[2])?.to_i64().unwrap_or(-1);
+                let protocol = self.int64(a[2])?.unwrap_or(-1);
                 if !(protocol == 0 || kind == 1 && protocol == 1 || kind == 2 && protocol == 2) {
                     return Err(invalid(
                         "invalid_input",

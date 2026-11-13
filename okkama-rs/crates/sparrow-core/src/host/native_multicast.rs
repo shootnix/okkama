@@ -85,12 +85,10 @@ impl Heap {
         let group = address(n, &self.native_bytes(a[1])?, "").map_err(native)?;
         let name = self.text(a[2])?;
         let index = self
-            .integer(a[3])?
-            .to_i64()
+            .int64(a[3])?
             .filter(|n| (1..=u32::MAX as i64).contains(n));
         let hops = self
-            .integer(a[4])?
-            .to_i64()
+            .int64(a[4])?
             .filter(|n| (0..=255).contains(n))
             .ok_or_else(|| invalid("invalid_input", "Multicast hop limit must be in 0..255"))?
             as u32;

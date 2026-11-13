@@ -1179,10 +1179,7 @@ impl Heap {
         })
     }
     fn regex_int(&self, value: Slot) -> Result<BigInt, Error> {
-        Ok(match self.integer(value)? {
-            Integer::Small(n) => BigInt::from(n),
-            Integer::Big(n) => (*n).clone(),
-        })
+        Ok(self.bigint(value)?.into_owned())
     }
     fn regex_map(
         &mut self,
@@ -1214,8 +1211,7 @@ impl Heap {
                 let mut flags = [false; 5];
                 for code in self.elements(args[1])? {
                     let index = self
-                        .integer(code)?
-                        .to_i64()
+                        .int64(code)?
                         .filter(|n| (0..=4).contains(n))
                         .ok_or_else(|| invalid("Unknown regex flag"))?;
                     flags[index as usize] = true;
@@ -1260,8 +1256,7 @@ impl Heap {
             }
             "regex_query_create" => {
                 let mode = self
-                    .integer(args[4])?
-                    .to_i64()
+                    .int64(args[4])?
                     .filter(|n| (0..=2).contains(n))
                     .ok_or_else(|| invalid("Unknown regex query mode"))?;
                 let RegexHandle::Pattern(pattern) = self.regex(args[0])? else {
@@ -1317,8 +1312,7 @@ impl Heap {
                     ));
                 }
                 let index = self
-                    .integer(args[1])?
-                    .to_i64()
+                    .int64(args[1])?
                     .and_then(|n| usize::try_from(n).ok())
                     .filter(|n| *n < found.spans.len())
                     .ok_or_else(|| invalid("Missing regex capture"))?;

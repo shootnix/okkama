@@ -87,8 +87,7 @@ impl Heap {
         }
         if native == Native::TestingTestStateOpen {
             let Some(limit) = self
-                .integer(args[0])?
-                .to_i64()
+                .int64(args[0])?
                 .filter(|n| (0..=65536).contains(n))
             else {
                 return failure(

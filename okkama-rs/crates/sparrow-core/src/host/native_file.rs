@@ -8,12 +8,6 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
 };
-pub(crate) fn big(v: Integer) -> num_bigint::BigInt {
-    match v {
-        Integer::Small(n) => n.into(),
-        Integer::Big(n) => (*n).clone(),
-    }
-}
 #[derive(Debug)]
 pub(crate) struct RawFile {
     pub(crate) file: Option<File>,
@@ -135,13 +129,11 @@ impl Heap {
             FsOpen => {
                 let path = self.fs_path(n, a[0])?;
                 let flags = self
-                    .integer(a[1])?
-                    .to_i64()
+                    .int64(a[1])?
                     .filter(|f| *f >= 0 && *f & !63 == 0)
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid open flags"))?;
                 let mode = self
-                    .integer(a[2])?
-                    .to_i64()
+                    .int64(a[2])?
                     .filter(|m| (0..=0o777).contains(m))
                     .ok_or_else(|| fail(n, "invalid_input", "Invalid permission mode"))?;
                 let file = RawFile::create(n, &path, flags, mode as u32)?;
@@ -156,7 +148,7 @@ impl Heap {
                 Ok(yes)
             }
             FsRead => {
-                let limit = big(self.integer(a[1])?);
+                let limit = self.bigint(a[1])?.into_owned();
                 if limit.sign() == num_bigint::Sign::Minus {
                     return Err(fail(n, "invalid_input", "Invalid read size"));
                 }
@@ -230,7 +222,7 @@ impl Heap {
                 Ok(yes)
             }
             FsTruncate => {
-                let size = big(self.integer(a[1])?);
+                let size = self.bigint(a[1])?.into_owned();
                 if size.sign() == num_bigint::Sign::Minus {
                     return Err(fail(n, "invalid_input", "Negative file size"));
                 }
@@ -241,8 +233,8 @@ impl Heap {
                 Ok(yes)
             }
             FsSeek => {
-                let offset = big(self.integer(a[1])?);
-                let origin = self.integer(a[2])?.to_i64();
+                let offset = self.bigint(a[1])?.into_owned();
+                let origin = self.int64(a[2])?;
                 let file = self.raw_file(a[0])?.open(n)?;
                 let base = match origin {
                     Some(0) => 0,
