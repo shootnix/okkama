@@ -242,9 +242,12 @@ Since 0.5.5 the release report is the micro-benchmark A/B
 tag rebuilt and the candidate, one session, Linux containers. The
 cross-language ladder report is made on demand. Compare releases with a
 back-to-back A/B, not against an older report, and never against a PGO build.
-- Micro against 0.5.4: Sparrow −7.5% by geometric mean over 57 reliable pairs,
-  8 programs faster beyond the noise band, 1 slower (`try-catch` +24% on Linux
-  with peak memory 535 → 76 MB, #544); the IR engine −1.2% (noise).
+- Micro, 0.5.6 against 0.5.5 (report
+  `okkama-docs/benchmarks/reports/2026-11-13-v0.5.6/micro.html`): every pair
+  within the noise band; Sparrow −2.5% by geometric mean over 68 reliable
+  pairs, the IR engine +1.0%. 0.5.5 against 0.5.4: Sparrow −7.5%, one program
+  slower (`try-catch` +24% on Linux with peak memory 535 → 76 MB, accepted
+  in #544).
 - Ladder against 0.5.4: wall time at parity (Sparrow +0.7%, the JVM +0.8%);
   10-app 107 → 95 ms and 13.3 → 12.5 MB with #522.
 - Cold runs (ladder, 01–10): Go is 2.3× faster than Sparrow. Sparrow is 1.5×

@@ -6,7 +6,31 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-0.5.6 is in progress.
+## [0.5.6] — 2026-11-13
+
+0.5.6 fixes the language bugs found while documenting std and writing the
+Bible, makes the Linux packages build again, and makes five changes to
+Sparrow's collector and scheduler. Each change was measured before it was
+kept.
+- **Language.** An index at the end of a `confirm` condition no longer
+  takes the confirm's `else` (#521). A generic library may keep a closure
+  or a role value in a `once let` (#520).
+- **Sparrow.**
+  - The pages of a past burst are no longer swept again and again (#435):
+    a program that once held a million objects runs its steady phase 2.8×
+    faster.
+  - Objects are marked when they are queued (#438): marking takes 23–34%
+    less time on shared graphs.
+  - Fewer allocations when Futures settle and sockets wake (#434, #440,
+    #442): `cancel` and `event-wake` are 4–6% faster, and new connections
+    to the hello server 3–7% faster.
+- **Measured and declined.**
+  - A larger collection floor (#544) made `sha256` 52% slower.
+  - A deadline heap for timers (#441) gave parity.
+- **Release report.** The micro-benchmark A/B
+  (`okkama-docs/benchmarks/reports/2026-11-13-v0.5.6/micro.html`) has every
+  pair within the noise band: Sparrow −2.5% by geometric mean, the IR
+  engine +1.0%. Conformance is 1032/1032 on six configurations.
 
 ### Changed
 
@@ -5547,7 +5571,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/shootnix/okkama/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/shootnix/okkama/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/shootnix/okkama/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/shootnix/okkama/compare/v0.5.1...v0.5.3
