@@ -237,7 +237,8 @@ object PopMailboxState {
         let parts = reply::Reply::text.split(" ");
         confirm parts.size() >= 2 else throw InvalidPopData.because("STAT requires count and size");
         let amount = PopDecimal(origin: parts[0], limits: limits).number();
-        confirm amount <= limits::Limits::entries else throw PopListingLimitExceeded.kind("entries");
+        confirm amount <= limits::Limits::entries
+            else throw PopListingLimitExceeded.kind("entries");
         let total = PopDecimal(origin: parts[1], limits: limits).integer();
         confirm amount > 0 || total.sign() == 0
             else throw InvalidPopData.because("empty maildrop reports nonzero size");
@@ -269,7 +270,11 @@ object PopListing {
             confirm parts.size() >= 2
                 else throw InvalidPopData.because("LIST requires number and size");
             let number = PopNumber(PopDecimal(origin: parts[0], limits: limits).number());
-            PopMessage(number: number, size: PopDecimal(parts[1], limits).integer(), identifiers: []);
+            PopMessage(
+                number: number,
+                size: PopDecimal(parts[1], limits).integer(),
+                identifiers: []
+            );
         };
         for values -> message {
             confirm !seen.membership(message.number().number())
@@ -301,7 +306,11 @@ object PopListing {
                 let matching is @PopMessage = identified.filter() -> entry {
                     entry.number().number() == message.number().number();
                 };
-                PopMessage(number: message.number(), size: message.size(), identifiers: [matching[0].identifier()]);
+                PopMessage(
+                    number: message.number(),
+                    size: message.size(),
+                    identifiers: [matching[0].identifier()]
+                );
             };
             entries = joined;
         }

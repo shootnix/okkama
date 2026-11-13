@@ -21,11 +21,23 @@ object PopReplyReading {
     has pending is Future<PopReplyRead>;
 
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: [], limits: PopReplyLimits(), chunk_bytes: 4096).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: [],
+            limits: PopReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     PopReplyReading(origin is AsyncReading, mode is PopReplyMode, prefix is @byte) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: PopReplyLimits(), chunk_bytes: 4096).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: prefix,
+            limits: PopReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     PopReplyReading(
@@ -35,7 +47,13 @@ object PopReplyReading {
         limits is PopReplyLimits,
         chunk_bytes is int
     ) {
-        pending = PopReplyInput(origin: origin, mode: mode, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
+        pending = PopReplyInput(
+            origin: origin,
+            mode: mode,
+            prefix: prefix,
+            limits: limits,
+            chunk_bytes: chunk_bytes
+        ).read();
     }
 
     read() is Future<PopReplyRead> {
