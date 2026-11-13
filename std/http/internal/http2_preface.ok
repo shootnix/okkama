@@ -1,9 +1,9 @@
 module http/internal/http2_preface v1.0.0;
 
-// Borrowed stream collaborator. Caller must already select H2 (ALPN h2 for TLS)
-// and owns transport disposal after any fault, partial write or cancellation.
-// Reads only the server's first SETTINGS, applies it, then emits ACK. The later
-// ACK of our own settings belongs to the connection loop, not this preface.
+// The connection preface (RFC 9113 §3.4): the client's magic and SETTINGS, the
+// server's SETTINGS, and the first ACK.
+//
+// Internal to the http modules; programs do not import it.
 
 import "http/http2_settings" take Http2Settings, Http2SettingsWire;
 import "http/internal/http2_settings" take Http2PeerSettings, ReceivedHttp2Settings;
@@ -17,14 +17,18 @@ import "http/internal/wire_bytes" take HttpWireBytes;
 import "async/atomic" take Atomic;
 import "io/decorators" take InvalidReading;
 
+// The client's side of the preface.
 object Http2ClientPreface {
     has waiting is Future<Http2PeerSettings>;
 
+    // Speaks on input and output, advertising settings.
     Http2ClientPreface(input is AsyncReading, output is AsyncWriting, settings is Http2Settings) {
         let operation = Http2PrefaceOperation(input: input, output: output, settings: settings);
         waiting = operation.run();
     }
 
+    // Sends the preface, reads the server's SETTINGS, acknowledges them and
+    // gives them.
     async settings() is Http2PeerSettings {
         let group is FutureGroup<Http2PeerSettings> = FutureGroup();
         let cleanup = Http2PrefaceSettlement(group);
@@ -98,6 +102,7 @@ hidden object Http2PrefaceSettlement<T> {
 object Http2ServerPreface {
     has waiting is Future<Http2PeerSettings>;
 
+    // Speaks on input and output, advertising settings.
     Http2ServerPreface(input is AsyncReading, output is AsyncWriting, settings is Http2Settings) {
         let operation = Http2ServerPrefaceOperation(
             input: input,
@@ -107,6 +112,8 @@ object Http2ServerPreface {
         waiting = operation.run();
     }
 
+    // Sends our SETTINGS, reads the client's magic and SETTINGS, acknowledges
+    // them and gives them.
     async settings() is Http2PeerSettings {
         let group is FutureGroup<Http2PeerSettings> = FutureGroup();
         let cleanup = Http2PrefaceSettlement(group);

@@ -1,5 +1,10 @@
 module http/internal/hpack v1.0.0;
 
+// HPACK (RFC 7541): header blocks of HTTP/2 encoded and decoded, with the
+// dynamic table and bounds on what a block may expand to.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/hpack_tables" take HpackField, HpackStaticTable, HpackDynamicTable,
     HpackLookup, HpackTableBound;
 import "http/internal/hpack_primitives" take HpackInteger, ParsedHpackInteger, HpackString,
@@ -11,15 +16,18 @@ import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
 import "io/buffer" take ByteBuffer;
 import "async/atomic" take Atomic;
 
+// How large a header block may be, encoded and decoded.
 object HpackBudget {
     has encoded, decoded, fields is int;
 
+    // 64 KiB encoded, 64 KiB decoded, 128 fields.
     HpackBudget() {
         encoded = 65536;
         decoded = 65536;
         fields = 128;
     }
 
+    // The budget as given.
     HpackBudget(encoded is int, decoded is int, fields is int) {
         confirm encoded >= 0
             && encoded <= 1048576
@@ -38,24 +46,29 @@ object HpackBudget {
         self.fields = fields;
     }
 
+    // Bytes of the encoded block.
     encoded() is int {
         encoded;
     }
 
+    // Bytes of the decoded fields.
     decoded() is int {
         decoded;
     }
 
+    // How many fields.
     fields() is int {
         fields;
     }
 }
 
+// The decoding side of one connection: tables and size limits.
 object HpackDecoder {
     has fixed is HpackStaticTable;
     has table is HpackDynamicTable;
     has limit, required is int;
 
+    // An empty 4096-byte dynamic table.
     HpackDecoder() {
         fixed = HpackStaticTable();
         table = HpackDynamicTable(4096);
@@ -63,6 +76,7 @@ object HpackDecoder {
         required = -1;
     }
 
+    // An empty table allowed up to limit bytes.
     HpackDecoder(limit is int) {
         HpackTableBound(limit);
         fixed = HpackStaticTable();
@@ -76,6 +90,8 @@ object HpackDecoder {
         };
     }
 
+    // As given; required is a size update the next block must start with, or
+    // -1.
     HpackDecoder(
         fixed is HpackStaticTable,
         table is HpackDynamicTable,
@@ -96,18 +112,22 @@ object HpackDecoder {
         self.required = required;
     }
 
+    // The dynamic table.
     table() is HpackDynamicTable {
         table;
     }
 
+    // The static table.
     fixed() is HpackStaticTable {
         fixed;
     }
 
+    // The largest table size the peer may set.
     allowed_limit() is int {
         limit;
     }
 
+    // The size update the next block must carry, or -1.
     required_limit() is int {
         required;
     }
@@ -121,24 +141,30 @@ object HpackDecoder {
         }
     }
 
+    // Decodes one block within budget; Http2Fault for a block that is not
+    // valid.
     decoded(origin is @byte, budget is HpackBudget) is HpackDecodedBlock {
         HpackBlockInput(context: self, origin: origin, budget: budget).block();
     }
 }
 
+// The fields of a block and the decoder after it.
 object HpackDecodedBlock {
     has fields is @HpackField;
     has context is HpackDecoder;
 
+    // As given.
     HpackDecodedBlock(fields is @HpackField, context is HpackDecoder) {
         self.fields = fields;
         self.context = context;
     }
 
+    // The fields, in order.
     fields() is @HpackField {
         fields;
     }
 
+    // The decoder to use for the next block.
     context() is HpackDecoder {
         context;
     }
@@ -356,11 +382,13 @@ object HpackEncoded {
     has origin is Sequencing<HpackField>;
     has budget is HpackBudget;
 
+    // Encodes origin within budget.
     HpackEncoded(origin is Sequencing<HpackField>, budget is HpackBudget) {
         self.origin = origin;
         self.budget = budget;
     }
 
+    // The block.
     bytes() is @byte {
         let count = origin.size();
         confirm count >= 0 && count <= budget.fields()

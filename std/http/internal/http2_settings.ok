@@ -1,5 +1,9 @@
 module http/internal/http2_settings v1.0.0;
 
+// The SETTINGS a peer advertised, applied one by one (RFC 9113 §6.5).
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/http2_frame" take Http2Frame, Http2FrameRules, Http2Fault, Http2FaultScope;
 import "encoding/binary" take Binary, Signedness;
 import "encoding/utf" take ByteOrder;
@@ -9,6 +13,8 @@ object Http2PeerSettings {
     has header_table, initial_window, frame_size, streams, header_list is int;
     has streams_limited, header_list_limited, push_enabled is bool;
 
+    // The initial values: a 4096-byte table, a 65535-byte window, 16384-byte
+    // frames, no stream or header-list limit, push enabled.
     Http2PeerSettings() {
         header_table = 4096;
         initial_window = 65535;
@@ -20,38 +26,48 @@ object Http2PeerSettings {
         push_enabled = true;
     }
 
+    // The header table size.
     header_table() is int {
         header_table;
     }
 
+    // The initial stream window.
     initial_window() is int {
         initial_window;
     }
 
+    // The largest frame payload.
     frame_size() is int {
         frame_size;
     }
 
+    // The most concurrent streams.
     streams() is int {
         streams;
     }
 
+    // The largest header list.
     header_list() is int {
         header_list;
     }
 
+    // Whether a stream limit was advertised.
     streams_limited() is bool {
         streams_limited;
     }
 
+    // Whether a header-list limit was advertised.
     header_list_limited() is bool {
         header_list_limited;
     }
 
+    // Whether push is enabled.
     push_enabled() is bool {
         push_enabled;
     }
 
+    // These settings with one more applied; Http2Fault for a value out of
+    // range.
     setting(identifier is int, value is int, from_server is bool) is ^Http2PeerSettings {
         confirm identifier >= 0 && identifier <= 65535 && value >= 0 && value <= 4294967295
             else throw Http2Fault.detailed(
@@ -104,17 +120,20 @@ object Http2PeerSettings {
     }
 }
 
+// A SETTINGS frame applied to the settings before it.
 object ReceivedHttp2Settings {
     has origin is Http2Frame;
     has previous is Http2PeerSettings;
     has from_server is bool;
 
+    // origin applied to previous, as sent by a server or a client.
     ReceivedHttp2Settings(origin is Http2Frame, previous is Http2PeerSettings, from_server is bool) {
         self.origin = origin;
         self.previous = previous;
         self.from_server = from_server;
     }
 
+    // The settings after it; Http2Fault for a frame that is not valid SETTINGS.
     settings() is Http2PeerSettings {
         Http2FrameRules(origin).check();
         confirm origin.header().kind().int() == 4 && (origin.header().flags().int() & 1) == 0

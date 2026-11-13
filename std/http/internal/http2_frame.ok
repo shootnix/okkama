@@ -1,5 +1,10 @@
 module http/internal/http2_frame v1.0.0;
 
+// HTTP/2 frames (RFC 9113 §4): the 9-byte header, the payload, the rules every
+// frame must follow, and the faults that end a stream or a connection.
+//
+// Internal to the http modules; programs do not import it.
+
 import "encoding/binary" take IntegerBytes, Binary, Signedness;
 import "encoding/utf" take ByteOrder;
 import "http/internal/wire_bytes" take HttpWireBytes;
@@ -7,6 +12,7 @@ import "http/internal/wire_bytes" take HttpWireBytes;
 // Internal wire values; these do not publish a session or stable public frame API.
 enum Http2FaultScope = (connection, stream);
 
+// A protocol fault: its scope, the error code to send, the stream and why.
 enum Http2Fault is Error = (detailed(
     scope is Http2FaultScope,
     code is int,
@@ -18,10 +24,12 @@ enum Http2Fault is Error = (detailed(
 object Http2FaultView {
     has fault is Http2Fault;
 
+    // The fields of fault.
     Http2FaultView(fault is Http2Fault) {
         self.fault = fault;
     }
 
+    // Stream or connection.
     scope() is Http2FaultScope {
         match fault {
             case Http2Fault.detailed(scope, _, _, _) {
@@ -30,6 +38,7 @@ object Http2FaultView {
         }
     }
 
+    // The HTTP/2 error code.
     code() is int {
         match fault {
             case Http2Fault.detailed(_, code, _, _) {
@@ -38,6 +47,7 @@ object Http2FaultView {
         }
     }
 
+    // The stream, 0 for the connection.
     stream() is int {
         match fault {
             case Http2Fault.detailed(_, _, stream, _) {
@@ -46,6 +56,7 @@ object Http2FaultView {
         }
     }
 
+    // Why.
     reason() is string {
         match fault {
             case Http2Fault.detailed(_, _, _, reason) {
@@ -55,10 +66,12 @@ object Http2FaultView {
     }
 }
 
+// The header of a frame: type, flags, stream and payload length.
 object Http2FrameHeader {
     has kind, flags is byte;
     has stream, length is int;
 
+    // As given; Http2Fault for a stream or length out of range.
     Http2FrameHeader(kind is byte, flags is byte, stream is int, length is int) {
         confirm stream >= 0 && stream <= 2147483647 && length >= 0 && length <= 16777215
             else throw Http2Fault.detailed(
@@ -73,22 +86,27 @@ object Http2FrameHeader {
         self.length = length;
     }
 
+    // The frame type.
     kind() is byte {
         kind;
     }
 
+    // The flags.
     flags() is byte {
         flags;
     }
 
+    // The stream identifier.
     stream() is int {
         stream;
     }
 
+    // The payload length.
     length() is int {
         length;
     }
 
+    // The 9 bytes.
     bytes() is @byte {
         let size = IntegerBytes(
             value: length,
@@ -106,15 +124,18 @@ object Http2FrameHeader {
     }
 }
 
+// A frame header read from 9 bytes.
 object ParsedHttp2FrameHeader {
     has origin is @byte;
     has maximum is int;
 
+    // Reads origin with payloads up to 16384 bytes.
     ParsedHttp2FrameHeader(origin is @byte) {
         self.origin = origin;
         maximum = 16384;
     }
 
+    // Reads origin with payloads up to maximum bytes.
     ParsedHttp2FrameHeader(origin is @byte, maximum is int) {
         confirm maximum >= 16384 && maximum <= 16777215
             else throw Http2Fault.detailed(
@@ -127,6 +148,7 @@ object ParsedHttp2FrameHeader {
         self.maximum = maximum;
     }
 
+    // The header; Http2Fault for a payload over the maximum.
     header() is Http2FrameHeader {
         confirm origin.size() == 9
             else throw Http2Fault.detailed(
@@ -147,10 +169,12 @@ object ParsedHttp2FrameHeader {
     }
 }
 
+// A whole frame: header and payload.
 object Http2Frame {
     has header is Http2FrameHeader;
     has payload is @byte;
 
+    // header with payload; their lengths must agree.
     Http2Frame(header is Http2FrameHeader, payload is @byte) {
         confirm payload.size() == header.length()
             else throw Http2Fault.detailed(Http2FaultScope.connection, 6, 0, "frame payload length");
@@ -158,26 +182,33 @@ object Http2Frame {
         self.payload = payload;
     }
 
+    // The header.
     header() is Http2FrameHeader {
         header;
     }
 
+    // The payload.
     payload() is @byte {
         payload;
     }
 
+    // The frame's bytes.
     bytes() is @byte {
         HttpWireBytes(chunks: [header.bytes(), payload], maximum: 9 + payload.size()).bytes();
     }
 }
 
+// The rules a frame header must follow by type.
 object Http2HeaderRules {
     has origin is Http2FrameHeader;
 
+    // The rules for origin.
     Http2HeaderRules(origin is Http2FrameHeader) {
         self.origin = origin;
     }
 
+    // Throws Http2Fault for a frame on the wrong stream, a fixed-size frame of
+    // another length, or a push.
     check() is void {
         let kind = origin.kind().int();
         let stream = origin.stream();
@@ -256,13 +287,16 @@ object Http2HeaderRules {
     }
 }
 
+// The rules a whole frame must follow.
 object Http2FrameRules {
     has origin is Http2Frame;
 
+    // The rules for origin.
     Http2FrameRules(origin is Http2Frame) {
         self.origin = origin;
     }
 
+    // Throws Http2Fault for a frame that breaks them.
     check() is void {
         let header = origin.header();
         Http2HeaderRules(header).check();
