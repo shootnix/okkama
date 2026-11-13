@@ -1,5 +1,7 @@
 module testing/runner v1.0.0;
 
+// Test reports read back from the test runner's recorded form.
+
 import "testing/result" take TestReport, TestResult, TestFailure, TestPosition, TestOutput,
     TestStatus, InvalidTestResult;
 import "json" take Json, JsonKind, ParsedJson;
@@ -12,6 +14,7 @@ import "encoding/base64" take Base64Decoded;
 object RecordedTestReport {
     has report is TestReport;
 
+    // The runner's recorded text.
     RecordedTestReport(origin is string) {
         confirm origin.length() <= 16777216
             else throw InvalidTestResult.because("runner wire budget");
@@ -29,6 +32,7 @@ object RecordedTestReport {
         );
     }
 
+    // The report; InvalidTestResult for text that is not one.
     report() is TestReport {
         report;
     }

@@ -1,15 +1,24 @@
 module testing/result v1.0.0;
 
+// Test results: what each test did and the report of a run.
+//
+//     report.counts()::Counts::failures;
+//     for report.results() -> result { result::Outcome::name; result::Outcome::status; }
+//     report.exit_status();                    // 0 when nothing failed
+
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 import "collections/sequence" take Sequencing;
 
+// Passed, failed, skipped, timed out or crashed.
 enum TestStatus = (passed, failed, skipped, timed_out, crashed);
 
+// Where in the source.
 object TestPosition {
     has source is string;
     has line, column is int;
 
+    // source at line and column.
     TestPosition(source is string, line is int, column is int) {
         confirm source.length() > 0 && source.length() <= 4096 && line > 0 && column > 0
             else throw InvalidTestResult.because("source position");
@@ -18,6 +27,7 @@ object TestPosition {
         self.column = column;
     }
 
+    // The source, line and column.
     cap Position {
         source is string {
             source;
@@ -33,12 +43,14 @@ object TestPosition {
     }
 }
 
+// Why a test failed.
 object TestFailure {
     has message is string;
     has position is @TestPosition;
     has causes is @TestFailure;
     has depth is int;
 
+    // message without a position.
     TestFailure(message is string) {
         confirm message.length() <= 65536
             else throw InvalidTestResult.because("failure text length");
@@ -48,6 +60,7 @@ object TestFailure {
         depth = 0;
     }
 
+    // message at position.
     TestFailure(message is string, position is TestPosition) {
         confirm message.length() <= 65536
             else throw InvalidTestResult.because("failure text length");
@@ -57,6 +70,7 @@ object TestFailure {
         depth = 0;
     }
 
+    // message at positions, caused by causes.
     TestFailure(
         message is string,
         positions is Sequencing<TestPosition>,
@@ -87,19 +101,23 @@ object TestFailure {
         self.depth = depth;
     }
 
+    // Whether it has a position.
     located() is bool {
         position.size() == 1;
     }
 
+    // Its position; MissingTestPosition without one.
     position() is TestPosition {
         confirm position.size() == 1 else throw MissingTestPosition.missing;
         position[0];
     }
 
+    // The failures behind it.
     causes() is Sequencing<TestFailure> {
         causes;
     }
 
+    // The message and how deep its causes go.
     cap Failure {
         message is string {
             message;
@@ -111,13 +129,16 @@ object TestFailure {
     }
 }
 
+// A failure as text.
 object TestFailureText {
     has origin is TestFailure;
 
+    // The failure.
     TestFailureText(origin is TestFailure) {
         self.origin = origin;
     }
 
+    // It with its positions and causes.
     string() is string {
         let causes = origin.causes();
         origin::Failure::message + (if causes.size() == 1 {
@@ -129,10 +150,12 @@ object TestFailureText {
     }
 }
 
+// What a test printed.
 object TestOutput {
     has output, errors is @byte;
     has truncated is bool;
 
+    // Its output and errors, and whether they were cut short.
     TestOutput(output is @byte, errors is @byte, truncated is bool) {
         confirm output.size() + errors.size() <= 16777216
             else throw InvalidTestResult.because("captured byte budget");
@@ -141,6 +164,7 @@ object TestOutput {
         self.truncated = truncated;
     }
 
+    // The output, the errors and whether they were cut short.
     cap Captured {
         output is @byte {
             output;
@@ -156,6 +180,7 @@ object TestOutput {
     }
 }
 
+// What one test did.
 object TestResult {
     has name is string;
     has status is TestStatus;
@@ -164,6 +189,7 @@ object TestResult {
     has output is TestOutput;
     has skip_reason is string;
 
+    // As given.
     TestResult(
         name is string,
         status is TestStatus,
@@ -188,6 +214,7 @@ object TestResult {
         skip_reason = "";
     }
 
+    // As given, with why it was skipped.
     TestResult(
         name is string,
         status is TestStatus,
@@ -215,18 +242,22 @@ object TestResult {
         self.skip_reason = skip_reason;
     }
 
+    // How long it ran.
     duration() is Duration {
         duration;
     }
 
+    // Why it failed.
     failures() is Sequencing<TestFailure> {
         failures;
     }
 
+    // What it printed.
     output() is TestOutput {
         output;
     }
 
+    // Its name, status and skip reason.
     cap Outcome {
         name is string {
             name;
@@ -242,9 +273,11 @@ object TestResult {
     }
 }
 
+// How many passed, failed and were skipped.
 object TestCounts {
     has passes, failures, skips is int;
 
+    // As given.
     TestCounts(passes is int, failures is int, skips is int) {
         confirm passes >= 0 && failures >= 0 && skips >= 0 && passes + failures + skips <= 4096
             else throw InvalidTestResult.because("test counts");
@@ -253,10 +286,12 @@ object TestCounts {
         self.skips = skips;
     }
 
+    // All of them.
     total() is int {
         passes + failures + skips;
     }
 
+    // Passes, failures and skips.
     cap Counts {
         passes is int {
             passes;
@@ -272,6 +307,7 @@ object TestCounts {
     }
 }
 
+// A run of tests.
 object TestReport {
     has start is Instant;
     has duration is Duration;
@@ -279,6 +315,7 @@ object TestReport {
     has results is @TestResult;
     has counts is TestCounts;
 
+    // Started at start, lasting duration, with seed and results.
     TestReport(
         start is Instant,
         duration is Duration,
@@ -327,26 +364,32 @@ object TestReport {
         counts = TestCounts(passes: passed, failures: size - passed - skipped, skips: skipped);
     }
 
+    // When it started.
     start() is Instant {
         start;
     }
 
+    // How long it took.
     duration() is Duration {
         duration;
     }
 
+    // The seed of the run.
     seed() is int {
         seed;
     }
 
+    // Every result, in order.
     results() is Sequencing<TestResult> {
         results;
     }
 
+    // The counts.
     counts() is TestCounts {
         counts;
     }
 
+    // 0 when nothing failed, 1 otherwise.
     exit_status() is int {
         if counts::Counts::failures == 0 {
             0;
@@ -357,8 +400,10 @@ object TestReport {
     }
 }
 
+// The failure has no position.
 enum MissingTestPosition is Error = (missing);
 
+// A result that cannot be built; reason says why.
 enum InvalidTestResult is Error = (because(reason is string));
 
 test "empty reports have successful exit status" {

@@ -1,5 +1,12 @@
 module testing/report v1.0.0;
 
+// Test reports as text: for people, TAP, JSON or JUnit XML. `okkama run -t`
+// writes them.
+//
+//     HumanTestReport(origin: report, width: 80).string();
+//     TapTestReport(report).string();
+//     JUnitTestReport(origin: report, suite: "std").string();
+
 import "testing/result" take TestReport, TestResult, TestFailure, TestFailureText, TestCounts,
     TestStatus, InvalidTestResult;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -39,13 +46,16 @@ hidden object TestStatusName {
     }
 }
 
+// Text escaped for a report line.
 object ReportText {
     has origin is string;
 
+    // The text.
     ReportText(origin is string) {
         self.origin = origin;
     }
 
+    // It with backslashes and control characters escaped.
     string() is string {
         let fragments is @string = (0..origin.length()).map() -> index {
             let scalar = origin.slice(index, index + 1);
@@ -93,10 +103,12 @@ object ReportText {
     }
 }
 
+// A report for people.
 object HumanTestReport {
     has origin is TestReport;
     has width is int;
 
+    // origin, wrapped to width.
     HumanTestReport(origin is TestReport, width is int) {
         confirm width >= 20 && width <= 512
             else throw InvalidTestResult.because("human width must be 20..512 scalars");
@@ -104,6 +116,7 @@ object HumanTestReport {
         self.width = width;
     }
 
+    // The report.
     string() is string {
         let results = origin.results();
         let counts = origin.counts();
@@ -168,13 +181,16 @@ object HumanTestReport {
     }
 }
 
+// A TAP version 13 report.
 object TapTestReport {
     has origin is TestReport;
 
+    // origin.
     TapTestReport(origin is TestReport) {
         self.origin = origin;
     }
 
+    // The report.
     string() is string {
         let results = origin.results();
         let lines is @string = (0..results.size()).map() -> index {
@@ -225,13 +241,16 @@ object TapTestReport {
     }
 }
 
+// A JSON report.
 object JsonTestReport {
     has origin is TestReport;
 
+    // origin.
     JsonTestReport(origin is TestReport) {
         self.origin = origin;
     }
 
+    // The report.
     string() is string {
         let results = origin.results();
         let counts = origin.counts();
@@ -311,6 +330,7 @@ object JUnitTestReport {
     has origin is TestReport;
     has suite is string;
 
+    // origin as JUnit suite.
     JUnitTestReport(origin is TestReport, suite is string) {
         confirm suite.length() > 0 && suite.length() <= 4096
             else throw InvalidTestResult.because("JUnit suite length must be 1..4096");
@@ -318,6 +338,7 @@ object JUnitTestReport {
         self.suite = suite;
     }
 
+    // The XML.
     string() is string {
         let results = origin.results();
         let counts = origin.counts();
@@ -452,13 +473,16 @@ object JUnitTestReport {
     }
 }
 
+// Text escaped for JUnit XML.
 object JUnitReportText {
     has origin is string;
 
+    // The text.
     JUnitReportText(origin is string) {
         self.origin = origin;
     }
 
+    // It escaped.
     string() is string {
         let fffe = Utf8Decoded([byte(239), byte(191), byte(190)]).string();
         let ffff = Utf8Decoded([byte(239), byte(191), byte(191)]).string();

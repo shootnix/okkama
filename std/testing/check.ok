@@ -1,5 +1,21 @@
 module testing/check v1.0.0;
 
+// Checks for tests beyond test.is and test.ok: floats, text and sequence diffs,
+// regexes, and conditions that become true later.
+//
+//     test "totals" {
+//         CloseTo(actual: total, expected: 10.0, relative: 1e-9, absolute: 0.0).check();
+//         TextEquals(actual: rendered, expected: expected).check();      // shows a diff
+//         SequenceEquals(actual: ids, expected: [1, 2, 3]).check();
+//         MatchingRegex(origin: id, pattern: Regex("^[a-f0-9]{32}$")).check();
+//     }
+//     async test "ready" {
+//         await Eventually(condition: () is bool { server.ready(); }, clock: SystemClock(),
+//             timeout: Duration(seconds: 2), interval: Duration(milliseconds: 20)).check();
+//     }
+//
+// A check fails the running test with a message; it may only run inside one.
+
 import "collections/sequence" take Sequencing;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
@@ -13,28 +29,37 @@ import "encoding/hex" take HexEncoded;
 import "runtime/debug" take data_dump;
 import "testing/context" take TestContext;
 
+// A check that runs at once.
 role Checking {
+    // Fails the running test when the check does not hold.
     check() is void;
 }
 
+// A check that waits.
 role AsyncChecking {
+    // Fails the running test when the check does not hold.
     async check() is void;
 }
 
 // Current runtime contextual test capability: even a passing check requires it.
 object CheckContext {
+    // The running test.
     CheckContext();
 
+    // Throws MissingTestContext outside a running test.
     verify() is void {
         TestContext().require();
     }
 }
 
+// A check that cannot run as given; reason says why.
 enum InvalidCheck is Error = (because(reason is string));
 
+// Floats within a tolerance.
 object CloseTo does Checking {
     has actual, expected, relative, absolute is float;
 
+    // actual is close to expected: within relative of it, or within absolute.
     CloseTo(actual is float, expected is float, relative is float, absolute is float) {
         confirm relative >= 0.0 && absolute >= 0.0
             else throw InvalidCheck.because("negative tolerance");
@@ -44,6 +69,7 @@ object CloseTo does Checking {
         self.absolute = absolute;
     }
 
+    // Fails when they are farther apart.
     check() is void {
         CheckContext().verify();
         if !self.close() {
@@ -255,22 +281,26 @@ hidden object CheckTextDiff {
     }
 }
 
+// Equal text, with a line diff when it differs.
 object TextEquals does Checking {
     has actual, expected is string;
     has window is CheckWindow;
 
+    // actual should be expected; 8 lines of context.
     TextEquals(actual is string, expected is string) {
         self.actual = actual;
         self.expected = expected;
         window = CheckWindow(8);
     }
 
+    // The same with context lines.
     TextEquals(actual is string, expected is string, context is int) {
         self.actual = actual;
         self.expected = expected;
         window = CheckWindow(context);
     }
 
+    // Fails with a diff when they differ.
     check() is void {
         CheckContext().verify();
         if actual == expected {
@@ -321,22 +351,26 @@ object TextEquals does Checking {
     }
 }
 
+// Equal bytes, with a hex diff when they differ.
 object BytesEqual does Checking {
     has actual, expected is @byte;
     has window is CheckWindow;
 
+    // actual should be expected.
     BytesEqual(actual is @byte, expected is @byte) {
         self.actual = actual;
         self.expected = expected;
         window = CheckWindow(8);
     }
 
+    // The same with context bytes.
     BytesEqual(actual is @byte, expected is @byte, context is int) {
         self.actual = actual;
         self.expected = expected;
         window = CheckWindow(context);
     }
 
+    // Fails with a diff when they differ.
     check() is void {
         CheckContext().verify();
         if actual == expected {
@@ -373,11 +407,13 @@ object BytesEqual does Checking {
     }
 }
 
+// Equal sequences, with a diff when they differ.
 object SequenceEquals<T> does Checking {
     has actual, expected is Sequencing<T>;
     has window is CheckWindow;
     has printing is @CheckItemRendering<T>;
 
+    // actual should be expected.
     SequenceEquals(actual is Sequencing<T>, expected is Sequencing<T>) {
         self.actual = actual;
         self.expected = expected;
@@ -385,6 +421,7 @@ object SequenceEquals<T> does Checking {
         printing = [];
     }
 
+    // The same with context items.
     SequenceEquals(actual is Sequencing<T>, expected is Sequencing<T>, context is int) {
         self.actual = actual;
         self.expected = expected;
@@ -392,6 +429,7 @@ object SequenceEquals<T> does Checking {
         printing = [];
     }
 
+    // The same, showing items with rendering.
     SequenceEquals(
         actual is Sequencing<T>,
         expected is Sequencing<T>,
@@ -404,6 +442,7 @@ object SequenceEquals<T> does Checking {
         printing = [CheckItemRendering(rendering)];
     }
 
+    // Fails with a diff when they differ.
     check() is void {
         CheckContext().verify();
         let left = actual.size();
@@ -488,15 +527,18 @@ hidden object CheckItemRendering<T> {
     }
 }
 
+// Text matching a pattern.
 object MatchingRegex does Checking {
     has origin is string;
     has pattern is Regex;
 
+    // origin should match pattern.
     MatchingRegex(origin is string, pattern is Regex) {
         self.origin = origin;
         self.pattern = pattern;
     }
 
+    // Fails when it does not.
     check() is void {
         CheckContext().verify();
         if !RegexMatches(origin: origin, regex: pattern).found() {
@@ -505,11 +547,14 @@ object MatchingRegex does Checking {
     }
 }
 
+// A condition that should become true within a time.
 object Eventually does AsyncChecking {
     has condition is () is bool;
     has clock is Timing;
     has timeout, interval is Duration;
 
+    // Tries condition every interval until timeout, on clock; InvalidCheck for
+    // a negative timeout or a zero interval.
     Eventually(condition is () is bool, clock is Timing, timeout is Duration, interval is Duration) {
         confirm timeout::Span::seconds >= 0.rat() && interval::Span::seconds > 0.rat()
             else throw InvalidCheck.because("timeout must be nonnegative and interval positive");
@@ -519,6 +564,7 @@ object Eventually does AsyncChecking {
         self.interval = interval;
     }
 
+    // Fails when timeout passes first.
     async check() is void {
         CheckContext().verify();
         let deadline = clock.monotonic_instant().plus(timeout);
@@ -542,11 +588,13 @@ object Eventually does AsyncChecking {
     }
 }
 
+// The same for an async condition.
 object AsyncEventually does AsyncChecking {
     has condition is async () is bool;
     has clock is Timing;
     has timeout, interval is Duration;
 
+    // Tries condition every interval until timeout, on clock.
     AsyncEventually(
         condition is async () is bool,
         clock is Timing,
@@ -561,6 +609,7 @@ object AsyncEventually does AsyncChecking {
         self.interval = interval;
     }
 
+    // Fails when timeout passes first.
     async check() is void {
         CheckContext().verify();
         let deadline = clock.monotonic_instant().plus(timeout);

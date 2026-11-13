@@ -1,5 +1,12 @@
 module testing/snapshot v1.0.0;
 
+// Snapshot tests: output compared with a file kept next to the tests.
+//
+//     Snapshot(origin: TextSnapshot(rendered), file: SnapshotFile(root: Directory(Path("snapshots")), name: "page.txt"), limit: 65536).check();
+//     SnapshotUpdate(origin: TextSnapshot(rendered), file: file, limit: 65536).update();   // when the change is wanted
+//
+// A missing snapshot fails the test; it is written only by SnapshotUpdate.
+
 import "io/stream" take ByteSource;
 import "fs/directory" take DirectoryLocating;
 import "fs/path" take Path;
@@ -11,10 +18,12 @@ import "json" take Json;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 
+// Where a snapshot is kept.
 object SnapshotFile {
     has root is Path;
     has name is string;
 
+    // The file name below root; InvalidSnapshot for a name with a path.
     SnapshotFile(root is DirectoryLocating, name is string) {
         confirm name.length() > 0
             && name != "."
@@ -26,60 +35,73 @@ object SnapshotFile {
         self.name = name;
     }
 
+    // The directory.
     root() is Path {
         root;
     }
 
+    // The file name.
     name() is string {
         name;
     }
 }
 
+// Text as snapshot bytes.
 object TextSnapshot does ByteSource {
     has content is @byte;
 
+    // The text.
     TextSnapshot(origin is string) {
         confirm origin.length() <= 1048576 else throw InvalidSnapshot.because("text scalar budget");
         content = Utf8Encoded(origin.split("\r\n").join("\n").split("\r").join("\n")).bytes();
         confirm self.content.size() <= 1048576 else throw InvalidSnapshot.because("byte budget");
     }
 
+    // Its UTF-8 bytes.
     bytes() is @byte {
         content;
     }
 }
 
+// JSON as snapshot bytes: its text and a newline.
 object JsonSnapshot does ByteSource {
     has content is @byte;
 
+    // The value.
     JsonSnapshot(origin is Json) {
         content = Utf8Encoded(origin.string() + "\n").bytes();
         confirm self.content.size() <= 1048576 else throw InvalidSnapshot.because("byte budget");
     }
 
+    // The JSON.
     bytes() is @byte {
         content;
     }
 }
 
+// Bytes as they are.
 object RawSnapshot does ByteSource {
     has content is @byte;
 
+    // The bytes.
     RawSnapshot(origin is @byte) {
         confirm origin.size() <= 1048576 else throw InvalidSnapshot.because("byte budget");
         content = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         content;
     }
 }
 
+// Output that must match its snapshot.
 object Snapshot does Checking {
     has origin is ByteSource;
     has file is SnapshotFile;
     has limit is int;
 
+    // origin against file, at most limit bytes (1 to 1 MiB).
     Snapshot(origin is ByteSource, file is SnapshotFile, limit is int) {
         confirm limit > 0 && limit <= 1048576
             else throw InvalidSnapshot.because("limit must be 1..1048576");
@@ -88,6 +110,7 @@ object Snapshot does Checking {
         self.limit = limit;
     }
 
+    // Fails when they differ or the file is missing.
     check() is void {
         CheckContext().verify();
         let actual = origin.bytes();
@@ -108,11 +131,13 @@ object Snapshot does Checking {
     }
 }
 
+// Writes a snapshot.
 object SnapshotUpdate {
     has origin is ByteSource;
     has file is SnapshotFile;
     has limit is int;
 
+    // origin to file, at most limit bytes.
     SnapshotUpdate(origin is ByteSource, file is SnapshotFile, limit is int) {
         confirm limit > 0 && limit <= 1048576
             else throw InvalidSnapshot.because("limit must be 1..1048576");
@@ -121,6 +146,7 @@ object SnapshotUpdate {
         self.limit = limit;
     }
 
+    // Writes it.
     update() is void {
         CheckContext().verify();
         let content = origin.bytes();
@@ -131,6 +157,7 @@ object SnapshotUpdate {
     }
 }
 
+// A snapshot that cannot be used; reason says why.
 enum InvalidSnapshot is Error = (because(reason is string));
 
 test "text normalization is explicit" {
