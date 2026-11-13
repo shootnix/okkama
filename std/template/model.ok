@@ -13,7 +13,9 @@ import "template/path" take TemplatePath, TemplatePathFromString;
 import "collections/sequence" take Sequencing;
 import "compare" take Order;
 
+// Something a text template takes its values from.
 role TemplateStrings {
+    // The value at path; MissingTemplateValue when absent.
     string(path is TemplatePath) is string;
 
     fake {
@@ -24,27 +26,33 @@ role TemplateStrings {
     }
 }
 
+// One value at a path.
 object TemplateBinding {
     has key is TemplatePath;
     has value is string;
 
+    // value at path.
     TemplateBinding(path is TemplatePath, value is string) {
         key = path;
         self.value = value;
     }
 
+    // The path.
     path() is TemplatePath {
         key;
     }
 
+    // The value.
     string() is string {
         value;
     }
 }
 
+// Values given by path.
 object TemplateBindings does TemplateStrings {
     has origin is @TemplateBinding;
 
+    // The values, at most 1024; DuplicateTemplateValue for a repeated path.
     TemplateBindings(values is Sequencing<TemplateBinding>) {
         origin = TemplateBindingSnapshot(source: values, maximum: 1024).items();
     }
@@ -66,10 +74,12 @@ object TemplateBindings does TemplateStrings {
         origin = TemplateBindingSnapshot(source: listed, maximum: 1024).items();
     }
 
+    // The values, at most maximum_bindings.
     TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
         origin = TemplateBindingSnapshot(source: values, maximum: maximum_bindings).items();
     }
 
+    // The value at path; MissingTemplateValue when absent.
     string(path is TemplatePath) is string {
         let found = (0..origin.size()).reduce(-1) -> previous, index {
             if origin[index].path().order(path) == Order.equal {
@@ -111,14 +121,19 @@ hidden object TemplateBindingSnapshot {
     }
 }
 
+// No value at the path.
 enum MissingTemplateValue is Error = (path(path is string));
 
+// Two values at one path.
 enum DuplicateTemplateValue is Error = (path(path is string));
 
+// A negative limit.
 enum InvalidTemplateBindingLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidTemplateBindingSize is Error = (invalid);
 
+// More values than the limit.
 enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {

@@ -10,20 +10,24 @@ module template/html_library v1.0.0;
 import "collections/sequence" take Sequencing;
 import "template/html" take HtmlTemplate;
 
+// A HTML template with its name.
 object NamedHtmlTemplate {
     has key is string;
     has origin is HtmlTemplate;
 
+    // value named name; InvalidHtmlTemplateName for an empty name.
     NamedHtmlTemplate(name is string, value is HtmlTemplate) {
         confirm name != "" else throw InvalidHtmlTemplateName.invalid;
         key = name;
         origin = value;
     }
 
+    // The name.
     name() is string {
         key;
     }
 
+    // The template.
     template() is HtmlTemplate {
         origin;
     }
@@ -48,10 +52,12 @@ object NamedHtmlTemplate {
 object HtmlTemplateLibrary {
     has origin is @NamedHtmlTemplate;
 
+    // No templates.
     HtmlTemplateLibrary() {
         origin = [];
     }
 
+    // The templates, at most 1024; DuplicateHtmlTemplate for a repeated name.
     HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>) {
         origin = HtmlTemplateLibrarySnapshot(source: values, maximum: 1024).items();
     }
@@ -72,10 +78,12 @@ object HtmlTemplateLibrary {
         origin = HtmlTemplateLibrarySnapshot(source: listed, maximum: 1024).items();
     }
 
+    // The templates, at most maximum_templates.
     HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>, maximum_templates is int) {
         origin = HtmlTemplateLibrarySnapshot(source: values, maximum: maximum_templates).items();
     }
 
+    // Whether a template has the name.
     membership(name is string) is bool {
         for origin -> item {
             if item.name() == name {
@@ -85,6 +93,7 @@ object HtmlTemplateLibrary {
         false;
     }
 
+    // The template of the name; MissingHtmlTemplate when none.
     template(name is string) is HtmlTemplate {
         for origin -> item {
             if item.name() == name {
@@ -94,6 +103,7 @@ object HtmlTemplateLibrary {
         throw MissingHtmlTemplate.name(name);
     }
 
+    // Every name, in order.
     names() is Sequencing<string> {
         let names is @string = origin.map() -> item {
             item.name();
@@ -132,14 +142,19 @@ hidden object HtmlTemplateLibrarySnapshot {
 // Lookup/declaration errors preserve exact names for programmatic diagnostics.
 enum MissingHtmlTemplate is Error = (name(name is string));
 
+// Two templates with one name.
 enum DuplicateHtmlTemplate is Error = (name(name is string));
 
+// An empty name.
 enum InvalidHtmlTemplateName is Error = (invalid);
 
+// A negative limit.
 enum InvalidHtmlTemplateLibraryLimit is Error = (invalid);
 
+// A negative size.
 enum InvalidHtmlTemplateLibrarySize is Error = (invalid);
 
+// More templates than the limit.
 enum HtmlTemplateLibraryLimitExceeded is Error = (exceeded);
 
 // Imported constructors currently fail lookup in root test bodies; successful

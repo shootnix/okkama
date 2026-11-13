@@ -11,9 +11,11 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "compare" take Comparing, Order;
 
+// A path of names.
 object TemplatePath does Comparing<TemplatePath> {
     has origin is @string;
 
+    // The parts, none empty; at most 64 parts and 4096 characters.
     TemplatePath(segments is Sequencing<string>) {
         origin = TemplatePathSnapshot(source: segments, maximum_segments: 64, maximum_length: 4096).items();
     }
@@ -24,6 +26,7 @@ object TemplatePath does Comparing<TemplatePath> {
         origin = TemplatePathSnapshot(source: listed, maximum_segments: 64, maximum_length: 4096).items();
     }
 
+    // The parts within these limits.
     TemplatePath(segments is Sequencing<string>, maximum_segments is int, maximum_length is int) {
         origin = TemplatePathSnapshot(
             source: segments,
@@ -32,14 +35,17 @@ object TemplatePath does Comparing<TemplatePath> {
         ).items();
     }
 
+    // The parts.
     segments() is Sequencing<string> {
         origin;
     }
 
+    // The parts joined with `.`.
     string() is string {
         origin.join(".");
     }
 
+    // Orders part by part.
     order(other is TemplatePath) is Order {
         let right = other.segments();
         let count = if origin.size() < right.size() {
@@ -65,16 +71,19 @@ object TemplatePath does Comparing<TemplatePath> {
     }
 }
 
+// A path read from dotted text.
 object TemplatePathFromString {
     has origin is string;
     has maximum_segments, maximum_length is int;
 
+    // The text, within the default limits.
     TemplatePathFromString(origin is string) {
         self.origin = origin;
         maximum_segments = 64;
         maximum_length = 4096;
     }
 
+    // The text within these limits.
     TemplatePathFromString(origin is string, maximum_segments is int, maximum_length is int) {
         confirm maximum_segments >= 0 && maximum_length >= 0
             else throw InvalidTemplatePathLimit.invalid;
@@ -83,6 +92,7 @@ object TemplatePathFromString {
         self.maximum_length = maximum_length;
     }
 
+    // The path; InvalidTemplatePath for an empty part.
     path() is TemplatePath {
         confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded.exceeded;
         confirm origin != "" && origin != "."
@@ -159,12 +169,16 @@ hidden object TemplatePathParts {
     }
 }
 
+// A path that is not valid; reason says why.
 enum InvalidTemplatePath is Error = (because(reason is string));
 
+// A negative size.
 enum InvalidTemplatePathSize is Error = (invalid);
 
+// A negative limit.
 enum InvalidTemplatePathLimit is Error = (invalid);
 
+// A path over a limit.
 enum TemplatePathLimitExceeded is Error = (exceeded);
 
 test "template path coordinates and comparison are nominal" {

@@ -15,16 +15,19 @@ import "json" take Json, JsonField, JsonKind, ParsedJson;
 import "math/decimal" take Decimal;
 import "runtime/template" take template_output_size;
 
+// The values of a Json, read by dotted path.
 object JsonTemplateStrings does TemplateStrings {
     has origin is Json;
     has maximum_members, maximum_output is int;
 
+    // Reads origin, at most 1024 members a step and 1 MiB of text.
     JsonTemplateStrings(origin is Json) {
         self.origin = origin;
         maximum_members = 1024;
         maximum_output = 1048576;
     }
 
+    // The same within these limits.
     JsonTemplateStrings(origin is Json, maximum_members is int, maximum_output is int) {
         confirm maximum_members >= 0 && maximum_output >= 0
             else throw InvalidTemplateJsonLimits.invalid;
@@ -33,11 +36,14 @@ object JsonTemplateStrings does TemplateStrings {
         self.maximum_output = maximum_output;
     }
 
+    // The value at path as text; MissingTemplateValue or NonScalarTemplateValue
+    // otherwise.
     string(path is TemplatePath) is string {
         confirm path.segments().size() <= 64 else throw TemplateJsonLimitExceeded.exceeded;
         self.scalar(path, 0);
     }
 
+    // The same for a dotted path; `.` is the whole value.
     string(path is string) is string {
         if path == "." {
             self.scalar(TemplatePath("."), 1);
@@ -91,8 +97,10 @@ object JsonTemplateStrings does TemplateStrings {
 // Typed diagnostics retain domain coordinates, not reflected Okkama types.
 enum NonScalarTemplateValue is Error = (detailed(path is string, kind is JsonKind));
 
+// A negative limit.
 enum InvalidTemplateJsonLimits is Error = (invalid);
 
+// Text over the limit.
 enum TemplateJsonLimitExceeded is Error = (exceeded);
 
 test "dotted paths read scalars of a Json" {

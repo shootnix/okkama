@@ -12,12 +12,15 @@ import "template/compile" take TemplateProgram, TemplateInstruction, TemplateFai
     InvalidTemplateLimits;
 import "collections/list" take List, EmptyList;
 
+// Literal, variable, section, inverted section or partial.
 enum TemplateTreeKind = (literal, variable, section, inverted, partial);
 
+// A section template's source as a tree.
 object TemplateTree {
     has source is string;
     has maximum_input, maximum_tokens, maximum_depth is int;
 
+    // source, within 1 Mi characters, 20000 tokens and depth 64.
     TemplateTree(source is string) {
         self.source = source;
         maximum_input = 1048576;
@@ -25,6 +28,7 @@ object TemplateTree {
         maximum_depth = 64;
     }
 
+    // The same within these limits.
     TemplateTree(
         source is string,
         maximum_input is int,
@@ -39,6 +43,7 @@ object TemplateTree {
         self.maximum_depth = maximum_depth;
     }
 
+    // The top nodes; TemplateFailure for bad source.
     nodes() is @TemplateTreeNode {
         let tokens = TemplateProgram(
             source: source,
@@ -62,6 +67,7 @@ object TemplateTreeNode {
     has origin is string;
     has nested is @TemplateTreeNode;
 
+    // A node of kind with text and children.
     TemplateTreeNode(kind is TemplateTreeKind, text is string, children is @TemplateTreeNode) {
         confirm text != "" else throw InvalidTemplateTreeNode.invalid;
         confirm kind == TemplateTreeKind.section
@@ -73,19 +79,23 @@ object TemplateTreeNode {
         nested = children;
     }
 
+    // Its kind.
     kind() is TemplateTreeKind {
         category;
     }
 
+    // Its literal text or name.
     text() is string {
         origin;
     }
 
+    // The nodes inside a section.
     children() is @TemplateTreeNode {
         nested;
     }
 }
 
+// A node that cannot be built.
 enum InvalidTemplateTreeNode is Error = (invalid);
 
 // Internal parser stack. The root frame represents the program, not an emitted

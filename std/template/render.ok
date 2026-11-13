@@ -14,17 +14,20 @@ import "io/buffer" take ByteBuffer;
 import "io/text" take Utf8Output;
 import "encoding/utf" take Utf8Decoded;
 
+// A template, its values and where it goes.
 object TemplateOutput {
     has origin is TextTemplate;
     has data is TemplateStrings;
     has destination is WritingText;
 
+    // Fills origin from data into destination.
     TemplateOutput(origin is TextTemplate, data is TemplateStrings, destination is WritingText) {
         self.origin = origin;
         self.data = data;
         self.destination = destination;
     }
 
+    // Writes it, checking the whole source first.
     write() is void {
         origin.write(data, destination);
     }
