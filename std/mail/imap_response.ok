@@ -1,12 +1,20 @@
 module mail/imap_response v1.0.0;
 
-// Bounded ASCII server-response framing, not a complete IMAP semantic parser.
-// Tagged/status/continuation text never introduces literals. Known structured
-// responses recognize quoted strings, {n} and ~{n}; unknown response names fail
-// because their extension grammar might use different framing. Literal bytes
-// are opaque except that ordinary literals exclude NUL. No negotiation or I/O.
-// Successor decoders keep independent state, stop at one complete response and
-// preserve exact remainder. Empty feed is not EOF; finish() detects truncation.
+// IMAP server responses: tagged, untagged or continuation, with their literals
+// framed (RFC 9051 §7).
+//
+//     let response = ParsedImapResponse(bytes).response();
+//     response.kind();                      // ImapResponseKind.untagged
+//     response.name();                      // "FETCH", "EXISTS", "OK"…
+//     for response.parts() -> part { part.bytes(); }
+//
+//     let decoder = ImapResponseDecoder().fed(chunk);
+//     if decoder.complete() { decoder.response(); }
+//
+// This frames responses; it does not interpret them (imap_data does). Literals
+// `{n}` and `~{n}` are recognized in the responses std knows; an unknown
+// response name is refused, since its grammar may differ. By default a line has
+// 8 KiB, a literal 16 MiB, a response 32 MiB and 100 literals.
 
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems, MimePosition;
@@ -17,13 +25,17 @@ import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "error" take InvalidArgument, InvalidState;
 
+// Tagged, untagged or continuation.
 enum ImapResponseKind = (tagged, untagged, continuation);
 
+// Text, a literal or a literal8.
 enum ImapResponsePartKind = (text, literal, literal8);
 
+// How large a response may be.
 object ImapResponseLimits {
     has line_bytes, literal_bytes, wire_bytes, literals is int;
 
+    // 8 KiB per line, 16 MiB per literal, 32 MiB in all, 100 literals.
     ImapResponseLimits() {
         line_bytes = 8192;
         literal_bytes = 16777216;
@@ -31,6 +43,7 @@ object ImapResponseLimits {
         literals = 100;
     }
 
+    // The limits as given.
     ImapResponseLimits(line_bytes is int, literal_bytes is int, wire_bytes is int, literals is int) {
         confirm line_bytes >= 0 && literal_bytes >= 0 && wire_bytes >= 0 && literals >= 0
             else throw InvalidArgument.because("IMAP response limits must be nonnegative");
@@ -40,6 +53,7 @@ object ImapResponseLimits {
         self.literals = literals;
     }
 
+    // The limits.
     cap Limits {
         line_bytes is int {
             line_bytes;
@@ -59,29 +73,35 @@ object ImapResponseLimits {
     }
 }
 
+// A piece of a response: line text or a literal's bytes.
 object ImapResponsePart does ByteSource {
     has kind is ImapResponsePartKind;
     has value is @byte;
 
+    // As given.
     ImapResponsePart(kind is ImapResponsePartKind, value is @byte) {
         self.kind = kind;
         self.value = value;
     }
 
+    // Which kind.
     kind() is ImapResponsePartKind {
         kind;
     }
 
+    // Its bytes.
     bytes() is @byte {
         value;
     }
 }
 
+// One response.
 object ImapResponse does ByteSource {
     has header is ImapResponseHeader;
     has parts is @ImapResponsePart;
     has wire is @byte;
 
+    // The response state completed.
     ImapResponse(state is ImapResponseProgress) {
         confirm state.complete() else throw InvalidState.because("IMAP response is incomplete");
         let entries = state.parts();
@@ -95,41 +115,50 @@ object ImapResponse does ByteSource {
         wire = buffer.content().bytes();
     }
 
+    // Tagged, untagged or continuation.
     kind() is ImapResponseKind {
         header.kind();
     }
 
+    // Its name, uppercase: OK, NO, BAD, BYE, FETCH, EXISTS…
     name() is string {
         header.name();
     }
 
+    // The tag; MissingImapTag for an untagged response.
     tag() is string {
         header.tag();
     }
 
+    // Its pieces, in order.
     parts() is Sequencing<ImapResponsePart> {
         parts;
     }
 
+    // The response as it came.
     bytes() is @byte {
         wire;
     }
 }
 
+// Exactly one response read from bytes.
 object ParsedImapResponse {
     has origin is @byte;
     has limits is ImapResponseLimits;
 
+    // Reads origin with the default limits.
     ParsedImapResponse(origin is @byte) {
         self.origin = origin;
         limits = ImapResponseLimits();
     }
 
+    // Reads origin within limits.
     ParsedImapResponse(origin is @byte, limits is ImapResponseLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The response; InvalidImapResponse for anything but one whole response.
     response() is ImapResponse {
         confirm origin.size() <= limits::Limits::wire_bytes
             else throw ImapResponseLimitExceeded.kind("wire_bytes");
@@ -145,11 +174,13 @@ object ParsedImapResponse {
     }
 }
 
+// Reads a response from chunks.
 object ImapResponseDecoder {
     has state is ImapResponseProgress;
     has limits is ImapResponseLimits;
     has tail is @byte;
 
+    // Nothing read yet, the default limits.
     ImapResponseDecoder() {
         let bounds = ImapResponseLimits();
         limits = bounds;
@@ -157,12 +188,14 @@ object ImapResponseDecoder {
         tail = [];
     }
 
+    // Nothing read yet, within limits.
     ImapResponseDecoder(limits is ImapResponseLimits) {
         self.limits = limits;
         state = ImapResponseProgress(limits);
         tail = [];
     }
 
+    // This decoder after chunk; InvalidImapResponse for bad input.
     fed(chunk is @byte) is ^ImapResponseDecoder {
         confirm !state.complete()
             else throw InvalidState.because("IMAP response decoder is complete");
@@ -199,37 +232,47 @@ object ImapResponseDecoder {
         ^tail = rest;
     }
 
+    // Whether the response is complete.
     complete() is bool {
         state.complete();
     }
 
+    // Bytes the response took.
     consumed() is int {
         state.consumed();
     }
 
+    // The response; InvalidImapResponse before it is complete.
     response() is ImapResponse {
         confirm state.complete() else throw InvalidState.because("IMAP response is incomplete");
         ImapResponse(state);
     }
 
+    // The response at the end of input; InvalidImapResponse when it was cut
+    // short.
     finish() is ImapResponse {
         confirm state.complete()
             else throw InvalidImapResponse.located(state.consumed(), "truncated IMAP response");
         ImapResponse(state);
     }
 
+    // Bytes past the response.
     remainder() is @byte {
         confirm state.complete() else throw InvalidState.because("IMAP response is incomplete");
         tail;
     }
 }
 
+// Bytes that are not a response; offset and reason say where and why.
 enum InvalidImapResponse is Error = (located(offset is int, reason is string));
 
+// A response over a limit; kind says which.
 enum ImapResponseLimitExceeded is Error = (kind(kind is string));
 
+// A tag was asked of an untagged response.
 enum MissingImapTag is Error = (missing);
 
+// A response being read; used inside mail/imap_response.
 object ImapResponseProgress {
     has limits is ImapResponseLimits;
     has pending, first is string;
@@ -238,6 +281,7 @@ object ImapResponseProgress {
     has remaining, used, literals is int;
     has binary, done is bool;
 
+    // Nothing read yet, within limits.
     ImapResponseProgress(limits is ImapResponseLimits) {
         self.limits = limits;
         pending = "";
@@ -253,26 +297,32 @@ object ImapResponseProgress {
         done = false;
     }
 
+    // Whether it is complete.
     complete() is bool {
         done;
     }
 
+    // Bytes taken.
     consumed() is int {
         used;
     }
 
+    // Literal bytes still to come.
     remaining() is int {
         remaining;
     }
 
+    // The first line.
     first() is string {
         first;
     }
 
+    // The pieces so far.
     parts() is @ImapResponsePart {
         parts.entries();
     }
 
+    // This state with more literal bytes.
     literal_fragment(fragment is @byte) is ^ImapResponseProgress {
         confirm !done && remaining > 0 && fragment.size() > 0 && fragment.size() <= remaining
             else throw InvalidState.because("invalid IMAP literal fragment");
@@ -311,6 +361,7 @@ object ImapResponseProgress {
         ^used = used + fragment.size();
     }
 
+    // This state with one more line byte.
     accepted(octet is byte) is ^ImapResponseProgress {
         confirm !done && remaining == 0
             else throw InvalidState.because("IMAP response expects literal bytes or is complete");
@@ -382,11 +433,13 @@ object ImapResponseProgress {
     }
 }
 
+// The start of a response line: kind, name and tag.
 object ImapResponseHeader {
     has kind is ImapResponseKind;
     has tag, name is string;
     has structured is bool;
 
+    // Reads the first line origin.
     ImapResponseHeader(origin is string) {
         let fields = origin.split(" ");
         let first = fields[0];
@@ -495,19 +548,23 @@ object ImapResponseHeader {
         }
     }
 
+    // Its kind.
     kind() is ImapResponseKind {
         kind;
     }
 
+    // Its name.
     name() is string {
         name;
     }
 
+    // Its tag; MissingImapTag when untagged.
     tag() is string {
         confirm kind == ImapResponseKind.tagged else throw MissingImapTag.missing;
         tag;
     }
 
+    // Whether it may carry literals.
     structured() is bool {
         structured;
     }
@@ -626,18 +683,22 @@ hidden object ImapResponseLine {
     }
 }
 
+// Whether the scanner is inside a quoted string.
 object ImapResponseQuote {
     has quoted, escaped is bool;
 
+    // Outside.
     ImapResponseQuote() {
         quoted = false;
         escaped = false;
     }
 
+    // Whether it is inside.
     quoted() is bool {
         quoted;
     }
 
+    // This state after char at offset.
     accepted(char is string, offset is int) is ^ImapResponseQuote {
         if escaped {
             confirm char == "\"" || char == "\\"
