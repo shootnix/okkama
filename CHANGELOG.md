@@ -43,6 +43,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   rule are unchanged. Implemented by Codex, reviewed and verified by
   Claude.
 
+- **The JIT's liveness analysis keeps one slab per function (#455, #456).**
+  Blocks are revisited from a worklist, scratch sets are reused, and the
+  sets per instruction live in one allocation whose size the
+  `MAX_LIVENESS_BYTES` cap now bounds in full. Results are identical (the
+  old analysis checks 1 536 generated functions in the tests); compile time
+  is unchanged, since Cranelift dominates it. Implemented by Codex, reviewed
+  and verified by Claude.
+
 ### Fixed
 
 - **The quoted-printable docs say what the encoder does with tabs (#549).**
