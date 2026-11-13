@@ -395,6 +395,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- **The examples use the 0.5.5 API.** Fourteen examples that still did things
+  the old way now use the new calls: nested directories with
+  `create(parents: true)`, the parts of a `Path`, `copy` and
+  `move(overwrite:)`, `Run`, environment variables read like json, CSV
+  records by column name, the `Regex` shortcuts, TOML read like json, and
+  `for await` over a channel and a WebSocket.
+
 - **`BigInt` holds an `int` (#189).** Okkama's `int` already has any size,
   so BigInt arithmetic is the int's, and digits are written only when asked
   for. The product of 300 factors plus their sum takes Sparrow
