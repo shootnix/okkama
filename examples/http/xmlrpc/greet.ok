@@ -1,0 +1,117 @@
+module examples/http/xmlrpc/greet v1.0.0;
+
+import "http/xmlrpc" take XmlRpcCalling, XmlRpcCall, XmlRpcResult, XmlRpcResultKind, XmlRpcSuccess,
+    XmlRpcFailure, XmlRpcFault, XmlRpcText, XmlRpcHandling, XmlRpcClient, XmlRpcLimits,
+    XmlRpcWriting, XmlRpcValue, XmlRpcMember;
+import "async/atomic" take Atomic;
+import "collections/sequence" take Sequencing;
+import "math/decimal" take Decimal;
+import "time/local_datetime" take LocalDateTime;
+import "http/server" take HttpServer;
+import "http/client" take HttpClient;
+import "http/endpoint" take LoopbackEndpoints;
+import "net/tcp" take TcpListening;
+import "url/value" take ParsedUrl;
+import "time/duration" take Duration;
+import "io/stdout" take Stdout;
+
+// An XML-RPC server and client in one program. Greeting answers the method
+// "greet" with a string and any other method with the standard fault
+// -32601; the server serves it on /RPC2 of 127.0.0.1, and the client calls it
+// once of each kind.
+object Greeting does XmlRpcCalling {
+    Greeting();
+
+    async result(call is XmlRpcCall) is XmlRpcResult {
+        if call.method() != "greet" {
+            return XmlRpcFailure(
+                XmlRpcFault(code: -32601, message: "Unknown method " + call.method())
+            );
+        }
+        let who = TextOf();
+        for call.parameters() -> parameter {
+            parameter.print(who);
+        }
+        XmlRpcSuccess(XmlRpcText("Hello, " + who.string() + "!"));
+    }
+}
+
+// Reads an XML-RPC value as text: a value shows itself by calling the one
+// callback of its kind. Anything but a string reads as "stranger".
+object TextOf does XmlRpcWriting {
+    has seen is Atomic<string>;
+
+    TextOf() {
+        seen = Atomic("stranger");
+    }
+
+    string() is string {
+        seen.value();
+    }
+
+    text(value is string) is void {
+        seen.replace(value);
+    }
+
+    integer(value is int) is void {}
+
+    boolean(value is bool) is void {}
+
+    floating(value is Decimal) is void {}
+
+    datetime(value is LocalDateTime) is void {}
+
+    binary(value is @byte) is void {}
+
+    elements(values is Sequencing<XmlRpcValue>) is void {}
+
+    members(values is Sequencing<XmlRpcMember>) is void {}
+
+    nil_value() is void {}
+}
+
+async main() is int {
+    let out = Stdout();
+    let listener = await TcpListening(port: 0).listener();
+    let endpoint = ParsedUrl("http://127.0.0.1:" + listener::Local::port.string() + "/RPC2").parts();
+    let server = HttpServer(
+        listener: listener,
+        handling: XmlRpcHandling(path: "/RPC2", calling: Greeting(), limits: XmlRpcLimits())
+    ).started();
+    // A real program writes HttpClient(); this one may reach 127.0.0.1.
+    let rpc = XmlRpcClient(
+        origin: HttpClient(endpoints: LoopbackEndpoints()),
+        endpoint: endpoint,
+        limits: XmlRpcLimits()
+    );
+
+    let hello = await rpc.result(XmlRpcCall(method: "greet", parameters: [XmlRpcText("Ann")]));
+    match hello.kind() {
+        case XmlRpcResultKind.success {
+            let reply = TextOf();
+            hello.value().print(reply);
+            out.writeln("greet: ", reply.string());
+        }
+        case XmlRpcResultKind.fault {
+            out.writeln("greet failed: ", hello.fault()::Fault::text);
+        }
+    }
+
+    let missing = await rpc.result(XmlRpcCall(method: "shout", parameters: []));
+    match missing.kind() {
+        case XmlRpcResultKind.success {
+            out.writeln("shout: unexpected success");
+        }
+        case XmlRpcResultKind.fault {
+            out.writeln(
+                "shout fault ",
+                missing.fault()::Fault::code,
+                ": ",
+                missing.fault()::Fault::text
+            );
+        }
+    }
+
+    await server.drain(limit: Duration(seconds: 5));
+    0;
+}

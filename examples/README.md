@@ -192,7 +192,7 @@ container.
 | `async/channel.ok` | a producer and a consumer over a bounded channel, until it closes |
 | `async/timeout.ok` | bound an operation by time, race two answers, wait for all of several |
 
-## http/client
+## http/client, http/xmlrpc
 
 Each program starts a small `HttpServer` on 127.0.0.1 with a handler, talks
 to it and drains it, so it opens loopback sockets but needs no network. A real
@@ -203,6 +203,7 @@ program writes `HttpClient()` and a real URL.
 | `http/client/get_text.ok` | GET a page and print it as text, decoded by its charset |
 | `http/client/post_json.ok` | POST a JSON document and read the JSON answer |
 | `http/client/statuses.ok` | compare a status with a case, match on it, take its class, number and phrase |
+| `http/xmlrpc/greet.ok` | an XML-RPC server answers with `XmlRpcSuccess` or an `XmlRpcFailure` fault; the client calls it once of each kind |
 
 ## web, http/websocket
 
