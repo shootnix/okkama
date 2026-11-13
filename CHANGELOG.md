@@ -19,6 +19,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   the start by position, the rest by settlement. Async micro-benchmarks are
   within ±1.5%, the run-to-run spread of the baseline.
 
+- **`AllFutures` orders its failures in one pass (#445).** It kept each
+  failure once by searching the list of failures, then sorted the
+  secondaries by searching the inputs inside the sort key. Both were
+  O(n²). A set and a single table of first positions replace them; the
+  order stays the same: the first failure observed is primary, the others
+  follow by input position. 32 000 inputs that all fail: 952 ms → 9 ms.
+
 ## [0.5.6] — 2026-11-13
 
 0.5.6 fixes the language bugs found while documenting std and writing the

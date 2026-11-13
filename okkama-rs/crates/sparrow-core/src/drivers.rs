@@ -16,7 +16,7 @@ use crate::primitives::{COMPLETED, REFUSED, State, WAITING};
 use crate::program::Kind;
 use crate::runtime::{Ctx, FAILED, FailureKind, OK, Runtime};
 use crate::tasks::{self, DELIVER_NOW, DONE, FAILURE_STATE, FLAGS, PARKED, REGISTERS, RESULT, RESUME};
-use crate::word::{Repr, UNBOUND, Word};
+use crate::word::{FastMap, FastSet, Repr, UNBOUND, Word};
 
 #[derive(Debug)]
 pub enum Step {
@@ -648,7 +648,10 @@ struct Collection {
     initial_order: u64,
     winner: Option<Word>,
     winner_repr: Repr,
+    /// Failures in the order observed, each once.
     failures: Vec<Word>,
+    /// The failures already in `failures` (#445).
+    failed: FastSet<Word>,
     external: Option<Word>,
     finishing: bool,
 }
@@ -702,6 +705,7 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
             winner: None,
             winner_repr,
             failures: Vec::new(),
+            failed: FastSet::default(),
             external: None,
             finishing: false,
         };
@@ -922,12 +926,13 @@ fn consume(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
         Ok(value) if !c.finishing && c.strategy != Strategy::All => {
             if c.strategy == Strategy::First {
                 c.failures.clear();
+                c.failed.clear();
             }
             c.winner = Some(value);
             cancel = true;
         }
         Err(failure) if !ignore => {
-            if !c.failures.contains(&failure) {
+            if c.failed.insert(failure) {
                 c.failures.push(failure);
             }
             if !c.finishing && c.strategy != Strategy::First {
@@ -948,11 +953,16 @@ fn collect_finish(runtime: &mut Runtime, frame: Word, function: usize) -> Step {
     if let Some(primary) = external.or_else(|| failures.first().copied()) {
         // AllFutures keeps the first observed failure as primary and attaches
         // the others in input order.
-        if strategy == Strategy::All {
-            let position = |failure: Word| {
-                entries.iter().position(|&e| tasks::get(e, tasks::STATE) == FAILURE_STATE && tasks::get(e, tasks::FAILURE) == failure)
-            };
-            failures.sort_by_key(|&f| position(f));
+        if strategy == Strategy::All && failures.len() > 1 {
+            // The first input position of each failure, found in one pass
+            // (#445); a failure no input holds sorts first, as before.
+            let mut first: FastMap<Word, usize> = FastMap::with_capacity_and_hasher(failures.len(), Default::default());
+            for (index, &entry) in entries.iter().enumerate() {
+                if tasks::get(entry, tasks::STATE) == FAILURE_STATE {
+                    first.entry(tasks::get(entry, tasks::FAILURE)).or_insert(index);
+                }
+            }
+            failures.sort_by_key(|failure| first.get(failure).copied());
         }
         for failure in failures {
             if failure != primary {
