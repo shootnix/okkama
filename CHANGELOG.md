@@ -369,6 +369,11 @@ documentation for all of std.
 
 ### Fixed
 
+- **Linux packages link against glibc 2.17 (#545).** `preadv2` (#121) and
+  `renameat2` (#126) are called as system calls, not through glibc, which
+  has them only since 2.26 and 2.28; the first build of the v0.5.5 packages
+  failed on manylinux2014 for that reason.
+
 - **Sparrow's heap no longer grows when a program recycles its garbage
   (#522).** The collector counted only new pages, but machine code reuses
   swept cells without telling it. A program could use up every swept cell
