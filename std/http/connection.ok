@@ -85,7 +85,12 @@ object Http1Connecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -120,7 +125,12 @@ object Http1Connecting {
                 dispose: HttpTlsDisposal().release
             );
             defer await tls_cleanup.close();
-            let upgrading = TlsClientHandshake(origin: tcp, server: identity, policy: policy, clock: clock).connection();
+            let upgrading = TlsClientHandshake(
+                origin: tcp,
+                server: identity,
+                policy: policy,
+                clock: clock
+            ).connection();
             tls_pending.replace([upgrading]);
             tls_group.start(upgrading);
             let tls = await upgrading;
@@ -137,7 +147,11 @@ object Http1Connecting {
             );
             let acquired = Http1Acquisition(
                 session: session,
-                details: ExchangeDetails(tls.details().endpoints(), HttpVersion.http_1_1, tls.details()),
+                details: ExchangeDetails(
+                    tls.details().endpoints(),
+                    HttpVersion.http_1_1,
+                    tls.details()
+                ),
                 observation: observation
             );
             published.set();
@@ -309,7 +323,11 @@ test "HTTP1 opener rejects incompatible ALPN before acquisition" {
         access: AllEndpoints()
     );
     let versions is Set<TlsVersion> = OrderedSet([TlsVersion.tls1_3]);
-    let policy = TlsClientPolicy(trust: TrustedCertificates(), versions: versions, protocols: ["h2"]);
+    let policy = TlsClientPolicy(
+        trust: TrustedCertificates(),
+        versions: versions,
+        protocols: ["h2"]
+    );
     test.ok(try {
         Http1Connecting(route: route, policy: policy);
         false;

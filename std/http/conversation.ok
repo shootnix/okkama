@@ -168,7 +168,12 @@ object Http1Conversation does HttpConversation, Closing {
         let information is @Response = (0..heads.size()).map() -> index {
             heads.item(index).response(EmptyBody());
         };
-        HttpConversationExchange(request: request, response: result.response(), information: information, lease: origin);
+        HttpConversationExchange(
+            request: request,
+            response: result.response(),
+            information: information,
+            lease: origin
+        );
     }
 }
 
@@ -213,7 +218,12 @@ object Http2Conversation does HttpConversation, Closing {
         let information is @Response = (0..heads.size()).map() -> index {
             heads.item(index);
         };
-        HttpConversationExchange(request: request, response: result.response(), information: information, lease: result);
+        HttpConversationExchange(
+            request: request,
+            response: result.response(),
+            information: information,
+            lease: result
+        );
     }
 }
 
@@ -241,7 +251,10 @@ object Http2ConversationConnecting does HttpConversationConnecting {
         group.start(opening);
         let result = await opening;
         taken.set();
-        HttpConversationAcquisition(session: Http2Conversation(result.session()), details: result.details());
+        HttpConversationAcquisition(
+            session: Http2Conversation(result.session()),
+            details: result.details()
+        );
     }
 }
 

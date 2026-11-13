@@ -67,7 +67,12 @@ object HttpSelectedConnecting does HttpConversationConnecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -93,7 +98,13 @@ object HttpSelectedConnecting does HttpConversationConnecting {
             dispose: HttpConversationAcquisitionDisposal().release
         );
         defer await acquired_cleanup.close();
-        let adopting = HttpConversationAdopting(tcp: tcp, target: route.url(), policy: policy, client: client, clock: clock).acquisition();
+        let adopting = HttpConversationAdopting(
+            tcp: tcp,
+            target: route.url(),
+            policy: policy,
+            client: client,
+            clock: clock
+        ).acquisition();
         pending_acquired.replace([adopting]);
         adopted_group.start(adopting);
         let acquired = await adopting;
@@ -151,7 +162,12 @@ object HttpConversationAdopting does HttpConversationConnecting {
                 dispose: HttpTlsDisposal().release
             );
             defer await tls_cleanup.close();
-            let upgrading = TlsClientHandshake(origin: tcp, server: identity, policy: policy, clock: clock).connection();
+            let upgrading = TlsClientHandshake(
+                origin: tcp,
+                server: identity,
+                policy: policy,
+                clock: clock
+            ).connection();
             tls_pending.replace([upgrading]);
             tls_group.start(upgrading);
             let tls = await upgrading;
@@ -177,13 +193,28 @@ object HttpConversationAdopting does HttpConversationConnecting {
                 published.set();
                 return acquired;
             }
-            let peer = await Http2ClientPreface(input: tls.input(), output: tls.output(), settings: local).settings();
+            let peer = await Http2ClientPreface(
+                input: tls.input(),
+                output: tls.output(),
+                settings: local
+            ).settings();
             let session = Http2Conversation(
-                Http2Session(input: tls.input(), output: tls.output(), owner: tls, local: local, peer: peer, limits: limits)
+                Http2Session(
+                    input: tls.input(),
+                    output: tls.output(),
+                    owner: tls,
+                    local: local,
+                    peer: peer,
+                    limits: limits
+                )
             );
             let acquired = HttpConversationAcquisition(
                 session: session,
-                details: ExchangeDetails(tls.details().endpoints(), HttpVersion.http_2, tls.details())
+                details: ExchangeDetails(
+                    tls.details().endpoints(),
+                    HttpVersion.http_2,
+                    tls.details()
+                )
             );
             published.set();
             return acquired;
@@ -206,9 +237,20 @@ object HttpConversationAdopting does HttpConversationConnecting {
             published.set();
             return acquired;
         }
-        let peer = await Http2ClientPreface(input: tcp.input(), output: tcp.output(), settings: local).settings();
+        let peer = await Http2ClientPreface(
+            input: tcp.input(),
+            output: tcp.output(),
+            settings: local
+        ).settings();
         let session = Http2Conversation(
-            Http2Session(input: tcp.input(), output: tcp.output(), owner: tcp, local: local, peer: peer, limits: limits)
+            Http2Session(
+                input: tcp.input(),
+                output: tcp.output(),
+                owner: tcp,
+                local: local,
+                peer: peer,
+                limits: limits
+            )
         );
         let acquired = HttpConversationAcquisition(
             session: session,

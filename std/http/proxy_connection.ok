@@ -51,7 +51,14 @@ object HttpProxyRouting does HttpConversationRouting {
     }
 
     connecting(url is UrlParts) is HttpConversationConnecting {
-        HttpProxyConnecting(proxy: proxy, target: url, resolver: resolver, tls: tls, client: client, clock: clock);
+        HttpProxyConnecting(
+            proxy: proxy,
+            target: url,
+            resolver: resolver,
+            tls: tls,
+            client: client,
+            clock: clock
+        );
     }
 
     allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool {
@@ -106,7 +113,12 @@ hidden object HttpProxyConnecting does HttpConversationConnecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: raw, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: raw,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let opening = TcpRacing(
             origins: endpoints,
@@ -159,7 +171,13 @@ hidden object HttpProxyConnecting does HttpConversationConnecting {
             dispose: HttpConversationAcquisitionDisposal().release
         );
         defer await adopted_cleanup.close();
-        let adapting = HttpConversationAdopting(tcp: tcp, target: target, policy: tls, client: client, clock: clock).acquisition();
+        let adapting = HttpConversationAdopting(
+            tcp: tcp,
+            target: target,
+            policy: tls,
+            client: client,
+            clock: clock
+        ).acquisition();
         acquisition_pending.replace([adapting]);
         adopted.start(adapting);
         let acquired = await adapting;

@@ -21,7 +21,12 @@ object HttpProxyTunnel {
     has fields is @Header;
     has limits is Http1Limits;
 
-    HttpProxyTunnel(input is AsyncReading, output is AsyncWriting, target is UrlParts, fields is @Header) {
+    HttpProxyTunnel(
+        input is AsyncReading,
+        output is AsyncWriting,
+        target is UrlParts,
+        fields is @Header
+    ) {
         self.input = input;
         self.output = output;
         self.target = target;
@@ -49,7 +54,12 @@ object HttpProxyTunnel {
         await sending;
         let information = HttpMediaPosition(index: 0, slots: 0);
         loop {
-            let pending = Http1ResponseHeadReading(origin: input, prefix: [], limits: limits, chunk_bytes: 1).head();
+            let pending = Http1ResponseHeadReading(
+                origin: input,
+                prefix: [],
+                limits: limits,
+                chunk_bytes: 1
+            ).head();
             let received = await pending;
             let status = received.head()::Head::status;
             let class = StatusCode(status).class();

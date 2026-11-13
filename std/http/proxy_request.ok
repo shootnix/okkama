@@ -24,7 +24,10 @@ object HttpForwardRequest {
             body: origin.body()
         );
         let checked = HttpDirectRequest(source);
-        let fields = ProxyRequestFields(origin: checked.request()::Head::headers, fields: proxy_fields).headers();
+        let fields = ProxyRequestFields(
+            origin: checked.request()::Head::headers,
+            fields: proxy_fields
+        ).headers();
         request = Request(
             method: source::Head::method,
             target: source::Head::target,
@@ -91,16 +94,25 @@ enum InvalidProxyRequest is Error = (because(reason is string));
 
 test "a forward request keeps the absolute target; CONNECT names the authority" {
     let proxy = Header(name: HeaderName("Proxy-Authorization"), value: "Basic YTpi");
-    let forward = HttpForwardRequest(origin: Request(url: "http://example.com/a?b=1"), proxy_fields: [proxy]).request();
+    let forward = HttpForwardRequest(
+        origin: Request(url: "http://example.com/a?b=1"),
+        proxy_fields: [proxy]
+    ).request();
     test.is(forward::Head::target.string(), "http://example.com/a?b=1");
     test.is(forward::Head::headers.membership(HeaderName("Proxy-Authorization")), true);
     test.throws(InvalidProxyRequest) {
         HttpForwardRequest(origin: Request(url: "https://example.com/"), proxy_fields: []);
     };
     test.throws(InvalidProxyRequest) {
-        HttpForwardRequest(origin: Request(url: "http://example.com/"), proxy_fields: [Header(name: HeaderName("X-Other"), value: "1")]);
+        HttpForwardRequest(
+            origin: Request(url: "http://example.com/"),
+            proxy_fields: [Header(name: HeaderName("X-Other"), value: "1")]
+        );
     };
-    let tunnel = HttpConnectRequest(origin: ParsedUrl("https://example.com/path").parts(), proxy_fields: []).request();
+    let tunnel = HttpConnectRequest(
+        origin: ParsedUrl("https://example.com/path").parts(),
+        proxy_fields: []
+    ).request();
     test.is(tunnel::Head::method == Method.connect, true);
     test.is(tunnel::Head::target.string(), "example.com:443");
     test.is(tunnel::Head::headers.values(HeaderName("Host")).item(0), "example.com:443");

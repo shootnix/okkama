@@ -45,7 +45,8 @@ object LoopbackEndpoints does EndpointAllowing {
     LoopbackEndpoints();
 
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
-        endpoint::Parts::zone == "" && endpoint.address().properties().membership(IpProperty.loopback);
+        endpoint::Parts::zone == ""
+            && endpoint.address().properties().membership(IpProperty.loopback);
     }
 }
 
@@ -92,8 +93,10 @@ object HttpEndpointSelection {
         let scheme = url::Parts::scheme;
         confirm scheme == "http" || scheme == "https"
             else throw InvalidHttpEndpoint.because("scheme");
-        confirm url::Parts::host != Maybe<string>.none else throw InvalidHttpEndpoint.because("authority");
-        confirm url::Parts::userinfo == Maybe<string>.none else throw InvalidHttpEndpoint.because("userinfo");
+        confirm url::Parts::host != Maybe<string>.none
+            else throw InvalidHttpEndpoint.because("authority");
+        confirm url::Parts::userinfo == Maybe<string>.none
+            else throw InvalidHttpEndpoint.because("userinfo");
         let kind = url.host_kind();
         confirm kind == UrlHostKind.name || kind == UrlHostKind.address
             else throw InvalidHttpEndpoint.because("host");
@@ -127,7 +130,8 @@ object HttpEndpointSelection {
         confirm count >= 0 && count <= 256 else throw EndpointSelectionLimit.stage("addresses");
         let snapshot is @IpEndpoint = (0..count).map() -> index {
             let endpoint = source.item(index);
-            confirm endpoint::Parts::port == port else throw InvalidHttpEndpoint.because("resolver port");
+            confirm endpoint::Parts::port == port
+                else throw InvalidHttpEndpoint.because("resolver port");
             endpoint;
         };
         let allowed is @IpEndpoint = snapshot.filter() -> endpoint {
