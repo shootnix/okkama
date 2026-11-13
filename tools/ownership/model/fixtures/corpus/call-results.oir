@@ -1,0 +1,40 @@
+# corpus/call-results
+profile own
+summary make take direct
+scope.begin first
+call.enter nested make
+call.enter make_n make
+new n N
+call.exit make_n n
+call.exit nested n
+bind kept n
+call.enter make_d make
+new d D
+call.exit make_d d
+check ''
+use n
+scope.end first
+check DN
+reset.log
+scope.begin second
+call.enter boxed make
+new f F
+object box item=f
+call.exit boxed box
+bind box_bind box
+check ''
+get child_f box item
+use child_f
+scope.end second
+check F
+reset.log
+scope.begin third
+new c C
+object temporary item=c
+call.enter item make temporary
+get child temporary item
+call.exit item child
+check ''
+use child
+scope.end third
+check C

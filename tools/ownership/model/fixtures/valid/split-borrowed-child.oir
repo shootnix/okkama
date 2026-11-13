@@ -1,0 +1,17 @@
+# valid/split-borrowed-child
+profile own
+scope.begin outer
+new a A
+bind a_bind a
+scope.begin inner
+new h H child=a
+get child h child
+scope.split inner h all
+own.split all child rest selected deps
+own.admit selected inner
+own.admit rest inner
+exit.prepare inner child
+scope.end inner
+exit.commit inner outer
+use child
+scope.end outer

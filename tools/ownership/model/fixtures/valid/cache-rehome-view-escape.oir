@@ -1,0 +1,14 @@
+# valid/cache-rehome-view-escape
+profile own
+scope.begin outer async
+scope.begin inner
+future f new A bound
+await result f
+cache.rehome f outer
+exit.prepare inner result
+scope.end inner
+exit.commit inner outer
+use result
+await again f
+use again
+scope.end outer

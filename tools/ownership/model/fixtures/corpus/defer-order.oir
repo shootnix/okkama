@@ -1,0 +1,31 @@
+# corpus/defer-order
+profile own
+summary make take direct
+scope.begin first
+defer first emit 1
+new a A
+bind a_bind a
+defer first emit.label &a_bind
+new b B
+defer first emit 2
+scope.end first
+check 2A1BA
+reset.log
+scope.begin second
+new a2 A
+# Inline defer resource has its own synchronous call boundary.
+defer.block second 'scope.begin defer_receiver' 'new defer_d D' 'scope.end defer_receiver'
+check ''
+scope.end second
+check DA
+reset.log
+scope.begin third
+call.enter returned make
+new local L
+defer returned emit d
+new result R
+call.exit returned result
+check dL
+use result
+scope.end third
+check dLR

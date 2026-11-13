@@ -1,0 +1,11 @@
+# valid/builder-push-failure-preserves-buffer
+profile own
+scope.begin s
+builder.new b0
+new a A
+builder.push b0 b1 a fail
+use a
+builder.push b0 b2 a ok
+builder.finish b2 result
+use result
+scope.end s

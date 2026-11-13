@@ -1,0 +1,13 @@
+# valid/shared-waiter-cancellation
+profile own
+scope.begin s async
+new input I
+future f new R bound input
+future.start f
+waiter first f
+waiter second f
+waiter.cancel first f
+check ''
+waiter.cancel second f
+check I
+scope.end s

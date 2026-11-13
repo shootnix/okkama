@@ -1,0 +1,16 @@
+# review/13-shielded-async-cleanup
+profile own
+scope.begin s async
+new a A
+new.async b B
+cleanup.begin s
+cleanup.step s
+assert.state s closing
+gc a b
+cancel s
+cleanup.resume s
+check B
+cleanup.step s
+cleanup.step s
+assert.failure Cancelled
+assert.state s closed

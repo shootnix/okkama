@@ -1,0 +1,16 @@
+# valid/replace-retired-and-fresh
+profile own
+scope.begin caller
+scope.begin action
+new a A
+new b B
+array original a b
+bind array_bind original
+new c C
+replace revised original 0 c
+exit.prepare action revised
+scope.end action
+exit.commit action caller
+check A
+use revised
+scope.end caller

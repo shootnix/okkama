@@ -1,0 +1,20 @@
+# valid/staging-overwrite-caught-and-success
+profile own
+failure stop typed Stop
+scope.begin caller
+scope.begin action
+scope.begin attempt
+new b B
+stage action field b
+scope.unwind attempt stop
+catch Stop caught
+new c C
+stage action field c
+staged final action field
+new successor S field=final
+exit.prepare action successor
+scope.end action
+exit.commit action caller
+check B
+use successor
+scope.end caller

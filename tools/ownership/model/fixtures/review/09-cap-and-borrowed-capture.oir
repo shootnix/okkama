@@ -1,0 +1,20 @@
+# review/09-cap-and-borrowed-capture
+profile own
+scope.begin caller
+scope.begin factory
+new r R
+new owner O hidden=r
+cap view owner
+exit.prepare factory view
+scope.end factory
+exit.commit factory caller
+use view
+new a A
+bind a_bind a
+closure f a
+scope.begin inner
+object stored action=f
+use stored
+scope.end inner
+use a
+scope.end caller

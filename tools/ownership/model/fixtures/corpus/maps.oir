@@ -1,0 +1,40 @@
+# corpus/maps
+profile own
+scope.begin keys
+new a A
+new b B
+new c C
+object map z=a a=b m=c
+use map
+scope.end keys
+check CBA
+reset.log
+scope.begin duplicates
+new da A
+bind da_bind da
+object repeated x=da y=da
+use repeated
+scope.end duplicates
+check A
+reset.log
+scope.begin merge
+new original A
+object first k=original
+bind first_bind first
+new replacement B
+object merged k=replacement
+bind merged_bind merged
+check ''
+use merged
+scope.end merge
+check BA
+reset.log
+scope.begin object_keys
+plain key2
+new x X
+plain key1
+new y Y
+object keyed rank2=x rank1=y
+use keyed
+scope.end object_keys
+check YX

@@ -1,0 +1,17 @@
+# valid/race-loser-before-winner-publication
+profile own
+scope.begin caller async
+scope.begin race
+new loser_input L
+future loser void - bound loser_input
+future winner new W bound
+future.start loser
+await result winner
+future.cancel loser
+check L
+cache.rehome winner caller
+exit.prepare race result
+scope.end race
+exit.commit race caller
+use result
+scope.end caller

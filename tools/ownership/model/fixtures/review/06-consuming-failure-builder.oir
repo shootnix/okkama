@@ -1,0 +1,18 @@
+# review/06-consuming-failure-builder
+profile own
+failure stop typed Stop
+scope.begin caller
+defer caller emit d
+new a A
+# Later argument fails before callee entry: admission remains here.
+scope.unwind caller stop
+check dA
+scope.begin builder_scope
+builder.new b0
+new element B
+builder.push b0 b1 element ok
+new rejected C
+builder.push b1 b2 rejected fail
+# Failure before commit leaves b1 and the fresh C unchanged.
+builder.abandon b1
+scope.unwind builder_scope stop

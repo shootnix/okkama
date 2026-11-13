@@ -1,0 +1,34 @@
+# corpus/rebinds
+profile own
+scope.begin original
+new a A
+bind r a
+new b B
+succ b
+succ.take b
+rebind r b
+check ''
+scope.begin child
+new c C
+succ c
+succ.take c
+rebind r c
+check ''
+scope.end child
+check ''
+use &r
+scope.end original
+check CBA
+reset.log
+scope.begin snapshots
+new x X
+bind rx x
+bound snapshot x
+new y Y
+rebind rx y
+use snapshot
+emit.label x
+emit '|'
+use &rx
+scope.end snapshots
+check 'X|YX'

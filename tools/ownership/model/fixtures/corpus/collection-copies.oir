@@ -1,0 +1,33 @@
+# corpus/collection-copies
+profile own
+scope.begin arrays
+new a A
+new b B
+new c C
+array original a b c
+bind original_bind original
+scope.begin copied
+slice sliced original 0 2
+use sliced
+scope.end copied
+check ''
+array retained a c
+use retained
+check ''
+scope.end arrays
+check CBA
+reset.log
+scope.begin maps
+new ma A
+new mb B
+object map z=ma a=mb
+bind map_bind map
+scope.begin derived
+array values mb ma
+object fewer a=mb
+use values
+use fewer
+scope.end derived
+check ''
+scope.end maps
+check BA

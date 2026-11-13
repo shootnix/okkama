@@ -1,0 +1,35 @@
+# corpus/caps
+profile own
+summary make take direct
+scope.begin first
+call.enter factory make
+new r R
+new owner O hidden=r
+cap view owner
+call.exit factory view
+bind view_bind view
+use view
+check ''
+array copies view view
+use copies
+scope.end first
+check OR
+reset.log
+scope.begin second
+new r2 R
+new original O hidden=r2
+bind original_bind original
+cap view2 original
+scope.begin inner
+new successor S hidden=r2
+succ successor
+cap successor_view successor
+use successor
+use successor_view
+scope.end inner
+check S
+use view2
+emit.label original
+emit '|'
+scope.end second
+check 'SO|OR'

@@ -1,0 +1,15 @@
+# valid/pending-abort-after-destroy-prefix
+profile own
+scope.begin caller
+scope.begin action
+new old A
+new bomb B
+on.destroy bomb 'fail typed Cleanup'
+new returned R
+new newest C
+exit.prepare action returned
+scope.end action
+# C was already destroyed; abort inserts R before remaining A.
+check CBRA
+assert.failure Cleanup
+scope.end caller

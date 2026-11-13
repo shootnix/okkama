@@ -1,0 +1,10 @@
+# valid/repeated-cached-failure
+profile own
+scope.begin outer async
+future f fail Stop bound
+await ignored1 f
+catch Stop first
+await ignored2 f
+catch Stop second
+assert.failure Stop
+scope.end outer

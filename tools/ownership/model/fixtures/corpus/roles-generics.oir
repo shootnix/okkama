@@ -1,0 +1,37 @@
+# corpus/roles-generics
+profile own
+summary make take role
+scope.begin first
+call.enter factory make
+new r R
+object resource hidden=r
+role value resource
+call.exit factory value
+bind value_bind value
+object boxed value=value
+get unboxed boxed value
+use unboxed
+check ''
+scope.end first
+check R
+reset.log
+scope.begin second
+new a A
+new b B
+array items a b
+object inner value=items
+object nested value=inner
+use nested
+scope.end second
+check BA
+reset.log
+scope.begin third
+new x X
+any opaque x
+scope.split third opaque packet
+own.dynamic packet third any opaque third
+object box value=opaque
+use box
+check ''
+scope.end third
+check X

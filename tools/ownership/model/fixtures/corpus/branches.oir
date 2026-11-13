@@ -1,0 +1,41 @@
+# corpus/branches
+profile own
+scope.begin caller1
+scope.begin if_true
+new local1 L
+new chosen1 A
+exit.prepare if_true chosen1
+scope.end if_true
+exit.commit if_true caller1
+check L
+use chosen1
+scope.end caller1
+check LA
+reset.log
+scope.begin caller2
+scope.begin if_else
+new discarded1 B
+scope.end if_else
+check B
+scope.end caller2
+check B
+reset.log
+scope.begin caller3
+scope.begin match2
+new local2 L
+new chosen2 M
+exit.prepare match2 chosen2
+scope.end match2
+exit.commit match2 caller3
+check L
+use chosen2
+scope.end caller3
+check LM
+reset.log
+scope.begin caller4
+scope.begin match1
+new discarded2 D
+scope.end match1
+check D
+scope.end caller4
+check D

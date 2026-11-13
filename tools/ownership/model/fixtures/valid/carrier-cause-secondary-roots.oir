@@ -1,0 +1,24 @@
+# valid/carrier-cause-secondary-roots
+profile own
+scope.begin carrier_owner
+scope.begin s
+new a A
+new b B
+failure cause typed Cause
+scope.split s a cause_packet
+carrier cause cause_packet carrier_owner
+failure primary typed Body
+failure.cause primary cause
+scope.split s b primary_packet
+carrier primary primary_packet carrier_owner
+failure secondary typed Secondary
+failure.secondary primary secondary
+gc a b
+scope.unwind s primary
+assert.failure Body Secondary
+catch Body caught
+failure.view view caught
+use view
+gc view
+check ''
+scope.end carrier_owner

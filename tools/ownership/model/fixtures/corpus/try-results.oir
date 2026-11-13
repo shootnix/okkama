@@ -1,0 +1,41 @@
+# corpus/try-results
+profile own
+failure stop typed Stop
+summary make take direct
+scope.begin first
+scope.begin try_success
+new l L
+new t T
+exit.prepare try_success t
+scope.end try_success
+exit.commit try_success first
+check L
+use t
+scope.end first
+check LT
+reset.log
+scope.begin second
+scope.begin try_failure
+new l2 L
+scope.unwind try_failure stop
+catch Stop caught
+scope.begin handler
+new h H
+new c C
+exit.prepare handler c
+scope.end handler
+exit.commit handler second
+check LH
+use c
+scope.end second
+check LHC
+reset.log
+scope.begin third
+call.enter make_m make
+new m M
+call.exit make_m m
+array maybe m
+bind optional maybe
+check ''
+scope.end third
+check M

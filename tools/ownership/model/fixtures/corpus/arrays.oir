@@ -1,0 +1,56 @@
+# corpus/arrays
+profile own
+scope.begin nested
+new a A
+array row1 a
+new b B
+new c C
+array row2 b c
+array rows row1 row2
+bind rows_bind rows
+check ''
+scope.end nested
+check CBA
+reset.log
+scope.begin duplicate
+new da A
+bind da_bind da
+array left da da
+array right da
+concat combined left right
+use combined
+scope.end duplicate
+check A
+reset.log
+scope.begin original
+new oa A
+array arr oa
+bind arr_bind arr
+scope.begin copied
+new nb B
+array added nb
+concat copy arr added
+bind copy_bind copy
+use copy
+scope.end copied
+check B
+use arr
+scope.end original
+check BA
+reset.log
+scope.begin empty_case
+array empty
+new z Z
+array one z
+concat result empty one
+use result
+scope.end empty_case
+check Z
+reset.log
+scope.begin equal
+new q1 Q
+new q2 Q
+array equals q1 q2
+use equals
+scope.end equal
+check QQ

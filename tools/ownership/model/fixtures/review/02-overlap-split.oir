@@ -1,0 +1,17 @@
+# review/02-overlap-split
+profile own
+scope.begin s
+new a A
+new b B
+new h H left=a right=a other=b
+get left h left
+get right h right
+scope.split s h all
+own.split all left rest selected deps
+own.split rest right rest2 duplicate deps2
+own.admit duplicate s
+own.admit selected s
+own.admit rest2 s
+use left
+use right
+scope.end s

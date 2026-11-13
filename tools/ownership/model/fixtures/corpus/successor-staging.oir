@@ -1,0 +1,34 @@
+# corpus/successor-staging
+profile own
+summary update take direct
+failure stop typed Stop
+scope.begin outer
+new a A
+object original item=a
+bind original_bind original
+scope.begin consumer
+call.enter action update original
+scope.begin attempt
+new b B
+stage action item b
+scope.unwind attempt stop
+catch Stop caught
+emit c
+staged final_field action item
+object updated item=final_field
+succ updated
+succ.take updated
+call.exit action updated
+use updated
+check c
+scope.end consumer
+check cB
+call.enter failed_action update original
+new f F
+stage failed_action item f
+call.exit failed_action - stop
+catch Stop caught_again
+check cBF
+use original
+scope.end outer
+check cBFA

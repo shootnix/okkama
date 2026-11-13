@@ -1,0 +1,15 @@
+# review/17-role-and-closure-adapters
+profile own
+summary slot take role
+summary entry take closure
+scope.begin s
+new a A
+call.enter read_only_implementation slot a
+new b B
+call.exit read_only_implementation b
+check A
+bind b_bind b
+call.enter closure_entry entry b
+call.exit closure_entry b
+use b
+scope.end s
