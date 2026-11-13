@@ -1,80 +1,115 @@
 module http/websocket v1.0.0;
 
+// WebSocket connections (RFC 6455): messages, limits and close codes.
+//
+//     for await connection -> message {
+//         await connection.send_text(message.text().upper());
+//     }
+//     await connection.send_json(Json(JsonField("ok", true)));
+//     await connection.close(code: 1000, reason: "bye");
+//
+// A message is text or binary; asking a binary one for text is
+// WebSocketMessageIsNotText. message() throws WebSocketClosed once the
+// connection has closed, next() answers none, so a `for await` loop ends.
+// Messages are bounded by WebSocketLimits (16 MiB per message, 64 KiB per
+// frame, 16 queued by default). A server opens connections through
+// http/websocket_server, a client through http/websocket_client.
+
 import "encoding/utf" take Utf8Encoded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "json" take Json, ParsedJson;
 
+// Text or binary.
 enum WebSocketMessageKind = (text, binary);
 
+// One WebSocket message.
 role WebSocketMessage {
+    // Text or binary.
     kind() is WebSocketMessageKind;
+    // The text; WebSocketMessageIsNotText for a binary message.
     text() is string;
+    // The bytes; WebSocketMessageIsNotBinary for a text message.
     bytes() is @byte;
 
     // A text message parsed as JSON (#220); a binary one is not text.
     json() is Json;
 }
 
+// A text message.
 object TextWebSocketMessage does WebSocketMessage {
     has origin is string;
 
+    // The text.
     TextWebSocketMessage(origin is string) {
         self.origin = origin;
         Utf8Encoded(origin).bytes();
     }
 
+    // WebSocketMessageKind.text.
     kind() is WebSocketMessageKind {
         WebSocketMessageKind.text;
     }
 
+    // The text.
     text() is string {
         origin;
     }
 
+    // WebSocketMessageIsNotBinary.
     bytes() is @byte {
         throw WebSocketMessageIsNotBinary.not_binary;
     }
 
+    // The text parsed as JSON.
     json() is Json {
         ParsedJson(origin).root();
     }
 }
 
+// A binary message.
 object BinaryWebSocketMessage does WebSocketMessage {
     has origin is @byte;
 
+    // The bytes.
     BinaryWebSocketMessage(origin is @byte) {
         self.origin = origin;
     }
 
+    // WebSocketMessageKind.binary.
     kind() is WebSocketMessageKind {
         WebSocketMessageKind.binary;
     }
 
+    // WebSocketMessageIsNotText.
     text() is string {
         throw WebSocketMessageIsNotText.not_text;
     }
 
+    // The bytes.
     bytes() is @byte {
         origin;
     }
 
+    // WebSocketMessageIsNotText.
     json() is Json {
         throw WebSocketMessageIsNotText.not_text;
     }
 }
 
+// How large messages and frames may be, and how many wait to be read.
 object WebSocketLimits {
     has message_bytes is BigInt;
     has frame_bytes, queue is int;
 
+    // 16 MiB per message, 64 KiB per frame, 16 queued messages.
     WebSocketLimits() {
         message_bytes = BigInt(16777216);
         frame_bytes = 65536;
         queue = 16;
     }
 
+    // The limits as given.
     WebSocketLimits(message_bytes is BigInt, frame_bytes is int, queue is int) {
         confirm message_bytes.sign() > 0
             && message_bytes.order(BigInt(1073741824)) != Order.greater
@@ -88,10 +123,12 @@ object WebSocketLimits {
         self.queue = queue;
     }
 
+    // Bytes per message.
     message_bytes() is BigInt {
         message_bytes;
     }
 
+    // Bytes per frame and messages queued.
     cap Limits {
         frame_bytes is int {
             frame_bytes;
@@ -110,6 +147,8 @@ object WebSocketClose {
     has code is int;
     has reason is string;
 
+    // code (1000-1003, 1007-1014, 3000, 3003, 3008 or 4000-4999) with a reason
+    // of at most 123 bytes; WebSocketFailure otherwise.
     WebSocketClose(code is int, reason is string) {
         let standard = code == 1000
             || code == 1001
@@ -126,6 +165,7 @@ object WebSocketClose {
         self.reason = reason;
     }
 
+    // The code and the reason.
     cap Close {
         code is int {
             code;
@@ -146,23 +186,36 @@ object WebSocketClose {
 // message() waits for the next message and throws WebSocketClosed once the
 // connection has closed; next() answers none instead, so the loop ends.
 role WebSocketConnection {
+    // The next message; WebSocketClosed once the connection has closed.
     async message() is WebSocketMessage;
+    // The next message, or none once the connection has closed.
     async next() is Maybe<WebSocketMessage>;
+    // Sends origin.
     async send(origin is WebSocketMessage) is WebSocketConnection;
+    // Sends a text message.
     async send_text(text is string) is WebSocketConnection;
+    // Sends a binary message.
     async send_bytes(bytes is @byte) is WebSocketConnection;
+    // Sends value as a text message of JSON.
     async send_json(value is Json) is WebSocketConnection;
+    // Sends a ping with origin.
     async ping(origin is @byte) is WebSocketConnection;
+    // Closes with code and reason.
     async close(code is int, reason is string) is WebSocketConnection;
+    // Whether it has closed.
     closed() is bool;
 }
 
+// A binary message was read as text.
 enum WebSocketMessageIsNotText is Error = (not_text);
 
+// A text message was read as bytes.
 enum WebSocketMessageIsNotBinary is Error = (not_binary);
 
+// A protocol error or a value that may not be sent; reason says why.
 enum WebSocketFailure is Error = (because(reason is string));
 
+// The connection has closed, with the code and reason received.
 enum WebSocketClosed is Error = (detailed(code is int, reason is string));
 
 test "WebSocket values distinguish projections" {

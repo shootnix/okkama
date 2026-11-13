@@ -25,9 +25,12 @@ import "async/timeout" take Within, TimedOut;
 import "time/clock" take Timing;
 import "time/duration" take Duration;
 
+// An open WebSocket connection over a stream.
 object WebSocketSession does WebSocketConnection, Closing {
     has state is WebSocketSessionState;
 
+    // A session on input and output, as client or server; random masks client
+    // frames.
     WebSocketSession(
         input is AsyncReading,
         output is AsyncWriting,
@@ -50,40 +53,48 @@ object WebSocketSession does WebSocketConnection, Closing {
         );
     }
 
+    // Starts reading and writing; true once running.
     async started() is bool {
         state.start();
         true;
     }
 
+    // Whether it has closed.
     closed() is bool {
         state.closed();
     }
 
+    // Stops at once, without a closing handshake.
     close() is void {
         state.abort();
     }
 
+    // Waits until reading and writing have stopped.
     async settled() is bool {
         await state.settled();
     }
 
+    // The next message; WebSocketClosed once the connection has closed.
     async message() is WebSocketMessage {
         state.start();
         await state.message();
     }
 
+    // Sends origin.
     async send(origin is WebSocketMessage) is WebSocketConnection {
         state.start();
         await state.send(origin);
         self;
     }
 
+    // Sends a ping with origin (at most 125 bytes).
     async ping(origin is @byte) is WebSocketConnection {
         state.start();
         await state.ping(origin);
         self;
     }
 
+    // Closes with code and reason, waiting a while for the peer's close.
     async close(code is int, reason is string) is WebSocketConnection {
         state.start();
         await state.finish(code, reason);
@@ -102,14 +113,17 @@ object WebSocketSession does WebSocketConnection, Closing {
         found;
     }
 
+    // Sends a text message.
     async send_text(text is string) is WebSocketConnection {
         await self.send(TextWebSocketMessage(text));
     }
 
+    // Sends a binary message.
     async send_bytes(bytes is @byte) is WebSocketConnection {
         await self.send(BinaryWebSocketMessage(bytes));
     }
 
+    // Sends value as a text message of JSON.
     async send_json(value is Json) is WebSocketConnection {
         await self.send(TextWebSocketMessage(value.string()));
     }

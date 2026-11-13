@@ -73,6 +73,7 @@ import "collections/set" take Set, OrderedSet;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 
+// An HTTP server on one listener.
 object HttpServer does Closing {
     has state is HttpServerState;
     has background is FutureGroup<HttpServer>;
@@ -1285,6 +1286,7 @@ hidden object HttpServerTimedInput does AsyncReading {
     }
 }
 
+// A request the server answered with 400 itself; reason says why.
 enum BadRequest is Error = (because(reason is string));
 
 hidden object HttpServerObservedInput does AsyncReading {
@@ -1339,6 +1341,7 @@ hidden object HttpServerContinueInput does AsyncReading {
     }
 }
 
+// A request body paused longer than the policy allows.
 enum HttpServerBodyTimedOut is Error = (elapsed);
 
 // Draining a server within a limit.

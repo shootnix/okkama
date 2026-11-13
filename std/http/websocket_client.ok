@@ -1,5 +1,15 @@
 module http/websocket_client v1.0.0;
 
+// Opening a WebSocket connection as a client.
+//
+//     let connection = await WebSocketConnecting(url: ParsedUrl("wss://example.com/chat").parts()).connection();
+//     await connection.send_text("hello");
+//     let reply = await connection.message();
+//
+// Like HttpClient(), it resolves with the system's DNS, trusts the system's
+// roots and reaches public endpoints only; WebSocketPolicy changes that and the
+// timeouts (30 seconds to open, 5 to close).
+
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure,
     TextWebSocketMessage, BinaryWebSocketMessage, WebSocketMessageKind, WebSocketClosed;
@@ -37,11 +47,13 @@ import "http/message" take Request;
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/websocket_origin" take WebSocketAllowing;
 
+// What a WebSocket client allows itself.
 object WebSocketPolicy {
     has limits is WebSocketLimits;
     has opening, closing is Duration;
     has access is EndpointAllowing;
 
+    // The default limits, 30 seconds to open, 5 to close, public endpoints.
     WebSocketPolicy() {
         limits = WebSocketLimits();
         opening = Duration(seconds: 30);
@@ -49,6 +61,7 @@ object WebSocketPolicy {
         access = PublicEndpoints();
     }
 
+    // The policy as given.
     WebSocketPolicy(
         limits is WebSocketLimits,
         opening is Duration,
@@ -63,18 +76,22 @@ object WebSocketPolicy {
         self.access = access;
     }
 
+    // The message limits.
     limits() is WebSocketLimits {
         limits;
     }
 
+    // To connect and finish the handshake.
     opening_timeout() is Duration {
         opening;
     }
 
+    // To wait for the peer's close.
     closing_timeout() is Duration {
         closing;
     }
 
+    // Which endpoints it may reach.
     access() is EndpointAllowing {
         access;
     }
@@ -108,6 +125,7 @@ object WebSocketConnecting {
         ).outcome();
     }
 
+    // The same with an explicit TLS policy.
     WebSocketConnecting(
         url is UrlParts,
         protocols is @string,
@@ -128,6 +146,7 @@ object WebSocketConnecting {
         ).outcome();
     }
 
+    // Connects once and gives the connection; later calls give the same one.
     async connection() is WebSocketConnection {
         let group is FutureGroup<WebSocketSession> = FutureGroup();
         let taken = Event();
@@ -215,6 +234,7 @@ hidden object WebSocketStart {
     }
 }
 
+// One opening handshake of a client connection.
 object WebSocketOpening {
     has url is UrlParts;
     has protocols is @string;
@@ -224,6 +244,7 @@ object WebSocketOpening {
     has policy is WebSocketPolicy;
     has clock is Timing;
 
+    // Opens url over route with these protocols, headers, TLS and policy.
     WebSocketOpening(
         url is UrlParts,
         protocols is @string,
@@ -242,6 +263,7 @@ object WebSocketOpening {
         self.clock = clock;
     }
 
+    // Connects, upgrades and gives the session.
     async open() is WebSocketSession {
         let random = SecureRandom();
         let handshake = WebSocketClientHandshake(
@@ -338,6 +360,8 @@ object WebSocketOpening {
         session;
     }
 
+    // Sends the handshake on output and checks the answer on input; gives the
+    // bytes read past it.
     async upgrade(
         input is AsyncReading,
         output is AsyncWriting,

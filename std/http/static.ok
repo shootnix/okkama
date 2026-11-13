@@ -1298,10 +1298,13 @@ hidden object StaticDigest {
     }
 }
 
+// A request path that does not name a file below the root.
 enum InvalidStaticPath is Error = (invalid);
 
+// A policy that cannot be used; reason says why.
 enum InvalidStaticPolicy is Error = (because(reason is string));
 
+// A file changed while it was being served.
 enum StaticFileChanged is Error = (changed);
 
 test "static policy defaults bound ranges and disable optional file modes" {

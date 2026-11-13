@@ -1,5 +1,23 @@
 module http/websocket_server v1.0.0;
 
+// Accepting WebSocket upgrades on a server.
+//
+//     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+//         WebSocketHandlingResult(
+//             origin: WebSocketUpgrade(protocols: [], limits: WebSocketLimits(), access: SameOriginWebSockets(), deadline: Duration(seconds: 5)),
+//             application: self,
+//         );
+//     }
+//
+//     async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
+//         for await connection -> message { await connection.send(message); }
+//         self;
+//     }
+//
+// The server must be built with url: so that the Origin can be checked. The
+// first protocol of the server's list that the client offers is chosen; no
+// extensions are negotiated.
+
 import "http/websocket" take WebSocketConnection, WebSocketLimits, WebSocketFailure;
 import "http/websocket_handshake" take WebSocketServerHandshake, WebSocketProtocols;
 import "http/websocket_origin" take WebSocketAllowing;
@@ -27,6 +45,8 @@ object WebSocketUpgrade {
     has access is WebSocketAllowing;
     has deadline is Duration;
 
+    // Accepts these protocols in order of preference, within limits, from
+    // origins access allows, finishing within deadline.
     WebSocketUpgrade(
         protocols is @string,
         limits is WebSocketLimits,
@@ -41,18 +61,22 @@ object WebSocketUpgrade {
         self.deadline = deadline;
     }
 
+    // The protocols, preferred first.
     protocols() is @string {
         protocols.values();
     }
 
+    // The message limits.
     limits() is WebSocketLimits {
         limits;
     }
 
+    // The Origin policy.
     access() is WebSocketAllowing {
         access;
     }
 
+    // How long the handshake may take.
     deadline() is Duration {
         deadline;
     }
@@ -64,6 +88,8 @@ object WebSocketUpgrade {
 object WebSocketAccepting {
     has waiting is Future<WebSocketSession>;
 
+    // Accepts the upgrade in head on input and output for destination, under
+    // upgrade.
     WebSocketAccepting(
         input is AsyncReading,
         output is AsyncWriting,
@@ -90,6 +116,8 @@ object WebSocketAccepting {
         waiting = bounded.outcome();
     }
 
+    // Checks the Origin, answers 101 and gives the connection; WebSocketFailure
+    // when the Origin is denied.
     async connection() is WebSocketConnection {
         let group is FutureGroup<WebSocketSession> = FutureGroup();
         let taken = Event();

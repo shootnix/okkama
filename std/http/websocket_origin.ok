@@ -9,13 +9,18 @@ import "http/header" take HeaderName;
 import "url/value" take UrlParts, ParsedUrl, InvalidUrl, MissingUrlPort, UrlHostKind;
 import "http/header" take Header, Headers;
 
+// What decides whether an upgrade may come from its Origin.
 role WebSocketAllowing {
+    // Whether request may open a WebSocket on destination.
     allowed(request is Request, destination is UrlParts) is bool;
 }
 
+// Upgrades whose Origin has the server's scheme, host and port.
 object SameOriginWebSockets does WebSocketAllowing {
+    // The policy.
     SameOriginWebSockets();
 
+    // One Origin field, of the same scheme, host and port as destination.
     allowed(request is Request, destination is UrlParts) is bool {
         let values = request::Head::headers.values(HeaderName("Origin"));
         if values.size() != 1 {
