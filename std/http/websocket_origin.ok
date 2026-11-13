@@ -1,8 +1,12 @@
 module http/websocket_origin v1.0.0;
 
-// Trusted destination is supplied by the server's routing configuration, not
-// reconstructed from an untrusted Host field. Non-browser clients must supply
-// an explicit alternative policy if they omit Origin.
+// Whether a WebSocket upgrade may come from its Origin.
+//
+//     WebSocketUpgrade(protocols: [], limits: WebSocketLimits(), access: SameOriginWebSockets(), deadline: Duration(seconds: 5));
+//
+// The server's own URL, from its configuration, is what the Origin is checked
+// against; the Host field of the request is not trusted. A non-browser client
+// that sends no Origin needs a policy of its own.
 
 import "http/message" take Request;
 import "http/header" take HeaderName;

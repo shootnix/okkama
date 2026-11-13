@@ -2,6 +2,9 @@ module crypto/error v1.0.0;
 
 // The failures of digest and crypto modules.
 //
+//     try { cipher.opened(nonce, aad, sealed); }
+//     catch failure is AuthenticationFailed { … }               // tampered or wrong key
+//
 // - InvalidCryptoInput: a key, nonce or other input of the wrong size or form.
 // - AuthenticationFailed: sealed data or its associated data was changed.
 // - CryptoUnavailable: the engine has no provider for the operation.

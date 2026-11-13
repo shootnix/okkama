@@ -1,8 +1,11 @@
 module numbers/float v1.0.0;
 
-// A finite binary64 value's shortest significant decimal candidate is accepted
-// only within its exact nearest-even rounding interval. No float comparison or
-// Perl stringification decides that boundary. Zero's sign is a separate identity.
+// The shortest decimal that reads back as exactly a float.
+//
+//     ShortestFloat(0.1).decimal().string();       // "1e-1": 0.1, not 0.1000000000000000055…
+//
+// The decimal is chosen within the float's exact round-to-nearest interval, so
+// printing and parsing round-trip. Zero keeps its sign.
 
 import "encoding/binary" take FloatBytes, Binary, FloatWidth, Signedness;
 import "encoding/utf" take ByteOrder;

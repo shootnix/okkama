@@ -1,5 +1,21 @@
 module web/request v1.0.0;
 
+// The request as an endpoint sees it: route parameters, query, header fields,
+// cookies and a body read under a byte limit.
+//
+//     async show(request is WebRequest) is Responding {
+//         let id = request.path().int("id");                       // from "/notes/:id"
+//         let page = request.query().maybe("page").int() else 1;
+//         let trace = request.header().maybe("X-Request-Id").text() else "";
+//         let note = await request.json(65536);
+//         TextReply("note " + id.string());
+//     }
+//
+// A client mistake (a bad number, a body too large or of the wrong type)
+// becomes an Exception with the matching status, 400, 413 or 415, naming the
+// value. The body is read once and kept, so an Around and the endpoint can both
+// read it. request() and context() give the std Request and its context.
+
 import "http/method" take Method;
 import "http/message" take Request, BodyLimitExceeded;
 import "http/request_context" take HttpRequestContext;
@@ -26,15 +42,6 @@ import "net/stream" take ConnectionEndpoints;
 import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
 import "async/cancellation" take Cancellation;
-
-// The request as an endpoint sees it: route parameters, query, fields and a
-// body read under an explicit byte limit. Client mistakes become Exception
-// values with the matching status (400, 413, 415) so the endpoint never has to
-// translate transport problems itself. The std Request and context stay
-// reachable through request() and context().
-//
-// The body is read once and kept: text(), json(), form() and bytes() may be
-// called again, by an Around and then by the endpoint, and give the same bytes.
 
 // The request as an endpoint sees it: parameters, query, fields and a bounded
 // body.

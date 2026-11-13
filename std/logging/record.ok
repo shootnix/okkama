@@ -1,7 +1,14 @@
 module logging/record v1.0.0;
 
 // Log records: when, how important, the message, the logger's context and an
-// optional cause.
+// optional cause. Loggers make them; destinations write them.
+//
+//     for collected.records() -> record {
+//         record::Entry::level;
+//         record::Entry::message;
+//         record.context().name().string();
+//         if record.has_cause() { record.cause().text(); }
+//     }
 
 import "logging/name" take LogName;
 import "logging/level" take LogLevel;
