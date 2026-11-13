@@ -1,0 +1,31 @@
+# Full finite translation of tests/ownership-corpus/future-group.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin block
+group group1
+future first void - bound
+future.body first 'new localA A' suspend
+future second void - bound
+future.body second 'new localB B' suspend
+group.start group1 first
+group.start group1 first
+group.start group1 second
+check ''
+await result first
+check A
+group.wait group1
+check AB
+scope.end block
+check AB
+reset.log
+scope.begin cancelled
+group group2
+future third void - bound
+future.body third 'new localC C' suspend
+group.start group2 third
+group.cancel group2
+group.wait group2
+check C
+scope.end cancelled
+scope.end main

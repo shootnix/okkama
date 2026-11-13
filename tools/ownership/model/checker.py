@@ -21,7 +21,7 @@ def split_edge(machine, instruction, success):
         rest, selected, deps = (prefix + s for s in ('rest', 'selected', 'deps'))
         machine.execute(Instruction('own.split.checked', (packet, value, rest, selected, deps), instruction.line))
         machine.edge = {'$rest': ('packet', rest), '$selected': ('packet', selected),
-                        '$deps': ('value', machine.values[deps])}
+                        '$external_deps': ('value', machine.values[deps])}
         return normal
     # Failure precedes commit: no new partition or self is published.
     saved = prefix + 'input'

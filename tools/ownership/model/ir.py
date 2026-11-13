@@ -38,6 +38,21 @@ for names, low, high in [
 ARITY['gc'] = (0, None)
 ARITY['slice'] = ARITY['replace'] = ARITY['builder.push'] = (4, 4)
 
+# Draft 3 protocol transitions.
+ARITY.update({
+    'carrier.attach': (2, 3), 'carrier.transfer': (2, 2),
+    'carrier.rehome': (2, 2), 'carrier.release': (2, 2),
+    'dynamic.refresh': (2, 2), 'dynamic.check': (3, 4), 'snapshot.check': (1, 1),
+    'observe': (2, 2), 'service.schedule': (1, None), 'service.settle': (1, 1),
+    'assert.provenance': (2, 2), 'assert.cleanup-origin': (1, 1),
+    'future.body': (2, None), 'future.request-cancel': (1, 1),
+})
+
+ARITY.update({'destroy.log': (3, 3), 'check.value': (2, 2)})
+
+ARITY['fresh.transfer'] = (2, 2)
+
+ARITY.update({'group': (1, 1), 'group.start': (2, 2), 'group.wait': (1, 1), 'group.cancel': (1, 1), 'race.winner': (2, None)})
 
 def validate(instruction):
     if instruction.op not in ARITY:

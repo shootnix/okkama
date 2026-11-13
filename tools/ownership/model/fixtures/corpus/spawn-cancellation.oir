@@ -1,0 +1,17 @@
+# Full finite translation of tests/ownership-corpus/spawn-cancellation.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+future parent void - bound
+future.body parent 'new localA A' 'future child void - bound' 'future.body child "new localB B" "defer @task:child emit d" suspend' 'future.start child' suspend
+future.start parent
+check ''
+future.request-cancel parent
+check ''
+await result parent
+assert.failure Cancelled
+check dBA
+check dBA
+future.request-cancel parent
+check dBA
+scope.end main

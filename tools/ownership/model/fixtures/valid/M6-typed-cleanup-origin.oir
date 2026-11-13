@@ -1,0 +1,11 @@
+# Draft 3 M6
+profile own
+scope.begin outer
+scope.begin s
+new a A
+on.destroy a 'fail typed Cleanup'
+scope.end s
+catch Cleanup caught
+assert.cleanup-origin caught
+assert.failure Cleanup
+scope.end outer

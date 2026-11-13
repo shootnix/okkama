@@ -1,0 +1,19 @@
+# Draft 3 M4
+profile own
+scope.begin outer
+new external E
+bind e external
+scope.begin inner
+new a A
+deps.view view a
+array both view external
+scope.split inner both p
+own.split p both rest selected external_deps
+own.admit rest inner
+own.admit selected inner
+use external_deps
+exit.prepare inner both
+scope.end inner
+exit.commit inner outer
+use view
+scope.end outer

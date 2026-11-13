@@ -44,15 +44,150 @@ class Fixtures(unittest.TestCase):
                     path = HERE.parents[2] / 'tests/ownership-corpus' / case['corpus']
                     corpus.add(case['corpus'])
                     text = path.read_text()
-                    # Read only literal expected log strings in the original TAP
-                    # checks. Expected model traces are separately hand written.
+                    # Read every literal expected string in the original TAP checks,
+                    # including scalar results. Model goldens are hand written.
                     goldens = [json.loads(s) for s in re.findall(
-                        r't\.is\(log\.value\(\),\s*("(?:[^"\\]|\\.)*")', text)]
+                        r't\.is\([^,\n]+,\s*("(?:[^"\\]|\\.)*")', text)]
                     self.assertEqual(len(goldens), int(re.search(r'Tap\((\d+)\)', text)[1]))
-                    self.assertEqual(state.checkpoints, goldens)
+                    expected = list(goldens)
+                    for difference in case.get('corpus_differences', []):
+                        index = difference['index']
+                        self.assertEqual(goldens[index], difference['source'])
+                        self.assertNotEqual(difference['source'], difference['model'])
+                        self.assertTrue(difference['reason'])
+                        expected[index] = difference['model']
+                    self.assertEqual(state.checkpoints, expected)
         self.assertEqual(reviews, set(range(1, 25)))
         self.assertEqual(rules, {f'B{i}' for i in range(1, 12)})
-        self.assertGreaterEqual(len(corpus), 25)
+        self.assertGreaterEqual(len(corpus), 40)
+        self.assertFalse({'proposed-581', 'unresolved-fake'} & statuses.keys())
+
+    def test_draft3_answers_have_positive_and_negative_witnesses(self):
+        catalog = json.loads((HERE / 'fixtures/manifest.json').read_text())
+        for answer in range(1, 10):
+            cases = [c for c in catalog if answer in c.get('answers', [])]
+            self.assertTrue(any('error' not in c for c in cases), answer)
+            self.assertTrue(any('error' in c for c in cases), answer)
+
+    def test_service_schedules_are_inputs_and_preserve_partial_orders(self):
+        text = (HERE / 'fixtures/valid/M9-explicit-service-schedule.oir').read_text()
+        first = run(parse(text))
+        second = run(parse(text.replace('service.schedule s b a', 'service.schedule s a b')
+                           .replace('check BYAX', 'check AXBY')))
+        self.assertEqual(first.destroy_trace, list('BYAXO'))
+        self.assertEqual(second.destroy_trace, list('AXBYO'))
+        self.assertEqual(first.events, run(parse(text)).events)
+        for state, order in [(first, ['b', 'a']), (second, ['a', 'b'])]:
+            self.assertEqual([e['service'] for e in state.events
+                              if e['event'] == 'service.choose' and e['scope'] == 's'], order)
+            outer = next(i for i, e in enumerate(state.events)
+                         if e['event'] == 'destroy' and e['label'] == 'O')
+            settled = next(i for i, e in enumerate(state.events)
+                           if e['event'] == 'service.end' and e['scope'] == 's')
+            self.assertLess(settled, outer)
+
+    def test_deferred_cancellation_has_separate_abort_boundary(self):
+        state = run(parse((HERE / 'fixtures/valid/final-cleanup-cancel-aborts-result.oir').read_text()))
+        self.assertEqual(state.destroy_trace, ['A', 'R'])
+        aborts = [e for e in state.events if e['event'] == 'exit.abort']
+        self.assertEqual([e['boundary'] for e in aborts], ['abort'])
+        before = run(parse((HERE / 'fixtures/valid/M8-defer-failure-returns-reserve.oir').read_text()))
+        self.assertEqual(before.destroy_trace, ['R', 'A'])
+        self.assertEqual([e['boundary'] for e in before.events if e['event'] == 'exit.abort'], ['original-plan'])
+
+    def test_partition_preserves_full_deps_and_retention_selection(self):
+        state = run(parse((HERE / 'fixtures/valid/M4-retention-and-external-deps.oir').read_text()))
+        self.assertEqual(state.values['both'].deps, frozenset({1, 2}))
+        self.assertEqual(state.values['view'].ids, frozenset({2}))
+        self.assertEqual(state.values['external_deps'].deps, frozenset({1}))
+
+    def test_rehome_increments_epoch_once_and_noop_does_not(self):
+        state = run(parse((HERE / 'fixtures/valid/M5-cache-owner-rehome.oir').read_text()))
+        before = state.snapshots['before'][1]
+        after = state.snapshots['after'][1]
+        self.assertEqual(after[2], before[2] + 1)
+        self.assertEqual(after[1], before[1])
+        self.assertNotEqual(after[0], before[0])
+        state = run(parse('profile own\nscope.begin s\nnew a A\ndynamic.refresh snap a\n'
+                          'scope.transfer s s a\nsnapshot.check snap\nscope.end s\n'))
+        self.assertEqual(state.identities[1].epoch, 0)
+
+    def test_cached_failure_graph_has_one_packet_and_same_carrier(self):
+        state = run(parse((HERE / 'fixtures/valid/M7-shared-failure-cache.oir').read_text()))
+        self.assertIs(state.failures['first'], state.failures['second'])
+        self.assertEqual(state.values['v'].deps, state.values['w'].deps)
+        self.assertEqual(state.destroy_trace, ['A'])
+
+    def test_all_futures_primary_by_schedule_secondaries_by_positions(self):
+        state = run(parse("""profile own
+scope.begin s
+future a fail A bound
+future b fail B bound
+future c fail C bound
+future.settle c
+future.settle b
+future.settle a
+collect.all result a b c a
+assert.failure C A B
+collect.all again a b c a
+assert.failure C A B
+scope.end s
+"""))
+        self.assertEqual(state.futures['a'].starts, 1)
+        self.assertEqual(len(state.futures['c'].failure.secondaries), 2)
+
+    def test_completions_already_settled_inputs_follow_positions(self):
+        state = run(parse("""profile own
+scope.begin s
+future a new A bound
+future b new B bound
+future.settle b
+future.settle a
+completions stream a b a
+completion.next first stream
+completion.next second stream
+completion.next third stream
+scope.end s
+"""))
+        self.assertEqual([state.values[n].futures for n in ('first', 'second', 'third')],
+                         [frozenset({'a'}), frozenset({'b'}), frozenset({'a'})])
+        self.assertEqual(state.destroy_trace, ['A', 'B'])
+
+    def test_service_failure_continues_settle_and_race_cleans_all_losers(self):
+        for finish in ('scope.end s', 'race.winner result winner a b\nscope.end s'):
+            state = run(parse("""profile own
+scope.begin s async
+future winner new W bound
+future a void - bound
+future.body a 'new localA A' 'on.destroy localA "fail typed Cleanup"' suspend
+future b void - bound
+future.body b 'new localB B' suspend
+future.start a
+future.start b
+""" + finish))
+            self.assertEqual(state.destroy_trace[:2], ['A', 'B'])
+            self.assertEqual(state.futures['b'].state, 'settled')
+            self.assertEqual(state.scopes['s'].phase, 'closed')
+            if finish.startswith('scope.end'):
+                self.assertEqual(state.last_failure.name, 'Cleanup')
+            else:
+                self.assertNotIn('result', state.values)
+
+    def test_rehome_plain_completed_future_does_not_retain_dead_inputs(self):
+        state = run(parse("""profile own
+scope.begin outer
+scope.begin inner
+new a A
+future f literal done bound a
+await result f
+check A
+cache.rehome f outer
+scope.end inner
+await again f
+check.value again done
+scope.end outer
+"""))
+        self.assertEqual(state.destroy_trace, ['A'])
 
     def test_every_rule_has_negative_fixture(self):
         catalog = json.loads((HERE / 'fixtures/manifest.json').read_text())

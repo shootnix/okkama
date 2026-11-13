@@ -1,0 +1,56 @@
+# Full finite translation of tests/ownership-corpus/cold-futures.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin never
+scope.begin factory1
+new receiver1 R
+new arg1 A
+future cold1 literal RA bound receiver1 arg1
+cache.rehome cold1 never
+scope.end factory1
+check ''
+scope.end never
+check AR
+reset.log
+scope.begin cancelled
+scope.begin factory2
+new receiver2 R
+new arg2 A
+future cold2 literal RA bound receiver2 arg2
+cache.rehome cold2 cancelled
+scope.end factory2
+future.request-cancel cold2
+check ''
+await ignored cold2
+scope.end cancelled
+check AR
+reset.log
+scope.begin outer
+new receiver3 R
+bind r receiver3
+new arg3 A
+bind a arg3
+scope.begin borrow
+future cold3 literal RA bound receiver3 arg3
+scope.end borrow
+check ''
+scope.end outer
+check AR
+reset.log
+scope.begin awaited
+scope.begin factory4
+new receiver4 R
+new arg4 A
+future cold4 literal RA bound receiver4 arg4
+cache.rehome cold4 awaited
+scope.end factory4
+await first cold4
+check.value first RA
+await second cold4
+check.value second RA
+# Draft 3 10.1: plain string does not retain receiver/arg; action cleanup ran.
+check AR
+scope.end awaited
+check AR
+scope.end main

@@ -1,0 +1,41 @@
+# Full finite translation of tests/ownership-corpus/channels.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin unread
+storage first channel
+new u U
+storage.set first message u
+check ''
+storage.close first
+check ''
+scope.end unread
+check U
+reset.log
+scope.begin delivered
+storage second channel
+new r R
+storage.set second message r
+storage.close second
+scope.begin receiver
+storage.get received second message
+use received
+check ''
+scope.end receiver
+check R
+scope.end delivered
+check R
+reset.log
+scope.begin outer
+new a A
+bind bound a
+scope.begin repeated
+storage third channel
+storage.set third one a
+storage.set third two a
+storage.close third
+scope.end repeated
+check ''
+scope.end outer
+check A
+scope.end main

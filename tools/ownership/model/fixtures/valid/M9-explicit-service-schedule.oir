@@ -1,0 +1,18 @@
+# Draft 3 M9
+profile own
+scope.begin s async
+new outer O
+future a void - bound
+future.body a 'new localA A' 'on.destroy localA "new duringA X"' suspend
+future b void - bound
+future.body b 'new localB B' 'on.destroy localB "new duringB Y"' suspend
+future.start a
+future.start b
+service.schedule s b a
+cleanup.begin s
+assert.state s service-settle
+service.settle s
+assert.state s closing
+check BYAX
+cleanup.step s
+cleanup.step s

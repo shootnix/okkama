@@ -1,0 +1,29 @@
+# Draft 3 carrier graph
+profile own
+scope.begin diagnostic
+future f fail Cached bound
+new a A
+failure cached typed Cached
+scope.split diagnostic a pa
+carrier.attach cached pa diagnostic
+carrier.transfer cached cache:f
+await ignored f
+catch Cached old
+scope.begin handler
+scope.begin body
+new b B
+failure fresh typed New
+scope.split body b pb
+# Default owner is the enclosing handler, not the exiting body.
+carrier.attach fresh pb
+failure.cause fresh old
+scope.unwind body fresh
+catch New caught
+failure.view view caught
+use view
+carrier.release caught handler
+scope.end handler
+# The cached part of cause is still alive, owned only by f.
+failure.view cached_view cached
+use cached_view
+scope.end diagnostic

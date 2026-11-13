@@ -1,0 +1,43 @@
+# Full finite translation of tests/ownership-corpus/async-results.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin first
+future pending new R bound
+future.body pending 'new localL L' suspend
+future.start pending
+check ''
+await result pending
+check L
+await again pending
+use result
+use again
+check L
+scope.end first
+check LR
+reset.log
+scope.begin discarded
+future temp new R temporary
+future.body temp 'new discardedL L' suspend
+unique-cache k temp
+await.take dropped temp k
+drop dropped
+check L
+scope.end discarded
+check LR
+reset.log
+scope.begin outer
+new o O
+scope.begin block
+new a A
+future temp2 new R temporary
+future.body temp2 'new secondL L' suspend
+unique-cache k2 temp2
+await.take dropped2 temp2 k2
+drop dropped2
+new b B
+scope.end block
+check LBRA
+scope.end outer
+check LBRAO
+scope.end main

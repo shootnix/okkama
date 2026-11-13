@@ -1,0 +1,30 @@
+# Full finite translation of tests/ownership-corpus/gen-001.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+summary inspect borrow direct
+scope.begin main
+scope.begin outer
+new o O
+bind outerResource o
+check ''
+scope.begin try
+scope.begin iteration
+new h H
+new a A
+new b B
+object aggregate left=a right=b
+bind kept aggregate
+new temp T
+call.enter take inspect temp
+call.exit take -
+check T
+defer iteration emit d
+failure stop typed Stop
+scope.unwind iteration stop
+scope.unwind try stop
+catch Stop caught
+emit c
+check TdBAHc
+scope.end outer
+check TdBAHcO
+scope.end main
