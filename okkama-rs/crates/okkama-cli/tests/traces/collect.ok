@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "async/event" take Event;
+import "async/collect" take AllFutures;
+
+enum Broken is Error = (broken(label is string));
+
+// Waits for `go`, then fails with its label.
+object Breaking {
+    has go is Event;
+    has label is string;
+    Breaking(:go, :label);
+    async run() is int {
+        await go.wait();
+        throw Broken.broken(label);
+    }
+}
+
+async main() is int {
+    // Woken in spawn order, the inputs fail f3, f2, f1, f0, all before the
+    // collection looks. f3, the first observed, stays primary; the others
+    // follow in input order. f1 is given twice and listed once.
+    let go = Event();
+    let f3 = spawn Breaking(go: go, label: "f3").run();
+    let f2 = spawn Breaking(go: go, label: "f2").run();
+    let f1 = spawn Breaking(go: go, label: "f1").run();
+    let f0 = spawn Breaking(go: go, label: "f0").run();
+    let inputs is @Future<int> = [f1, f0, f3, f2, f1];
+    go.set();
+    await AllFutures(origins: inputs).results();
+    0;
+}

@@ -8,6 +8,8 @@
 //! `barrier.rs`, `semaphore.rs`, the `sleep_nanoseconds` native).
 #![allow(unsafe_code)]
 
+use std::collections::VecDeque;
+
 use crate::heap::Payload;
 use crate::intrinsics::{Intrinsic, call_function, call_role, thrown};
 use crate::primitives::{COMPLETED, REFUSED, State, WAITING};
@@ -632,6 +634,17 @@ struct Collection {
     entries: Vec<Word>,
     consumed: Vec<bool>,
     cancelled: Vec<bool>,
+    /// Inputs not consumed yet.
+    remaining: usize,
+    /// Settled inputs in the order they are consumed: those settled at the
+    /// start by input position, then the rest as they settle (#443).
+    ready: VecDeque<usize>,
+    /// Inputs that settled since the frame last ran, in settlement order.
+    /// The frame listens once to every unsettled input, and `settled` fills
+    /// this, so a run costs the settled inputs, not all of them.
+    inbox: Vec<Word>,
+    /// (input, position), sorted: the positions of a settled input.
+    positions: Vec<(Word, usize)>,
     initial_order: u64,
     winner: Option<Word>,
     winner_repr: Repr,
@@ -658,6 +671,13 @@ fn collection(runtime: &mut Runtime, frame: Word) -> &mut Collection {
     state::<Collection>(runtime, frame).expect("collection")
 }
 
+/// `future`, an input of collection `frame`, settled (#443).
+pub(crate) fn settled(runtime: &mut Runtime, frame: Word, future: Word) {
+    if let Some(c) = state::<Collection>(runtime, frame) {
+        c.inbox.push(future);
+    }
+}
+
 fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, intrinsic: Intrinsic, deliver: bool) -> Step {
     let receiver = param(runtime, frame, function, 0);
     if state::<Collection>(runtime, frame).is_none() {
@@ -674,6 +694,10 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
             entries: Vec::new(),
             consumed: Vec::new(),
             cancelled: Vec::new(),
+            remaining: 0,
+            ready: VecDeque::new(),
+            inbox: Vec::new(),
+            positions: Vec::new(),
             initial_order: 0,
             winner: None,
             winner_repr,
@@ -702,13 +726,28 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
         let c = collection(runtime, frame);
         c.consumed = vec![false; entries.len()];
         c.cancelled = vec![false; entries.len()];
+        c.remaining = entries.len();
         c.initial_order = completions;
         c.started = true;
-    }
-    let entries = collection(runtime, frame).entries.clone();
-    // Whatever woke this frame, stop listening to the other entries.
-    for &entry in &entries {
-        runtime.remove_waiter(entry, frame);
+        // Inputs settled by now go first, by input position. The frame then
+        // listens once to each unsettled input; `settled` reports them in
+        // settlement order, which is the order they are consumed in.
+        let mut pending = Vec::new();
+        for (index, &entry) in entries.iter().enumerate() {
+            if matches!(tasks::get(entry, tasks::STATE), DONE | FAILURE_STATE) {
+                c.ready.push_back(index);
+            } else {
+                pending.push(entry);
+            }
+        }
+        c.positions = entries.iter().enumerate().map(|(index, &entry)| (entry, index)).collect();
+        c.positions.sort_unstable();
+        pending.sort_unstable();
+        pending.dedup();
+        tasks::set(frame, FLAGS, tasks::get(frame, FLAGS) | tasks::INBOX);
+        for entry in pending {
+            runtime.listen(entry, frame);
+        }
     }
     if deliver {
         let failure = runtime.cancelled_failure();
@@ -717,37 +756,23 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
     }
     loop {
         let c = collection(runtime, frame);
-        let mut best: Option<(u8, u64, usize)> = None;
-        let mut remaining = false;
-        for (index, &entry) in c.entries.iter().enumerate() {
-            if c.consumed[index] {
-                continue;
-            }
-            remaining = true;
-            if matches!(tasks::get(entry, tasks::STATE), DONE | FAILURE_STATE) {
-                let order = Runtime::completion_order(entry);
-                let key = if order <= c.initial_order { (0, 0, index) } else { (1, order, index) };
-                if best.is_none_or(|b| key < b) {
-                    best = Some(key);
+        if !c.inbox.is_empty() {
+            let mut inbox = std::mem::take(&mut c.inbox);
+            for &future in &inbox {
+                let first = c.positions.partition_point(|&(entry, _)| entry < future);
+                for &(entry, index) in &c.positions[first..] {
+                    if entry != future {
+                        break;
+                    }
+                    c.ready.push_back(index);
                 }
             }
+            inbox.clear();
+            c.inbox = inbox;
         }
-        match best {
-            Some((_, _, index)) => consume(runtime, ctx, frame, function, index),
-            None if remaining => {
-                let c = collection(runtime, frame);
-                let pending: Vec<Word> = c
-                    .entries
-                    .iter()
-                    .zip(&c.consumed)
-                    .filter(|&(_, &consumed)| !consumed)
-                    .map(|(&e, _)| e)
-                    .collect();
-                for entry in pending {
-                    runtime.listen(entry, frame);
-                }
-                return Pending;
-            }
+        match c.ready.pop_front() {
+            Some(index) => consume(runtime, ctx, frame, function, index),
+            None if c.remaining > 0 => return Pending,
             None => break,
         }
     }
@@ -889,7 +914,9 @@ fn consume(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
         Ok(_) => false,
     };
     let c = collection(runtime, frame);
+    debug_assert!(!c.consumed[index], "input {index} consumed twice");
     c.consumed[index] = true;
+    c.remaining -= 1;
     let mut cancel = false;
     match result {
         Ok(value) if !c.finishing && c.strategy != Strategy::All => {

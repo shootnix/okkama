@@ -46,6 +46,9 @@ pub const PARKED: u64 = 32;
 /// An async destroy awaited by a region close (#154): a cancellation neither
 /// reaches it nor resumes its awaiter; it stays requested for the next await.
 const SHIELDED: u64 = 64;
+/// A collection driver that learns which inputs settled (#443): waking it
+/// also hands it the settled Future.
+pub const INBOX: u64 = 128;
 /// Flags above this bit hold the completion order of a settled Future.
 const ORDER_SHIFT: u64 = 16;
 
@@ -198,6 +201,9 @@ impl Runtime {
     fn wake_waiter(&mut self, frame: Word, waiter: Word) {
         if get(waiter, AWAITING) == frame {
             set(waiter, AWAITING, UNBOUND);
+        } else if get(waiter, FLAGS) & INBOX != 0 {
+            // A collection only listens, so a plain `await` skips this.
+            crate::drivers::settled(self, waiter, frame);
         }
         self.wake(waiter);
     }
