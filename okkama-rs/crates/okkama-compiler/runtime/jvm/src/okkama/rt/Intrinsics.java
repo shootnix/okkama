@@ -879,9 +879,23 @@ public final class Intrinsics {
             try {
                 return Scheduler.await(waiter);
             } catch (Failure failure) {
-                if (failure.error instanceof Cancelled && running(waiter)) {
+                // A cancelled request cancels the stream, waits for every input
+                // to be cleaned up and fails with the stream's cancellation, as
+                // every later request does (#548), as on the other engines. A
+                // waiter that was handed a completion keeps it.
+                if (failure.error instanceof Cancelled && waiter.state != Future.DONE) {
                     state.waiters.remove(waiter);
                     abort(state, failure);
+                    if (state.aborted == null) {
+                        Future cleanup = Future.promise();
+                        state.waiters.add(cleanup);
+                        try {
+                            Scheduler.await(cleanup);
+                        } catch (Failure ignored) {
+                            // The cleanup's outcome is the stream's cancellation.
+                        }
+                    }
+                    throw state.aborted != null ? state.aborted : failure;
                 }
                 throw failure;
             }
