@@ -1,5 +1,23 @@
 module db/pool v1.0.0;
 
+// A pool of database connections.
+//
+//     let pool = DbPool(
+//         origin: PostgresConnecting(…),
+//         options: PoolOptions(minimum: 2, maximum: 16, idle_timeout: Duration(minutes: 5),
+//             lifetime: Duration(minutes: 30), acquisition_timeout: Duration(seconds: 5)),
+//         clock: SystemClock(),
+//     );
+//     let db = await pool.connection();
+//     defer db.close();                       // returns it to the pool
+//     await db.query("SELECT 1 AS one").one();
+//
+// A lease is a DbConnection. Closing it rolls back an open transaction, closes
+// its cursors and statements, and returns the connection; a broken one is
+// dropped. Connections idle longer than idle_timeout or older than lifetime are
+// replaced (0 turns either off). A pool holds at most 64 connections.
+// DbPreparedPool also hands out prepared statements and transactions.
+
 import "db/connection" take DbConnecting, DbConnection, DbExecuting;
 import "db/acquisition" take DbAcquiring, DbAcquisition, PortableDbAcquiring;
 import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening;
@@ -21,10 +39,13 @@ import "async/timeout" take Before;
 import "async/scope" take FutureGroup;
 import "io/stream" take Closing;
 
+// How large a pool is and how long connections live.
 object PoolOptions {
     has minimum, maximum is int;
     has idle, lifetime, acquisition is Duration;
 
+    // At least minimum and at most maximum (1..64) connections;
+    // InvalidPoolOptions otherwise.
     PoolOptions(
         minimum is int,
         maximum is int,
@@ -47,18 +68,22 @@ object PoolOptions {
         acquisition = acquisition_timeout;
     }
 
+    // How long a connection may sit idle; 0 for ever.
     idle_timeout() is Duration {
         idle;
     }
 
+    // How long a connection may live; 0 for ever.
     lifetime() is Duration {
         lifetime;
     }
 
+    // How long connection() waits.
     acquisition_timeout() is Duration {
         acquisition;
     }
 
+    // The minimum and maximum.
     cap Size {
         minimum is int {
             minimum;
@@ -70,9 +95,11 @@ object PoolOptions {
     }
 }
 
+// A pool's counts at one moment.
 object PoolSnapshot {
     has acquisitions, idle, waiting, capacity is int;
 
+    // As given.
     PoolSnapshot(acquisitions is int, idle is int, waiting is int, capacity is int) {
         self.acquisitions = acquisitions;
         self.idle = idle;
@@ -80,6 +107,7 @@ object PoolSnapshot {
         self.capacity = capacity;
     }
 
+    // Leased connections, idle ones, waiting requests and capacity.
     cap Counts {
         acquisitions is int {
             acquisitions;
@@ -99,7 +127,9 @@ object PoolSnapshot {
     }
 }
 
+// How a pool checks a connection before lending it.
 role DbChecking {
+    // Whether origin can be lent.
     async healthy(origin is DbConnection) is bool;
 }
 
@@ -111,9 +141,11 @@ hidden object UncheckedDbConnections does DbChecking {
     }
 }
 
+// A pool of plain connections.
 object DbPool does Closing {
     has owner is DbPoolState;
 
+    // A pool connecting with origin.
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing) {
         owner = DbPoolState(
             origin: PortableDbAcquiring(origin),
@@ -123,6 +155,7 @@ object DbPool does Closing {
         );
     }
 
+    // The same, checking connections with health.
     DbPool(origin is DbConnecting, options is PoolOptions, clock is Timing, health is DbChecking) {
         owner = DbPoolState(
             origin: PortableDbAcquiring(origin),
@@ -132,22 +165,29 @@ object DbPool does Closing {
         );
     }
 
+    // A connection from the pool; TimedOut after the acquisition timeout,
+    // DbClosed once closed.
     async connection() is PooledConnection {
         await owner.connection();
     }
 
+    // Its counts now.
     snapshot() is PoolSnapshot {
         owner.snapshot();
     }
 
+    // Whether it was closed.
     closed() is bool {
         owner.closed();
     }
 
+    // Closes it: no more leases; idle connections close, leased ones when
+    // returned.
     close() is void {
         owner.close();
     }
 
+    // Waits until every connection has closed.
     async settled() is bool {
         await owner.settled();
     }
@@ -157,9 +197,11 @@ object DbPool does Closing {
     }
 }
 
+// A pool whose leases can also prepare statements.
 object DbPreparedPool does Closing {
     has owner is DbPoolState;
 
+    // A pool acquiring from origin.
     DbPreparedPool(origin is DbAcquiring, options is PoolOptions, clock is Timing) {
         owner = DbPoolState(
             origin: origin,
@@ -169,6 +211,7 @@ object DbPreparedPool does Closing {
         );
     }
 
+    // The same, checking connections with health.
     DbPreparedPool(
         origin is DbAcquiring,
         options is PoolOptions,
@@ -178,22 +221,29 @@ object DbPreparedPool does Closing {
         owner = DbPoolState(origin: origin, options: options, clock: clock, health: health);
     }
 
+    // A connection from the pool; TimedOut after the acquisition timeout,
+    // DbClosed once closed.
     async connection() is PooledConnection {
         await owner.connection();
     }
 
+    // Its counts now.
     snapshot() is PoolSnapshot {
         owner.snapshot();
     }
 
+    // Whether it was closed.
     closed() is bool {
         owner.closed();
     }
 
+    // Closes it: no more leases; idle connections close, leased ones when
+    // returned.
     close() is void {
         owner.close();
     }
 
+    // Waits until every connection has closed.
     async settled() is bool {
         await owner.settled();
     }
@@ -203,36 +253,43 @@ object DbPreparedPool does Closing {
     }
 }
 
+// One physical connection of a pool.
 object DbPhysical {
     has pending is Future<DbAcquisition>;
     has born is MonotonicInstant;
     has serial is int;
 
+    // The connection pending acquires, born at born.
     DbPhysical(pending is Future<DbAcquisition>, born is MonotonicInstant, serial is int) {
         self.pending = pending;
         self.born = born;
         self.serial = serial;
     }
 
+    // The connection.
     async connection() is DbConnection {
         let acquired = await pending;
         acquired.connection();
     }
 
+    // Its preparation.
     async preparing() is DbPreparing {
         let acquired = await pending;
         acquired.preparing();
     }
 
+    // Its preparing transactions.
     async transactions() is DbPreparedOpening {
         let acquired = await pending;
         acquired.transactions();
     }
 
+    // When it was opened.
     born() is MonotonicInstant {
         born;
     }
 
+    // Its number in the pool.
     serial() is int {
         serial;
     }
@@ -256,6 +313,7 @@ hidden object DbIdle {
     }
 }
 
+// The shared state of a pool; used inside db/pool.
 object DbPoolState {
     has origin is DbAcquiring;
     has options is PoolOptions;
@@ -271,6 +329,7 @@ object DbPoolState {
     has leases is Atomic<@PooledConnection>;
     has retiring is Atomic<@DbRetirement>;
 
+    // The state of a pool of origin.
     DbPoolState(
         origin is DbAcquiring,
         options is PoolOptions,
@@ -298,10 +357,12 @@ object DbPoolState {
         retiring = Atomic(no_retiring);
     }
 
+    // Whether it is closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // Its counts.
     snapshot() is PoolSnapshot {
         PoolSnapshot(
             acquisitions: leases.value().size(),
@@ -311,11 +372,13 @@ object DbPoolState {
         );
     }
 
+    // Fails with DbClosed once the pool closes.
     async stopping() is PooledConnection {
         await stopped.wait();
         throw DbClosed.closed;
     }
 
+    // A lease within the acquisition timeout.
     async connection() is PooledConnection {
         confirm !self.closed() else throw DbClosed.closed;
         waiting.replace(waiting.value() + 1);
@@ -338,6 +401,7 @@ object DbPoolState {
         result;
     }
 
+    // A lease: an idle connection or a new one.
     async acquire() is PooledConnection {
         let permit = await capacity.permit();
         let published = Event();
@@ -426,6 +490,7 @@ object DbPoolState {
         }
     }
 
+    // Opens connections up to the minimum.
     async warm() is bool {
         loop {
             if records.value().size() >= options::Size::minimum {
@@ -461,6 +526,7 @@ object DbPoolState {
         true;
     }
 
+    // Forgets connection id.
     forget(id is int) is void {
         let kept is @DbPhysical = records.value().filter() -> record {
             record.serial() != id;
@@ -468,6 +534,7 @@ object DbPoolState {
         records.replace(kept);
     }
 
+    // Drops a broken connection.
     discard(physical is DbPhysical, connection is DbConnection) is void {
         connection.close();
         self.forget(physical.serial());
@@ -475,16 +542,19 @@ object DbPoolState {
         self.retire(pending);
     }
 
+    // Waits for connection to settle; true when it is reusable.
     async join(connection is DbConnection) is bool {
         await connection.settled();
     }
 
+    // Records a failure.
     failed(error is Error) is void {
         if failure.value().size() == 0 {
             failure.replace([error]);
         }
     }
 
+    // Tracks a closing in progress.
     retire(pending is Future<bool>) is void {
         let old is @DbRetirement = retiring.value().filter() -> record {
             !record.complete();
@@ -495,6 +565,7 @@ object DbPoolState {
         record.start();
     }
 
+    // Takes back lease.
     release(lease is PooledConnection) is void {
         let kept is @PooledConnection = leases.value().filter() -> entry {
             entry.identifier() != lease.identifier();
@@ -503,6 +574,7 @@ object DbPoolState {
         self.retire(lease.reset());
     }
 
+    // Puts a connection back as idle.
     recycle(physical is DbPhysical, connection is DbConnection) is void {
         let expired = options.lifetime()::Span::seconds > 0.rat()
             && clock.monotonic_instant().minus(physical.born())::Span::seconds >= options.lifetime()::Span::seconds;
@@ -517,6 +589,7 @@ object DbPoolState {
         }
     }
 
+    // Closes the pool.
     close() is void {
         if !self.closed() {
             stopped.set();
@@ -533,12 +606,14 @@ object DbPoolState {
         }
     }
 
+    // Closes one connection.
     async close_physical(physical is DbPhysical) is bool {
         let connection = await physical.connection();
         self.discard(physical, connection);
         true;
     }
 
+    // Waits until every connection has closed.
     async settled() is bool {
         let pending = retiring.value();
         for pending -> record {
@@ -560,6 +635,7 @@ object DbPoolState {
     }
 }
 
+// A connection leased from a pool.
 object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
     has owner is DbPoolState;
     has physical is DbPhysical;
@@ -570,6 +646,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
     has transactions is Atomic<@Transaction>;
     has preparation is Atomic<@PreparedStatement>;
 
+    // A lease of origin from owner.
     PooledConnection(
         owner is DbPoolState,
         physical is DbPhysical,
@@ -589,19 +666,23 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         preparation = Atomic(no_preparation);
     }
 
+    // The physical connection's number.
     identifier() is int {
         physical.serial();
     }
 
+    // Whether it was returned.
     closed() is bool {
         stopped.ready() || owner.closed() || origin.closed();
     }
 
+    // Runs statement.
     async execution(statement is Statement) is Execution {
         confirm !self.closed() else throw DbClosed.closed;
         await origin.execution(statement);
     }
 
+    // Runs statement and reads its rows.
     async rows(statement is Statement) is RowReading {
         confirm !self.closed() else throw DbClosed.closed;
         let rows = await origin.rows(statement);
@@ -609,6 +690,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         PooledRows(origin: rows, lease_closed: stopped);
     }
 
+    // Prepares text on this connection.
     async prepared(text is string) is PreparedStatement {
         confirm !self.closed() else throw DbClosed.closed;
         let preparing = await physical.preparing();
@@ -626,6 +708,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         PooledPrepared(origin: raw, lease_closed: stopped, readers: readers);
     }
 
+    // Begins a transaction.
     async transaction(options is TransactionOptions) is Transaction {
         confirm !self.closed() else throw DbClosed.closed;
         let transaction = await origin.transaction(options);
@@ -633,6 +716,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         PooledTransaction(origin: transaction, lease_closed: stopped, readers: readers);
     }
 
+    // Begins a transaction that can prepare statements.
     async prepared_transaction(options is TransactionOptions) is PooledTransaction {
         confirm !self.closed() else throw DbClosed.closed;
         let opening = await physical.transactions();
@@ -646,6 +730,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         );
     }
 
+    // Returns it: its cursors and statements close and the pool takes it back.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -659,11 +744,14 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         }
     }
 
+    // Ends the lease at once, dropping the connection.
     revoke() is void {
         origin.close();
         self.close();
     }
 
+    // Rolls back open transactions and waits; true when the connection is
+    // reusable.
     async reset() is bool {
         defer permit.close();
         let healthy = try {
@@ -694,6 +782,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         true;
     }
 
+    // Waits until everything on it has finished.
     async settled() is bool {
         await owner.settled();
     }
@@ -714,6 +803,7 @@ object PooledConnection does DbConnection, DbExecuting, DbPreparing, Closing {
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
@@ -756,12 +846,14 @@ hidden object PooledRows does RowReading, Closing {
     }
 }
 
+// A transaction on a leased connection.
 object PooledTransaction does Transaction, DbExecuting, DbPreparing {
     has origin is Transaction;
     has lease_closed is Event;
     has readers is Atomic<@RowReading>;
     has preparation is @DbPreparing;
 
+    // origin, ending when the lease does.
     PooledTransaction(origin is Transaction, lease_closed is Event, readers is Atomic<@RowReading>) {
         self.origin = origin;
         self.lease_closed = lease_closed;
@@ -769,6 +861,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         preparation = [];
     }
 
+    // The same, preparing with preparation.
     PooledTransaction(
         origin is Transaction,
         lease_closed is Event,
@@ -781,15 +874,18 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         self.preparation = [preparation];
     }
 
+    // Whether it is still open.
     active() is bool {
         !lease_closed.ready() && origin.active();
     }
 
+    // Runs statement.
     async execution(statement is Statement) is Execution {
         confirm self.active() else throw TransactionEnded.ended;
         await origin.execution(statement);
     }
 
+    // Runs statement and reads its rows.
     async rows(statement is Statement) is RowReading {
         confirm self.active() else throw TransactionEnded.ended;
         let rows = await origin.rows(statement);
@@ -797,6 +893,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         PooledRows(origin: rows, lease_closed: lease_closed);
     }
 
+    // Prepares text on this connection.
     async prepared(text is string) is PreparedStatement {
         confirm self.active() else throw TransactionEnded.ended;
         confirm preparation.size() == 1
@@ -810,12 +907,14 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         PooledPrepared(origin: statement, lease_closed: lease_closed, readers: readers);
     }
 
+    // Commits.
     async commit() is Transaction {
         confirm !lease_closed.ready() else throw TransactionEnded.ended;
         await origin.commit();
         self;
     }
 
+    // Rolls back.
     async rollback() is Transaction {
         confirm !lease_closed.ready() else throw TransactionEnded.ended;
         await origin.rollback();
@@ -834,6 +933,7 @@ object PooledTransaction does Transaction, DbExecuting, DbPreparing {
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
@@ -926,6 +1026,7 @@ hidden object DbUnclaimedLease {
     }
 }
 
+// Pool options out of range.
 enum InvalidPoolOptions is Error = (invalid);
 
 hidden object DbRetirement {
@@ -1076,13 +1177,16 @@ hidden object DbUnpublishedPrepared {
     }
 }
 
+// Opens transactions on a lease.
 object PooledTransactions {
     has origin is PooledConnection;
 
+    // On origin.
     PooledTransactions(origin is PooledConnection) {
         self.origin = origin;
     }
 
+    // Begins a transaction with options.
     async transaction(options is TransactionOptions) is PooledTransaction {
         await origin.prepared_transaction(options);
     }
