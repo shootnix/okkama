@@ -145,7 +145,12 @@ hidden object RecordedScreen does TerminalScreenApplying {
     }
 
     clear(region is ClearRegion) is void {
-        self.record("clear " + if region == ClearRegion.line { "line"; } else { "other"; });
+        self.record("clear " + if region == ClearRegion.line {
+            "line";
+        }
+        else {
+            "other";
+        });
     }
 
     move(row is int, column is int) is void {

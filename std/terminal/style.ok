@@ -180,7 +180,11 @@ hidden object IndexedRgb {
                 [0, 255, 255],
                 [255, 255, 255]
             ];
-            origin = ColorRgb(red: palette[index][0], green: palette[index][1], blue: palette[index][2]);
+            origin = ColorRgb(
+                red: palette[index][0],
+                green: palette[index][1],
+                blue: palette[index][2]
+            );
         }
         else {
             if index < 232 {
@@ -446,7 +450,11 @@ test "colors answer SGR codes for each depth" {
 }
 
 test "a style joins attributes and colors; styled text resets after itself" {
-    let style = TextStyle(foreground: NamedColor(BasicColor.red), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.underline]);
+    let style = TextStyle(
+        foreground: NamedColor(BasicColor.red),
+        background: DefaultColor(),
+        attributes: [TextAttribute.bold, TextAttribute.underline]
+    );
     test.is(style.code(TerminalColorDepth.basic), "1;4;31;49");
     test.is(style.attributes().size(), 2);
     let text = StyledText(origin: "hi", style: style);
@@ -455,6 +463,10 @@ test "a style joins attributes and colors; styled text resets after itself" {
     test.is(text.rendered(TerminalColorDepth.basic), esc + "[1;4;31;49mhi" + esc + "[0m");
     test.is(text.text(), "hi");
     test.throws(InvalidTerminalStyle) {
-        TextStyle(foreground: DefaultColor(), background: DefaultColor(), attributes: [TextAttribute.bold, TextAttribute.bold]);
+        TextStyle(
+            foreground: DefaultColor(),
+            background: DefaultColor(),
+            attributes: [TextAttribute.bold, TextAttribute.bold]
+        );
     };
 }
