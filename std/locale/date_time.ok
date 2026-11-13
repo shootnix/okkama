@@ -780,7 +780,9 @@ object LocalizedDate {
         let data = GregorianLocaleData(locale);
         let times is @TimeOfDay = [];
         let zones is @LocalizedZoneObservation = [];
-        GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(data.date(style));
+        GregorianPrinting(dates: [origin], times: times, zones: zones, data: data).string(
+            data.date(style)
+        );
     }
 }
 
@@ -804,7 +806,9 @@ object LocalizedTime {
         let data = GregorianLocaleData(locale);
         let dates is @Date = [];
         let zones is @LocalizedZoneObservation = [];
-        GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(data.time(style, false));
+        GregorianPrinting(dates: dates, times: [origin], zones: zones, data: data).string(
+            data.time(style, false)
+        );
     }
 }
 
@@ -827,7 +831,12 @@ object LocalizedLocalDateTime {
     hidden rendered() is string {
         let data = GregorianLocaleData(locale);
         let zones is @LocalizedZoneObservation = [];
-        let printing = GregorianPrinting(dates: [origin.date()], times: [origin.time()], zones: zones, data: data);
+        let printing = GregorianPrinting(
+            dates: [origin.date()],
+            times: [origin.time()],
+            zones: zones,
+            data: data
+        );
         GregorianCombined(
             date: printing.string(data.date(style::Styles::date)),
             time: printing.string(data.time(style::Styles::time, false)),
@@ -855,7 +864,12 @@ object LocalizedInstant {
         let data = self.data;
         let observed = LocalizedZoneObservation(zone: zone, instant: origin);
         let local = observed.local();
-        let printing = GregorianPrinting(dates: [local.date()], times: [local.time()], zones: [observed], data: data);
+        let printing = GregorianPrinting(
+            dates: [local.date()],
+            times: [local.time()],
+            zones: [observed],
+            data: data
+        );
         GregorianCombined(
             date: printing.string(data.date(style::Styles::date)),
             time: printing.string(data.time(style::Styles::time, true)),
@@ -865,5 +879,12 @@ object LocalizedInstant {
 }
 
 test "localized date keeps the Gregorian year explicit" {
-    test.is(LocalizedDate(origin: Date(year: 2026, month: 8, day: 11), locale: Locale("en"), style: DateStyle.short).string(), "8/11/26");
+    test.is(
+        LocalizedDate(
+            origin: Date(year: 2026, month: 8, day: 11),
+            locale: Locale("en"),
+            style: DateStyle.short
+        ).string(),
+        "8/11/26"
+    );
 }

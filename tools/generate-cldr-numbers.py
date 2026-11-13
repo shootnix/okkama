@@ -78,7 +78,9 @@ args.output.write_text('''module locale/internal/numbers v1.0.0;
 // (cldr-numbers.dat, #223).
 import "runtime/cldr" take cldr_fields;
 
+// CLDR number symbols, patterns and numbering systems by locale.
 object CldrNumbers {
+    // The data.
     CldrNumbers();
 
     // Default, native, traditional and finance numbering systems, minimum

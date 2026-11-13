@@ -38,7 +38,9 @@ MODULE_GREGORIAN='''module locale/internal/gregorian v1.0.0;
 import "runtime/cldr" take cldr_fields;
 import "strings/parse" take Number;
 
+// CLDR Gregorian calendar patterns and names by locale.
 object CldrGregorian {
+    // The data.
     CldrGregorian();
 
     // The profile of a locale tag; -1 for an unknown tag.
@@ -77,7 +79,9 @@ MODULE_DAY_PERIODS='''module locale/internal/day_periods v1.0.0;
 // #223).
 import "runtime/cldr" take cldr_fields;
 
+// CLDR day period boundaries: when morning, noon, evening and night begin.
 object CldrDayPeriods {
+    // The data.
     CldrDayPeriods();
 
     // Period, start and end tick, and exactness per rule; empty for an
@@ -94,7 +98,9 @@ MODULE_ZONE_META='''module locale/internal/zone_meta v1.0.0;
 // (cldr-zones.dat, #223).
 import "runtime/cldr" take cldr_fields;
 
+// CLDR metazones: which named zone a time zone belongs to, and since when.
 object CldrZoneMeta {
+    // The data.
     CldrZoneMeta();
 
     // The CLDR key of a zone name or alias; the name itself when unknown.
@@ -121,7 +127,9 @@ MODULE_ZONE_NAMES='''module locale/internal/zone_names v1.0.0;
 // (cldr-zones.dat, #223).
 import "runtime/cldr" take cldr_fields;
 
+// CLDR localized zone names and GMT formats.
 object CldrZoneNames {
+    // The data.
     CldrZoneNames();
 
     // Hour, GMT and GMT-zero formats; empty for a tag without them.

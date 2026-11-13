@@ -71,25 +71,37 @@ alias_cases = ''.join('case '+json.dumps(kind)+'{'+literal(values)+';}'
 text='''module locale/internal/iana v1.0.0;
 // Generated from SHA-checked IANA Language Subtag Registry, file-date DATE.
 // Materialize only the queried registry group, not every table for every tag.
+// The IANA Language Subtag Registry, as needed for canonical tags.
 object IanaLanguages {
+ // The registry.
  IanaLanguages();
+ // The registry's file date.
  version() is string{"DATE";}
+ // The preferred value of tag among the subtags of kind, or tag itself.
  alias(kind is string,tag is string) is string{
   let values is %string:string=match kind{ALIASES else{[:];}};
   if values.has(tag){values[tag];}else{tag;}
  }
+ // Whether tag is a grandfathered tag.
  grandfathered(tag is string) is bool{
   if tag.split("-").size()==1{return false;}
   let values is %string:string=GRANDFATHERED;values.has(tag);
  }
+ // The preferred value of a whole tag, or "".
  preferred_tag(tag is string) is string{
   if tag.split("-").size()==1{return "";}
   let values is %string:string=WHOLE;
   if values.has(tag){values[tag];}else{"";}
  }
+ // The prefix an extended language subtag requires, or "".
  extlang_prefix(tag is string) is string{let values is %string:string=EXTLANGS;if values.has(tag){values[tag];}else{"";}}
 }
-object IanaLanguageDataVersion {IanaLanguageDataVersion();string() is string{"DATE";}}
+// The registry version.
+object IanaLanguageDataVersion {
+// The version.
+IanaLanguageDataVersion();
+// The registry's file date.
+string() is string{"DATE";}}
 '''
 for key,value in [('DATE',manifest['file_date']),('ALIASES',alias_cases),('GRANDFATHERED',literal(grandfathered)),('WHOLE',literal(whole_tags)),('EXTLANGS',literal(extlangs))]:
     text=text.replace(key,value)

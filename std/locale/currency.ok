@@ -258,7 +258,10 @@ hidden object CurrencyNumberData does NumberRenderingData {
         self.currency = currency;
         self.label = label;
         self.accounting = accounting;
-        alpha = CurrencyAlphabeticBoundary(label: label, pattern: currency.pattern(accounting, false)).found();
+        alpha = CurrencyAlphabeticBoundary(
+            label: label,
+            pattern: currency.pattern(accounting, false)
+        ).found();
     }
 
     symbol(index is int) is string {
@@ -413,7 +416,11 @@ hidden object CurrencyPluralCategory {
             else throw InvalidLocalizedNumber.because(
                 "currency plural operand exceeds 1024 scalars"
             );
-        value = match PluralCategoryOf(origin: PluralNumber(spelling), locale: locale, kind: PluralKind.cardinal).category() {
+        value = match PluralCategoryOf(
+            origin: PluralNumber(spelling),
+            locale: locale,
+            kind: PluralKind.cardinal
+        ).category() {
             case PluralCategory.zero {
                 0;
             }
@@ -463,18 +470,39 @@ object LocalizedCurrency {
         let source = policy.precision();
         let precision = if format::Settings::currency_digits {
             let digits = currency.digits();
-            NumberPrecision(minimum_integer: source::Digits::minimum_integer, minimum_fraction: digits, maximum_fraction: digits, rounding: source::Digits::rounding);
+            NumberPrecision(
+                minimum_integer: source::Digits::minimum_integer,
+                minimum_fraction: digits,
+                maximum_fraction: digits,
+                rounding: source::Digits::rounding
+            );
         }
         else {
             source;
         };
-        let numbers = NumberFormat(notation: policy::Style::notation, grouping: policy::Style::grouping, sign: policy::Style::sign, precision: precision);
+        let numbers = NumberFormat(
+            notation: policy::Style::notation,
+            grouping: policy::Style::grouping,
+            sign: policy::Style::sign,
+            precision: precision
+        );
         let base = NumberLocaleData(locale);
         let data = CurrencyLocaleData(locale: locale, currency: currency, numbers: base);
         let magnitude = DecimalNumberMagnitude(origin: amount, shift: 0, negative_zero: false).magnitude();
         if format::Settings::display == CurrencyDisplay.name {
-            let rendered = NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: base).rendering();
-            let category = CurrencyPluralCategory(number: rendered, locale: locale, minimum_fraction: precision::Digits::minimum_fraction).index();
+            let rendered = NumberPrinting(
+                origin: magnitude,
+                locale: locale,
+                format: numbers,
+                percent: false,
+                per_mille: false,
+                data: base
+            ).rendering();
+            let category = CurrencyPluralCategory(
+                number: rendered,
+                locale: locale,
+                minimum_fraction: precision::Digits::minimum_fraction
+            ).index();
             let unit = data.unit(category);
             let parts = unit.split("{0}");
             confirm parts.size() == 2
@@ -495,8 +523,20 @@ object LocalizedCurrency {
             return text;
         }
         let label = data.symbol(format::Settings::display);
-        let representation = CurrencyNumberData(numbers: base, currency: data, label: label, accounting: format::Settings::accounting);
-        NumberPrinting(origin: magnitude, locale: locale, format: numbers, percent: false, per_mille: false, data: representation).string();
+        let representation = CurrencyNumberData(
+            numbers: base,
+            currency: data,
+            label: label,
+            accounting: format::Settings::accounting
+        );
+        NumberPrinting(
+            origin: magnitude,
+            locale: locale,
+            format: numbers,
+            percent: false,
+            per_mille: false,
+            data: representation
+        ).string();
     }
 }
 
