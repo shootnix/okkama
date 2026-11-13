@@ -10,11 +10,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
-- **Fewer allocations in Sparrow's scheduler (#434, #440).** A Future with
+- **Fewer allocations in Sparrow's scheduler (#434, #440, #442).** A Future with
   one waiter, the common `await`, wakes it without building a vector. The
   collector visits the scheduler's roots in place instead of copying them.
   Micro-benchmarks on Linux: `cancel` 268 → 256 ns, `event-wake` 214 → 205,
   `event-many-waiters` 1275 → 1217; the other async programs are unchanged.
+  A poll of the reactor keeps its buffer of woken frames and wakes each
+  frame once (#442). On new connections the hello server answers in
+  0.112 ms instead of 0.115–0.121 ms, 8 350 requests/s instead of
+  7 650–8 200; keep-alive is unchanged.
 
 ### Fixed
 
