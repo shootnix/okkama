@@ -10,6 +10,21 @@ fn wrap(body: &str) -> String {
 }
 
 #[test]
+fn confirm_else_after_an_index_belongs_to_confirm() {
+    // #521: the index does not take the `else` of `confirm` as its fallback,
+    // with or without a line break; parentheses keep an inner fallback.
+    let expected = "(ConfirmStatement condition=(>= size (index pair 1)) fallback=(ConfirmPanic value=\"short\"))";
+    assert_eq!(body_sexpr("confirm size >= pair[1] else panic \"short\";"), expected);
+    assert_eq!(body_sexpr("confirm size >= pair[1]\n    else panic \"short\";"), expected);
+    assert_eq!(
+        body_sexpr("confirm size >= (pair[5] else 0) else throw Short();"),
+        "(ConfirmStatement condition=(>= size (group (index pair 5 else 0))) fallback=(ConfirmThrow value=(call Short)))"
+    );
+    // Outside `confirm` an index fallback is unchanged.
+    assert_eq!(body_sexpr("let x = pair[9] else 42;"), "(LetStatement name=x type=_ value=(index pair 9 else 42))");
+}
+
+#[test]
 fn let_defer_confirm_and_bindings() {
     assert_eq!(
         body_sexpr(

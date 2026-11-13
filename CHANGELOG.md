@@ -10,6 +10,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **The `else` of `confirm` after an index is the confirm's (#521).**
+  `confirm size >= pair[1] else panic "short";` took the `else` as the
+  index's fallback. The panic handler was lost: a false condition failed
+  with a generic "confirm failed". With `else throw` it was a syntax error.
+  An `else` at the top level of a confirm condition now belongs to
+  `confirm`, with or without a line break before it. An index or `Maybe`
+  fallback inside the condition is written in parentheses. Book §14.1;
+  conformance `L01.gram.confirm.index-else`, `L07.confirm.index-else-panic`.
+
 - **A generic library may keep a closure in a `once let` (#520).**
   `FilteredGeneration` from `testing/generation` did not compile:
   `SortedBy.ranked` keeps its sorted entries in a `once let`, and the

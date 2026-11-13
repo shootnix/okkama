@@ -1507,6 +1507,11 @@ confirm condition else panic "Invariant lost"; // uncatchable emergency
 form for internal invariants, `else throw` for failures a caller is expected
 to handle, and `else panic` for an emergency with a deterministic string.
 
+An `else` at the top level of the condition belongs to `confirm`, also when
+the condition ends in an index: `confirm size >= pair[1] else panic "short";`
+runs the panic (#521). An index or `Maybe` fallback inside the condition is
+written in parentheses: `confirm size >= (pair[5] else 0) else throw …;`.
+
 ### 14.2 Error enums, `Error`, `throw`, and `panic`
 
 The preferred way to declare errors is an **error enum**: an enum marked

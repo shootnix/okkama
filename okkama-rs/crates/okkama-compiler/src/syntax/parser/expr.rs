@@ -44,6 +44,8 @@ impl Parser<'_> {
 
     pub(super) fn expression_with_fallback(&mut self, optional: bool) -> PResult<Expr> {
         let enclosing = std::mem::replace(&mut self.for_source, false);
+        // `optional == false` is the top level of a `confirm` condition (#521).
+        let enclosing_confirm = std::mem::replace(&mut self.confirm_condition, !optional);
         let result = self.nested(|parser| {
             let mut expr = parser.logic_or()?;
             if optional
@@ -75,6 +77,7 @@ impl Parser<'_> {
             Ok(expr)
         });
         self.for_source = enclosing;
+        self.confirm_condition = enclosing_confirm;
         result
     }
 
@@ -574,7 +577,8 @@ impl Parser<'_> {
                     TokenKind::RightBracket,
                     "Expect \"]\" after index expression.",
                 )?;
-                let fallback = if self.eat(TokenKind::Else) {
+                // In a `confirm` condition the `else` is the confirm's (#521).
+                let fallback = if !self.confirm_condition && self.eat(TokenKind::Else) {
                     Some(Box::new(self.expression()?))
                 } else {
                     None
