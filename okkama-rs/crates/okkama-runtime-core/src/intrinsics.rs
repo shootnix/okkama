@@ -90,6 +90,7 @@ pub(crate) fn state_edges(state: &dyn Any, out: &mut crate::gc::Edges) -> bool {
     } else if let Some(retained) = state.downcast_ref::<Retained>() {
         let Ok(result) = retained.result.try_borrow() else { return false };
         result.iter().for_each(|value| out.value(value));
+        if !retained.owned.edges(out) { return false; }
     } else if let Some(storage) = state.downcast_ref::<Storage>() {
         let Ok(entries) = storage.entries.try_borrow() else { return false };
         for (key, value) in entries.iter() {
@@ -375,6 +376,12 @@ fn origins(host: &HostRef, receiver: &Value) -> Result<Vec<Future>> {
 #[derive(Default)]
 struct Retained {
     result: RefCell<Option<Value>>,
+    owned: Rc<crate::heap::Region>,
+}
+
+/// Private ownership of a collector's cached Future (not its borrowed aliases).
+pub(crate) fn owned_state(state: &dyn Any) -> Option<Rc<crate::heap::Region>> {
+    state.downcast_ref::<Retained>().map(|retained| retained.owned.clone())
 }
 
 fn retained(value: &Value) -> Result<Rc<Retained>> {
@@ -391,7 +398,11 @@ fn retained(value: &Value) -> Result<Rc<Retained>> {
 fn cached(receiver: &Value, make: impl FnOnce() -> Value) -> Result<Value> {
     let state = retained(receiver)?;
     if state.result.borrow().is_none() {
-        *state.result.borrow_mut() = Some(make());
+        let result = make();
+        if let Value::Future(future) = &result {
+            state.owned.own_future(future);
+        }
+        *state.result.borrow_mut() = Some(result);
     }
     Ok(state.result.borrow().clone().expect("result set above"))
 }

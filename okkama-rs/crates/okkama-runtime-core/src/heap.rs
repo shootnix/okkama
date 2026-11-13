@@ -91,12 +91,16 @@ thread_local! {
     static REGIONS: Cell<u64> = const { Cell::new(0) };
 }
 
+pub(crate) fn next_serial() -> u64 {
+    CREATED.with(|created| {
+        created.set(created.get() + 1);
+        created.get()
+    })
+}
+
 impl Object {
     pub fn new(declaration: usize, fields: Vec<Value>) -> Self {
-        let serial = CREATED.with(|created| {
-            created.set(created.get() + 1);
-            created.get()
-        });
+        let serial = next_serial();
         #[cfg(test)]
         LIVE_OBJECTS.with(|live| live.set(live.get() + 1));
         Self {
@@ -1532,15 +1536,53 @@ impl ObjectHeap {
 }
 
 /// Регион владения лексической области (OIR-1 §7), как `okkama.rt.Region`:
-/// идентичности регистрируются партиями в порядке создания; закрытие
-/// уничтожает их в обратном порядке регистрации, каждую не более одного раза.
+/// идентичности регистрируются партиями; закрытие раскрывает исходы Future
+/// и уничтожает объекты в обратном порядке создания, каждый не более одного раза.
 #[derive(Debug)]
 pub struct Region {
     id: u64,
-    entries: RefCell<Vec<Rc<Object>>>,
-    known: RefCell<std::collections::HashSet<*const Object>>,
+    entries: RefCell<Vec<Identity>>,
+    known: RefCell<std::collections::HashSet<usize>>,
     /// Самый старый `serial` среди `entries` (`u64::MAX` — записей нет).
     oldest: Cell<u64>,
+}
+
+/// Futures are identities too: their private region owns their cached outcome.
+/// Awaited values never cross that ownership boundary.
+#[derive(Debug, Clone)]
+enum Identity {
+    Object(Rc<Object>),
+    Future(crate::sched::Future),
+}
+
+impl Identity {
+    fn key(&self) -> usize {
+        match self {
+            Self::Object(object) => Rc::as_ptr(object) as usize,
+            Self::Future(future) => Rc::as_ptr(future) as usize,
+        }
+    }
+
+    fn serial(&self) -> u64 {
+        match self {
+            Self::Object(object) => object.serial,
+            Self::Future(future) => future.serial,
+        }
+    }
+
+    fn owner(&self) -> &Cell<u64> {
+        match self {
+            Self::Object(object) => &object.owner,
+            Self::Future(future) => &future.owner,
+        }
+    }
+
+    fn value(&self) -> Value {
+        match self {
+            Self::Object(object) => Value::Object(object.clone()),
+            Self::Future(future) => Value::Future(future.clone()),
+        }
+    }
 }
 
 impl Default for Region {
@@ -1566,7 +1608,7 @@ fn plain(value: &Value) -> bool {
 // slot for the duration of a walk so nested/reentrant walks get independent state.
 #[derive(Default)]
 struct WalkScratch {
-    seen: std::collections::HashSet<*const Object>,
+    seen: std::collections::HashSet<usize>,
     pending: Vec<Value>,
     open: Vec<Walked>,
 }
@@ -1733,7 +1775,7 @@ impl Drop for WalkLease {
 /// через `via` — пока все записи `via` новее её. Большая структура, которой
 /// владеет открытый регион, обходится один раз, а не на каждое значение,
 /// которое на неё ссылается.
-fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
+fn collect(value: &Value, out: &mut Vec<Identity>, via: Option<(u64, u64)>) {
     #[cfg(feature = "allocation-scopes")]
     let _allocation_scope = okkama_allocation_counter::enter(2);
     #[cfg(feature = "region-walk-stats")]
@@ -1770,7 +1812,7 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
                     continue;
                 }
                 events += 1;
-                if !seen.insert(Rc::as_ptr(&object)) {
+                if !seen.insert(Rc::as_ptr(&object) as usize) {
                     #[cfg(feature = "region-walk-stats")]
                     { stats[7] += 1; }
                     continue;
@@ -1783,7 +1825,7 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
                             pending.push(value);
                         }
                 }
-                out.push(object);
+                out.push(Identity::Object(object));
             }
             // An array of plain values holds no identity to walk (#335).
             Value::Array(array) if array.plain() => {}
@@ -1806,7 +1848,17 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
             }
             Value::Future(future) => {
                 events += 1;
-                pending.extend(future.retained().into_iter().rev());
+                if !seen.insert(Rc::as_ptr(&future) as usize) {
+                    continue;
+                }
+                // Inputs still follow #578 even when a collector privately owns
+                // this cached Future: an escaping results() keeps its receiver.
+                // The outcome itself is never traversed here.
+                pending.extend(future.inputs().into_iter().rev());
+                let owner = future.owner.get();
+                if owner == FREE || via.is_some_and(|(id, _)| id == owner) {
+                    out.push(Identity::Future(future));
+                }
             }
             _ => {}
         }
@@ -1819,7 +1871,7 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
 /// объекту за шаг, потому что тело `destroy` — обычный вызов программы.
 #[derive(Debug)]
 pub struct Closing {
-    kept: std::collections::HashSet<*const Object>,
+    kept: std::collections::HashSet<usize>,
     index: usize,
 }
 
@@ -1839,9 +1891,9 @@ impl Region {
         }
     }
 
-    fn remember(&self, object: Rc<Object>) {
-        if self.known.borrow_mut().insert(Rc::as_ptr(&object)) {
-            self.oldest.set(self.oldest.get().min(object.serial));
+    fn remember(&self, object: Identity) {
+        if self.known.borrow_mut().insert(object.key()) {
+            self.oldest.set(self.oldest.get().min(object.serial()));
             self.entries.borrow_mut().push(object);
         }
     }
@@ -1858,12 +1910,48 @@ impl Region {
         #[cfg(feature = "region-walk-stats")]
         walk_stats::add([1, 0, 0, 0, 0, 0, 0, 0, 0]);
         collect(value, &mut fresh, None);
-        fresh.sort_by_key(|object| object.serial);
+        fresh.sort_by_key(|object| object.serial());
         for object in fresh {
             if own {
-                object.owner.set(self.id);
+                object.owner().set(self.id);
             }
             self.remember(object);
+        }
+    }
+
+    fn drain_into(&self, to: &Region) {
+        let entries = std::mem::take(&mut *self.entries.borrow_mut());
+        self.known.borrow_mut().clear();
+        self.oldest.set(u64::MAX);
+        for identity in entries {
+            if identity.owner().get() == self.id {
+                identity.owner().set(to.id);
+                to.remember(identity);
+            }
+        }
+    }
+
+    /// A collector owns its cached Future, whose receiver remains a borrow.
+    pub(crate) fn own_future(&self, future: &crate::sched::Future) {
+        if future.owner.get() == FREE {
+            future.owner.set(self.id);
+            self.remember(Identity::Future(future.clone()));
+        }
+    }
+
+    pub(crate) fn edges(&self, out: &mut crate::gc::Edges) -> bool {
+        let Ok(entries) = self.entries.try_borrow() else { return false };
+        for identity in entries.iter() {
+            out.value(&identity.value());
+        }
+        true
+    }
+
+    pub(crate) fn clear(&self, sink: &mut Vec<Value>) {
+        if let Ok(mut entries) = self.entries.try_borrow_mut() {
+            sink.extend(entries.drain(..).map(|identity| identity.value()));
+            self.known.borrow_mut().clear();
+            self.oldest.set(u64::MAX);
         }
     }
 
@@ -1890,12 +1978,12 @@ impl Region {
         #[cfg(feature = "region-walk-stats")]
         walk_stats::add([0, 1, 0, 0, 0, 0, 0, 0, 0]);
         collect(value, &mut reachable, Some((self.id, self.oldest.get())));
-        reachable.sort_by_key(|object| object.serial);
+        reachable.sort_by_key(|object| object.serial());
         for object in reachable {
-            if object.owner.get() != self.id {
+            if object.owner().get() != self.id {
                 continue;
             }
-            object.owner.set(to.id);
+            object.owner().set(to.id);
             to.remember(object);
         }
     }
@@ -1920,12 +2008,36 @@ impl Region {
             walk_stats::add([0, 0, 1, 0, 0, 0, 0, 0, 0]);
             let mut reachable = Vec::new();
             collect(value, &mut reachable, Some((self.id, self.oldest.get())));
-            kept.extend(reachable.iter().map(Rc::as_ptr));
+            kept.extend(reachable.iter().map(Identity::key));
         }
-        Closing {
-            kept,
-            index: self.entries.borrow().len(),
+        // Expand only Futures being destroyed, never a borrowed outcome in keep.
+        // Expansion precedes sorting so all resources obey creation-order LIFO,
+        // including outcomes of different Futures and ordinary local objects.
+        let mut index = 0;
+        while index < self.entries.borrow().len() {
+            let identity = self.entries.borrow()[index].clone();
+            index += 1;
+            if kept.contains(&identity.key())
+                || (identity.owner().get() != FREE && identity.owner().get() != self.id)
+            {
+                continue;
+            }
+            match identity {
+                Identity::Future(future) => {
+                    future.owner.set(DEAD);
+                    future.owned.drain_into(self);
+                }
+                Identity::Object(object) => {
+                    if let Some(state) = object.intrinsic()
+                        && let Some(owned) = crate::intrinsics::owned_state(state.as_ref())
+                    {
+                        owned.drain_into(self);
+                    }
+                }
+            }
         }
+        self.entries.borrow_mut().sort_by_key(Identity::serial);
+        Closing { kept, index: self.entries.borrow().len() }
     }
 
     /// Следующий объект для `destroy` (уже помечен уничтоженным) или None,
@@ -1936,19 +2048,21 @@ impl Region {
         while closing.index > 0 {
             closing.index -= 1;
             let object = self.entries.borrow()[closing.index].clone();
-            if closing.kept.contains(&Rc::as_ptr(&object)) {
-                if object.owner.get() == self.id {
-                    object.owner.set(FREE);
-                    freed(object.serial);
+            if closing.kept.contains(&object.key()) {
+                if object.owner().get() == self.id {
+                    object.owner().set(FREE);
+                    freed(object.serial());
                 }
                 continue;
             }
-            let owner = object.owner.get();
+            let owner = object.owner().get();
             if owner != self.id && owner != FREE {
                 continue; // принят другим владельцем или уже уничтожен
             }
-            object.owner.set(DEAD);
-            return Some(object);
+            object.owner().set(DEAD);
+            if let Identity::Object(object) = object {
+                return Some(object);
+            }
         }
         self.entries.borrow_mut().clear();
         self.known.borrow_mut().clear();
@@ -2371,7 +2485,7 @@ mod tests {
             outer.0.as_mut().unwrap().pending.push(Value::Object(object));
             let mut inner = WalkLease::new();
             assert!(inner.0.as_ref().unwrap().pending.is_empty());
-            inner.0.as_mut().unwrap().seen.insert(weak.as_ptr());
+            inner.0.as_mut().unwrap().seen.insert(weak.as_ptr() as usize);
             drop(inner);
             panic!("exercise traversal cleanup");
         }));
@@ -2420,6 +2534,72 @@ mod tests {
         let mut closing = outer.begin_close(&[]);
         assert!(Rc::ptr_eq(&outer.next_destroyed(&mut closing).unwrap(), &borrowed));
         assert!(outer.next_destroyed(&mut closing).is_none());
+    }
+
+    #[test]
+    fn future_outcome_owner_blocks_adopt_track_transfer_and_keep() {
+        let owner = Region::new();
+        let borrower = Region::new();
+        let future = crate::sched::promise();
+        let value = Value::Future(future.clone());
+        owner.adopt(&value);
+        let result = Rc::new(Object::new(0, vec![]));
+        let alias = Value::Object(result.clone());
+        crate::sched::complete(&future, Ok(alias.clone()));
+        borrower.adopt(&alias);
+        owner.track(&alias); // #579: even the Future's own scope cannot own its result.
+        owner.transfer(&borrower, &alias);
+        assert_eq!(result.owner.get(), future.owned.id);
+        let mut close = borrower.begin_close(&[]);
+        assert!(borrower.next_destroyed(&mut close).is_none());
+        let mut close = owner.begin_close(&[alias]);
+        assert!(Rc::ptr_eq(&owner.next_destroyed(&mut close).unwrap(), &result));
+        assert!(owner.next_destroyed(&mut close).is_none());
+    }
+
+    #[test]
+    fn future_outcome_duplicate_graph_and_transfer_preserve_creation_order() {
+        let first = Region::new();
+        let second = Region::new();
+        let a = crate::sched::promise();
+        let b = crate::sched::promise();
+        let graph = ArrayHeap.allocate(vec![Value::Future(b.clone()), Value::Future(a.clone()), Value::Future(b.clone())]);
+        first.adopt(&graph);
+        let x = Rc::new(Object::new(0, vec![]));
+        crate::sched::complete(&a, Ok(Value::Object(x.clone())));
+        let middle = Rc::new(Object::new(0, vec![]));
+        second.adopt(&Value::Object(middle.clone()));
+        let y = Rc::new(Object::new(0, vec![]));
+        crate::sched::complete(&b, Ok(Value::Object(y.clone())));
+        first.transfer(&second, &graph);
+        let mut close = first.begin_close(&[]);
+        assert!(first.next_destroyed(&mut close).is_none());
+        let mut close = second.begin_close(&[]);
+        for expected in [&y, &middle, &x] {
+            assert!(Rc::ptr_eq(&second.next_destroyed(&mut close).unwrap(), expected));
+        }
+        assert!(second.next_destroyed(&mut close).is_none());
+    }
+
+    #[test]
+    fn future_outcome_cached_failure_owns_payload_once() {
+        let owner = Region::new();
+        let future = crate::sched::promise();
+        owner.adopt(&Value::Future(future.clone()));
+        let payload = Rc::new(Object::new(0, vec![]));
+        let failure = crate::failure::Failure::new(crate::failure::Kind::Thrown {
+            object: Ref(payload.clone()), name: "Test".into(), message: None,
+        });
+        crate::sched::complete(&future, Err(failure.clone()));
+        assert!(Rc::ptr_eq(&future.outcome().unwrap_err(), &failure));
+        assert!(Rc::ptr_eq(&future.outcome().unwrap_err(), &failure));
+        let borrower = Region::new();
+        borrower.adopt(&Value::Object(payload.clone()));
+        let mut close = borrower.begin_close(&[]);
+        assert!(borrower.next_destroyed(&mut close).is_none());
+        let mut close = owner.begin_close(&[]);
+        assert!(Rc::ptr_eq(&owner.next_destroyed(&mut close).unwrap(), &payload));
+        assert!(owner.next_destroyed(&mut close).is_none());
     }
 
     #[test]

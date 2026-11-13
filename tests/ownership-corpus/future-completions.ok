@@ -1,7 +1,4 @@
-// Pending #581: future-completions.
-// Book 31.5: "First await starts it; later awaits reuse the cached value or typed failure."
-// Open semantics question #581: this expectation follows the proposal that the cached
-// outcome stays owned through all consumers; the Book does not yet settle that owner.
+// #581 owner decision: a Future owns its cached outcome; await only borrows it.
 // Book 20.2, 31.5; async/collect: settlement stream retains original future identities.
 module ownership v1.0.0;
 

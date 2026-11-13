@@ -39,6 +39,9 @@ pub enum State {
 /// Future Okkama: холодный до первого `await` или `spawn`; исход (значение,
 /// отказ, отмена) кэшируется — повторный `await` не повторяет тело.
 pub struct FutureCell {
+    pub(crate) serial: u64,
+    pub(crate) owner: Cell<u64>,
+    pub(crate) owned: crate::heap::Region,
     state: Cell<State>,
     value: RefCell<Option<Value>>,
     failure: RefCell<Option<Rc<Failure>>>,
@@ -272,6 +275,9 @@ pub fn reset() {
 impl FutureCell {
     fn new(state: State, body: Option<Body>, retained: Vec<Value>) -> Future {
         Rc::new(Self {
+            serial: crate::heap::next_serial(),
+            owner: Cell::new(0),
+            owned: crate::heap::Region::new(),
             state: Cell::new(state),
             value: RefCell::new(None),
             failure: RefCell::new(None),
@@ -321,10 +327,8 @@ impl FutureCell {
     }
 
     /// Значения, через которые регион видит объекты Future.
-    pub fn retained(&self) -> Vec<Value> {
-        let mut values = self.retained.borrow().clone();
-        values.extend(self.value.borrow().iter().cloned());
-        values
+    pub(crate) fn inputs(&self) -> Vec<Value> {
+        self.retained.borrow().clone()
     }
 
     pub fn value(&self) -> Option<Value> {
@@ -364,11 +368,12 @@ impl FutureCell {
         value.iter().for_each(|value| out.value(value));
         failure.iter().for_each(|failure| out.failure(failure));
         retained.iter().for_each(|value| out.value(value));
-        true
+        self.owned.edges(out)
     }
 
     /// Разорвать поздние рёбра недостижимого Future.
     pub(crate) fn clear(&self, sink: &mut Vec<Value>, failures: &mut Vec<Rc<Failure>>) {
+        self.owned.clear(sink);
         if let Ok(mut value) = self.value.try_borrow_mut() {
             sink.extend(value.take());
         }
@@ -557,10 +562,14 @@ pub fn complete(future: &Future, outcome: Outcome) {
     };
     match outcome {
         Ok(value) => {
+            future.owned.adopt(&value);
             *future.value.borrow_mut() = Some(value);
             future.state.set(State::Done);
         }
         Err(failure) => {
+            for value in crate::failure::thrown_errors(&failure) {
+                future.owned.adopt(&value);
+            }
             *future.failure.borrow_mut() = Some(failure);
             future.state.set(State::Failed);
         }

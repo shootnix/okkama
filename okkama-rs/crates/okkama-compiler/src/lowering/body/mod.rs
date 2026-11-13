@@ -2457,11 +2457,15 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     }
                     Some(_) => {
                         let ty = self.expr_type(expr)?;
-                        Ok(Out::Value(self.emit(
+                        let value = self.emit(
                             InstKind::Await(future.value),
                             ty,
                             span,
-                        )))
+                        );
+                        // #579 tracking remains safe: the Future already owns
+                        // its cached outcome, including in this same scope.
+                        self.track(&value, span);
+                        Ok(Out::Value(value))
                     }
                 }
             }

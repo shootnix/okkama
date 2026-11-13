@@ -95,8 +95,8 @@ async main() is int {
         result.label();
     }
 
-    t.note("returned resource has separate awaiting owner: " + log.value());
-    t = t.is(log.value(), "X<X>R", "returned resource has separate awaiting owner");
+    t.note("returned resource closes with its Future owner: " + log.value());
+    t = t.is(log.value(), "X<X>R", "returned resource closes with its Future owner");
     log.replace("");
     try {
         await Work().failed(log);

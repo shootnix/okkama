@@ -272,6 +272,27 @@ pub fn stack_text_by<T: PartialEq>(header: &str, frames: &[T], render: impl Fn(&
     out
 }
 
+/// Owned payload roots in a cached or propagating failure, with cycle protection.
+pub fn thrown_errors(failure: &Rc<Failure>) -> Vec<crate::Value> {
+    let mut errors = Vec::new();
+    let mut pending = vec![failure.clone()];
+    // The graph may share links or even loop: each failure is looked at once.
+    let mut seen = std::collections::HashSet::new();
+    while let Some(link) = pending.pop() {
+        if !seen.insert(Rc::as_ptr(&link)) {
+            continue;
+        }
+        if let Kind::Thrown { object, .. } = &link.kind {
+            errors.push(crate::Value::Object(object.0.clone()));
+        }
+        pending.extend(link.secondaries().into_iter().rev());
+        if let Some(cause) = link.cause() {
+            pending.push(cause);
+        }
+    }
+    errors
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,8 +1,9 @@
 //! Stackless async: the heap frame of an async call is also its Future.
 //!
 //! Frame words after the header: state, result, failure, waiter, awaiting,
-//! resume point, flags, then every register of the function, an optional driver
-//! slot, and retained copies of the arguments (registers can be reused). An async body is
+//! resume point, flags, outcome ownership region, then every register of the
+//! function, an optional driver slot, and retained copies of the arguments
+//! (registers can be reused). An async body is
 //! compiled as `(ctx, frame) -> 0 | 1` (completed or pending): it starts at
 //! resume point 0 with its parameters in the frame, and a suspended `await` at
 //! `pc` re-enters at `pc + 1` with every register reloaded. Whoever runs a body
@@ -33,8 +34,9 @@ pub const WAITER: u64 = 32;
 pub const AWAITING: u64 = 40;
 pub const RESUME: u64 = 48;
 pub const FLAGS: u64 = 56;
-pub const REGISTERS: u64 = 64;
-pub const FIXED_WORDS: usize = 7;
+pub const OWNED: u64 = 64;
+pub const REGISTERS: u64 = 72;
+pub const FIXED_WORDS: usize = 8;
 
 const SPAWNED: u64 = 1;
 const OBSERVED: u64 = 2;
@@ -135,6 +137,7 @@ impl Runtime {
             set(frame, REGISTERS + u64::from(param.0) * 8, argument);
             set(frame, (1 + retained + index) as u64 * 8, argument);
         }
+        self.future_created(frame);
         frame
     }
 
@@ -173,6 +176,7 @@ impl Runtime {
         } else {
             set(frame, FAILURE, value);
         }
+        self.own_outcome(frame, state == DONE, value);
         let waiters = get(frame, WAITER);
         set(frame, WAITER, UNBOUND);
         if waiters == UNBOUND {

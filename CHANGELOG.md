@@ -6,13 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-### Changed
+### Fixed
 
-- **Sparrow is the default engine (#584, step 1).** `okkama run`, source-file
-  shorthand, inline tests (`run -t`) and the conformance adapter now select
-  Sparrow. Engine lists put Sparrow first. Explicit `--engine ir`, engine
-  environment overrides and all IR gate configurations remain available
-  until the switch is proven, ahead of IR retirement in 0.6.0.
+- **Future-owned cached outcomes (#581).** On IR and Sparrow, await borrows
+  a Future's result. Repeated awaits and duplicate collector inputs keep one
+  owner; destroying that Future releases its fresh outcome exactly once in
+  reverse creation order. Retained inputs still follow escaping Futures (#578),
+  and tracking awaited values remains safe (#579). The ownership corpus restores
+  the #579–#581 checks and makes returned await aliases explicit borrows.
 
 ### Added
 

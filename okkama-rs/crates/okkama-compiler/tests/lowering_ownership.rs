@@ -429,7 +429,7 @@ fn cold_future_tracks_adopts_and_keeps_retained_dependencies() {
 }
 
 #[test]
-fn cold_future_corpus_lowers_with_stdlib() {
+fn future_ownership_corpus_lowers_with_stdlib() {
     use okkama_compiler::lowering::{LoadedModule, ModuleLoader, lower_linked};
     use std::path::PathBuf;
 
@@ -449,9 +449,29 @@ fn cold_future_corpus_lowers_with_stdlib() {
     }
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let path = root.join("tests/ownership-corpus/cold-futures.ok");
-    let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
-    let program = syntax::parse(&source, &ParseOptions::default()).unwrap();
-    let module = lower_linked(&program, source.name(), &mut CorpusLoader(root)).unwrap();
-    ir::verify(&module).unwrap();
+    for file in ["cold-futures", "future-completions", "async-results", "all-futures", "channel-transfer", "raced", "async-destroy"] {
+        let path = root.join(format!("tests/ownership-corpus/{file}.ok"));
+        let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
+        let program = syntax::parse(&source, &ParseOptions::default()).unwrap();
+        let module = lower_linked(&program, source.name(), &mut CorpusLoader(root.clone())).unwrap();
+        ir::verify(&module).unwrap();
+    }
+}
+
+#[test]
+fn future_outcome_await_tracking_preserves_future_owner() {
+    let module = module(&format!(
+        "{RES} object Work {{ Work(); async make() is Res {{ Res(n: 1); }} }} \
+         async main() is int {{ let f = Work().make(); {{ await f; }} await Work().make(); 0; }}"
+    ));
+    let main = function(&module, "main");
+    let instructions: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
+    let awaited: Vec<_> = instructions.iter().filter_map(|inst| {
+        matches!(inst.kind, InstKind::Await(_)).then_some(inst.result).flatten()
+    }).collect();
+    assert_eq!(awaited.len(), 2, "{module}");
+    for result in awaited {
+        assert!(instructions.iter().any(|inst| matches!(inst.kind,
+            InstKind::RegionTrack { value, .. } if value == result)), "{module}");
+    }
 }
