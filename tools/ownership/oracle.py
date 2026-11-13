@@ -118,7 +118,7 @@ def read(path):
 
 def execute(command, env, cwd, prefix, timeout):
     """Use files, closed stdin and a new process group; kill descendants on exit/timeout."""
-    result = dict(command=[str(x) for x in command], stdout=str(prefix) + '.out',
+    result = dict(command=[str(x) for x in command], cwd=str(cwd), stdout=str(prefix) + '.out',
                   stderr=str(prefix) + '.err', timeout=False, error=None, code=None)
     start = time.monotonic()
     with open(result['stdout'], 'wb') as out, open(result['stderr'], 'wb') as err:
@@ -153,6 +153,35 @@ def fingerprint(path):
     return digest.hexdigest()
 
 
+def trace_blocks(path):
+    """Keep exact bytes, test order, duplicate names and the pre-test prefix."""
+    blocks = [bytearray()]
+    with open(path, 'rb') as stream:
+        for line in stream:
+            if line.startswith(b'# test '):
+                blocks.append(bytearray())
+            blocks[-1].extend(line)
+    return blocks
+
+
+def trace_diff(left, right):
+    a, b = trace_blocks(left), trace_blocks(right)
+    changes = []
+    for index in range(max(len(a), len(b))):
+        x = a[index] if index < len(a) else None
+        y = b[index] if index < len(b) else None
+        if x == y:
+            continue
+        changes.append(f'trace block {index} differs (0 = pre-test prefix)')
+        changes.extend(difflib.unified_diff(
+            bytes(x or b'').decode('utf-8', errors='replace').splitlines(),
+            bytes(y or b'').decode('utf-8', errors='replace').splitlines(),
+            fromfile=f'A/trace/block-{index}', tofile=f'B/trace/block-{index}', n=2))
+        if len(changes) >= 40:
+            break
+    return changes[:40]
+
+
 def compare(left, right):
     changes = {}
     for field in ('code', 'stdout', 'trace'):
@@ -161,6 +190,8 @@ def compare(left, right):
         if not equal:
             if field == 'code':
                 changes[field] = [a, b]
+            elif field == 'trace':
+                changes[field] = trace_diff(a, b)
             else:
                 # Exact comparison above; short human-readable excerpt below.
                 changes[field] = list(difflib.unified_diff(read(a).splitlines(), read(b).splitlines(),

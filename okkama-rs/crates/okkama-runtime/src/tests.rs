@@ -66,6 +66,7 @@ fn run_tests_here(module: &ir::Module, out: &mut dyn Write) -> Result<bool, Runt
     let mut passed = true;
     sched::reset();
     for (name, func) in &tests {
+        engine.state.begin_test_trace(name);
         writeln!(out, "=== RUN   {name}").map_err(io)?;
         out.flush().map_err(io)?;
         okkama_runtime_core::testing::begin();

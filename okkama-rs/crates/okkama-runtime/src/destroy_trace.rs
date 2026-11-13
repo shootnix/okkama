@@ -60,6 +60,14 @@ impl DestroyTrace {
         }
     }
 
+    pub(crate) fn begin_test(&mut self, name: &str) {
+        self.serial = 0;
+        self.identities.clear();
+        if let Some(file) = &mut self.file {
+            let _ = writeln!(file, "# test {name}");
+        }
+    }
+
     pub(crate) fn destroy(&mut self, object: &Object, name: &str) {
         if let Some(file) = &mut self.file
             && let Some(serial) = self.identities.remove(&object.serial)
@@ -190,7 +198,8 @@ mod tests {
             assert_eq!(wrapper.declaration, container);
             let after = host.make(res, vec![]);
             emit(&engine, &after);
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), if populated { "Res 5\n" } else { "Res 4\n" });
+            // The populated input's resource is released before `after`.
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), if populated { "Res 1\nRes 5\n" } else { "Res 4\n" });
             sched::reset();
         }
     }
@@ -207,6 +216,7 @@ mod tests {
                 .args(["--exact", "destroy_trace::tests::trace_destroy_programs", "--nocapture"])
                 .env(CHILD, "1")
                 .env("OKKAMA_TRACE_DESTROY", &path)
+                .env("SPARROW_TRACE_DESTROY", &path)
                 .output()
                 .unwrap();
             std::fs::remove_dir_all(directory).unwrap();
@@ -289,6 +299,46 @@ mod tests {
         module.objects[0].name = "example.resources::Res".into();
         std::fs::write(&path, "").unwrap();
         crate::execute(&module).unwrap();
-        assert_eq!(std::fs::read_to_string(path).unwrap(), "example.resources::Res 1\n");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "example.resources::Res 1\n");
+
+        // Exercise the real runner: an empty test still has a block, and
+        // sync/async tests restart serials while repeated runs append.
+        struct NoImports;
+        impl lowering::ModuleLoader for NoImports {
+            fn load(&mut self, path: &str, _: &str) -> Result<Option<lowering::LoadedModule>, String> {
+                Err(format!("unexpected import: {path}"))
+            }
+        }
+        let source = SourceFile::new("destroy_trace.ok", r#"module app v1.0.0;
+            object Res { Res(); destroy {} }
+            test "first" { let a = Res(); let b = Res(); }
+            test "empty" {}
+            async test "second" { let a = Res(); }
+        "#).unwrap();
+        let ast = syntax::prune::desugar_test_items(syntax::parse(&source, &syntax::ParseOptions::default()).unwrap());
+        let roots = [lowering::RootFile { program: &ast, source: &source }];
+        let (module, _) = lowering::lower_linked_tests(&roots, &mut NoImports).unwrap();
+        std::fs::write(&path, "prefix\n").unwrap();
+        for _ in 0..2 {
+            assert!(crate::run_tests(&module, &mut Vec::new()).unwrap());
+        }
+        let expected = "# test first\nRes 2\nRes 1\n# test empty\n# test second\nRes 1\n";
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("prefix\n{expected}{expected}"));
+
+        let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
+        let bytes = okkama_sparrow::encode(&program).unwrap();
+        std::fs::write(&path, "prefix\n").unwrap();
+        for _ in 0..2 {
+            assert!(sparrow_core::run_tests(bytes.clone(), Box::new(Vec::new())).unwrap());
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("prefix\n{expected}{expected}"));
+
+        // A reset also forgets identities that were not destroyed.
+        let mut trace = super::DestroyTrace::new(&module);
+        trace.serial = 42;
+        trace.identities.insert(100, 42);
+        trace.begin_test("reset");
+        assert_eq!(trace.serial, 0);
+        assert!(trace.identities.is_empty());
     }
 }

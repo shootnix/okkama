@@ -184,6 +184,7 @@ pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<
         let io = |e: std::io::Error| Error(format!("test report: {e}"));
         let mut passed = true;
         for (name, function) in tests {
+            failures::Resources::trace_test(&name);
             writeln!(out, "=== RUN   {name}").map_err(io)?;
             out.flush().map_err(io)?;
             let declaration = &program.functions[function.0 as usize];
