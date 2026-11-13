@@ -1,5 +1,13 @@
 module locale/system v1.0.0;
 
+// The locales a user prefers, from the operating system and the environment.
+//
+//     let preferred = PreferredLocales(Environment());
+//     LookedUpLocale(requested: …, available: supported, fallback: Locale("en"));
+//
+// LANGUAGE, then LC_ALL, LC_MESSAGES and LANG are read; on platforms with a
+// language setting (macOS, Windows) that comes first.
+
 import "locale/tag" take Locale, LocaleFromLanguageTag, InvalidLocale;
 import "collections/sequence" take Sequencing;
 import "collections/iteration" take Cursor;
@@ -8,15 +16,20 @@ import "runtime/system" take system_platform;
 import "runtime/locale" take preferred_language_tags;
 import "encoding/utf" take Utf8Encoded;
 
+// Where the user's language list comes from.
 role PreferredLanguageReading {
+    // Whether the list comes from the operating system's settings.
     platform_owned() is bool;
+    // The language tags, most preferred first.
     tags() is Sequencing<string>;
 }
 
+// A language list given by the program.
 object FixedLanguagePreferences does PreferredLanguageReading {
     has values is @string;
     has owned is bool;
 
+    // The tags, as the platform's or not.
     FixedLanguagePreferences(origin is Sequencing<string>, platform_owned is bool) {
         let size = origin.size();
         confirm size >= 0 && size <= 64 else throw InvalidPreferredLocales.because("tag count");
@@ -29,18 +42,22 @@ object FixedLanguagePreferences does PreferredLanguageReading {
         owned = platform_owned;
     }
 
+    // Whether the list comes from the operating system's settings.
     platform_owned() is bool {
         owned;
     }
 
+    // The language tags, most preferred first.
     tags() is Sequencing<string> {
         values;
     }
 }
 
+// The operating system's language list.
 object SystemLanguagePreferences does PreferredLanguageReading {
     has origin is FixedLanguagePreferences;
 
+    // The list.
     SystemLanguagePreferences() {
         let platform = try {
             system_platform();
@@ -63,18 +80,22 @@ object SystemLanguagePreferences does PreferredLanguageReading {
         origin = FixedLanguagePreferences(origin: tags, platform_owned: owned);
     }
 
+    // Whether the list comes from the operating system's settings.
     platform_owned() is bool {
         origin.platform_owned();
     }
 
+    // The language tags, most preferred first.
     tags() is Sequencing<string> {
         origin.tags();
     }
 }
 
+// The user's locales, most preferred first.
 object PreferredLocales does Sequencing<Locale> {
     has origin is @Locale;
 
+    // From the system's list and origin.
     PreferredLocales(origin is Environment) {
         self.origin = PreferredLocalePolicy(
             environment: origin,
@@ -82,40 +103,49 @@ object PreferredLocales does Sequencing<Locale> {
         ).values();
     }
 
+    // From preferences and origin.
     PreferredLocales(origin is Environment, preferences is PreferredLanguageReading) {
         self.origin = PreferredLocalePolicy(environment: origin, preferences: preferences).values();
     }
 
+    // How many.
     size() is int {
         origin.size();
     }
 
+    // The locale at index.
     item(index is int) is Locale {
         origin.item(index);
     }
 
+    // The first locale.
     first() is Locale {
         origin.first();
     }
 
+    // The last locale.
     last() is Locale {
         origin.last();
     }
 
+    // Walks them.
     cursor() is Cursor<Locale> {
         origin.cursor();
     }
 }
 
+// How the list is made from settings and variables.
 object PreferredLocalePolicy {
     has environment is Environment;
     has preferences is PreferredLanguageReading;
 
+    // From environment and preferences.
     PreferredLocalePolicy(environment is Environment, preferences is PreferredLanguageReading) {
         self.environment = environment;
         self.preferences = preferences;
     }
 
+    // The locales; PreferredLocaleUnavailable when none can be found.
     values() is @Locale {
         if preferences.platform_owned() {
             return self.parsed(
@@ -244,8 +274,10 @@ hidden object PosixLocaleSuffix {
     }
 }
 
+// A setting that cannot be read; reason says why.
 enum InvalidPreferredLocales is Error = (because(reason is string));
 
+// No preferred locale could be found; reason says why.
 enum PreferredLocaleUnavailable is Error = (because(reason is string));
 
 test "POSIX language preferences normalize without changing environment" {
