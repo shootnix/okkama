@@ -1,4 +1,4 @@
-// Book 20.2, 31.5: result transfer across suspension and repeated awaits.
+// Book 20.2, 31.5: Future-owned results across suspension and repeated awaits.
 module ownership v1.0.0;
 
 import "tap" take Tap;
@@ -33,7 +33,7 @@ object Work {
 }
 
 async main() is int {
-    let t = Tap(5);
+    let t = Tap(6);
     let log = Atomic("");
     defer log.close();
     {
@@ -54,14 +54,16 @@ async main() is int {
         t = t.is(log.value(), "L", "cached result aliases do not destroy result");
     }
 
-    t.note("awaiting scope destroys result once: " + log.value());
-    t = t.is(log.value(), "LR", "awaiting scope destroys result once");
+    t.note("Future owner destroys cached result once: " + log.value());
+    t = t.is(log.value(), "LR", "Future owner destroys cached result once");
     log.replace("");
     {
         await Work().make(log, Event(), Event(ready: true));
-        t.note("discarded awaited result gets lexical owner: " + log.value());
-        t = t.is(log.value(), "L", "discarded awaited result gets lexical owner");
+        t.note("temporary Future retains discarded awaited result: " + log.value());
+        t = t.is(log.value(), "L", "temporary Future retains discarded awaited result");
     }
 
+    t.note("discarded awaited result closes with temporary Future: " + log.value());
+    t = t.is(log.value(), "LR", "discarded awaited result closes with temporary Future");
     t.done();
 }

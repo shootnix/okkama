@@ -321,7 +321,7 @@ pub(crate) fn execute_function(
                         // Error-объекты отказа освобождаются (`Region.unwind`).
                         InstKind::RegionUnwind { failure: id, .. }
                         | InstKind::RegionSettleUnwind { failure: id, .. } => {
-                            thrown_errors(failure(read(slots, *id, inst.span)?, inst.span)?)
+                            okkama_runtime_core::failure::thrown_errors(failure(read(slots, *id, inst.span)?, inst.span)?)
                         }
                         _ => unreachable!("matched above"),
                     };
@@ -1383,27 +1383,6 @@ fn failure(value: &Value, span: Span) -> Result<&Rc<Failure>, RuntimeError> {
 }
 fn is_runtime_cancelled(value: &Value) -> bool {
     matches!(value, Value::Object(object) if object.declaration == okkama_runtime_core::heap::CANCELLED)
-}
-
-/// Error-объекты отказа, его причин и вторичных отказов.
-fn thrown_errors(failure: &Rc<Failure>) -> Vec<Value> {
-    let mut errors = Vec::new();
-    let mut pending = vec![failure.clone()];
-    // The graph may share links or even loop: each failure is looked at once.
-    let mut seen = std::collections::HashSet::new();
-    while let Some(link) = pending.pop() {
-        if !seen.insert(Rc::as_ptr(&link)) {
-            continue;
-        }
-        if let FailureKind::Thrown { object, .. } = &link.kind {
-            errors.push(Value::Object(object.0.clone()));
-        }
-        pending.extend(link.secondaries().into_iter().rev());
-        if let Some(cause) = link.cause() {
-            pending.push(cause);
-        }
-    }
-    errors
 }
 
 fn from_error(error: RuntimeError) -> Result<Rc<Failure>, RuntimeError> {

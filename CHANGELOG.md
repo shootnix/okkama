@@ -6,6 +6,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- **Future-owned cached outcomes (#581).** On IR and Sparrow, await borrows
+  a Future's result. Repeated awaits and duplicate collector inputs keep one
+  owner; destroying that Future releases its fresh outcome exactly once in
+  reverse creation order. Retained inputs still follow escaping Futures (#578),
+  and tracking awaited values remains safe (#579). The ownership corpus restores
+  the #579–#581 checks and makes returned await aliases explicit borrows.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three
