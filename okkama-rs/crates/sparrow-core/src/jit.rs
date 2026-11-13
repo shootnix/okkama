@@ -118,6 +118,8 @@ helpers! {
     fut = crate::tasks::rt_fut as (ctx, op: u64, future: Word) -> Word; [Reenters, Fails];
 }
 
+const COMPILE_HEADER: &str = "; compile\tfunction\tinstructions\tregisters\tsuspensions\tclif blocks\tclif instructions\tsafepoints\tcode bytes\tframe bytes\tdeclare\tliveness\temit\tfinalize\tcodegen\tmaps\tdefinitions\ttables (microseconds)";
+
 pub struct Jit {
     module: JITModule,
     helpers: Helpers,
@@ -274,7 +276,7 @@ impl Jit {
             profile: std::env::var("SPARROW_CORE_PROFILE_COMPILE")
                 .is_ok_and(|value| !value.is_empty() && value != "0")
                 .then(|| {
-                    eprintln!("; compile\tfunction\tinstructions\tregisters\tsuspensions\tclif blocks\tclif instructions\tsafepoints\tcode bytes\tframe bytes\tdeclare\tliveness\temit\tfinalize\tcodegen\tmaps\tdefinitions\ttables (microseconds)");
+                    eprintln!("{COMPILE_HEADER}");
                     cranelift_codegen::timing::PassTimes::default()
                 }),
         })
@@ -510,7 +512,12 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         builder.finalize(config);
     }
     mark!();
-    let clif = (context.func.layout.blocks().count(), context.func.dfg.num_insts());
+    // Sample before codegen, only for the diagnostic report (#481).
+    let clif = profiling.then(|| {
+        #[cfg(test)]
+        profile_tests::SAMPLES.with(|samples| samples.set(samples.get() + 1));
+        (context.func.layout.blocks().count(), context.func.dfg.num_insts())
+    });
     let dump = jit.dump.has(symbol);
     if dump {
         // Callees by their CLIF names: the runtime's helpers and the program's functions.
@@ -584,9 +591,10 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     code[function] = address;
     mark!();
     if let Some(passes) = jit.profile.as_mut() {
+        let clif = clif.expect("profiling sampled CLIF before codegen");
         passes.add(&cranelift_codegen::timing::take_current());
         let micros: Vec<String> = marks.windows(2).map(|pair| (pair[1] - pair[0]).as_micros().to_string()).collect();
-        eprintln!(
+        report_compile(format_args!(
             "; compile\t{symbol}\t{}\t{}\t{}\t{}\t{}\t{safepoints}\t{size}\t{fp_to_sp}\t{}",
             source.code.len(),
             source.registers.len(),
@@ -594,7 +602,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             clif.0,
             clif.1,
             micros.join("\t")
-        );
+        ));
     }
     if dump && let Some(listing) = &compiled.vcode {
         eprintln!("; machine code of {symbol} at {address:#x}, {size} bytes, frame {fp_to_sp} bytes\n{listing}");
@@ -611,6 +619,12 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         }
     }
     Ok(address)
+}
+
+fn report_compile(report: std::fmt::Arguments<'_>) {
+    #[cfg(test)]
+    profile_tests::REPORTS.with(|reports| reports.borrow_mut().push(report.to_string()));
+    eprintln!("{report}");
 }
 
 struct Emitter<'a, 'b> {
@@ -2455,5 +2469,58 @@ fn int_condition(op: Cmp) -> IntCC {
         Cmp::Le => IntCC::SignedLessThanOrEqual,
         Cmp::Gt => IntCC::SignedGreaterThan,
         Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    thread_local! {
+        pub(super) static SAMPLES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static REPORTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    #[test]
+    fn compile_profile_preserves_diagnostics_and_code_characteristics() {
+        assert_eq!(COMPILE_HEADER.split('\t').collect::<Vec<_>>(), [
+            "; compile", "function", "instructions", "registers", "suspensions",
+            "clif blocks", "clif instructions", "safepoints", "code bytes", "frame bytes",
+            "declare", "liveness", "emit", "finalize", "codegen", "maps", "definitions", "tables (microseconds)",
+        ]);
+        crate::on_vm_thread(|| {
+            let program = okkama_sparrow::assemble(
+                "sparrow 15\nmodule \"profile\" \"v1.0.0\"\ntype t0 int\n\
+                 function f0 \"main\" {\n registers [t0]\n params []\n result t0\n\
+                 0: const r0, int 7\n 1: ret r0\n}\nentry f0\n"
+            ).unwrap();
+            let mut characteristics = Vec::new();
+            for enabled in [false, true] {
+                SAMPLES.set(0);
+                REPORTS.with(|reports| reports.borrow_mut().clear());
+                let mut runtime = Box::new(Runtime::new(crate::program::Loaded::new(program.clone()))?);
+                runtime.jit.profile = enabled.then(Default::default);
+                assert_eq!(runtime.run_entry(crate::STACK_BYTES)?, 7);
+                assert_eq!(SAMPLES.get(), usize::from(enabled));
+                REPORTS.with(|reports| {
+                    let reports = reports.borrow();
+                    assert_eq!(reports.len(), usize::from(enabled));
+                    if enabled {
+                        let columns: Vec<_> = reports[0].split('\t').collect();
+                        assert_eq!(columns.len(), 18);
+                        // Pre-codegen CLIF includes entry/limit/failure blocks.
+                        assert_eq!(&columns[..8], &["; compile", "main", "2", "1", "0", "3", "10", "0"]);
+                        for column in &columns[8..] {
+                            column.parse::<u64>().unwrap();
+                        }
+                    }
+                });
+                characteristics.push((runtime.jit.ranges[0].1 - runtime.jit.ranges[0].0,
+                    runtime.jit.largest_frame, runtime.jit.maps.len()));
+            }
+            assert_eq!(characteristics[0], characteristics[1]);
+            Ok(())
+        }).unwrap();
     }
 }

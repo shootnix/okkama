@@ -103,24 +103,108 @@ pub fn run_described(
 ) -> Result<Result<i64, (Error, Option<Uncaught>)>, Error> {
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
-        let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
-        runtime.worker_command = worker_command;
-        runtime.limits = limits;
-        if stats && runtime.stats.is_none() {
-            runtime.stats = Some(Box::default());
-            runtime.heap.allocations = Some(Box::default());
-        }
-        if let Some(host) = &mut runtime.host {
-            host.arguments = arguments;
-        }
-        let result = runtime.run_entry(STACK_BYTES);
-        if let Some(report) = runtime.stats_report() {
-            // The program's buffered output goes first (#132).
-            let _ = okkama_runtime_core::stdout::flush();
-            eprint!("{report}");
-        }
-        Ok(result.map_err(|error| (error, runtime.uncaught.take())))
+        let mut runtime = configured_runtime(program, arguments, stats, worker_command, limits)?;
+        Ok(execute(&mut runtime))
     })
+}
+
+/// CLI execution result. Loading failures remain the outer `Err`; runtime
+/// failures carry the same report and an already rendered Sparrow trace.
+#[derive(Debug)]
+pub enum Execution {
+    Main(Result<i64, (Error, String)>),
+    Tests(bool),
+}
+
+/// Preserve CLI formatting: SPB/test-profile errors have the launcher prefix;
+/// VM setup failures have the runtime report's formatting.
+#[derive(Debug)]
+pub enum ExecutionError {
+    Load(Error),
+    Run(Error),
+}
+
+/// Launcher policy applied only after SPB decoding and verification.
+#[derive(Default)]
+pub struct ExecutionOptions {
+    pub stats: bool,
+    pub trace: bool,
+    pub tests: Option<Box<dyn std::io::Write + Send>>,
+    /// Optional launcher setup (e.g. an interrupt watchdog). Invalid SPB
+    /// must be rejected before this callback has any effects.
+    pub on_verified: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl std::fmt::Debug for ExecutionOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionOptions").field("stats", &self.stats).field("trace", &self.trace).finish_non_exhaustive()
+    }
+}
+
+/// Decode and verify once on the VM stack, then execute with trace rendering
+/// before the sole program is dropped. `options.tests` selects automatic test-profile
+/// dispatch (okkama exec); without it even a test-profile file runs main.
+/// No caller-supplied Program can cross this checked byte-input boundary.
+pub fn run_executable(
+    bytes: Vec<u8>,
+    arguments: Vec<Vec<u8>>,
+    worker_command: Vec<std::ffi::OsString>,
+    limits: budget::Limits,
+    options: ExecutionOptions,
+) -> Result<Execution, ExecutionError> {
+    on_vm_thread(move || {
+        let program = match okkama_sparrow::decode(&bytes) {
+            Ok(program) => program,
+            Err(error) => return Ok(Err(ExecutionError::Load(Error(error.to_string())))),
+        };
+        let ExecutionOptions { stats, trace, tests, on_verified } = options;
+        if let Some(prepare) = on_verified {
+            prepare();
+        }
+        if program.tests.is_some() && let Some(out) = tests {
+            return Ok(test_program(program, out).map(Execution::Tests).map_err(ExecutionError::Load));
+        }
+        let original_functions = program.functions.len();
+        let mut runtime = configured_runtime(program, arguments, stats, worker_command, limits)?;
+        let result = execute(&mut runtime).map_err(|(error, uncaught)| {
+            let rendered = uncaught.filter(|_| trace).map(|u| {
+                // Loaded appends worker functions; the old CLI only saw SPB functions.
+                render_trace_functions(&runtime.loaded.program.functions[..original_functions], &u.trace)
+            }).unwrap_or_default();
+            (error, rendered)
+        });
+        Ok(Ok(Execution::Main(result)))
+    }).map_err(ExecutionError::Run)?
+}
+
+fn configured_runtime(
+    program: okkama_sparrow::Program,
+    arguments: Vec<Vec<u8>>,
+    stats: bool,
+    worker_command: Vec<std::ffi::OsString>,
+    limits: budget::Limits,
+) -> Result<Box<runtime::Runtime>, Error> {
+    let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
+    runtime.worker_command = worker_command;
+    runtime.limits = limits;
+    if stats && runtime.stats.is_none() {
+        runtime.stats = Some(Box::default());
+        runtime.heap.allocations = Some(Box::default());
+    }
+    if let Some(host) = &mut runtime.host {
+        host.arguments = arguments;
+    }
+    Ok(runtime)
+}
+
+fn execute(runtime: &mut Box<runtime::Runtime>) -> Result<i64, (Error, Option<Uncaught>)> {
+    let result = runtime.run_entry(STACK_BYTES);
+    if let Some(report) = runtime.stats_report() {
+        // The program's buffered output goes first (#132).
+        let _ = okkama_runtime_core::stdout::flush();
+        eprint!("{report}");
+    }
+    result.map_err(|error| (error, runtime.uncaught.take()))
 }
 
 /// An uncaught failure of `main`: its OCS category (`uncaught-error`,
@@ -142,13 +226,17 @@ pub use okkama_runtime_core::stdout;
 /// The call stack of an uncaught failure in Sparrow terms: function, number
 /// and text of the instruction of each frame. Empty for an empty stack.
 pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String {
+    render_trace_functions(&program.functions, trace)
+}
+
+fn render_trace_functions(functions: &[okkama_sparrow::Function], trace: &[Site]) -> String {
     use okkama_runtime_core::failure::{frame_name, stack_text_by};
     if trace.is_empty() {
         return String::new();
     }
     // Строки только показанных кадров: стек глубокой рекурсии — миллионы (#241).
     stack_text_by("Stack trace (Sparrow, most recent call first):", trace, |site| {
-        match program.functions.get(site.function as usize) {
+        match functions.get(site.function as usize) {
             Some(function) => {
                 let name = frame_name(&function.symbol);
                 match function.code.get(site.pc as usize) {
@@ -175,60 +263,64 @@ pub fn run_reported(
 /// true when no test failed. Each test runs on a fresh runtime.
 pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<bool, Error> {
     on_vm_thread(move || {
-        let mut out = out;
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
-        let tests = program.tests.clone().ok_or_else(|| Error("module has no tests".into()))?;
-        if tests.is_empty() {
-            return Err(Error("Test run requires at least one test".into()));
-        }
-        let io = |e: std::io::Error| Error(format!("test report: {e}"));
-        let mut passed = true;
-        for (name, function) in tests {
-            failures::Resources::trace_test(&name);
-            writeln!(out, "=== RUN   {name}").map_err(io)?;
-            out.flush().map_err(io)?;
-            let declaration = &program.functions[function.0 as usize];
-            let (failures, skipped) = if !declaration.params.is_empty() || declaration.result.is_some() {
-                (vec!["invalid test entry signature".to_owned()], None)
-            } else {
-                let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program.clone()))?);
-                if let Some(host) = &mut runtime.host {
-                    host.test_failures = Some(Vec::new());
-                }
-                let outcome = runtime.run_function(function.0 as usize, STACK_BYTES);
-                // `SPARROW_CORE_STATS` counts each test's runtime as well (#555).
-                if let Some(report) = runtime.stats_report() {
-                    eprint!("{report}");
-                }
-                let host = runtime.host.as_mut();
-                let (mut failures, skipped) =
-                    host.map(|h| (h.test_failures.take().unwrap_or_default(), h.test_skipped.take())).unwrap_or_default();
-                // A skipped test ends with the failure of its `test.skip`.
-                if let (Err(error), None) = (outcome, &skipped) {
-                    failures.push(error.0);
-                }
-                (failures, skipped)
-            };
-            if !failures.is_empty() {
-                passed = false;
-                writeln!(out, "--- FAIL: {name}").map_err(io)?;
-                for failure in failures {
-                    writeln!(out, "    {}", failure.replace('\n', "\n    ")).map_err(io)?;
-                }
-            } else if let Some(reason) = skipped {
-                writeln!(out, "--- SKIP: {name}").map_err(io)?;
-                if !reason.is_empty() {
-                    writeln!(out, "    {}", reason.replace('\n', "\n    ")).map_err(io)?;
-                }
-            } else {
-                writeln!(out, "--- PASS: {name}").map_err(io)?;
-            }
-            out.flush().map_err(io)?;
-        }
-        writeln!(out, "{}", if passed { "PASS" } else { "FAIL" }).map_err(io)?;
-        out.flush().map_err(io)?;
-        Ok(passed)
+        test_program(program, out)
     })
+}
+
+// Private: only a decoded, verified program reaches test execution.
+fn test_program(program: okkama_sparrow::Program, mut out: Box<dyn std::io::Write + Send>) -> Result<bool, Error> {
+    let tests = program.tests.clone().ok_or_else(|| Error("module has no tests".into()))?;
+    if tests.is_empty() {
+        return Err(Error("Test run requires at least one test".into()));
+    }
+    let io = |e: std::io::Error| Error(format!("test report: {e}"));
+    let mut passed = true;
+    for (name, function) in tests {
+        failures::Resources::trace_test(&name);
+        writeln!(out, "=== RUN   {name}").map_err(io)?;
+        out.flush().map_err(io)?;
+        let declaration = &program.functions[function.0 as usize];
+        let (failures, skipped) = if !declaration.params.is_empty() || declaration.result.is_some() {
+            (vec!["invalid test entry signature".to_owned()], None)
+        } else {
+            let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program.clone()))?);
+            if let Some(host) = &mut runtime.host {
+                host.test_failures = Some(Vec::new());
+            }
+            let outcome = runtime.run_function(function.0 as usize, STACK_BYTES);
+            // `SPARROW_CORE_STATS` counts each test's runtime as well (#555).
+            if let Some(report) = runtime.stats_report() {
+                eprint!("{report}");
+            }
+            let host = runtime.host.as_mut();
+            let (mut failures, skipped) =
+                host.map(|h| (h.test_failures.take().unwrap_or_default(), h.test_skipped.take())).unwrap_or_default();
+            // A skipped test ends with the failure of its `test.skip`.
+            if let (Err(error), None) = (outcome, &skipped) {
+                failures.push(error.0);
+            }
+            (failures, skipped)
+        };
+        if !failures.is_empty() {
+            passed = false;
+            writeln!(out, "--- FAIL: {name}").map_err(io)?;
+            for failure in failures {
+                writeln!(out, "    {}", failure.replace('\n', "\n    ")).map_err(io)?;
+            }
+        } else if let Some(reason) = skipped {
+            writeln!(out, "--- SKIP: {name}").map_err(io)?;
+            if !reason.is_empty() {
+                writeln!(out, "    {}", reason.replace('\n', "\n    ")).map_err(io)?;
+            }
+        } else {
+            writeln!(out, "--- PASS: {name}").map_err(io)?;
+        }
+        out.flush().map_err(io)?;
+    }
+    writeln!(out, "{}", if passed { "PASS" } else { "FAIL" }).map_err(io)?;
+    out.flush().map_err(io)?;
+    Ok(passed)
 }
 
 /// The child side of a process worker: answer the framed `request` for the

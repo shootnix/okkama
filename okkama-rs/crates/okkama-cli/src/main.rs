@@ -290,17 +290,26 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     {
         return Outcome::failure(format!("okkama: cannot read `{path}`: {error}\n"), EXIT_IO);
     }
-    let program = match okkama_sparrow::decode(&bytes) {
-        Ok(program) => program,
-        Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-    };
-    if program.tests.is_some() {
-        return core_tests(bytes);
-    }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    let (outcome, trace) =
-        core_described(sparrow_core::run_described(bytes, arguments, false, core::worker_command(Path::new(path)), limits));
-    with_trace(outcome, || sparrow_core::render_trace(&program, &trace))
+    let trace = std::env::var("OKKAMA_TRACE").as_deref() != Ok("off");
+    match sparrow_core::run_executable(
+        bytes, arguments, core::worker_command(Path::new(path)), limits,
+        sparrow_core::ExecutionOptions {
+            tests: Some(Box::new(okkama_runtime::stdout::Buffered)), trace, ..Default::default()
+        },
+    ) {
+        Ok(sparrow_core::Execution::Tests(passed)) => Outcome {
+            stdout: String::new(), stderr: String::new(), code: u8::from(!passed),
+        },
+        Ok(sparrow_core::Execution::Main(Ok(value))) => core_outcome(Ok(value)),
+        Ok(sparrow_core::Execution::Main(Err((error, trace)))) => {
+            let mut outcome = core_outcome(Err(error));
+            outcome.stderr.push_str(&trace);
+            outcome
+        }
+        Err(sparrow_core::ExecutionError::Load(error)) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
+        Err(sparrow_core::ExecutionError::Run(error)) => core_outcome(Err(error)),
+    }
 }
 
 /// A test-profile program on the core: the report goes to stdout.
