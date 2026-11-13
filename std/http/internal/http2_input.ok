@@ -237,7 +237,10 @@ object Http2ConnectionInput {
     hidden stream_fault(failure is Http2Fault) is void {
         if receiver.stream_fault(failure) {
             controls.frame(
-                Http2ResetFrame(stream: Http2FaultView(failure).stream(), code: Http2FaultView(failure).code()).frame()
+                Http2ResetFrame(
+                    stream: Http2FaultView(failure).stream(),
+                    code: Http2FaultView(failure).code()
+                ).frame()
             );
         }
     }
@@ -314,7 +317,9 @@ object Http2ConnectionInput {
                 receiver.settings(previous, following);
                 peer.replace(following);
             }
-            controls.frame(Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: []));
+            controls.frame(
+                Http2Frame(header: Http2FrameHeader(4.byte(), 1.byte(), 0, 0), payload: [])
+            );
             return true;
         }
         if kind == 9 {

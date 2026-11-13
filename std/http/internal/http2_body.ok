@@ -87,7 +87,9 @@ object Http2BodyBuffer does BodyReading {
         configured = Event();
         needs_fields = Event();
         state = buffer.buffer_state_create([]);
-        window = Atomic(Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial));
+        window = Atomic(
+            Http2FlowWindow(scope: Http2FaultScope.stream, stream: stream, remaining: initial)
+        );
         received = Atomic(0);
         changed = Atomic(Event());
         stopped = Event();

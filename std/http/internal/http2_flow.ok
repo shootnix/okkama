@@ -228,7 +228,12 @@ object Http2WindowFrame {
     frame() is Http2Frame {
         Http2Frame(
             header: Http2FrameHeader(8.byte(), 0.byte(), stream, 4),
-            payload: IntegerBytes(value: amount, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes()
+            payload: IntegerBytes(
+                value: amount,
+                size: 4,
+                signedness: Signedness.unsigned,
+                order: ByteOrder.big
+            ).bytes()
         );
     }
 }
