@@ -555,6 +555,57 @@ impl Heap {
         string
     }
 
+    /// The texts of the strings in `array` with `separator` between them, as
+    /// one flat string: the lengths are summed first and the bytes copied
+    /// once into the new string, with no temporary (#447). None when the
+    /// result would not fit the 4 GiB a string can hold.
+    pub fn allocate_join(&mut self, array: Word, separator: Word) -> Option<Word> {
+        // A trie's elements come as an owned copy, kept alive here; a flat or
+        // shared array's are its own slots. Moving the copy does not move its
+        // buffer, and an allocation neither moves nor frees heap objects.
+        let (first, count, _copy) = match self.elements(array) {
+            std::borrow::Cow::Borrowed(slots) => (slots.as_ptr(), slots.len(), None),
+            std::borrow::Cow::Owned(copy) => (copy.as_ptr(), copy.len(), Some(copy)),
+        };
+        // SAFETY: see above; the slots stay valid until this returns.
+        let items = unsafe { std::slice::from_raw_parts(first, count) };
+        let (separator_at, separator_length) = self.text_bytes(separator);
+        let mut bytes = separator_length.checked_mul(count.saturating_sub(1))?;
+        let mut ascii = count < 2 || self.ascii_text(separator);
+        for &item in items {
+            bytes = bytes.checked_add(self.text_bytes(item).1)?;
+            ascii = ascii && self.ascii_text(item);
+        }
+        if bytes > u32::MAX as usize {
+            return None;
+        }
+        let words = 1 + bytes.div_ceil(8).max(1);
+        self.counted("string", 0, words);
+        let string = self.allocate(words);
+        // SAFETY: room for the header and `bytes` bytes; the parts are other
+        // strings, written once and never mutated.
+        unsafe {
+            *(string as *mut u64) = header(STRING, Repr::Raw, bytes as u32) | if ascii { ASCII } else { 0 };
+            let mut at = (string + 8) as *mut u8;
+            for (index, &item) in items.iter().enumerate() {
+                if index != 0 {
+                    std::ptr::copy_nonoverlapping(separator_at, at, separator_length);
+                    at = at.add(separator_length);
+                }
+                let (from, length) = self.text_bytes(item);
+                std::ptr::copy_nonoverlapping(from, at, length);
+                at = at.add(length);
+            }
+        }
+        Some(string)
+    }
+
+    /// Whether a string is all ASCII: its flag, or its bytes when the flag
+    /// is not set (a view may leave it unset).
+    fn ascii_text(&self, string: Word) -> bool {
+        self.header_of(string) & ASCII != 0 || self.text(string).is_ascii()
+    }
+
     /// The address of the first byte of a string and its length in bytes:
     /// inline in a flat string, in a text buffer for a [`SHARED`] one.
     fn text_bytes(&self, string: Word) -> (*const u8, usize) {
@@ -1592,6 +1643,40 @@ mod tests {
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
             self
         }
+    }
+
+    #[test]
+    fn a_join_copies_each_part_once_with_the_right_flag() {
+        let mut heap = Heap::new(layouts());
+        let parts = ["alpha", "beta", "gamma"].map(|text| heap.allocate_text(text));
+        let array = heap.allocate_array(Repr::Ref, &parts);
+        let comma = heap.allocate_text(", ");
+        let bullet = heap.allocate_text(" · ");
+        let joined = heap.allocate_join(array, comma).unwrap();
+        assert_eq!(heap.text(joined), "alpha, beta, gamma");
+        assert!(heap.is_ascii_text(joined));
+        // A multibyte separator clears the flag only when it is used.
+        let joined = heap.allocate_join(array, bullet).unwrap();
+        assert_eq!(heap.text(joined), "alpha · beta · gamma");
+        assert!(!heap.is_ascii_text(joined));
+        let one = heap.allocate_array(Repr::Ref, &parts[..1]);
+        let single = heap.allocate_join(one, bullet).unwrap();
+        assert_eq!(heap.text(single), "alpha");
+        assert!(heap.is_ascii_text(single));
+        let empty = heap.allocate_array(Repr::Ref, &[]);
+        let nothing = heap.allocate_join(empty, comma).unwrap();
+        assert_eq!(heap.text(nothing), "");
+        // A multibyte part, and a trie's elements in order.
+        let greek = [heap.allocate_text("α"), heap.allocate_text("b")];
+        let mixed = heap.allocate_array(Repr::Ref, &greek);
+        let joined = heap.allocate_join(mixed, comma).unwrap();
+        assert_eq!(heap.text(joined), "α, b");
+        assert!(!heap.is_ascii_text(joined));
+        let many: Vec<Word> = (0..100).map(|i| heap.allocate_text(&i.to_string())).collect();
+        let trie = heap.trie_from(Repr::Ref, &many);
+        let joined = heap.allocate_join(trie, comma).unwrap();
+        let expected: Vec<String> = (0..100).map(|i| i.to_string()).collect();
+        assert_eq!(heap.text(joined), expected.join(", "));
     }
 
     #[test]
