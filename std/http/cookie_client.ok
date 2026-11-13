@@ -27,7 +27,11 @@ object FirstPartyCookies does CookieContextualizing {
     context(request is Request) is CookieContext {
         confirm request::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidArgument.because("absolute cookie request required");
-        CookieContext(site: request::Head::target.url(), top_level: true, method: request::Head::method);
+        CookieContext(
+            site: request::Head::target.url(),
+            top_level: true,
+            method: request::Head::method
+        );
     }
 }
 
@@ -71,7 +75,10 @@ object CookieExchanging does Exchanging {
         }
         else {
             let selected = CookieRequestPairs(jar.cookies(request::Head::target.url(), context)).string();
-            let clean = HeadersWithout(origin: request::Head::headers, names: [HeaderName("Cookie")]).headers();
+            let clean = HeadersWithout(
+                origin: request::Head::headers,
+                names: [HeaderName("Cookie")]
+            ).headers();
             if selected == "" {
                 clean;
             }
@@ -88,7 +95,10 @@ object CookieExchanging does Exchanging {
         );
         let result = await origin.response(outgoing);
         let retained = Event();
-        let cleanup = RedirectResponseCleanup(response: result::Exchange::response, retained: retained);
+        let cleanup = RedirectResponseCleanup(
+            response: result::Exchange::response,
+            retained: retained
+        );
         defer cleanup.close();
         // Storage is correct even if a caller places this outside Redirecting,
         // but selection per hop requires Redirecting(CookieExchanging(...)).
