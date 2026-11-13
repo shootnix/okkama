@@ -90,8 +90,18 @@ object Http2FrameHeader {
     }
 
     bytes() is @byte {
-        let size = IntegerBytes(value: length, size: 3, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
-        let id = IntegerBytes(value: stream, size: 4, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+        let size = IntegerBytes(
+            value: length,
+            size: 3,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
+        let id = IntegerBytes(
+            value: stream,
+            size: 4,
+            signedness: Signedness.unsigned,
+            order: ByteOrder.big
+        ).bytes();
         [size[0], size[1], size[2], kind, flags, id[0], id[1], id[2], id[3]];
     }
 }
@@ -310,15 +320,23 @@ object Http2FrameRules {
 
 test "a frame header is nine bytes and refuses impossible coordinates" {
     let header = Http2FrameHeader(kind: 4.byte(), flags: 0.byte(), stream: 0, length: 6);
-    test.is(header.bytes(), [0.byte(), 0.byte(), 6.byte(), 4.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]);
-    let parsed = ParsedHttp2FrameHeader([0.byte(), 0.byte(), 8.byte(), 6.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]).header();
+    test.is(
+        header.bytes(),
+        [0.byte(), 0.byte(), 6.byte(), 4.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]
+    );
+    let parsed = ParsedHttp2FrameHeader(
+        [0.byte(), 0.byte(), 8.byte(), 6.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte(), 0.byte()]
+    ).header();
     test.is(parsed.kind().int(), 6);
     test.is(parsed.length(), 8);
     test.is(parsed.stream(), 0);
     test.throws(Http2Fault) {
         Http2FrameHeader(kind: 0.byte(), flags: 0.byte(), stream: -1, length: 0);
     };
-    let frame = Http2Frame(header: header, payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()]);
+    let frame = Http2Frame(
+        header: header,
+        payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()]
+    );
     test.is(frame.bytes().size(), 15);
     Http2FrameRules(frame).check();
     test.throws(Http2Fault) {
@@ -326,7 +344,12 @@ test "a frame header is nine bytes and refuses impossible coordinates" {
     };
     let acknowledged = Http2FrameHeader(kind: 4.byte(), flags: 1.byte(), stream: 0, length: 6);
     test.throws(Http2Fault) {
-        Http2FrameRules(Http2Frame(header: acknowledged, payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()])).check();
+        Http2FrameRules(
+            Http2Frame(
+                header: acknowledged,
+                payload: [0.byte(), 3.byte(), 0.byte(), 0.byte(), 0.byte(), 100.byte()]
+            )
+        ).check();
     };
     let fault = try {
         Http2HeaderRules(Http2FrameHeader(kind: 0.byte(), flags: 0.byte(), stream: 0, length: 0)).check();
@@ -334,7 +357,12 @@ test "a frame header is nine bytes and refuses impossible coordinates" {
     }
     catch error is Http2Fault {
         let view = Http2FaultView(error);
-        if view.scope() == Http2FaultScope.connection { "connection " + view.code().string(); } else { "stream"; }
+        if view.scope() == Http2FaultScope.connection {
+            "connection " + view.code().string();
+        }
+        else {
+            "stream";
+        }
     };
     test.is(fault, "connection 1");
 }
