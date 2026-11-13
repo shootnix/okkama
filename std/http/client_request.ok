@@ -1,5 +1,8 @@
 module http/client_request v1.0.0;
 
+// A request checked before it leaves: an absolute http or https URL and at most
+// one Host, matching it. HttpClient uses it.
+
 import "http/message" take Request;
 import "http/target" take RequestTargetKind, OriginTarget;
 import "http/version" take HttpVersion;
@@ -16,6 +19,7 @@ object HttpDirectRequest {
     has url is UrlParts;
     has request is Request;
 
+    // origin to send directly.
     HttpDirectRequest(origin is Request) {
         confirm origin::Head::target.kind() == RequestTargetKind.absolute
             else throw InvalidClientRequest.because("absolute HTTP URL required");
@@ -53,15 +57,19 @@ object HttpDirectRequest {
         url = destination;
     }
 
+    // The URL it goes to.
     url() is UrlParts {
         url;
     }
 
+    // The request with its Host; InvalidClientRequest when it is not a direct
+    // HTTP/1.1 request.
     request() is Request {
         request;
     }
 }
 
+// A request a client cannot send; reason says why.
 enum InvalidClientRequest is Error = (because(reason is string));
 
 test "direct route adds Host and a slash without adding optional client features" {

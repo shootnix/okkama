@@ -1,5 +1,8 @@
 module http/proxy_tunnel v1.0.0;
 
+// A CONNECT tunnel on a proxy connection: the request, and the proxy's answer
+// read byte by byte so that TLS can follow on the same stream.
+
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/proxy_request" take HttpConnectRequest;
 import "http/proxy_policy" take ProxyConnectRejected;
@@ -21,6 +24,7 @@ object HttpProxyTunnel {
     has fields is @Header;
     has limits is Http1Limits;
 
+    // A tunnel to target over input and output, with the default limits.
     HttpProxyTunnel(
         input is AsyncReading,
         output is AsyncWriting,
@@ -34,6 +38,7 @@ object HttpProxyTunnel {
         limits = Http1Limits();
     }
 
+    // The same within limits.
     HttpProxyTunnel(
         input is AsyncReading,
         output is AsyncWriting,
@@ -48,6 +53,8 @@ object HttpProxyTunnel {
         self.limits = limits;
     }
 
+    // Sends CONNECT and waits for a 2xx; ProxyConnectRejected for another
+    // status.
     async ready() is bool {
         let request = HttpConnectRequest(origin: target, proxy_fields: fields).request();
         let sending = Http1RequestWriting(origin: output, request: request, limits: limits).output();

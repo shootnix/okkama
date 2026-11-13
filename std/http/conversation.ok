@@ -1,5 +1,12 @@
 module http/conversation v1.0.0;
 
+// Conversations: one connection speaking HTTP/1.1 or HTTP/2, as a client pool
+// holds them.
+//
+// HttpTransport keeps conversations per origin and sends each request on one
+// that is accepting. An HTTP/1.1 conversation takes one request at a time; an
+// HTTP/2 one multiplexes. Programs use HttpClient instead.
+
 import "http/message" take Request, Response;
 import "http/transport_observation" take HttpResponseObservation;
 import "http/version" take HttpVersion;
@@ -20,48 +27,66 @@ import "http/connection" take HttpAcquisitionCleanup;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 
+// One client connection speaking HTTP.
 role HttpConversation {
+    // Whether it was closed.
     closed() is bool;
+    // Closes the connection.
     close() is void;
+    // Whether it takes another request now.
     accepting() is bool;
+    // Whether it carries several requests at once.
     multiplexed() is bool;
+    // Waits until every exchange on it has finished.
     async settled() is bool;
+    // Sends request and gives the response head; the body follows.
     async exchange(request is Request) is HttpConversationExchange;
 }
 
+// How to open a conversation.
 role HttpConversationConnecting {
+    // A new conversation and how it connected.
     async acquisition() is HttpConversationAcquisition;
 }
 
+// How a pool reaches origins: directly or through a proxy.
 role HttpConversationRouting {
+    // How to reach url.
     connecting(url is UrlParts) is HttpConversationConnecting;
+    // Whether a connection with details may serve url under access.
     allowed(url is UrlParts, details is ExchangeDetails, access is EndpointAllowing) is bool;
 }
 
+// A new conversation and how it connected.
 object HttpConversationAcquisition {
     has session is HttpConversation;
     has details is ExchangeDetails;
 
+    // As given.
     HttpConversationAcquisition(session is HttpConversation, details is ExchangeDetails) {
         self.session = session;
         self.details = details;
     }
 
+    // The conversation.
     session() is HttpConversation {
         session;
     }
 
+    // How it connected.
     details() is ExchangeDetails {
         details;
     }
 }
 
+// One request on a conversation and its response.
 object HttpConversationExchange does Closing {
     has request is Request;
     has response is Response;
     has information is @Response;
     has lease is Closing;
 
+    // request answered by response after information, holding lease.
     HttpConversationExchange(
         request is Request,
         response is Response,
@@ -74,33 +99,40 @@ object HttpConversationExchange does Closing {
         self.lease = lease;
     }
 
+    // The request.
     request() is Request {
         request;
     }
 
+    // The final response.
     response() is Response {
         response;
     }
 
+    // The 1xx responses before it.
     informational() is Sequencing<Response> {
         information;
     }
 
+    // Whether it was closed.
     closed() is bool {
         lease.closed();
     }
 
+    // Releases the connection for the next request.
     close() is void {
         lease.close();
     }
 }
 
+// An HTTP/1.1 conversation: one request at a time.
 object Http1Conversation does HttpConversation, Closing {
     has origin is Http1Session;
     has observation is @HttpResponseObservation;
     has forward is bool;
     has proxy_fields is @Header;
 
+    // Over origin.
     Http1Conversation(origin is Http1Session) {
         self.origin = origin;
         observation = [];
@@ -108,6 +140,7 @@ object Http1Conversation does HttpConversation, Closing {
         proxy_fields = [];
     }
 
+    // Over origin, watching for the first response.
     Http1Conversation(origin is Http1Session, observation is HttpResponseObservation) {
         self.origin = origin;
         self.observation = [observation];
@@ -115,6 +148,7 @@ object Http1Conversation does HttpConversation, Closing {
         proxy_fields = [];
     }
 
+    // The same, adding the proxy's fields to every request.
     Http1Conversation(
         origin is Http1Session,
         observation is HttpResponseObservation,
@@ -126,26 +160,32 @@ object Http1Conversation does HttpConversation, Closing {
         self.proxy_fields = proxy_fields;
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the connection.
     close() is void {
         origin.close();
     }
 
+    // Whether it takes another request now.
     accepting() is bool {
         !origin.closed();
     }
 
+    // false.
     multiplexed() is bool {
         false;
     }
 
+    // Waits until every exchange on it has finished.
     async settled() is bool {
         true;
     }
 
+    // Sends request and gives the response head; the body follows.
     async exchange(request is Request) is HttpConversationExchange {
         let source = Request(
             method: request::Head::method,
@@ -177,33 +217,41 @@ object Http1Conversation does HttpConversation, Closing {
     }
 }
 
+// An HTTP/2 conversation: many requests at once.
 object Http2Conversation does HttpConversation, Closing {
     has origin is Http2Session;
 
+    // Over origin.
     Http2Conversation(origin is Http2Session) {
         self.origin = origin;
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the connection.
     close() is void {
         origin.close();
     }
 
+    // Whether it takes another request now.
     accepting() is bool {
         origin.accepting();
     }
 
+    // true.
     multiplexed() is bool {
         true;
     }
 
+    // Waits until every exchange on it has finished.
     async settled() is bool {
         await origin.settled();
     }
 
+    // Sends request and gives the response head; the body follows.
     async exchange(request is Request) is HttpConversationExchange {
         let prepared = Request(
             method: request::Head::method,
@@ -227,13 +275,16 @@ object Http2Conversation does HttpConversation, Closing {
     }
 }
 
+// Opens HTTP/2 conversations.
 object Http2ConversationConnecting does HttpConversationConnecting {
     has origin is Http2Connecting;
 
+    // With origin.
     Http2ConversationConnecting(origin is Http2Connecting) {
         self.origin = origin;
     }
 
+    // A new conversation and how it connected.
     async acquisition() is HttpConversationAcquisition {
         let group is FutureGroup<Http2Acquisition> = FutureGroup();
         let empty is @Future<Http2Acquisition> = [];
@@ -266,9 +317,12 @@ hidden object Http2ConversationDisposal {
     }
 }
 
+// Closes a conversation nobody took.
 object HttpConversationAcquisitionDisposal {
+    // The disposal.
     HttpConversationAcquisitionDisposal();
 
+    // Closes acquired.
     release(acquired is HttpConversationAcquisition) is void {
         acquired.session().close();
     }

@@ -1,8 +1,8 @@
 module http/connection v1.0.0;
 
-// A supplied HTTP route opens an HTTP1 conversation. Every TCP attempt uses
-// the exact previously checked numeric endpoint; no second lookup occurs.
-// Bounded staggered TCP racing closes every losing attempt before publication.
+// HTTP/1 connections for a client: TCP to an address already checked, racing
+// the candidates a little apart, then TLS when the URL is https. HttpTransport
+// uses it.
 
 import "http/endpoint" take HttpEndpointSelection;
 import "http/transport_observation" take HttpResponseObservation;
@@ -28,12 +28,14 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
+// How to open an HTTP/1 connection to a route.
 object Http1Connecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;
     has limits is Http1Limits;
     has clock is Timing;
 
+    // To route with policy and the default limits.
     Http1Connecting(route is HttpEndpointSelection, policy is TlsClientPolicy) {
         for policy.protocols() -> protocol {
             confirm protocol == "http/1.1" else throw UnsupportedHttpVersion.unsupported;
@@ -44,6 +46,7 @@ object Http1Connecting {
         clock = SystemClock();
     }
 
+    // The same, within limits and with clock for timeouts.
     Http1Connecting(
         route is HttpEndpointSelection,
         policy is TlsClientPolicy,
@@ -59,6 +62,7 @@ object Http1Connecting {
         self.clock = clock;
     }
 
+    // A new HTTP/1 session.
     async session() is Http1Session {
         let group is FutureGroup<Http1Acquisition> = FutureGroup();
         let empty is @Future<Http1Acquisition> = [];
@@ -79,6 +83,7 @@ object Http1Connecting {
         acquired.session();
     }
 
+    // A new session and how it connected.
     async acquisition() is Http1Acquisition {
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
@@ -174,17 +179,20 @@ object Http1Connecting {
     }
 }
 
+// A new session and how it connected.
 object Http1Acquisition {
     has session is Http1Session;
     has details is ExchangeDetails;
     has observation is @HttpResponseObservation;
 
+    // As given.
     Http1Acquisition(session is Http1Session, details is ExchangeDetails) {
         self.session = session;
         self.details = details;
         observation = [];
     }
 
+    // As given, with the observation of its first response.
     Http1Acquisition(
         session is Http1Session,
         details is ExchangeDetails,
@@ -195,16 +203,19 @@ object Http1Acquisition {
         self.observation = [observation];
     }
 
+    // Starts watching for the first response.
     begin() is void {
         for observation -> value {
             value.begin();
         }
     }
 
+    // The session.
     session() is Http1Session {
         session;
     }
 
+    // How it connected.
     details() is ExchangeDetails {
         details;
     }
@@ -226,6 +237,7 @@ object HttpAcquisitionCleanup<T> {
     has taken is Event;
     has dispose is (T) is void;
 
+    // Disposes of what group produced and nobody took.
     HttpAcquisitionCleanup(
         group is FutureGroup<T>,
         pending is Atomic<@Future<T>>,
@@ -238,6 +250,7 @@ object HttpAcquisitionCleanup<T> {
         self.dispose = dispose;
     }
 
+    // Cancels the rest and disposes of it.
     async close() is void {
         if group.active() > 0 {
             group.cancel();
@@ -268,31 +281,40 @@ object HttpAcquisitionCleanup<T> {
     }
 }
 
+// Closes a TCP connection nobody took.
 object HttpTcpDisposal {
+    // The disposal.
     HttpTcpDisposal();
 
+    // Closes connection.
     release(connection is TcpConnection) is void {
         connection.close();
     }
 }
 
+// Closes a TLS connection nobody took.
 object HttpTlsDisposal {
+    // The disposal.
     HttpTlsDisposal();
 
+    // Closes connection.
     release(connection is TlsConnection) is void {
         connection.close();
     }
 }
 
+// A TCP connection closed unless it is handed out.
 object HttpUnpublishedTcp {
     has origin is TcpConnection;
     has published is Event;
 
+    // origin, kept once published fires.
     HttpUnpublishedTcp(origin is TcpConnection, published is Event) {
         self.origin = origin;
         self.published = published;
     }
 
+    // Closes origin unless it was handed out.
     close() is void {
         if !published.ready() {
             origin.close();
@@ -300,15 +322,18 @@ object HttpUnpublishedTcp {
     }
 }
 
+// A TLS connection closed unless it is handed out.
 object HttpUnpublishedTls {
     has origin is TlsConnection;
     has published is Event;
 
+    // origin, kept once published fires.
     HttpUnpublishedTls(origin is TlsConnection, published is Event) {
         self.origin = origin;
         self.published = published;
     }
 
+    // Closes origin unless it was handed out.
     close() is void {
         if !published.ready() {
             origin.close();

@@ -1,5 +1,16 @@
 module http/client_policy v1.0.0;
 
+// What a client allows itself: limits, timeouts, protocols, connections and
+// endpoints.
+//
+//     HttpClient(
+//         limits: HttpLimits(header_bytes: 65536, line_bytes: 8192, body_bytes: BigInt(10485760)),
+//         timeouts: ClientTimeouts(connection: Duration(seconds: 5), headers: Duration(seconds: 10), body_idle: Duration(seconds: 10)),
+//     );
+//
+// By default: 64 KiB of header, 8 KiB per line, 1 GiB of body, 30 seconds for
+// each timeout, HTTP/1.1, 8 connections and public endpoints only.
+
 import "http/http1_head" take Http1Limits;
 import "http/version" take HttpVersion, UnsupportedHttpVersion;
 import "http/endpoint" take EndpointAllowing, PublicEndpoints;
@@ -14,12 +25,15 @@ object HttpLimits {
     has header_bytes, line_bytes is int;
     has body_bytes is BigInt;
 
+    // 64 KiB of header, 8 KiB per line and 1 GiB of body.
     HttpLimits() {
         header_bytes = 65536;
         line_bytes = 8192;
         body_bytes = BigInt(1073741824);
     }
 
+    // The limits as given; InvalidClientPolicy for ones too small to read a
+    // head.
     HttpLimits(header_bytes is int, line_bytes is int, body_bytes is BigInt) {
         confirm header_bytes >= 4
             && header_bytes <= 1048576
@@ -33,14 +47,17 @@ object HttpLimits {
         self.body_bytes = body_bytes;
     }
 
+    // Bytes in a whole head.
     header_bytes() is int {
         header_bytes;
     }
 
+    // Bytes in one line of a head.
     line_bytes() is int {
         line_bytes;
     }
 
+    // Bytes in a body read whole.
     body_bytes() is BigInt {
         body_bytes;
     }
@@ -63,9 +80,11 @@ object HttpLimits {
     }
 }
 
+// How long a client waits.
 object ClientTimeouts {
     has connection, headers, body_idle is Duration;
 
+    // 30 seconds for each.
     ClientTimeouts() {
         let interval = Duration(seconds: 30);
         connection = interval;
@@ -73,6 +92,7 @@ object ClientTimeouts {
         body_idle = interval;
     }
 
+    // To connect, for the response head, and for each pause in the body.
     ClientTimeouts(connection is Duration, headers is Duration, body_idle is Duration) {
         confirm connection::Span::seconds >= 0.rat()
             && headers::Span::seconds >= 0.rat()
@@ -83,19 +103,23 @@ object ClientTimeouts {
         self.body_idle = body_idle;
     }
 
+    // To connect, TLS included.
     connection_timeout() is Duration {
         connection;
     }
 
+    // From sending to the end of the response head.
     headers_timeout() is Duration {
         headers;
     }
 
+    // For each pause while the body is read.
     body_idle_timeout() is Duration {
         body_idle;
     }
 }
 
+// Everything a transport needs besides DNS, TLS and a clock.
 object ClientPolicy {
     has protocols is Set<HttpVersion>;
     has limits is HttpLimits;
@@ -103,6 +127,8 @@ object ClientPolicy {
     has connections is int;
     has access is EndpointAllowing;
 
+    // HTTP/1.1, the default limits and timeouts, 8 connections, public
+    // endpoints.
     ClientPolicy() {
         let enabled is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]);
         protocols = enabled;
@@ -112,6 +138,8 @@ object ClientPolicy {
         access = PublicEndpoints();
     }
 
+    // The policy as given; InvalidClientPolicy for no protocols or connections
+    // out of 1..1024.
     ClientPolicy(
         protocols is Set<HttpVersion>,
         limits is HttpLimits,
@@ -139,22 +167,27 @@ object ClientPolicy {
         self.access = access;
     }
 
+    // The versions it may speak.
     protocols() is Set<HttpVersion> {
         protocols;
     }
 
+    // The limits.
     limits() is HttpLimits {
         limits;
     }
 
+    // The timeouts.
     timeouts() is ClientTimeouts {
         timeouts;
     }
 
+    // How many connections it keeps at most.
     connections() is int {
         connections;
     }
 
+    // Which endpoints it may reach.
     access() is EndpointAllowing {
         access;
     }
@@ -163,6 +196,7 @@ object ClientPolicy {
 // The currently available transport is deliberately selected here. A policy
 // value can describe H2, but it cannot silently become an HTTP1 conversation.
 object Http1ClientProtocols {
+    // Checks that policy and tls agree on HTTP/1.1.
     Http1ClientProtocols(policy is ClientPolicy, tls is TlsClientPolicy) {
         confirm policy.protocols().size() == 1
             && policy.protocols().membership(HttpVersion.http_1_1)
@@ -172,11 +206,13 @@ object Http1ClientProtocols {
         }
     }
 
+    // HTTP/1.1; UnsupportedHttpVersion when the policy does not allow it.
     version() is HttpVersion {
         HttpVersion.http_1_1;
     }
 }
 
+// A policy that cannot be used; reason says why.
 enum InvalidClientPolicy is Error = (because(reason is string));
 
 test "default client policy is explicit and HTTP1-only" {

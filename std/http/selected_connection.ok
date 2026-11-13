@@ -37,6 +37,7 @@ import "net/tls" take TlsVersion;
 import "crypto/x509/trust" take TrustedCertificates;
 import "collections/set" take Set, OrderedSet;
 
+// Opens a connection and speaks what ALPN selected, or the cleartext version.
 object HttpSelectedConnecting does HttpConversationConnecting {
     has route is HttpEndpointSelection;
     has policy is TlsClientPolicy;
@@ -46,6 +47,7 @@ object HttpSelectedConnecting does HttpConversationConnecting {
     has protocols is HttpClientProtocols;
     has client is ClientPolicy;
 
+    // To route with the TLS policy, the client policy and clock.
     HttpSelectedConnecting(
         route is HttpEndpointSelection,
         policy is TlsClientPolicy,
@@ -61,6 +63,7 @@ object HttpSelectedConnecting does HttpConversationConnecting {
         protocols = HttpClientProtocols(policy: client, tls: policy);
     }
 
+    // A new conversation and how it connected.
     async acquisition() is HttpConversationAcquisition {
         let endpoints = await route.endpoints();
         let group is FutureGroup<TcpConnection> = FutureGroup();
@@ -114,6 +117,7 @@ object HttpSelectedConnecting does HttpConversationConnecting {
     }
 }
 
+// A conversation over a TCP connection already open, as after CONNECT.
 object HttpConversationAdopting does HttpConversationConnecting {
     has tcp is TcpConnection;
     has target is UrlParts;
@@ -123,6 +127,7 @@ object HttpConversationAdopting does HttpConversationConnecting {
     has local is Http2Settings;
     has protocols is HttpClientProtocols;
 
+    // Adopts tcp for target, adding TLS when target is https.
     HttpConversationAdopting(
         tcp is TcpConnection,
         target is UrlParts,
@@ -139,6 +144,7 @@ object HttpConversationAdopting does HttpConversationConnecting {
         protocols = HttpClientProtocols(policy: client, tls: policy);
     }
 
+    // The conversation and how it connected.
     async acquisition() is HttpConversationAcquisition {
         let published = Event();
         let anchor = HttpUnpublishedTcp(origin: tcp, published: published);

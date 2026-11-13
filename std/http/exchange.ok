@@ -1,5 +1,17 @@
 module http/exchange v1.0.0;
 
+// What a client sends and gets back.
+//
+//     let reply = await client.get("https://example.com/");
+//     reply::Head::status;                         // Status.ok
+//     reply::Head::headers.text("Content-Type");
+//     reply::Exchange::history.size();             // redirect hops before it
+//     reply::Exchange::details.secure();           // came over TLS
+//     await reply.text();
+//
+// Exchanging is the role of anything that sends a request: HttpClient and every
+// decorator around it.
+
 import "url/value" take UrlParts, MissingUrlPort;
 import "net/ip" take IpAddress;
 import "http/method" take Method;
@@ -21,17 +33,20 @@ import "encoding/utf" take Utf8Decoded, Utf8Encoded;
 import "encoding/single_byte" take AsciiDecoded, Latin1Decoded;
 import "json" take Json, ParsedJson;
 
+// How a response travelled: the endpoints, the version and TLS.
 object ExchangeDetails {
     has endpoints is ConnectionEndpoints<IpEndpoint>;
     has tls is @TlsDetails;
     has version is HttpVersion;
 
+    // Over plain TCP.
     ExchangeDetails(endpoints is ConnectionEndpoints<IpEndpoint>, version is HttpVersion) {
         self.endpoints = endpoints;
         self.version = version;
         tls = [];
     }
 
+    // Over TLS.
     ExchangeDetails(
         endpoints is ConnectionEndpoints<IpEndpoint>,
         version is HttpVersion,
@@ -42,28 +57,34 @@ object ExchangeDetails {
         self.tls = [tls];
     }
 
+    // The local and remote addresses.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         endpoints;
     }
 
+    // The HTTP version.
     version() is HttpVersion {
         version;
     }
 
+    // Whether it came over TLS.
     secure() is bool {
         tls.size() == 1;
     }
 
+    // The TLS details; PlainHttpHasNoTls over plain TCP.
     tls() is TlsDetails {
         confirm tls.size() == 1 else throw PlainHttpHasNoTls.none;
         tls[0];
     }
 }
 
+// TLS details were asked of a plain connection.
 enum PlainHttpHasNoTls is Error = (none);
 
 // Sends a request and answers what came back: a client, or a decorator of one.
 role Exchanging {
+    // Sends request and gives what came back.
     async response(request is Request) is ClientResponse;
 }
 
@@ -72,6 +93,7 @@ role Exchanging {
 object HttpClientKey {
     has key is string;
 
+    // The key of url.
     HttpClientKey(url is UrlParts) {
         let port = url::Parts::port else if url::Parts::scheme == "https" {
             443;
@@ -82,6 +104,7 @@ object HttpClientKey {
         key = url::Parts::scheme + "://" + (url::Parts::host else "") + ":" + port.string();
     }
 
+    // `scheme://host:port`.
     string() is string {
         key;
     }
@@ -92,11 +115,13 @@ object ExchangeHop {
     has request is Request;
     has response is Response;
 
+    // request and the response it got.
     ExchangeHop(request is Request, response is Response) {
         self.request = request;
         self.response = response;
     }
 
+    // The request and the response.
     cap Exchange {
         request is Request {
             request;
@@ -118,6 +143,7 @@ object ClientResponse {
     has history is @ExchangeHop;
     has details is ExchangeDetails;
 
+    // response to request, with no hops.
     ClientResponse(request is Request, response is Response, details is ExchangeDetails) {
         self.request = request;
         self.response = response;
@@ -125,6 +151,7 @@ object ClientResponse {
         history = [];
     }
 
+    // response to request after history.
     ClientResponse(
         request is Request,
         response is Response,
@@ -142,6 +169,7 @@ object ClientResponse {
         self.details = details;
     }
 
+    // The status, its code and class, the fields and the version.
     cap Head {
         status is Status {
             response::Head::status;
@@ -164,6 +192,8 @@ object ClientResponse {
         }
     }
 
+    // The request that got it, the response, the hops before it and the
+    // details.
     cap Exchange {
         request is Request {
             request;
@@ -249,6 +279,7 @@ hidden object BodyCharset {
     }
 }
 
+// A text body in a charset text() does not decode.
 enum UnsupportedBodyCharset is Error = (named(name is string));
 
 // A body reading seen as an AsyncReading, for io/transfer.

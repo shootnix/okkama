@@ -1,5 +1,17 @@
 module http/endpoint v1.0.0;
 
+// Which addresses a client may connect to, checked after DNS and before the
+// socket.
+//
+//     HttpClient();                                         // PublicEndpoints
+//     HttpClient(endpoints: LoopbackEndpoints());           // tests, local servers
+//     HttpClient(endpoints: ListedNetworks(IpNetwork(address: IpAddress("10.0.0.0"), prefix: 8)));
+//     HttpClient(endpoints: AllEndpoints());
+//
+// PublicEndpoints keeps a client off loopback, private and other special
+// addresses, which guards against requests aimed at the inside of a network
+// (SSRF). A host that resolves only to refused addresses is EndpointDenied.
+
 import "url/value" take ParsedUrl, UrlParts, UrlHostKind;
 import "net/ip" take IpAddress, IpNetwork, IpProperty;
 import "net/endpoint" take IpEndpoint, HostEndpoint;
@@ -9,20 +21,27 @@ import "collections/sequence" take Sequencing;
 // The caller can inspect both the effective URL and the exact numeric candidate.
 // This capability grants no DNS lookup, socket mutation or implicit redirect.
 role EndpointAllowing {
+    // Whether url may be reached at endpoint.
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool;
 }
 
+// Every address.
 object AllEndpoints does EndpointAllowing {
+    // The policy.
     AllEndpoints();
 
+    // true.
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         true;
     }
 }
 
+// Global addresses only: no loopback, private or special ranges.
 object PublicEndpoints does EndpointAllowing {
+    // The policy.
     PublicEndpoints();
 
+    // Whether the address is global, not loopback and not private.
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         if endpoint::Parts::zone != "" {
             return false;
@@ -42,17 +61,21 @@ object PublicEndpoints does EndpointAllowing {
 // Only this machine: 127.0.0.0/8 and ::1. For local servers, tests and
 // examples: HttpClient(endpoints: LoopbackEndpoints()).
 object LoopbackEndpoints does EndpointAllowing {
+    // The policy.
     LoopbackEndpoints();
 
+    // Whether the address is a loopback one.
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         endpoint::Parts::zone == ""
             && endpoint.address().properties().membership(IpProperty.loopback);
     }
 }
 
+// Addresses in some networks.
 object ListedNetworks does EndpointAllowing {
     has networks is @IpNetwork;
 
+    // The networks.
     ListedNetworks(origins is Sequencing<IpNetwork>) {
         let count = origins.size();
         confirm count >= 0 && count <= 1024 else throw EndpointSelectionLimit.stage("networks");
@@ -73,6 +96,7 @@ object ListedNetworks does EndpointAllowing {
         networks = snapshot;
     }
 
+    // Whether the address is in one of the networks.
     allowed(url is UrlParts, endpoint is IpEndpoint) is bool {
         networks.reduce(false) -> permitted, network {
             permitted || network.membership(endpoint.address());
@@ -89,6 +113,8 @@ object HttpEndpointSelection {
     has resolver is Resolving;
     has access is EndpointAllowing;
 
+    // The endpoints of url, resolved by resolver and filtered by access;
+    // InvalidHttpEndpoint for a URL a client cannot reach.
     HttpEndpointSelection(url is UrlParts, resolver is Resolving, access is EndpointAllowing) {
         let scheme = url::Parts::scheme;
         confirm scheme == "http" || scheme == "https"
@@ -113,10 +139,13 @@ object HttpEndpointSelection {
         self.access = access;
     }
 
+    // The URL.
     url() is UrlParts {
         url;
     }
 
+    // The allowed addresses with the URL's port (at most 256); EndpointDenied
+    // when none.
     async endpoints() is Sequencing<IpEndpoint> {
         let source is Sequencing<IpEndpoint> = if url.host_kind() == UrlHostKind.address {
             let direct is @IpEndpoint = [IpEndpoint(address: url.host_address(), port: port)];
@@ -142,10 +171,13 @@ object HttpEndpointSelection {
     }
 }
 
+// A URL a client cannot connect to; reason says why.
 enum InvalidHttpEndpoint is Error = (because(reason is string));
 
+// Every address of the host was refused.
 enum EndpointDenied is Error = (denied);
 
+// Too many addresses; stage says where.
 enum EndpointSelectionLimit is Error = (stage(stage is string));
 
 test "explicit empty network selection grants no endpoint" {

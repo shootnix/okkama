@@ -1,5 +1,13 @@
 module http/environment_proxy v1.0.0;
 
+// The proxy the environment names: http_proxy, https_proxy (or HTTPS_PROXY),
+// all_proxy (or ALL_PROXY) and no_proxy (or NO_PROXY).
+//
+//     let proxy = EnvironmentProxy(Environment()).proxy(url);      // MissingProxy when none
+//     Proxied(proxy: proxy, resolver: SystemResolution(), tls: tls, policy: ClientPolicy(), clock: SystemClock());
+//
+// Uppercase HTTP_PROXY is ignored, as CGI servers set it from a request header.
+
 import "http/proxy_policy" take ProxyPolicy, InvalidProxy;
 import "os/environment" take Environment;
 import "url/value" take UrlParts, ParsedUrl, UrlHostKind, MissingUrlPort;
@@ -9,10 +17,12 @@ import "encoding/utf" take Utf8Encoded;
 import "http/media_type" take HttpMediaItems;
 import "compare" take Order;
 
+// The proxy settings of an environment.
 object EnvironmentProxy {
     has environment is Environment;
     has bypass is @NoProxyRule;
 
+    // Reads environment.
     EnvironmentProxy(environment is Environment) {
         self.environment = environment;
         let text = if environment.membership("no_proxy") {
@@ -40,6 +50,8 @@ object EnvironmentProxy {
         bypass = rules.values();
     }
 
+    // The proxy for origin; MissingProxy when none is set, no_proxy excludes
+    // it, or it is not http or https.
     proxy(origin is UrlParts) is ProxyPolicy {
         confirm origin::Parts::scheme == "http" || origin::Parts::scheme == "https"
             else throw MissingProxy.missing;
@@ -83,6 +95,8 @@ object EnvironmentProxy {
     }
 }
 
+// What a no_proxy entry names: everything, a host and its subdomains, or a
+// network.
 enum NoProxyKind = (all, host, network);
 
 hidden object NoProxyRule {
@@ -261,6 +275,7 @@ hidden object NoProxyCoordinates {
     }
 }
 
+// No proxy applies.
 enum MissingProxy is Error = (missing);
 
 test "environment proxies are selected only from the supplied snapshot" {
