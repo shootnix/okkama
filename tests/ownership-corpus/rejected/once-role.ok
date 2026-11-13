@@ -1,0 +1,15 @@
+// Book 18.6, 22, 20.2: whole-program role implementers determine once let resource safety.
+// EXPECT-CHECK-FAIL: once let cannot store a role with a resource-bearing implementer.
+module ownership v1.0.0;
+role Label { label() is string; }
+object Res does Label {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+object Cache {
+    has value is Label;
+    Cache(value is Label) { self.value = value; }
+    cached() is Label { once let kept = value; kept; }
+}
+main() is int { let cache = Cache(Res()); cache.cached().label(); 0; }

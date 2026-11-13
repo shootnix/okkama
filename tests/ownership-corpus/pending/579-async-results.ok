@@ -1,0 +1,48 @@
+// Pending #579: async-results.
+// Book 20.2: "A lazy async action started by `await` transfers fresh result ownership to that awaiting lexical scope, even when a continuation resumes after suspension."
+// Book 20.2, 31.5: result transfer across suspension and repeated awaits.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async make(log is Atomic<string>, ready is Event, gate is Event) is Res {
+        let local = Res("L", log);
+        ready.set();
+        await gate.wait();
+        Res("R", log);
+    }
+}
+
+async main() is int {
+    let t = Tap(1);
+    let log = Atomic("");
+    defer log.close();
+    {
+        await Work().make(log, Event(), Event(ready: true));
+    }
+
+    t.note("discarded awaited result closes at scope exit: " + log.value());
+    t = t.is(log.value(), "LR", "discarded awaited result closes at scope exit");
+    t.done();
+}

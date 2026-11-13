@@ -1,0 +1,83 @@
+// Book 20.2, 31.5–31.5.2: returned message pins and cancelled undelivered sends.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/channel" take Channel;
+import "async/event" take Event;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async receive(channel is Channel<Res>) is Res {
+        let received = await channel.receiving().item();
+        received;
+    }
+
+    async blocked(channel is Channel<Res>, log is Atomic<string>, ready is Event) is void {
+        let local = Res("L", log);
+        ready.set();
+        await channel.sending().send(Res("M", log));
+    }
+}
+
+async main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let channel is Channel<Res> = Channel(capacity: 1);
+        await channel.sending().send(Res("R", log));
+        {
+            let received = await Work().receive(channel);
+            received.label();
+            t.note("returning received value transfers pin beyond helper: " + log.value());
+            t = t.is(log.value(), "", "returning received value transfers pin beyond helper");
+        }
+
+        t.note("final receiving scope releases returned pin: " + log.value());
+        t = t.is(log.value(), "R", "final receiving scope releases returned pin");
+        channel.sending().close();
+    }
+
+    t.note("returned message has no residual channel owner: " + log.value());
+    t = t.is(log.value(), "R", "returned message has no residual channel owner");
+    log.replace("");
+    {
+        let channel is Channel<Res> = Channel(capacity: 0);
+        let ready = Event();
+        let task = spawn Work().blocked(channel, log, ready);
+        await ready.wait();
+        t.note("blocked send pins fresh message and keeps sender local alive: " + log.value());
+        t = t.is(log.value(), "", "blocked send pins fresh message and keeps sender local alive");
+        task.cancel();
+        try {
+            await task;
+        } catch e is Cancelled {
+            t.note("cancellation releases undelivered input before sender local: " + log.value());
+            t = t.is(log.value(), "ML", "cancellation releases undelivered input before sender local");
+        }
+
+        channel.sending().close();
+    }
+
+    t.note("channel disposal does not repeat cancelled message cleanup: " + log.value());
+    t = t.is(log.value(), "ML", "channel disposal does not repeat cancelled message cleanup");
+    t.done();
+}

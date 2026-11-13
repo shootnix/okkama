@@ -1,0 +1,61 @@
+// Book 14.2, 15, 20.1–20.3: panic unwinds nested resources and cleanup may acquire resources.
+// EXPECT-RUNTIME-FAIL: panic "ownership corpus deliberate panic"; two TAP checks run during unwind.
+// Run separately from normal-success TAP programs. This is not a checker failure.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Observer {
+    has log is Atomic<string>;
+    Observer(log is Atomic<string>) {
+        self.log = log;
+    }
+
+    destroy {
+        let t = Tap(2);
+        t.note("panic unwind: " + log.value());
+        t = t.is(log.value(), "dBA", "panic drains nested defer and resources before outer observer");
+        {
+            let cleanupResource = Res("P", log);
+        }
+
+        t.note("cleanup allocation: " + log.value());
+        t = t.is(log.value(), "dBAP", "resource created during destruction gets its own lexical owner");
+        let status = t.done();
+        confirm status == 0;
+        log.close();
+    }
+}
+
+main() is int {
+    let log = Atomic("");
+    let observer = Observer(log);
+    {
+        let a = Res("A", log);
+        {
+            let b = Res("B", log);
+            defer log.replace(log.value() + "d");
+            panic "ownership corpus deliberate panic";
+        }
+    }
+
+    0;
+}

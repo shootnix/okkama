@@ -1,0 +1,71 @@
+// Book 8.2–8.3, 20.2: map creation order, merge replacement, repeated values.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Key {
+    has rank is int;
+    Key(rank is int) {
+        self.rank = rank;
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let values = ["z": Res("A", log), "a": Res("B", log), "m": Res("C", log)];
+        values.size();
+    }
+
+    t.note("key sorting cannot change reverse creation order: " + log.value());
+    t = t.is(log.value(), "CBA", "key sorting cannot change reverse creation order");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        let values = ["x": a, "y": a];
+        values.values();
+    }
+
+    t.note("repeated map values preserve identity: " + log.value());
+    t = t.is(log.value(), "A", "repeated map values preserve identity");
+    log.replace("");
+    {
+        let first = ["k": Res("A", log)];
+        let merged = first + ["k": Res("B", log)];
+        t.note("merge replacement does not release source: " + log.value());
+        t = t.is(log.value(), "", "merge replacement does not release source");
+        merged.size();
+    }
+
+    t.note("replaced and replacement values both close: " + log.value());
+    t = t.is(log.value(), "BA", "replaced and replacement values both close");
+    log.replace("");
+    {
+        let keyed = [Key(2): Res("X", log), Key(1): Res("Y", log)];
+        keyed.keys();
+    }
+
+    t.note("resource-free object keys do not reorder resources: " + log.value());
+    t = t.is(log.value(), "YX", "resource-free object keys do not reorder resources");
+    t.done();
+}

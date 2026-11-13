@@ -1,0 +1,15 @@
+// Book 18.6, 20.2: once let refuses a direct resource even when it is a field.
+// EXPECT-CHECK-FAIL: once let cannot store resource type Res.
+module ownership v1.0.0;
+object Res {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+
+object Cache {
+    has resource is Res;
+    Cache(resource is Res) { self.resource = resource; }
+    get() is Res { once let kept = resource; kept; }
+}
+main() is int { let cache = Cache(Res()); cache.get().label(); 0; }

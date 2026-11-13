@@ -1,0 +1,86 @@
+// Book 19, 20.2: copied fields borrow, replaced fields transfer, original preserved.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Holder {
+    has item is Res;
+    has tag is string;
+    has log is Atomic<string>;
+    Holder(item is Res, tag is string, log is Atomic<string>) {
+        self.item = item;
+        self.tag = tag;
+        self.log = log;
+    }
+
+    retag(tag is string) is ^Holder {
+        ^tag = tag;
+    }
+
+    replace(item is Res, tag is string) is ^Holder {
+        ^item = item;
+        ^tag = tag;
+    }
+
+    label() is string {
+        item.label();
+    }
+
+    destroy {
+        log.replace(log.value() + tag);
+    }
+}
+
+main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let original = Holder(Res("A", log), "O", log);
+        {
+            let copy = original.retag("S");
+            copy.label();
+        }
+
+        t.note("successor dies while shared field stays with original: " + log.value());
+        t = t.is(log.value(), "S", "successor dies while shared field stays with original");
+        original.label();
+    }
+
+    t.note("original owner then shared field close: " + log.value());
+    t = t.is(log.value(), "SOA", "original owner then shared field close");
+    log.replace("");
+    {
+        let original = Holder(Res("A", log), "O", log);
+        {
+            let replaced = original.replace(Res("B", log), "S");
+            replaced.label();
+        }
+
+        t.note("replacement successor owns new field: " + log.value());
+        t = t.is(log.value(), "SB", "replacement successor owns new field");
+        original.label();
+    }
+
+    t.note("replacement leaves old field alive: " + log.value());
+    t = t.is(log.value(), "SBOA", "replacement leaves old field alive");
+    t.done();
+}

@@ -1,0 +1,133 @@
+// Book 20.1.1, 20.3, 31.5: awaited LIFO destruction and shielded cancellation.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object AsyncRes {
+    has name is string;
+    has log is Atomic<string>;
+    has closing is Event;
+    has gate is Event;
+    AsyncRes(name is string, log is Atomic<string>, closing is Event, gate is Event) {
+        self.name = name;
+        self.log = log;
+        self.closing = closing;
+        self.gate = gate;
+    }
+
+    async destroy {
+        log.replace(log.value() + name + "<");
+        closing.set();
+        await gate.wait();
+        log.replace(log.value() + name + ">");
+    }
+}
+
+enum Stop is Error = (now);
+
+object Work {
+    Work();
+    async returned(log is Atomic<string>) is Res {
+        let local = AsyncRes("X", log, Event(), Event(ready: true));
+        return Res("R", log);
+    }
+
+    async failed(log is Atomic<string>) is void {
+        let local = AsyncRes("F", log, Event(), Event(ready: true));
+        throw Stop.now;
+    }
+
+    async scope(log is Atomic<string>, closing is Event, gate is Event) is void {
+        let a = Res("A", log);
+        let b = AsyncRes("B", log, closing, gate);
+        defer log.replace(log.value() + "d");
+    }
+
+    async run(log is Atomic<string>, closing is Event, gate is Event, never is Event) is int {
+        await self.scope(log, closing, gate);
+        await never.wait();
+        1;
+    }
+}
+
+async main() is int {
+    let t = Tap(10);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let a = AsyncRes("A", log, Event(), Event(ready: true));
+        let b = AsyncRes("B", log, Event(), Event(ready: true));
+    }
+
+    t.note("async destroys are awaited serially in LIFO order: " + log.value());
+    t = t.is(log.value(), "B<B>A<A>", "async destroys are awaited serially in LIFO order");
+    log.replace("");
+    {
+        let items = [AsyncRes("A", log, Event(), Event(ready: true)), AsyncRes("B", log, Event(), Event(ready: true))];
+    }
+
+    t.note("array transports resources with async destroy: " + log.value());
+    t = t.is(log.value(), "B<B>A<A>", "array transports resources with async destroy");
+    log.replace("");
+    {
+        let result = await Work().returned(log);
+        t.note("early return awaits cleanup before publishing resource: " + log.value());
+        t = t.is(log.value(), "X<X>", "early return awaits cleanup before publishing resource");
+        result.label();
+    }
+
+    t.note("returned resource has separate awaiting owner: " + log.value());
+    t = t.is(log.value(), "X<X>R", "returned resource has separate awaiting owner");
+    log.replace("");
+    try {
+        await Work().failed(log);
+    }
+
+    catch e is Stop {
+        t.note("body throw awaits async destroy before catch: " + log.value());
+        t = t.is(log.value(), "F<F>", "body throw awaits async destroy before catch");
+    }
+
+    t.note("failed future cannot repeat async destruction: " + log.value());
+    t = t.is(log.value(), "F<F>", "failed future cannot repeat async destruction");
+    log.replace("");
+    let closing = Event();
+    let gate = Event();
+    let task = spawn Work().run(log, closing, gate, Event());
+    await closing.wait();
+    t.note("defer ran and async destroy is suspended before older resource: " + log.value());
+    t = t.is(log.value(), "dB<", "defer ran and async destroy is suspended before older resource");
+    task.cancel();
+    t.note("cancellation cannot interrupt suspended async destroy: " + log.value());
+    t = t.is(log.value(), "dB<", "cancellation cannot interrupt suspended async destroy");
+    gate.set();
+    try {
+        await task;
+    } catch e is Cancelled {
+        t.note("shielded cleanup finishes before cancellation reaches next await: " + log.value());
+        t = t.is(log.value(), "dB<B>A", "shielded cleanup finishes before cancellation reaches next await");
+    }
+
+    t.note("cancelled task closes each identity once: " + log.value());
+    t = t.is(log.value(), "dB<B>A", "cancelled task closes each identity once");
+    t.done();
+}

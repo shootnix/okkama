@@ -1,0 +1,76 @@
+// Book 8.1, 8.2a, 20.2: nested arrays, repeated references and concatenation.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(7);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let rows = [[Res("A", log)], [Res("B", log), Res("C", log)]];
+        t.note("nested aggregate retains all resources: " + log.value());
+        t = t.is(log.value(), "", "nested aggregate retains all resources");
+    }
+
+    t.note("nested arrays register by creation order: " + log.value());
+    t = t.is(log.value(), "CBA", "nested arrays register by creation order");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        let rows = [a, a] + [a];
+        rows.size();
+    }
+
+    t.note("concatenation preserves duplicate identity: " + log.value());
+    t = t.is(log.value(), "A", "concatenation preserves duplicate identity");
+    log.replace("");
+    {
+        let a = [Res("A", log)];
+        {
+            let combined = a + [Res("B", log)];
+            combined.size();
+        }
+
+        t.note("inner copied array owns only fresh addition: " + log.value());
+        t = t.is(log.value(), "B", "inner copied array owns only fresh addition");
+    }
+
+    t.note("copy leaves original resource with outer owner: " + log.value());
+    t = t.is(log.value(), "BA", "copy leaves original resource with outer owner");
+    log.replace("");
+    {
+        let empty is @Res = [];
+        let result = empty + [Res("Z", log)];
+        result.size();
+    }
+
+    t.note("typed empty array does not hide fresh resource: " + log.value());
+    t = t.is(log.value(), "Z", "typed empty array does not hide fresh resource");
+    log.replace("");
+    {
+        let equalValues = [Res("Q", log), Res("Q", log)];
+        equalValues.size();
+    }
+    t.note("structurally equal distinct resources: " + log.value());
+    t = t.is(log.value(), "QQ", "equal values with different identities must both be destroyed");
+    t.done();
+}

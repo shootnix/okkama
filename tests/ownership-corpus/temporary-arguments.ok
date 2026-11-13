@@ -1,0 +1,64 @@
+// Book 20.2: fresh and borrowed arguments, duplicate identities, anonymous actions.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Inspect {
+    Inspect();
+    one(r is Res) is void {
+        r.label();
+    }
+
+    two(a is Res, b is Res) is void {
+        a.label();
+        b.label();
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    Inspect().two(Res("A", log), Res("B", log));
+    t.note("fresh arguments close at callee return: " + log.value());
+    t = t.is(log.value(), "BA", "fresh arguments close at callee return");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        Inspect().two(a, Res("B", log));
+        t.note("mixed arguments adopt only fresh input: " + log.value());
+        t = t.is(log.value(), "B", "mixed arguments adopt only fresh input");
+        Inspect().two(a, a);
+        t.note("same caller-owned value twice stays borrowed: " + log.value());
+        t = t.is(log.value(), "B", "same caller-owned value twice stays borrowed");
+    }
+
+    t.note("caller destroys duplicate aliases only once: " + log.value());
+    t = t.is(log.value(), "BA", "caller destroys duplicate aliases only once");
+    log.replace("");
+    ((a is Res, b is Res) is void {
+        a.label();
+        b.label();
+    })(Res("C", log), Res("D", log));
+    t.note("anonymous action adopts fresh arguments: " + log.value());
+    t = t.is(log.value(), "DC", "anonymous action adopts fresh arguments");
+    t.done();
+}

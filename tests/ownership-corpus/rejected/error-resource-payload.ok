@@ -1,0 +1,12 @@
+// Book 14.2 versus 14.3/20.2: Error enum payload grammar excludes resources.
+// EXPECT-CHECK-FAIL: Error enum payload cannot be an object.
+// This records the current boundary: resource Error-payload transfer prose is unreachable.
+module ownership v1.0.0;
+object Res {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+
+enum Invalid is Error = (resource(item is Res));
+main() is int { throw Invalid.resource(Res()); 0; }

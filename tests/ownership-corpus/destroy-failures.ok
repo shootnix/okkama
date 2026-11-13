@@ -1,0 +1,95 @@
+// Book 15, 20.1–20.3: throwing destroy, primary failure and remaining cleanup.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Body is Error = (failed);
+
+enum Cleanup is Error = (failed);
+
+object Bomb {
+    has name is string;
+    has log is Atomic<string>;
+    Bomb(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    destroy {
+        let alias = self;
+        log.replace(log.value() + name);
+        throw Cleanup.failed;
+    }
+}
+
+object Fail {
+    Fail();
+    fail() is void {
+        throw Body.failed;
+    }
+}
+
+main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    try {
+        let a = Res("A", log);
+        let b = Bomb("B", log);
+        let alias = b;
+    } catch e is Cleanup {
+        t.note("destroy throw does not skip older resource or repeat self alias: " + log.value());
+        t = t.is(log.value(), "BA", "destroy throw does not skip older resource or repeat self alias");
+    }
+
+    t.note("caught cleanup failure has completed cleanup: " + log.value());
+    t = t.is(log.value(), "BA", "caught cleanup failure has completed cleanup");
+    log.replace("");
+    try {
+        let a = Bomb("A", log);
+        let b = Bomb("B", log);
+        throw Body.failed;
+    } catch e is Body {
+        log.replace(log.value() + "p");
+    }
+
+    catch e is Cleanup {
+        log.replace(log.value() + "wrong");
+    }
+
+    t.note("body failure wins over two cleanup failures: " + log.value());
+    t = t.is(log.value(), "BAp", "body failure wins over two cleanup failures");
+    log.replace("");
+    try {
+        let a = Bomb("A", log);
+        defer Fail().fail();
+    } catch e is Body {
+        log.replace(log.value() + "d");
+    }
+
+    catch e is Cleanup {
+        log.replace(log.value() + "wrong");
+    }
+
+    t.note("defer failure wins over destroy failure: " + log.value());
+    t = t.is(log.value(), "Ad", "defer failure wins over destroy failure");
+    t.done();
+}

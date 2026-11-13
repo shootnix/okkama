@@ -1,0 +1,21 @@
+// Book 18.5–18.6, 20.2: action signatures with resource captures cannot be cached.
+// EXPECT-CHECK-FAIL: once let cannot store an action type capturing a resource.
+module ownership v1.0.0;
+object Res {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+
+object Cache {
+    has value is () is string;
+    Cache(value is () is string) { self.value = value; }
+    cached() is () is string { once let kept = value; kept; }
+}
+main() is int {
+    let r = Res();
+    let action = () is string { r.label(); };
+    let cache = Cache(action);
+    cache.cached()();
+    0;
+}

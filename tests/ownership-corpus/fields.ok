@@ -1,0 +1,88 @@
+// Book 16.2, 20.2: nested fields, shared fields and parent/child destruction.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Pair {
+    has left is Res;
+    has right is Res;
+    Pair(left is Res, right is Res) {
+        self.left = left;
+        self.right = right;
+    }
+}
+
+object Owner {
+    has item is Res;
+    has log is Atomic<string>;
+    Owner(item is Res, log is Atomic<string>) {
+        self.item = item;
+        self.log = log;
+    }
+
+    item() is Res {
+        item;
+    }
+
+    destroy {
+        log.replace(log.value() + "O");
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let pair = Pair(Res("A", log), Res("B", log));
+        t.note("fields remain live: " + log.value());
+        t = t.is(log.value(), "", "fields remain live");
+    }
+
+    t.note("fresh fields close in reverse construction order: " + log.value());
+    t = t.is(log.value(), "BA", "fresh fields close in reverse construction order");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        let pair = Pair(a, a);
+    }
+
+    t.note("two fields sharing one resource destroy once: " + log.value());
+    t = t.is(log.value(), "A", "two fields sharing one resource destroy once");
+    log.replace("");
+    {
+        let owner = Owner(Res("C", log), log);
+    }
+
+    t.note("completed parent is newer than its field: " + log.value());
+    t = t.is(log.value(), "OC", "completed parent is newer than its field");
+    log.replace("");
+    {
+        let child = Owner(Res("C", log), log).item();
+        t.note("returning child does not retain parent: " + log.value());
+        t = t.is(log.value(), "O", "returning child does not retain parent");
+        child.label();
+    }
+
+    t.note("escaped child has independent lifetime: " + log.value());
+    t = t.is(log.value(), "OC", "escaped child has independent lifetime");
+    t.done();
+}

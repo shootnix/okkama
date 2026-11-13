@@ -1,0 +1,10 @@
+// Book 8.2, 20.2: map keys must be resource-free value objects.
+// EXPECT-CHECK-FAIL: Map key type Res cannot be a key: has a destroy block.
+module ownership v1.0.0;
+object Res {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+
+main() is int { let invalid is %Res:int = [Res(): 1]; 0; }

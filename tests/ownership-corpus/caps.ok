@@ -1,0 +1,88 @@
+// Book 16.3, 19, 20.2: caps retain hidden resources and original snapshot.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Owner {
+    has resource is Res;
+    has tag is string;
+    has log is Atomic<string>;
+    Owner(resource is Res, tag is string, log is Atomic<string>) {
+        self.resource = resource;
+        self.tag = tag;
+        self.log = log;
+    }
+
+    cap View {
+        tag is string {
+            tag;
+        }
+    }
+
+    retag(tag is string) is ^Owner {
+        ^tag = tag;
+    }
+
+    destroy {
+        log.replace(log.value() + tag);
+    }
+}
+
+object Factory {
+    Factory();
+    view(log is Atomic<string>) is Owner::View {
+        Owner(Res("R", log), "O", log)::View;
+    }
+}
+
+main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let view = Factory().view(log);
+        view::tag;
+        t.note("cap retains owner even when computed field does not read resource: " + log.value());
+        t = t.is(log.value(), "", "cap retains owner even when computed field does not read resource");
+        let copies = [view, view];
+        copies.size();
+    }
+
+    t.note("cap aggregate closes owner graph exactly once: " + log.value());
+    t = t.is(log.value(), "OR", "cap aggregate closes owner graph exactly once");
+    log.replace("");
+    {
+        let owner = Owner(Res("R", log), "O", log);
+        let view = owner::View;
+        {
+            let successor = owner.retag("S");
+            successor::View::tag;
+        }
+
+        t.note("successor closes independently of original cap: " + log.value());
+        t = t.is(log.value(), "S", "successor closes independently of original cap");
+        log.replace(log.value() + view::tag + "|");
+    }
+
+    t.note("cap remains bound to original snapshot: " + log.value());
+    t = t.is(log.value(), "SO|OR", "cap remains bound to original snapshot");
+    t.done();
+}

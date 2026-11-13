@@ -1,0 +1,70 @@
+// Book 20.2–20.3, 31.5; async/collect: loser cleanup precedes winner publication.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/collect" take Raced;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async loser(log is Atomic<string>, ready is Event, never is Event) is Res {
+        let local = Res("L", log);
+        defer log.replace(log.value() + "d");
+        ready.set();
+        await never.wait();
+        Res("wrong", log);
+    }
+
+    async winner(log is Atomic<string>, ready is Event) is Res {
+        await ready.wait();
+        Res("W", log);
+    }
+}
+
+async main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let ready = Event();
+        let origins is @Future<Res> = [Work().loser(log, ready, Event()), Work().winner(log, ready)];
+        let race is Raced<Res> = Raced(origins: origins);
+        let result = await race.winner();
+        t.note("loser is fully cleaned before winning resource is published: " + log.value());
+        t = t.is(log.value(), "dL", "loser is fully cleaned before winning resource is published");
+        result.label();
+        t.note("winning resource remains owned by awaiting scope: " + log.value());
+        t = t.is(log.value(), "dL", "winning resource remains owned by awaiting scope");
+    }
+
+    t.note("winner closes after loser cleanup: " + log.value());
+    t = t.is(log.value(), "dLW", "winner closes after loser cleanup");
+    log.replace("");
+    {
+        let origins is @Future<Res> = [Work().winner(log, Event(ready: true))];
+        let result = await Raced(origins: origins).winner();
+        result.label();
+    }
+
+    t.note("single-input race transfers resource normally: " + log.value());
+    t = t.is(log.value(), "W", "single-input race transfers resource normally");
+    t.done();
+}

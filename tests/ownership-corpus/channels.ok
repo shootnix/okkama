@@ -1,0 +1,76 @@
+// Book 20.2, 31.5.2; async/channel: message pins, unread messages, close and alias ownership.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/channel" take Channel;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+async main() is int {
+    let t = Tap(8);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let channel is Channel<Res> = Channel(capacity: 1);
+        await channel.sending().send(Res("U", log));
+        t.note("buffered message remains pinned after send: " + log.value());
+        t = t.is(log.value(), "", "buffered message remains pinned after send");
+        channel.sending().close();
+        t.note("close preserves unread buffered message: " + log.value());
+        t = t.is(log.value(), "", "close preserves unread buffered message");
+    }
+
+    t.note("last channel capability releases unread message: " + log.value());
+    t = t.is(log.value(), "U", "last channel capability releases unread message");
+    log.replace("");
+    {
+        let channel is Channel<Res> = Channel(capacity: 1);
+        await channel.sending().send(Res("R", log));
+        channel.sending().close();
+        {
+            let received = await channel.receiving().item();
+            received.label();
+            t.note("received resource lives through receiving scope: " + log.value());
+            t = t.is(log.value(), "", "received resource lives through receiving scope");
+        }
+
+        t.note("delivery transfers message pin to receiving scope: " + log.value());
+        t = t.is(log.value(), "R", "delivery transfers message pin to receiving scope");
+    }
+
+    t.note("channel disposal does not repeat delivered destroy: " + log.value());
+    t = t.is(log.value(), "R", "channel disposal does not repeat delivered destroy");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        {
+            let channel is Channel<Res> = Channel(capacity: 2);
+            await channel.sending().send(a);
+            await channel.sending().send(a);
+            channel.sending().close();
+        }
+
+        t.note("repeated unread borrowed messages leave source owner intact: " + log.value());
+        t = t.is(log.value(), "", "repeated unread borrowed messages leave source owner intact");
+    }
+
+    t.note("source alias owns repeated borrowed messages exactly once: " + log.value());
+    t = t.is(log.value(), "A", "source alias owns repeated borrowed messages exactly once");
+    t.done();
+}

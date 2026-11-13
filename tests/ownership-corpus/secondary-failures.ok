@@ -1,0 +1,78 @@
+// Book 14.2–14.4, 20.1–20.3: primary failure survives two throwing destroys.
+// EXPECT-RUNTIME-FAIL: uncaught Body.failed, with Cleanup.second then Cleanup.first as secondary failures.
+// Two TAP checks run during unwind; collect stderr as well as stdout, separately from success cases.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Body is Error = (failed);
+
+enum Cleanup is Error = (first, second);
+
+object Bomb {
+    has name is string;
+    has log is Atomic<string>;
+    Bomb(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    destroy {
+        let alias = self;
+        log.replace(log.value() + name);
+        if name == "B" {
+            throw Cleanup.second;
+        } else {
+            throw Cleanup.first;
+        }
+    }
+}
+
+object Observer {
+    has log is Atomic<string>;
+    Observer(log is Atomic<string>) {
+        self.log = log;
+    }
+
+    destroy {
+        let t = Tap(2);
+        t.note("both throwing destroys ran despite body failure: " + log.value());
+        t = t.is(log.value(), "BA", "both throwing destroys ran despite body failure");
+        {
+            let fresh = Res("C", log);
+        }
+
+        t.note("remaining cleanup can acquire and release a fresh identity: " + log.value());
+        t = t.is(log.value(), "BAC", "remaining cleanup can acquire and release a fresh identity");
+        let status = t.done();
+        confirm status == 0;
+        log.close();
+    }
+}
+
+main() is int {
+    let log = Atomic("");
+    let observer = Observer(log);
+    let a = Bomb("A", log);
+    let b = Bomb("B", log);
+    throw Body.failed;
+    0;
+}

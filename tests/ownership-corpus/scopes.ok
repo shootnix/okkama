@@ -1,0 +1,69 @@
+// Book 12.2, 20.1–20.3: lexical ownership, nested scopes, shadowing and nonescaping block tails.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let a = Res("A", log);
+        {
+            let b = Res("B", log);
+            {
+                let c = Res("C", log);
+            }
+        }
+
+        t.note("nested owners close before outer: " + log.value());
+        t = t.is(log.value(), "CB", "nested owners close before outer");
+        {
+            let a = Res("S", log);
+            a.label();
+        }
+
+        t.note("shadowing does not replace outer identity: " + log.value());
+        t = t.is(log.value(), "CBS", "shadowing does not replace outer identity");
+        a.label();
+    }
+
+    t.note("outer identity survives shadowing: " + log.value());
+    t = t.is(log.value(), "CBSA", "outer identity survives shadowing");
+    log.replace("");
+    {
+        Res("X", log);
+        t.note("standalone construction has lexical owner: " + log.value());
+        t = t.is(log.value(), "", "standalone construction has lexical owner");
+    }
+
+    t.note("standalone object closes at block exit: " + log.value());
+    t = t.is(log.value(), "X", "standalone object closes at block exit");
+    log.replace("");
+    {
+        let x = Res("Y", log);
+        x;
+    }
+
+    t.note("bare block tail does not escape a statement block: " + log.value());
+    t = t.is(log.value(), "Y", "bare block tail does not escape a statement block");
+    t.done();
+}

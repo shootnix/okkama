@@ -1,0 +1,96 @@
+// Book 22, 25, 20.2: role returns, generic wrappers, any transport.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+role Label {
+    label() is string;
+}
+
+object Resource does Label {
+    has resource is Res;
+    Resource(resource is Res) {
+        self.resource = resource;
+    }
+
+    label() is string {
+        resource.label();
+    }
+}
+
+object Box<T> {
+    has value is T;
+    Box(value is T) {
+        self.value = value;
+    }
+
+    value() is T {
+        value;
+    }
+}
+
+role Making {
+    make(log is Atomic<string>) is Label;
+}
+
+object Factory does Making {
+    Factory();
+    make(log is Atomic<string>) is Label {
+        Resource(Res("R", log));
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let factory is Making = Factory();
+        let value is Label = factory.make(log);
+        let boxed = Box(value);
+        boxed.value().label();
+        t.note("role call result survives generic container transport: " + log.value());
+        t = t.is(log.value(), "", "role call result survives generic container transport");
+    }
+
+    t.note("role resource closes with outer owner: " + log.value());
+    t = t.is(log.value(), "R", "role resource closes with outer owner");
+    log.replace("");
+    {
+        let nested = Box(Box([Res("A", log), Res("B", log)]));
+        nested.value().value().size();
+    }
+
+    t.note("nested generic containers retain concrete resource graph: " + log.value());
+    t = t.is(log.value(), "BA", "nested generic containers retain concrete resource graph");
+    log.replace("");
+    {
+        let resource is any = Res("X", log);
+        let box is Box<any> = Box(resource);
+        box.value();
+        t.note("any boxing does not erase owner: " + log.value());
+        t = t.is(log.value(), "", "any boxing does not erase owner");
+    }
+
+    t.note("any transport preserves exactly once cleanup: " + log.value());
+    t = t.is(log.value(), "X", "any transport preserves exactly once cleanup");
+    t.done();
+}

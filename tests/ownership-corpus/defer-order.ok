@@ -1,0 +1,68 @@
+// Book 15, 20.3: lazy defer inputs, resources acquired by defer, return cleanup.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    returned(log is Atomic<string>) is Res {
+        let local = Res("L", log);
+        defer log.replace(log.value() + "d");
+        return Res("R", log);
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        defer log.replace(log.value() + "1");
+        let a = Res("A", log);
+        defer log.replace(log.value() + a.label());
+        let b = Res("B", log);
+        defer log.replace(log.value() + "2");
+    }
+
+    t.note("all lazy defers run before resource LIFO: " + log.value());
+    t = t.is(log.value(), "2A1BA", "all lazy defers run before resource LIFO");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        defer Res("D", log).label();
+        t.note("deferred receiver is not evaluated at registration: " + log.value());
+        t = t.is(log.value(), "", "deferred receiver is not evaluated at registration");
+    }
+
+    t.note("defer adopts and destroys its fresh receiver before locals: " + log.value());
+    t = t.is(log.value(), "DA", "defer adopts and destroys its fresh receiver before locals");
+    log.replace("");
+    {
+        let r = Work().returned(log);
+        t.note("return cleans local defer and unrelated resource: " + log.value());
+        t = t.is(log.value(), "dL", "return cleans local defer and unrelated resource");
+        r.label();
+    }
+
+    t.note("returned resource survives deferred cleanup: " + log.value());
+    t = t.is(log.value(), "dLR", "returned resource survives deferred cleanup");
+    t.done();
+}

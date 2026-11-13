@@ -1,0 +1,15 @@
+// Book 18.6, 25, 20.2: generic aggregate cannot hide resources in once let.
+// EXPECT-CHECK-FAIL: once let cannot store a resource-bearing generic specialization.
+module ownership v1.0.0;
+object Res {
+    Res();
+    label() is string { "R"; }
+    destroy { 0; }
+}
+
+object Box<T> {
+    has value is T;
+    Box(value is T) { self.value = value; }
+    cached() is @T { once let kept = [value]; kept; }
+}
+main() is int { let box = Box(Res()); box.cached().size(); 0; }

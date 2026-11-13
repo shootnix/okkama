@@ -1,0 +1,87 @@
+// Book 12.5–12.7, 20.2–20.3: iteration cleanup on next, last and valued last.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(6);
+    let log = Atomic("");
+    defer log.close();
+    for ["A", "B", "C"] -> name {
+        let r = Res(name, log);
+        defer log.replace(log.value() + "d");
+        next if name == "A";
+        last if name == "B";
+    }
+
+    t.note("next and last close only visited iterations: " + log.value());
+    t = t.is(log.value(), "dAdB", "next and last close only visited iterations");
+    log.replace("");
+    {
+        let result = loop {
+            let r = Res("L", log);
+            last Res("R", log);
+        };
+        t.note("valued last transfers result and closes other locals: " + log.value());
+        t = t.is(log.value(), "L", "valued last transfers result and closes other locals");
+        result.label();
+    }
+
+    t.note("valued last result belongs to receiving scope: " + log.value());
+    t = t.is(log.value(), "LR", "valued last result belongs to receiving scope");
+    log.replace("");
+    loop {
+        let outer = Res("O", log);
+        {
+            let inner = Res("I", log);
+            last;
+        }
+    }
+
+    t.note("last unwinds nested blocks: " + log.value());
+    t = t.is(log.value(), "IO", "last unwinds nested blocks");
+    log.replace("");
+    for ["A", "B"] -> name {
+        let r = Res(name, log);
+        loop {
+            let inner = Res("i", log);
+            last;
+        }
+    }
+
+    t.note("last targets nearest loop: " + log.value());
+    t = t.is(log.value(), "iAiB", "last targets nearest loop");
+    log.replace("");
+    {
+        let iteration = Atomic(0);
+        defer iteration.close();
+        loop {
+            let n = iteration.value();
+            iteration.replace(n + 1);
+            let r = Res(if n == 0 { "A"; } else { "B"; }, log);
+            next if n == 0;
+            last;
+        }
+    }
+    t.note("loop next and last: " + log.value());
+    t = t.is(log.value(), "AB", "loop next and last each close their own iteration");
+    t.done();
+}

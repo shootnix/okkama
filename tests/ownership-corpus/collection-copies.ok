@@ -1,0 +1,62 @@
+// Book 8.2a–8.3, 13, 20.2: slices, subtraction and derived arrays retain identity.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let original = [Res("A", log), Res("B", log), Res("C", log)];
+        {
+            let slice = original.slice(0, 2);
+            slice.size();
+        }
+
+        t.note("slice borrows original elements: " + log.value());
+        t = t.is(log.value(), "", "slice borrows original elements");
+        let retained = original - [original[1]];
+        retained.size();
+        t.note("subtraction does not release removed resource early: " + log.value());
+        t = t.is(log.value(), "", "subtraction does not release removed resource early");
+    }
+
+    t.note("original owns copied and removed elements: " + log.value());
+    t = t.is(log.value(), "CBA", "original owns copied and removed elements");
+    log.replace("");
+    {
+        let original = ["z": Res("A", log), "a": Res("B", log)];
+        {
+            let copied = original.values();
+            let fewer = original - ["z": original["z"]];
+            copied.size();
+            fewer.size();
+        }
+
+        t.note("values and map subtraction borrow existing entries: " + log.value());
+        t = t.is(log.value(), "", "values and map subtraction borrow existing entries");
+    }
+
+    t.note("derived key order does not change owner order: " + log.value());
+    t = t.is(log.value(), "BA", "derived key order does not change owner order");
+    t.done();
+}

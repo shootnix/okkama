@@ -1,0 +1,73 @@
+// Book 14.1–14.4, 20.3: confirm throws, scalar Error payloads, automatic causes.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+enum Stop is Error = (code(value is int));
+
+enum Wrapped is Error = (cause(inner is Stop));
+
+main() is int {
+    let t = Tap(5);
+    let log = Atomic("");
+    defer log.close();
+    try {
+        let a = Res("A", log);
+        confirm false else throw Stop.code(7);
+    }
+
+    catch Stop.code(code) {
+        t.note("confirm else throw drains live resource before pattern binding: " + log.value());
+        t = t.is(log.value(), "A", "confirm else throw drains live resource before pattern binding");
+        log.replace(log.value() + code.string());
+    }
+
+    t.note("scalar Error payload remains usable in catch: " + log.value());
+    t = t.is(log.value(), "A7", "scalar Error payload remains usable in catch");
+    log.replace("");
+    {
+        let a = Res("A", log);
+        confirm true else throw Stop.code(9);
+        t.note("successful confirm leaves resource alive: " + log.value());
+        t = t.is(log.value(), "", "successful confirm leaves resource alive");
+    }
+
+    t.note("successful confirm does not alter natural exit: " + log.value());
+    t = t.is(log.value(), "A", "successful confirm does not alter natural exit");
+    log.replace("");
+    try {
+        try {
+            let a = Res("A", log);
+            throw Stop.code(3);
+        }
+
+        catch e is Stop {
+            let h = Res("H", log);
+            throw Wrapped.cause(e);
+        }
+    } catch Wrapped.cause(inner) {
+        t.note("wrapping error drains both scopes before outer catch: " + log.value());
+        t = t.is(log.value(), "AH", "wrapping error drains both scopes before outer catch");
+        inner.text();
+    }
+
+    t.done();
+}
