@@ -1,7 +1,8 @@
 module examples/terminal/colors v1.0.0;
 
 import "terminal/capability" take DetectedTerminalCapabilities, TerminalColorDepth, ColorPolicy;
-import "terminal/style" take StyledText, TextStyle, NamedColor, RgbColor, DefaultColor, BasicColor, TextAttribute;
+import "terminal/style" take StyledText, TextStyle, NamedColor, RgbColor, DefaultColor, BasicColor,
+    TextAttribute;
 import "terminal/width" take DisplayWidth;
 import "os/environment" take Environment;
 import "io/stdout" take Stdout;
@@ -22,10 +23,18 @@ object DepthName {
 
     string() is string {
         match depth {
-            case TerminalColorDepth.disabled { "no colors"; }
-            case TerminalColorDepth.basic { "8 colors"; }
-            case TerminalColorDepth.indexed { "256 colors"; }
-            case TerminalColorDepth.true_color { "true color"; }
+            case TerminalColorDepth.disabled {
+                "no colors";
+            }
+            case TerminalColorDepth.basic {
+                "8 colors";
+            }
+            case TerminalColorDepth.indexed {
+                "256 colors";
+            }
+            case TerminalColorDepth.true_color {
+                "true color";
+            }
         }
     }
 }
@@ -38,16 +47,56 @@ main() is int {
         ["dumb", "", "automatic, TERM=dumb"],
     ];
     for cases -> spec {
-        let values = if spec[1] == "" { ["TERM": spec[0]]; } else { ["TERM": spec[0], "COLORTERM": spec[1]]; };
-        let found = DetectedTerminalCapabilities(input: true, output: true, native_depth: TerminalColorDepth.basic, columns: 80, rows: 24, environment: Environment(values: values), policy: ColorPolicy.automatic).capabilities();
+        let values = if spec[1] == "" {
+            ["TERM": spec[0]];
+        }
+        else {
+            ["TERM": spec[0], "COLORTERM": spec[1]];
+        };
+        let found = DetectedTerminalCapabilities(
+            input: true,
+            output: true,
+            native_depth: TerminalColorDepth.basic,
+            columns: 80,
+            rows: 24,
+            environment: Environment(values: values),
+            policy: ColorPolicy.automatic
+        ).capabilities();
         out.writeln(spec[2], " -> ", DepthName(found::Support::colors));
     }
-    let piped = DetectedTerminalCapabilities(input: false, output: false, native_depth: TerminalColorDepth.true_color, columns: 0, rows: 0, environment: Environment(values: ["TERM": "xterm"]), policy: ColorPolicy.automatic).capabilities();
+    let piped = DetectedTerminalCapabilities(
+        input: false,
+        output: false,
+        native_depth: TerminalColorDepth.true_color,
+        columns: 0,
+        rows: 0,
+        environment: Environment(values: ["TERM": "xterm"]),
+        policy: ColorPolicy.automatic
+    ).capabilities();
     out.writeln("output to a pipe -> ", DepthName(piped::Support::colors));
 
-    let warning = StyledText(origin: "warning", style: TextStyle(foreground: NamedColor(BasicColor.yellow), background: DefaultColor(), attributes: [TextAttribute.bold]));
-    let brand = StyledText(origin: "okkama", style: TextStyle(foreground: RgbColor(red: 200.byte(), green: 30.byte(), blue: 30.byte()), background: DefaultColor(), attributes: []));
-    for [TerminalColorDepth.true_color, TerminalColorDepth.indexed, TerminalColorDepth.basic, TerminalColorDepth.disabled] -> depth {
+    let warning = StyledText(
+        origin: "warning",
+        style: TextStyle(
+            foreground: NamedColor(BasicColor.yellow),
+            background: DefaultColor(),
+            attributes: [TextAttribute.bold]
+        )
+    );
+    let brand = StyledText(
+        origin: "okkama",
+        style: TextStyle(
+            foreground: RgbColor(red: 200.byte(), green: 30.byte(), blue: 30.byte()),
+            background: DefaultColor(),
+            attributes: []
+        )
+    );
+    for [
+        TerminalColorDepth.true_color,
+        TerminalColorDepth.indexed,
+        TerminalColorDepth.basic,
+        TerminalColorDepth.disabled
+    ] -> depth {
         let shown = (warning.rendered(depth) + " " + brand.rendered(depth)).replace("\u{1b}", "ESC");
         out.writeln(DepthName(depth), ": ", shown);
     }

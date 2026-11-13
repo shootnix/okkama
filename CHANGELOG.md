@@ -287,6 +287,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **`MailMessage(from:, to:, subject:, text:)` works with the system clock
+  (#518).** It threw `InvalidMail` whenever the clock had a fraction of a
+  second, which the system clock always has. The Date field now takes the
+  whole second.
+
 - **Parsed JSON grew Sparrow's memory (#510).** Sparrow keeps JSON nodes and
   a parse's source outside the Okkama heap, which saw only tiny handles, so
   nothing brought a collection closer: a million `ParsedJson` calls reached
