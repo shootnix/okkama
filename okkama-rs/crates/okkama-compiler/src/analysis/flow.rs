@@ -881,8 +881,7 @@ impl<'r> Flow<'r, '_> {
                     }
                     Callee::Ctor { .. }
                     | Callee::Native(_)
-                    | Callee::Test(_)
-                    | Callee::FakeStorage(_) => {}
+                    | Callee::Test(_) => {}
                 }
                 self.transfers(args, state)?;
                 none()

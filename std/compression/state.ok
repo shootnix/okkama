@@ -21,8 +21,9 @@ module compression/state v1.0.0;
 //
 // The role fakes echo bytes; they are not codecs. The compressor delays output
 // until finish. The decompressor emits immediately with an eight-byte cumulative
-// limit and empty remainder after finish. Each fake has isolated test storage.
+// limit and empty remainder after finish. Each fake has its own typed state.
 
+import "async/atomic" take Atomic;
 import "io/stream" take Reading, Closing, InvalidReadLimit;
 import "io/buffer" take ByteBuffer;
 import "error" take InvalidArgument, InvalidState;
@@ -43,62 +44,52 @@ role Compressing {
     closed() is bool;
 
     fake {
+        has stored_pending is Atomic<@byte> = Atomic(@byte());
+        has stored_ready is Atomic<@byte> = Atomic(@byte());
+        has stored_done is Atomic<bool> = Atomic(false);
+        has stored_closed is Atomic<bool> = Atomic(false);
+
         write(origin is @byte) is void {
-            confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
+            confirm !self.closed() && !stored_done.value()
                 else throw InvalidState.because("codec is not writable");
-            let before is @byte = if fake.storage.has("pending") {
-                fake.storage.get("pending");
-            }
-            else {
-                [];
-            };
+            let before is @byte = stored_pending.value();
             let joined is @byte = before + origin;
-            fake.storage.set("pending", joined);
+            stored_pending.replace(joined);
         }
 
         output() is Reading {
-            confirm !self.closed() && !fake.storage.has("failed")
+            confirm !self.closed()
                 else throw InvalidState.because("codec output is unavailable");
-            let ready is @byte = if fake.storage.has("ready") {
-                fake.storage.get("ready");
-            }
-            else {
-                [];
-            };
+            let ready is @byte = stored_ready.value();
             let empty is @byte = [];
-            fake.storage.set("ready", empty);
+            stored_ready.replace(empty);
             CompressionOutput(ready);
         }
 
         finish() is void {
-            confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
+            confirm !self.closed() && !stored_done.value()
                 else throw InvalidState.because("codec cannot finish");
-            let pending is @byte = if fake.storage.has("pending") {
-                fake.storage.get("pending");
-            }
-            else {
-                [];
-            };
-            fake.storage.set("ready", pending);
-            if fake.storage.has("pending") {
-                fake.storage.remove("pending");
-            }
-            fake.storage.set("done", true);
+            let pending is @byte = stored_pending.value();
+            stored_ready.replace(pending);
+            stored_pending.replace(@byte());
+            stored_done.replace(true);
         }
 
         finished() is bool {
-            confirm !self.closed() && !fake.storage.has("failed")
+            confirm !self.closed()
                 else throw InvalidState.because("codec completion is unavailable");
-            fake.storage.has("done");
+            stored_done.value();
         }
 
         close() is void {
-            fake.storage.clear();
-            fake.storage.set("closed", true);
+            stored_pending.replace(@byte());
+            stored_ready.replace(@byte());
+            stored_done.replace(false);
+            stored_closed.replace(true);
         }
 
         closed() is bool {
-            fake.storage.has("closed");
+            stored_closed.value();
         }
     }
 }
@@ -121,67 +112,61 @@ role Decompressing {
     remainder() is @byte;
 
     fake {
+        has stored_budget is Atomic<DecompressionBudget> = Atomic(DecompressionBudget(8));
+        has stored_ready is Atomic<@byte> = Atomic(@byte());
+        has stored_failed is Atomic<bool> = Atomic(false);
+        has stored_done is Atomic<bool> = Atomic(false);
+        has stored_closed is Atomic<bool> = Atomic(false);
+
         write(origin is @byte) is void {
-            confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
+            confirm !self.closed() && !stored_failed.value() && !stored_done.value()
                 else throw InvalidState.because("codec is not writable");
-            let budget is DecompressionBudget = if fake.storage.has("budget") {
-                fake.storage.get("budget");
-            }
-            else {
-                DecompressionBudget(8);
-            };
+            let budget is DecompressionBudget = stored_budget.value();
             let spent = try {
                 let updated = budget.spent(origin.size());
                 updated;
             }
             catch error is CompressionLimitExceeded {
-                fake.storage.set("failed", true);
+                stored_failed.replace(true);
                 throw error;
             };
-            fake.storage.set("budget", spent);
-            let before is @byte = if fake.storage.has("ready") {
-                fake.storage.get("ready");
-            }
-            else {
-                [];
-            };
+            stored_budget.replace(spent);
+            let before is @byte = stored_ready.value();
             let joined is @byte = before + origin;
-            fake.storage.set("ready", joined);
+            stored_ready.replace(joined);
         }
 
         output() is Reading {
-            confirm !self.closed() && !fake.storage.has("failed")
+            confirm !self.closed() && !stored_failed.value()
                 else throw InvalidState.because("codec output is unavailable");
-            let ready is @byte = if fake.storage.has("ready") {
-                fake.storage.get("ready");
-            }
-            else {
-                [];
-            };
+            let ready is @byte = stored_ready.value();
             let empty is @byte = [];
-            fake.storage.set("ready", empty);
+            stored_ready.replace(empty);
             CompressionOutput(ready);
         }
 
         finish() is void {
-            confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
+            confirm !self.closed() && !stored_failed.value() && !stored_done.value()
                 else throw InvalidState.because("codec cannot finish");
-            fake.storage.set("done", true);
+            stored_done.replace(true);
         }
 
         finished() is bool {
-            confirm !self.closed() && !fake.storage.has("failed")
+            confirm !self.closed() && !stored_failed.value()
                 else throw InvalidState.because("codec completion is unavailable");
-            fake.storage.has("done");
+            stored_done.value();
         }
 
         close() is void {
-            fake.storage.clear();
-            fake.storage.set("closed", true);
+            stored_budget.replace(DecompressionBudget(8));
+            stored_ready.replace(@byte());
+            stored_failed.replace(false);
+            stored_done.replace(false);
+            stored_closed.replace(true);
         }
 
         closed() is bool {
-            fake.storage.has("closed");
+            stored_closed.value();
         }
 
         remainder() is @byte {

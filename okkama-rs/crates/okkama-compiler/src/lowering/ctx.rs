@@ -111,8 +111,8 @@ pub(super) enum Task {
     Test {
         index: usize,
     },
-    /// Intrinsic рантайма без владельца с данной сигнатурой (`test.is`,
-    /// `fake.storage.set`, …): одна функция на набор типов.
+    /// Intrinsic рантайма без владельца с данной сигнатурой (например,
+    /// `test.is`): одна функция на набор типов.
     Runtime {
         name: String,
         params: Vec<Type>,

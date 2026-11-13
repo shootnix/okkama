@@ -689,8 +689,7 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// `Role.fake()` — объект fake роли (тестовый режим) и
-    /// `fake.storage.op(...)` в action fake.
+    /// `Role.fake()` — объект fake роли (тестовый режим).
     fn fake_call(
         &mut self,
         object: &ast::Expr,
@@ -725,115 +724,7 @@ impl Checker<'_, '_> {
                     }
                 }
             }
-            ast::ExprKind::Get {
-                object: inner,
-                name: view,
-            } if view.text == "storage"
-                && matches!(&strip_grouping(inner).kind, ast::ExprKind::Name(fake) if fake.text == "fake")
-                && self.local("fake").is_none() =>
-            {
-                Some(self.fake_storage(name, args, span, expected))
-            }
             _ => None,
-        }
-    }
-
-    /// Операция хранилища fake: ключ — скаляр, строка или enum; значение
-    /// `get` — тип из контекста (проверяется при чтении).
-    fn fake_storage(
-        &mut self,
-        op: &ast::Name,
-        args: &[ast::Argument],
-        span: Span,
-        expected: Option<&Ty>,
-    ) -> Expr {
-        let in_fake = self
-            .object
-            .is_some_and(|object| self.reg.objects[object.0].name.ends_with("$fake"))
-            && matches!(self.kind, Kind::Method | Kind::Closure);
-        if !in_fake {
-            self.error(span, "fake.storage is available only inside a role fake");
-            return Self::poisoned(span);
-        }
-        let arity = match op.text.as_str() {
-            "set" => 2,
-            "get" | "has" | "remove" => 1,
-            "clear" | "size" => 0,
-            other => {
-                self.error(
-                    op.span,
-                    format!("Fake storage operation \"{other}\" does not exist"),
-                );
-                return Self::poisoned(span);
-            }
-        };
-        if args.len() != arity || args.iter().any(|arg| arg.name.is_some()) {
-            self.error(
-                span,
-                format!(
-                    "Fake storage operation \"{}\" expects {arity} positional argument(s)",
-                    op.text
-                ),
-            );
-            return Self::poisoned(span);
-        }
-        let mut values = Vec::new();
-        if let Some(key) = args.first() {
-            let value = self.value(&key.value, None);
-            let key_ty = Self::ty_of(&value).taken();
-            let valid = matches!(
-                key_ty,
-                Ty::Int | Ty::Bool | Ty::Str | Ty::Char | Ty::Enum(_) | Ty::Error
-            );
-            if !valid {
-                let message = if key_ty == Ty::Byte {
-                    "Fake storage key cannot be byte".to_string()
-                } else {
-                    format!(
-                        "Fake storage key must be int, bool, string, char or enum, got {}",
-                        self.type_name(&key_ty)
-                    )
-                };
-                self.error(key.value.span, message);
-            }
-            values.push(Self::consume(value));
-        }
-        if let Some(stored) = args.get(1) {
-            let value = self.value(&stored.value, None);
-            values.push(Self::consume(value));
-        }
-        let result = match op.text.as_str() {
-            "has" => Some(Ty::Bool),
-            "size" => Some(Ty::Int),
-            "get" => match expected {
-                Some(ty) if !matches!(ty, Ty::Error) => Some(ty.clone()),
-                _ => {
-                    self.error(
-                        span,
-                        "fake.storage.get() needs an expected type from its context",
-                    );
-                    return Self::poisoned(span);
-                }
-            },
-            _ => None,
-        };
-        let callee = Callee::FakeStorage(op.text.clone());
-        match result {
-            Some(ty) => Self::typed(
-                ExprKind::Call {
-                    callee,
-                    args: values,
-                },
-                ty,
-                span,
-            ),
-            None => Self::unit(
-                ExprKind::Call {
-                    callee,
-                    args: values,
-                },
-                span,
-            ),
         }
     }
 

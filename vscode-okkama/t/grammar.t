@@ -111,8 +111,7 @@ ok(section_matches('capAccess', '::full_name'), 'computed field selection');
 ok(section_matches('capAccess', '::UPPER'), 'uppercase computed field');
 ok(section_matches('punctuation', '::'), 'cap separator');
 for my $call ('test.skip("reason")','test.fail("message")','test.close(a, b, 0.001)',
-    'test.text(actual, expected)','test.bytes(actual, expected)','test.throws(Refused)',
-    'fake.reading.get("key")','fake.writing.remove("key")') {
+    'test.text(actual, expected)','test.bytes(actual, expected)','test.throws(Refused)') {
     ok(exists($repository->{contextualCapabilities}) && section_matches('contextualCapabilities',$call),
         "$call has contextual capability highlighting");
 }

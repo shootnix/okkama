@@ -408,6 +408,10 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 
 - Reserved words: `next`, `loop`, `last`, `none`, `null`.
 - Imports come before every declaration.
+- Test state uses ordinary containers: `cell.Cell` for synchronous locals,
+  `async/atomic.Atomic` for async code and object/fake fields (`Cell` is forbidden
+  in fields). Role fakes have no hidden storage (#583); initialize typed fields
+  per fake construction, just as for ordinary test objects.
 - `/` on ints gives `rat`; use `.int()`.
 - `char` has no `.string()`; `@@byte()` is not a constructor; empty typed
   arrays need a type: `let empty is @T = [];`.

@@ -59,7 +59,6 @@ let checks = 0;
   check('test.close(a, b, 0.001)', 0, 'close', 'support.function.assertion.okkama');
   check('test.text(a, b)', 0, 'text', 'support.function.assertion.okkama');
   check('test.bytes(a, b)', 0, 'bytes', 'support.function.assertion.okkama');
-  check('fake.writing.remove("key")', 0, 'remove', 'support.function.fake-state.okkama');
   for (const declaration of ['cap Card {', 'cap Customer::Card {', 'cap Box::lowercase {', 'cap\nCustomer::Card\n{']) {
     const source = declaration + '\n label is string { "}"; }\n}';
     check(source, 0, 'cap', 'keyword.declaration.cap.okkama');

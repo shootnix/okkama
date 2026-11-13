@@ -6,6 +6,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Removed
+
+Removed hidden fake storage from the test profile, including its six operations,
+compiler checks and runtime support on IR, Sparrow and JVM (#583). Use `Cell`
+for mutable synchronous test values and `Atomic` for async code or object and
+fake fields; role fakes and their ordinary typed fields remain available.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

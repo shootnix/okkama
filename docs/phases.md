@@ -16,6 +16,12 @@ public consumer of a phase's output checks it again.
 | JVM codegen (`codegen/jvm`) | OIR (verified again on entry) | class files the JVM verifier accepts | JVM verification at load; conformance on `jvm` |
 | SPB loading (`okkama-sparrow`, `sparrow-core`) | any bytes | a verified, type-checked program within decode and analysis budgets ([#24]), intrinsic contracts hold | `decode`, `sparrow check`, fuzz target `spb` |
 
+Test-mode role fakes lower to ordinary `Role$fake` objects with typed fields.
+Mutable test state uses `Cell` (synchronous locals) or `Atomic` (async code and
+object fields). Its test-specific intrinsics are assertions and runner controls;
+there are no hidden fake-storage operations. Receiver captures follow ordinary
+field and action references (#583).
+
 Public consumers of OIR — `codegen::generate` (both backends),
 `okkama_runtime::execute*` and `okkama_runtime::run_tests` — run `ir::verify`
 first and return an error for a corrupted module.

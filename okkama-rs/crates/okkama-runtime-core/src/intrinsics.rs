@@ -90,12 +90,6 @@ pub(crate) fn state_edges(state: &dyn Any, out: &mut crate::gc::Edges) -> bool {
     } else if let Some(retained) = state.downcast_ref::<Retained>() {
         let Ok(result) = retained.result.try_borrow() else { return false };
         result.iter().for_each(|value| out.value(value));
-    } else if let Some(storage) = state.downcast_ref::<Storage>() {
-        let Ok(entries) = storage.entries.try_borrow() else { return false };
-        for (key, value) in entries.iter() {
-            out.value(key);
-            out.value(value);
-        }
     } else if let Some(channel) = state.downcast_ref::<ChannelState>() {
         let Ok(messages) = channel.messages.try_borrow() else { return false };
         messages.iter().for_each(|value| out.value(value));
@@ -1098,32 +1092,6 @@ fn sort_or_stop<T, E>(
     }
 }
 
-/// Хранилище экземпляра fake: ключи — значения рантайма.
-#[derive(Default)]
-struct Storage {
-    entries: RefCell<Vec<(Value, Value)>>,
-}
-
-fn storage(value: &Value) -> Result<Rc<Storage>> {
-    let object = object(value)?;
-    let existing = object.intrinsic();
-    if let Some(state) = existing.and_then(|state| state.downcast::<Storage>().ok()) {
-        return Ok(state);
-    }
-    let state = Rc::new(Storage::default());
-    object.set_intrinsic(state.clone() as Rc<dyn Any>);
-    Ok(state)
-}
-
-fn storage_position(host: &HostRef, storage: &Storage, key: &Value) -> Result<Option<usize>> {
-    for (index, (known, _)) in storage.entries.borrow().iter().enumerate() {
-        if host.equal(known, key)? {
-            return Ok(Some(index));
-        }
-    }
-    Ok(None)
-}
-
 fn bool_arg(value: &Value) -> Result<bool> {
     value.as_bool().map_err(|e| trap(e.message))
 }
@@ -1727,37 +1695,6 @@ pub fn call_borrowed(
             crate::testing::skip(reason.as_string().map_err(|e| trap(e.message))?.to_owned())?;
             unit
         }
-        "fake.storage.set" => {
-            let (receiver, key, value) = (arg(0)?, arg(1)?, arg(2)?);
-            let storage = storage(&receiver)?;
-            match storage_position(&host, &storage, &key)? {
-                Some(index) => storage.entries.borrow_mut()[index].1 = value,
-                None => storage.entries.borrow_mut().push((key, value)),
-            }
-            unit
-        }
-        "fake.storage.get" | "fake.storage.remove" => {
-            let (receiver, key) = (arg(0)?, arg(1)?);
-            let storage = storage(&receiver)?;
-            let Some(index) = storage_position(&host, &storage, &key)? else {
-                return Err(trap(format!("Fake storage has no key {}", host.show(&key))));
-            };
-            if name == "fake.storage.get" {
-                return Ok(storage.entries.borrow()[index].1.clone());
-            }
-            storage.entries.borrow_mut().remove(index);
-            unit
-        }
-        "fake.storage.has" => {
-            let (receiver, key) = (arg(0)?, arg(1)?);
-            let storage = storage(&receiver)?;
-            Ok(Value::Bool(storage_position(&host, &storage, &key)?.is_some()))
-        }
-        "fake.storage.clear" => {
-            storage(&arg(0)?)?.entries.borrow_mut().clear();
-            unit
-        }
-        "fake.storage.size" => Ok(int(storage(&arg(0)?)?.entries.borrow().len() as i64)),
         "array.ordering" => array_ordering(&host, &arg(0)?),
         other => Err(trap(format!("intrinsic okkama.{other} is not available"))),
     }

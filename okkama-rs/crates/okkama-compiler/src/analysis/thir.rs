@@ -491,9 +491,6 @@ pub enum Callee {
     /// `test.ok(...)`, `test.is(...)`, `test.isnt(...)`, `test.fail(...)`,
     /// `test.skip(...)`.
     Test(String),
-    /// `fake.storage.set/get/has/remove/clear/size(...)` в action fake (§14):
-    /// хранилище экземпляра `self`.
-    FakeStorage(String),
 }
 
 /// Builtin-действия значений (§6.6).
@@ -642,7 +639,7 @@ pub struct Functional {
 }
 
 /// Does `body` read the receiver of the action it is written in — `self`, a
-/// field, `fake.storage`, or a nested anonymous action that does? An
+/// field or a nested anonymous action that does? An
 /// anonymous action captures `self` only then (#53): unreferenced values are
 /// not retained. The walk names every form, so a new one must decide here.
 pub fn uses_receiver(body: &Body) -> bool {
@@ -726,8 +723,6 @@ fn expr_uses_receiver(expr: &Expr) -> bool {
                     Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
                         expr_uses_receiver(receiver)
                     }
-                    // The storage of the receiver's fake.
-                    Callee::FakeStorage(_) => true,
                     Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => false,
                 }
         }
@@ -844,7 +839,7 @@ pub fn expr_mentions(expr: &Expr, local: LocalId) -> usize {
                     Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
                         one(receiver)
                     }
-                    Callee::FakeStorage(_) | Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => 0,
+                    Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => 0,
                 }
         }
         ExprKind::Array(parts) => parts
@@ -1023,7 +1018,7 @@ pub(crate) fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
                 Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
                     visit(receiver)
                 }
-                Callee::FakeStorage(_) | Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => {}
+                Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => {}
             }
             args.iter().for_each(&mut *visit);
         }

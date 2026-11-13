@@ -2157,15 +2157,17 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
     std::fs::write(
         dir.0.join("main.ok"),
         "module app v1.0.0;\n\
+         import \"async/atomic\" take Atomic;\n\
          role Books {\n\
              remember(id is int, title is string) is void;\n\
              title(id is int) is string;\n\
              count() is int;\n\
              fake {\n\
+                 has titles is Atomic<%int:string> = Atomic([:]);\n\
                  has prefix is string = \"fake:\";\n\
-                 remember(id is int, title is string) is void { fake.storage.set(id, title); }\n\
-                 title(id is int) is string { prefix + fake.storage.get(id); }\n\
-                 count() is int { fake.storage.size(); }\n\
+                 remember(id is int, title is string) is void { titles.replace(titles.value() + [id: title]); }\n\
+                 title(id is int) is string { prefix + titles.value()[id]; }\n\
+                 count() is int { titles.value().size(); }\n\
              }\n\
          }\n\
          object Worker { Worker(); async value() is int { 7; } test \"scoped\" { test.ok(true); } }\n\
