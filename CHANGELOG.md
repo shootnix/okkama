@@ -25,12 +25,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   function value or a role`). Book §18.6; conformance `L04.once.*` (five new
   cases).
 
-- **Linux packages link against glibc 2.17 again (#545).** 0.5.5 called
-  `preadv2` (#121) and `renameat2` (#126) through glibc, which has them only
-  since 2.26 and 2.28, so the manylinux2014 build of the 0.5.5 packages failed.
-  Both are now plain system calls; kernels without them answer ENOSYS and
-  the existing fallbacks take over.
-
 ## [0.5.5] — 2026-11-13
 
 0.5.5 is the library release: the web stack, data formats, the platform, and
