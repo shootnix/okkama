@@ -98,7 +98,7 @@ helpers! {
     native = runtime::rt_native as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
     float = runtime::rt_float as (ctx, op: u64, left: u64, right: u64) -> u64; [Allocates, Fails];
     exec = crate::ops::rt_exec as (ctx, function: u64, pc: u64, uses: *const Word, registers: *const okkama_sparrow::Register, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
-    closure = runtime::rt_closure as (ctx, function: u64, captures: *const Word, count: u64) -> Word; [Allocates, Collects];
+    closure = runtime::rt_closure as (ctx, function: u64, captures: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
     call_closure = runtime::rt_call_closure as (ctx, closure: Word, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
     map_find = runtime::rt_map_find as (ctx, function: u64, pc: u64, map: Word, key: Word) -> u64; [];
     intrinsic = crate::intrinsics::rt_intrinsic as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
@@ -288,7 +288,11 @@ impl Jit {
             .zip(self.helper_counts.iter())
             .filter(|(_, count)| **count > 0)
             .map(|((name, _), &count)| (format!("helper {name}"), count))
-            .chain([("largest machine frame, bytes".to_string(), u64::from(self.largest_frame))])
+            .chain([
+                ("largest machine frame, bytes".to_string(), u64::from(self.largest_frame)),
+                ("stack map sites".to_string(), self.maps.len() as u64),
+                ("stack map root words, static sum".to_string(), self.maps.iter().map(|(_, _, slots)| slots.len() as u64).sum()),
+            ])
             .chain(self.alloc_sites.iter().filter(|(_, counts)| counts[0] > 0).flat_map(|(site, counts)| {
                 [(format!("alloc site {site}, count"), counts[0]), (format!("alloc site {site}, bytes"), counts[1])]
             }))
@@ -412,10 +416,10 @@ fn leaders(source: &okkama_sparrow::Function) -> Vec<bool> {
 }
 
 pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
-    if runtime.code[function] != 0 {
-        return Ok(runtime.code[function]);
+    if runtime.invocations[function].code != 0 {
+        return Ok(runtime.invocations[function].code);
     }
-    let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, stats, .. } = runtime;
+    let Runtime { heap, loaded, jit, invocations, constants, resources, limits, budget, stats, .. } = runtime;
     let started = stats.is_some().then(std::time::Instant::now);
     // Stage boundaries under `SPARROW_CORE_PROFILE_COMPILE` (#345).
     let profiling = jit.profile.is_some();
@@ -482,7 +486,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             heap,
             loaded,
             jit,
-            code_table: code.as_ptr() as i64,
+            code_table: invocations.as_ptr() as i64,
             constants,
             resources,
             function,
@@ -581,7 +585,9 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     jit.maps.sort_by_key(|(address, _, _)| *address);
     jit.ranges.push((address, address + u64::from(size)));
     jit.ranges.sort_unstable();
-    code[function] = address;
+    // Publish only after finalization and registration of maps/ranges. All
+    // static/role/async/closure users read this same stable record.
+    invocations[function].code = address;
     mark!();
     if let Some(passes) = jit.profile.as_mut() {
         passes.add(&cranelift_codegen::timing::take_current());
@@ -973,9 +979,9 @@ impl Emitter<'_, '_> {
     fn call(&mut self, pc: usize, function: Value, args: &[Value]) -> Value {
         let ctx = self.ctx();
         let base = self.iconst(self.code_table);
-        let offset = self.builder.ins().ishl_imm_u(function, 3);
+        let offset = self.builder.ins().imul_imm_u(function, std::mem::size_of::<runtime::Invocation>() as i64);
         let entry = self.builder.ins().iadd(base, offset);
-        let code = self.builder.ins().load(types::I64, MEMORY, entry, 0);
+        let code = self.builder.ins().load(types::I64, MEMORY, entry, std::mem::offset_of!(runtime::Invocation, code) as i32);
         let ready = self.builder.create_block();
         let compile = self.builder.create_block();
         self.builder.append_block_param(ready, types::I64);
@@ -1841,6 +1847,7 @@ impl Emitter<'_, '_> {
                 let index = self.iconst(i64::from(function.0));
                 let count = self.iconst(captures.len() as i64);
                 let closure = self.helper(|h| h.closure, &[ctx, index, address, count]).expect("result");
+                self.check(pc);
                 self.set(&dst.0, closure);
             }
             I::CallFn { dst, callee, args } => {
