@@ -17,7 +17,12 @@ import "runtime/regex" take RegexState, regex_state_create, regex_state_prepare,
 // executable constructs are not part of the dialect.
 // Syntax offsets count Unicode scalar values from zero. Compile limits are
 // 4,096 expression scalars, 256 nested groups, 1,024 captures and 16,384 NFA
-// states. Unicode property and case-fold data are pinned to Unicode 16.0.0.
+// states. Unicode property data is pinned to Unicode 16.0.0. With ignore_case
+// a letter matches every member of its simple case folding class (statuses C
+// and S of CaseFolding.txt, from the toolchain's tables: Unicode 17.0.0 with
+// Rust 1.97), in both directions: `K`, `k` and the Kelvin sign U+212A match
+// each other, and dotless `ı` and dotted `İ` match only themselves (#550).
+// With ascii as well, only ASCII letters pair.
 //
 // Construction retains expression and flags and creates only an empty lazy
 // compile state. expression() and flags() never compile. The first metadata or
@@ -430,6 +435,16 @@ test "an observation finds a match inside a range" {
         },
         "none"
     );
+}
+
+test "ignore_case matches whole simple case folding classes (#550)" {
+    let kelvin = Regex(expression: "k", flags: [RegexFlag.ignore_case]);
+    test.ok(kelvin.found("\u{212A}"));
+    test.ok(Regex(expression: "\u{212A}", flags: [RegexFlag.ignore_case]).found("K"));
+    test.ok(Regex(expression: "[a-z]+", flags: [RegexFlag.ignore_case]).found("\u{17F}"));
+    test.ok(Regex(expression: "σ", flags: [RegexFlag.ignore_case]).found("ς"));
+    test.ok(!Regex(expression: "i", flags: [RegexFlag.ignore_case]).found("ı"));
+    test.ok(!Regex(expression: "k", flags: [RegexFlag.ignore_case, RegexFlag.ascii]).found("\u{212A}"));
 }
 
 test "a regex answers the common questions itself" {

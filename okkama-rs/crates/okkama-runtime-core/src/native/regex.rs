@@ -609,9 +609,90 @@ fn is_number(point: u32) -> bool {
     matches!(crate::data::category(point), "Nd" | "Nl" | "No")
 }
 
-fn single_scalar(mut chars: impl Iterator<Item = char>) -> Option<u32> {
+fn single_scalar(mut chars: impl Iterator<Item = char>) -> Option<char> {
     let first = chars.next()?;
-    chars.next().is_none().then_some(first as u32)
+    chars.next().is_none().then_some(first)
+}
+
+// Sorted by fold key: members that upper1(key) cannot recover (#550).
+const SIMPLE_FOLD_EXTRAS: &[(char, char)] = &[
+    ('k', '\u{212a}'),
+    ('s', '\u{17f}'),
+    ('\u{df}', '\u{1e9e}'),
+    ('\u{e5}', '\u{212b}'),
+    ('\u{1c6}', '\u{1c5}'),
+    ('\u{1c9}', '\u{1c8}'),
+    ('\u{1cc}', '\u{1cb}'),
+    ('\u{1f3}', '\u{1f2}'),
+    ('\u{390}', '\u{1fd3}'),
+    ('\u{3b0}', '\u{1fe3}'),
+    ('\u{3b2}', '\u{3d0}'),
+    ('\u{3b5}', '\u{3f5}'),
+    ('\u{3b8}', '\u{3d1}'),
+    ('\u{3b8}', '\u{3f4}'),
+    ('\u{3b9}', '\u{345}'),
+    ('\u{3b9}', '\u{1fbe}'),
+    ('\u{3ba}', '\u{3f0}'),
+    ('\u{3bc}', '\u{b5}'),
+    ('\u{3c0}', '\u{3d6}'),
+    ('\u{3c1}', '\u{3f1}'),
+    ('\u{3c3}', '\u{3c2}'),
+    ('\u{3c6}', '\u{3d5}'),
+    ('\u{3c9}', '\u{2126}'),
+    ('\u{432}', '\u{1c80}'),
+    ('\u{434}', '\u{1c81}'),
+    ('\u{43e}', '\u{1c82}'),
+    ('\u{441}', '\u{1c83}'),
+    ('\u{442}', '\u{1c84}'),
+    ('\u{442}', '\u{1c85}'),
+    ('\u{44a}', '\u{1c86}'),
+    ('\u{463}', '\u{1c87}'),
+    ('\u{1e61}', '\u{1e9b}'),
+    ('\u{1f80}', '\u{1f88}'),
+    ('\u{1f81}', '\u{1f89}'),
+    ('\u{1f82}', '\u{1f8a}'),
+    ('\u{1f83}', '\u{1f8b}'),
+    ('\u{1f84}', '\u{1f8c}'),
+    ('\u{1f85}', '\u{1f8d}'),
+    ('\u{1f86}', '\u{1f8e}'),
+    ('\u{1f87}', '\u{1f8f}'),
+    ('\u{1f90}', '\u{1f98}'),
+    ('\u{1f91}', '\u{1f99}'),
+    ('\u{1f92}', '\u{1f9a}'),
+    ('\u{1f93}', '\u{1f9b}'),
+    ('\u{1f94}', '\u{1f9c}'),
+    ('\u{1f95}', '\u{1f9d}'),
+    ('\u{1f96}', '\u{1f9e}'),
+    ('\u{1f97}', '\u{1f9f}'),
+    ('\u{1fa0}', '\u{1fa8}'),
+    ('\u{1fa1}', '\u{1fa9}'),
+    ('\u{1fa2}', '\u{1faa}'),
+    ('\u{1fa3}', '\u{1fab}'),
+    ('\u{1fa4}', '\u{1fac}'),
+    ('\u{1fa5}', '\u{1fad}'),
+    ('\u{1fa6}', '\u{1fae}'),
+    ('\u{1fa7}', '\u{1faf}'),
+    ('\u{1fb3}', '\u{1fbc}'),
+    ('\u{1fc3}', '\u{1fcc}'),
+    ('\u{1ff3}', '\u{1ffc}'),
+    ('\u{a64b}', '\u{1c88}'),
+    ('\u{fb06}', '\u{fb05}'),
+];
+
+// Identifies C/S classes; Cherokee uses a lowercase representative (#550).
+fn fold_key(c: char) -> char {
+    match c {
+        // Dotless i has no C/S mapping (#550).
+        '\u{131}' => c,
+        // Full uppercase expansions hide these simple aliases (#550).
+        '\u{1fd3}' => '\u{390}',
+        '\u{1fe3}' => '\u{3b0}',
+        '\u{fb05}' => '\u{fb06}',
+        _ => {
+            let upper = single_scalar(c.to_uppercase()).unwrap_or(c);
+            single_scalar(upper.to_lowercase()).unwrap_or(upper)
+        }
+    }
 }
 
 impl Program {
@@ -673,7 +754,7 @@ impl Program {
     }
 
     fn candidates(&self, point: u32) -> impl Iterator<Item = u32> + Clone {
-        // Owned inline storage fits the point and three case variants (#462).
+        // Simple folding classes fit in four slots; tested exhaustively (#550).
         let mut out = [Some(point), None, None, None];
         if self.ignore_case {
             if self.ascii {
@@ -683,10 +764,24 @@ impl Program {
                     _ => None,
                 };
             } else if let Some(c) = char::from_u32(point) {
-                out[1] = single_scalar(c.to_lowercase());
-                out[2] = single_scalar(c.to_uppercase());
-                // Expanded uppercase mappings cannot shrink to one scalar.
-                out[3] = single_scalar(c.to_uppercase().flat_map(char::to_lowercase));
+                let key = fold_key(c);
+                out[0] = Some(key as u32);
+                let mut len = 1;
+                if let Some(upper) = single_scalar(key.to_uppercase())
+                    && upper != key
+                    && fold_key(upper) == key
+                {
+                    out[len] = Some(upper as u32);
+                    len += 1;
+                }
+                let start = SIMPLE_FOLD_EXTRAS.partition_point(|&(fold, _)| fold < key);
+                for &(fold, extra) in &SIMPLE_FOLD_EXTRAS[start..] {
+                    if fold != key {
+                        break;
+                    }
+                    out[len] = Some(extra as u32);
+                    len += 1;
+                }
             }
         }
         out.into_iter().flatten()
@@ -1291,19 +1386,19 @@ mod tests {
             ('A', "Aa"),
             ('a', "Aa"),
             ('7', "7"),
-            ('ß', "ß"),
+            ('ß', "ßẞ"),
             ('ẞ', "ßẞ"),
             ('İ', "İ"),
-            ('ı', "Iiı"),
-            ('Σ', "Σσ"),
-            ('σ', "Σσ"),
+            ('ı', "ı"),
+            ('Σ', "Σςσ"),
+            ('σ', "Σςσ"),
             ('ς', "Σςσ"),
-            ('K', "kK"),
-            ('Å', "åÅ"),
+            ('K', "KkK"),
+            ('Å', "ÅåÅ"),
             ('ﬀ', "ﬀ"),
             ('ŉ', "ŉ"),
             ('ά', "Άά"),
-            ('ΐ', "ΐ"),
+            ('ΐ', "ΐΐ"),
             ('𐐀', "𐐀𐐨"),
             ('𐐨', "𐐀𐐨"),
         ];
@@ -1324,6 +1419,113 @@ mod tests {
                         "{point:?}, ascii={ascii}, ignore_case={ignore_case}"
                     );
                 }
+            }
+        }
+    }
+
+    fn regex_fold_points() -> &'static [(char, u32)] {
+        static POINTS: std::sync::OnceLock<Vec<(char, u32)>> = std::sync::OnceLock::new();
+        POINTS.get_or_init(|| {
+            let mut points: Vec<_> = (0..=0x10ffff)
+                .filter_map(char::from_u32)
+                .map(|c| (fold_key(c), c as u32))
+                .collect();
+            points.sort_unstable();
+            points
+        })
+    }
+
+    #[test]
+    fn regex_candidates_exhaustive() {
+        let program = regex_program("", false, true);
+        for class in regex_fold_points().chunk_by(|a, b| a.0 == b.0) {
+            let expected: Vec<_> = class.iter().map(|&(_, point)| point).collect();
+            assert!(expected.len() <= 4, "class exceeds storage: {expected:x?}");
+            for &point in &expected {
+                assert_eq!(
+                    sorted_candidates(program.candidates(point)),
+                    expected,
+                    "U+{point:04X}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn regex_candidates_class_bound() {
+        let largest = regex_fold_points()
+            .chunk_by(|a, b| a.0 == b.0)
+            .map(<[_]>::len)
+            .max();
+        assert_eq!(largest, Some(4));
+        assert!(SIMPLE_FOLD_EXTRAS.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn regex_fold_key_simple_folding_reference() {
+        // fancy-regex uses CaseFolding.txt C/S classes, independently of our key (#550).
+        // Its Unicode version may lag Rust; compare characters it knows.
+        let assigned = fancy_regex::Regex::new(r"\p{Assigned}").unwrap();
+        let mut classes: BTreeMap<char, Vec<u32>> = BTreeMap::new();
+        let mut corpus = String::new();
+        for c in (0..=0x10ffff).filter_map(char::from_u32) {
+            if c.to_lowercase().eq(std::iter::once(c))
+                && c.to_uppercase().eq(std::iter::once(c))
+                && fold_key(c) == c
+            {
+                continue;
+            }
+            let mut encoded = [0; 4];
+            if assigned.is_match(c.encode_utf8(&mut encoded)).unwrap() {
+                corpus.push(c);
+                classes.entry(fold_key(c)).or_default().push(c as u32);
+            }
+        }
+        assert!(corpus.chars().count() > 2800);
+        for expected in classes.values() {
+            let reference =
+                fancy_regex::Regex::new(&format!(r"(?i:\x{{{:X}}})", expected[0])).unwrap();
+            let actual: Vec<_> = reference
+                .find_iter(&corpus)
+                .map(|found| found.unwrap().as_str().chars().next().unwrap() as u32)
+                .collect();
+            assert_eq!(actual, *expected, "reference class for U+{:04X}", expected[0]);
+        }
+    }
+
+    #[test]
+    fn regex_candidates_specific_classes() {
+        let program = regex_program("", false, true);
+        for class in [
+            "KkK",
+            "ÅåÅ",
+            "ΩωΩ",
+            "Ssſ",
+            "Σσς",
+            "Θθϑϴ",
+            "ßẞ",
+            "\u{345}Ιι\u{1fbe}",
+            "µμΜ",
+            "\u{13a0}\u{ab70}",
+            "\u{10d0}\u{1c90}",
+            "ı",
+            "İ",
+            "iI",
+            "\u{390}\u{1fd3}",
+            "\u{3b0}\u{1fe3}",
+            "\u{fb05}\u{fb06}",
+            "Ǆǅǆ",
+            "\u{1f80}\u{1f88}",
+            "\u{422}\u{442}\u{1c84}\u{1c85}",
+        ] {
+            let expected = sorted_candidates(class.chars().map(u32::from));
+            for c in class.chars() {
+                assert_eq!(
+                    sorted_candidates(program.candidates(c as u32)),
+                    expected,
+                    "U+{:04X}",
+                    c as u32
+                );
             }
         }
     }
@@ -1359,20 +1561,24 @@ mod tests {
             ("a", "A", true, true, true),
             ("a", "A", false, false, false),
             ("Σ", "ς", false, true, true),
-            ("ς", "Σ", false, true, false),
+            ("ς", "Σ", false, true, true),
             ("Σ", "ς", true, true, false),
             ("Σ", "ς", false, false, false),
             ("ß", "ẞ", false, true, true),
-            ("ẞ", "ß", false, true, false),
+            ("ẞ", "ß", false, true, true),
             ("SS", "ß", false, true, false),
             ("i", "İ", false, true, false),
-            ("I", "ı", false, true, true),
-            ("K", "K", false, true, false),
+            ("I", "ı", false, true, false),
+            ("i", "ı", false, true, false),
+            ("K", "K", false, true, true),
+            ("K", "K", true, true, false),
+            ("K", "K", false, false, false),
             ("k", "K", false, true, true),
-            ("K", "K", false, true, false),
-            ("Å", "Å", false, true, false),
+            ("K", "K", false, true, true),
+            ("K", "k", false, true, true),
+            ("Å", "Å", false, true, true),
             ("å", "Å", false, true, true),
-            ("Å", "Å", false, true, false),
+            ("Å", "Å", false, true, true),
             ("ff", "ﬀ", false, true, false),
             ("F", "ﬀ", false, true, false),
             ("N", "ŉ", false, true, false),
@@ -1381,9 +1587,12 @@ mod tests {
             ("[Σß]", "ẞ", false, true, true),
             ("[^Σ]", "ς", false, true, false),
             ("[^Σ]", "ς", true, true, true),
-            ("[A-Z]", "K", false, true, false),
+            ("[A-Z]", "K", false, true, true),
             ("[a-z]", "K", false, true, true),
-            ("[A-Z]", "ı", false, true, true),
+            ("[a-z]", "ſ", false, true, true),
+            ("[a-z]", "ſ", true, true, false),
+            ("[a-z]", "ſ", false, false, false),
+            ("[A-Z]", "ı", false, true, false),
             ("[A-Z]", "ı", true, true, false),
             ("[A-Z]", "İ", false, true, false),
             ("[Α-Ω]", "ς", false, true, true),
