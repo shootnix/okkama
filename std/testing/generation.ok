@@ -259,7 +259,10 @@ hidden object GeneratedInteger does Generated<int> {
             [GeneratedInteger(origin: target, target: target)];
         }
         else {
-            [GeneratedInteger(origin: target, target: target), GeneratedInteger(origin: middle, target: target)];
+            [
+                GeneratedInteger(origin: target, target: target),
+                GeneratedInteger(origin: middle, target: target)
+            ];
         }
     }
 }
@@ -341,7 +344,10 @@ hidden object GeneratedFloat does Generated<float> {
             [GeneratedFloat(origin: target, target: target)];
         }
         else {
-            [GeneratedFloat(origin: target, target: target), GeneratedFloat(origin: middle, target: target)];
+            [
+                GeneratedFloat(origin: target, target: target),
+                GeneratedFloat(origin: middle, target: target)
+            ];
         }
     }
 }
@@ -666,7 +672,10 @@ hidden object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
     }
 
     cursor() is Cursor<Generated<Sequencing<T>>> {
-        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(origin: self, position: 0);
+        let cursor is SequenceReductionCursor<T> = SequenceReductionCursor(
+            origin: self,
+            position: 0
+        );
         cursor;
     }
 }

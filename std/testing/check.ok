@@ -140,7 +140,10 @@ hidden object CheckValueText {
             256;
         };
         let text = origin.slice(0, limit);
-        let unsafe = RegexMatches(origin: text, regex: Regex("[\\x{0}-\\x{8}\\x{b}\\x{c}\\x{e}-\\x{1f}\\x{7f}]")).found();
+        let unsafe = RegexMatches(
+            origin: text,
+            regex: Regex("[\\x{0}-\\x{8}\\x{b}\\x{c}\\x{e}-\\x{1f}\\x{7f}]")
+        ).found();
         let rendered = if unsafe {
             "UTF-8 bytes " + HexEncoded(Utf8Encoded(text).bytes()).string();
         }
@@ -287,7 +290,12 @@ object TextEquals does Checking {
                     expected.slice(start, window.stop(mismatch, expected.length()))
                 ).string() + ", got " + CheckValueText(
                     actual.slice(start, window.stop(mismatch, actual.length()))
-                ).string() + "\n" + CheckTextDiff(actual: actual, expected: expected, position: mismatch, context: window.size()).string()
+                ).string() + "\n" + CheckTextDiff(
+                    actual: actual,
+                    expected: expected,
+                    position: mismatch,
+                    context: window.size()
+                ).string()
             ).string()
         );
     }

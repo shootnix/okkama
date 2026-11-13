@@ -111,7 +111,12 @@ object Property<T> does Checking {
                     self.shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(
+                        seed: seed,
+                        case_index: index,
+                        size: size,
+                        value: reduced.string()
+                    ).string() + " " + observation.description()
                 );
                 return;
             }
@@ -132,7 +137,11 @@ object Property<T> does Checking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
+            PropertyObservation(
+                passed: false,
+                typed_error: true,
+                description: "typed error: " + error.text()
+            );
         }
     }
 
@@ -222,7 +231,12 @@ object AsyncProperty<T> does AsyncChecking {
                     await shrink(generated, shrink_limit);
                 };
                 test.fail(
-                    "property failed: " + PropertyReproduction(seed: seed, case_index: index, size: size, value: reduced.string()).string() + " " + observation.description()
+                    "property failed: " + PropertyReproduction(
+                        seed: seed,
+                        case_index: index,
+                        size: size,
+                        value: reduced.string()
+                    ).string() + " " + observation.description()
                 );
                 return;
             }
@@ -243,7 +257,11 @@ object AsyncProperty<T> does AsyncChecking {
             throw;
         }
         catch error is Error {
-            PropertyObservation(passed: false, typed_error: true, description: "typed error: " + error.text());
+            PropertyObservation(
+                passed: false,
+                typed_error: true,
+                description: "typed error: " + error.text()
+            );
         }
     }
 
