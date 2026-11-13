@@ -315,6 +315,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **Sparrow's heap no longer grows when a program recycles its garbage
+  (#522).** The collector counted only new pages, but machine code reuses
+  swept cells without telling it. A program could use up every swept cell
+  before a collection came, then grow by new pages on every cycle. #503 had
+  hidden this until it stopped charging every array builder: the ladder's
+  `10-app` doubled its memory on Sparrow (13 → 25 MB). Swept cells now count
+  as they are handed out, a page's worth at a time: `10-app` uses 12.5 MB,
+  and the hello server 76 MB instead of 87.
+
 - **`MailMessage(from:, to:, subject:, text:)` works with the system clock
   (#518).** It threw `InvalidMail` whenever the clock had a fraction of a
   second, which the system clock always has. The Date field now takes the
