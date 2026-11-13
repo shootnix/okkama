@@ -609,6 +609,11 @@ fn is_number(point: u32) -> bool {
     matches!(crate::data::category(point), "Nd" | "Nl" | "No")
 }
 
+fn single_scalar(mut chars: impl Iterator<Item = char>) -> Option<u32> {
+    let first = chars.next()?;
+    chars.next().is_none().then_some(first as u32)
+}
+
 impl Program {
     fn matches_character(&self, matcher: &Matcher, point: u32) -> bool {
         match matcher {
@@ -654,44 +659,37 @@ impl Program {
                 *negate != inside
             }
             Matcher::Ranges(ranges) => {
+                if !self.ignore_case {
+                    return ranges.iter().any(|(from, to)| (*from..=*to).contains(&point));
+                }
                 let candidates = self.candidates(point);
                 ranges.iter().any(|(from, to)| {
                     candidates
-                        .iter()
-                        .any(|candidate| (*from..=*to).contains(candidate))
+                        .clone()
+                        .any(|candidate| (*from..=*to).contains(&candidate))
                 })
             }
         }
     }
 
-    fn candidates(&self, point: u32) -> Vec<u32> {
-        if !self.ignore_case {
-            return vec![point];
-        }
-        if self.ascii {
-            return match char::from_u32(point) {
-                Some(c) if c.is_ascii_uppercase() => vec![point, point + 32],
-                Some(c) if c.is_ascii_lowercase() => vec![point, point - 32],
-                _ => vec![point],
-            };
-        }
-        let mut out = vec![point];
-        let Some(c) = char::from_u32(point) else {
-            return out;
-        };
-        let upper: String = c.to_uppercase().collect();
-        let variants = [
-            c.to_lowercase().collect::<String>(),
-            upper.clone(),
-            upper.to_lowercase(),
-        ];
-        for variant in variants {
-            let mut chars = variant.chars();
-            if let (Some(single), None) = (chars.next(), chars.next()) {
-                out.push(single as u32);
+    fn candidates(&self, point: u32) -> impl Iterator<Item = u32> + Clone {
+        // Owned inline storage fits the point and three case variants (#462).
+        let mut out = [Some(point), None, None, None];
+        if self.ignore_case {
+            if self.ascii {
+                out[1] = match char::from_u32(point) {
+                    Some(c) if c.is_ascii_uppercase() => Some(point + 32),
+                    Some(c) if c.is_ascii_lowercase() => Some(point - 32),
+                    _ => None,
+                };
+            } else if let Some(c) = char::from_u32(point) {
+                out[1] = single_scalar(c.to_lowercase());
+                out[2] = single_scalar(c.to_uppercase());
+                // Expanded uppercase mappings cannot shrink to one scalar.
+                out[3] = single_scalar(c.to_uppercase().flat_map(char::to_lowercase));
             }
         }
-        out
+        out.into_iter().flatten()
     }
 
     /// Замыкание по ε-переходам в порядке приоритета (обход в глубину).
@@ -1268,5 +1266,174 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             })
         }
         _ => Err(Error::InvalidState(format!("{} is not a regex native", native.symbol()))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn regex_program(pattern: &str, ascii: bool, ignore_case: bool) -> Program {
+        compile_pattern(pattern, &[ascii, ignore_case, false, false, false])
+            .unwrap_or_else(|_| panic!("invalid test pattern: {pattern}"))
+    }
+
+    fn sorted_candidates(candidates: impl IntoIterator<Item = u32>) -> Vec<u32> {
+        let mut points: Vec<_> = candidates.into_iter().collect();
+        points.sort_unstable();
+        points.dedup();
+        points
+    }
+
+    #[test]
+    fn regex_candidates_characterisation() {
+        let cases = [
+            ('A', "Aa"),
+            ('a', "Aa"),
+            ('7', "7"),
+            ('ß', "ß"),
+            ('ẞ', "ßẞ"),
+            ('İ', "İ"),
+            ('ı', "Iiı"),
+            ('Σ', "Σσ"),
+            ('σ', "Σσ"),
+            ('ς', "Σςσ"),
+            ('K', "kK"),
+            ('Å', "åÅ"),
+            ('ﬀ', "ﬀ"),
+            ('ŉ', "ŉ"),
+            ('ά', "Άά"),
+            ('ΐ', "ΐ"),
+            ('𐐀', "𐐀𐐨"),
+            ('𐐨', "𐐀𐐨"),
+        ];
+        for ascii in [false, true] {
+            for ignore_case in [false, true] {
+                let program = regex_program("", ascii, ignore_case);
+                for (point, unicode) in cases {
+                    let expected = if !ignore_case || (ascii && !point.is_ascii_alphabetic()) {
+                        vec![point as u32]
+                    } else if ascii {
+                        vec!['A' as u32, 'a' as u32]
+                    } else {
+                        sorted_candidates(unicode.chars().map(u32::from))
+                    };
+                    assert_eq!(
+                        sorted_candidates(program.candidates(point as u32)),
+                        expected,
+                        "{point:?}, ascii={ascii}, ignore_case={ignore_case}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn regex_candidates_invalid_scalars() {
+        for ascii in [false, true] {
+            for ignore_case in [false, true] {
+                let program = regex_program("", ascii, ignore_case);
+                for point in [0xd800, 0xdfff, 0x110000, u32::MAX] {
+                    assert_eq!(sorted_candidates(program.candidates(point)), vec![point]);
+                    assert!(program.matches_character(&literal(point), point));
+                    assert!(!program.matches_character(&literal('A' as u32), point));
+                }
+            }
+        }
+    }
+
+    fn regex_spans(
+        program: &Program,
+        input: &str,
+        start: i64,
+        end: i64,
+        mode: i64,
+    ) -> Result<Vec<(i64, i64)>, &'static str> {
+        program.selected_spans(input, &IntValue::from_i64(start), &IntValue::from_i64(end), mode)
+    }
+
+    #[test]
+    fn regex_case_matching() {
+        let cases = [
+            ("a", "A", false, true, true),
+            ("a", "A", true, true, true),
+            ("a", "A", false, false, false),
+            ("Σ", "ς", false, true, true),
+            ("ς", "Σ", false, true, false),
+            ("Σ", "ς", true, true, false),
+            ("Σ", "ς", false, false, false),
+            ("ß", "ẞ", false, true, true),
+            ("ẞ", "ß", false, true, false),
+            ("SS", "ß", false, true, false),
+            ("i", "İ", false, true, false),
+            ("I", "ı", false, true, true),
+            ("K", "K", false, true, false),
+            ("k", "K", false, true, true),
+            ("K", "K", false, true, false),
+            ("Å", "Å", false, true, false),
+            ("å", "Å", false, true, true),
+            ("Å", "Å", false, true, false),
+            ("ff", "ﬀ", false, true, false),
+            ("F", "ﬀ", false, true, false),
+            ("N", "ŉ", false, true, false),
+            ("ŉ", "ŉ", false, true, true),
+            ("[Σß]", "ς", false, true, true),
+            ("[Σß]", "ẞ", false, true, true),
+            ("[^Σ]", "ς", false, true, false),
+            ("[^Σ]", "ς", true, true, true),
+            ("[A-Z]", "K", false, true, false),
+            ("[a-z]", "K", false, true, true),
+            ("[A-Z]", "ı", false, true, true),
+            ("[A-Z]", "ı", true, true, false),
+            ("[A-Z]", "İ", false, true, false),
+            ("[Α-Ω]", "ς", false, true, true),
+            ("[Ά-Ώ]", "ά", false, true, true),
+            ("[Ι]", "ΐ", false, true, false),
+            ("[𐐀-𐐧]", "𐐨", false, true, true),
+            ("[𐐀-𐐧]", "𐐨", true, true, false),
+            ("[𐐀-𐐧]", "𐐨", false, false, false),
+        ];
+        for (pattern, input, ascii, ignore_case, found) in cases {
+            let program = regex_program(pattern, ascii, ignore_case);
+            let end = input.chars().count() as i64;
+            let expected = if found { vec![(0, end)] } else { Vec::new() };
+            assert_eq!(
+                regex_spans(&program, input, 0, end, 2),
+                Ok(expected),
+                "{pattern:?}, {input:?}, ascii={ascii}, ignore_case={ignore_case}"
+            );
+        }
+    }
+
+    #[test]
+    fn regex_case_captures_offsets_and_errors() {
+        let program = regex_program("(Σ|ΣΣ)([a-z])?(𐐀)", false, true);
+        for mode in 0..=2 {
+            assert_eq!(
+                regex_spans(&program, "🙂ςσK𐐨!", 1, 5, mode),
+                Ok(vec![(1, 5), (1, 3), (3, 4), (4, 5)])
+            );
+            assert_eq!(
+                regex_spans(&program, "🙂ςσ𐐨!", 1, 4, mode),
+                Ok(vec![(1, 4), (1, 3), (-1, -1), (3, 4)])
+            );
+        }
+        let program = regex_program("(Σ)|(σ)", false, true);
+        assert_eq!(
+            regex_spans(&program, "ς", 0, 1, 0),
+            Ok(vec![(0, 1), (0, 1), (-1, -1)])
+        );
+        let program = regex_program("(Σ|ΣΣ)", false, true);
+        assert_eq!(
+            regex_spans(&program, "🙂ςσ", 0, 3, 0),
+            Ok(vec![(1, 3), (1, 3)])
+        );
+        for mode in 1..=2 {
+            assert_eq!(regex_spans(&program, "🙂ςσ", 0, 3, mode), Ok(vec![]));
+        }
+        assert_eq!(
+            regex_spans(&program, "ς", 0, 2, 0),
+            Err("Invalid regex search range\n")
+        );
     }
 }
