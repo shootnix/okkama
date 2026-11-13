@@ -1,0 +1,85 @@
+; #535: later heap definitions, captured parameters, parallel edges and unwind.
+sparrow 15
+module "pointer-free" "1.0.0"
+type t0 int
+type t1 bool
+type t2 str
+type t3 failure
+type t4 fn [] -> t0
+
+function f0 "main" {
+    registers [t0, t0, t0, t0, t4, t0, t1]
+    params []
+    result t0
+    0: const r0, int 0
+    1: const r1, int 4611686018427387903
+    2: const r2, int 1
+    3: int.add r0, r1, r2
+    4: call _, f2, []
+    5: call r3, f1, [r0]
+    6: int.sub r3, r3, r1
+    7: int.cmp eq, r6, r3, r2
+    8: br r6, @10, @9
+    9: trap confirm, "lost parameter"
+    10: fn.closure r4, f1, [r0]
+    11: call _, f2, []
+    12: call.fn r3, r4, []
+    13: jmp @14(r0 <- r3, r3 <- r0)
+    14: call _, f2, []
+    15: int.sub r3, r0, r1
+    16: int.cmp eq, r6, r3, r2
+    17: br r6, @19, @18
+    18: trap confirm, "lost captured/edge value"
+    19: const r5, int 42
+    20: ret r5
+}
+function f1 "captured" {
+    registers [t0, t0]
+    params [r0]
+    result t0
+    0: call _, f2, []
+    1: move r1, r0
+    2: const r0, int 0
+    3: call _, f2, []
+    4: ret r1
+}
+function f2 "allocate" {
+    registers [t2, t2]
+    params []
+    result void
+    0: const r0, str "allocate"
+    1: str.concat r1, r0, r0
+    2: ret _
+}
+function f3 "fail" {
+    registers []
+    params []
+    result void
+    0: trap confirm, "pointer-free failure"
+}
+function f4 "handled" {
+    registers [t0, t0, t3, t0, t0, t1]
+    params []
+    result void
+    handler 3 4 @5(r3 <- r0) r2
+    0: const r0, int 4611686018427387903
+    1: const r1, int 1
+    2: int.add r0, r0, r1
+    3: call _, f3, []
+    4: ret _
+    5: call _, f2, []
+    6: const r4, int 4611686018427387903
+    7: int.sub r3, r3, r4
+    8: int.cmp eq, r5, r3, r1
+    9: br r5, @11, @10
+    10: trap confirm, "lost unwind value"
+    11: raise r2
+}
+function f5 "failure entry" {
+    registers []
+    params []
+    result void
+    0: call _, f4, []
+    1: ret _
+}
+entry f0

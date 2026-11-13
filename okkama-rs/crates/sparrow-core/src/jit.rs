@@ -3,7 +3,8 @@
 //! Every function takes the context and its parameters as words and returns
 //! one word (floats travel as bits). Calls go through the code table: a zero
 //! entry compiles the callee first. Integer and reference registers are
-//! declared for stack maps, so every call is a precise safepoint; the
+//! declared for stack maps unless every definition is proven pointer-free.
+//! Every collecting call remains a precise safepoint; the
 //! collector walks frame records (frame pointers are preserved) and reads the
 //! spilled slots of each frame from the map of its return address.
 #![allow(unsafe_code)]
@@ -574,6 +575,18 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         .map_err(|e| Error(format!("JIT finalize: {e}")))?;
     mark!();
     let safepoints = maps.len();
+    let (root_words, traced, omitted) = if dump || profiling || stats.is_some() {
+        let root_words: usize = maps.iter().map(|(_, words)| words.len()).sum();
+        let info = &loaded.functions[function];
+        let omitted = info.kinds.iter().zip(&info.pointer_free).filter(|(kind, free)| kind.traced() && **free).count();
+        let traced = info.kinds.iter().filter(|kind| kind.traced()).count() - omitted;
+        (root_words, traced, omitted)
+    } else {
+        (0, 0, 0)
+    };
+    if dump || profiling {
+        eprintln!("; roots\t{symbol}\ttraced registers {traced}\tomitted registers {omitted}\tstack-map words {root_words}");
+    }
     let address = jit.module.get_finalized_function(id) as u64;
     for (ret, slots) in maps {
         jit.maps.push((address + u64::from(ret), fp_to_sp, slots));
@@ -604,6 +617,9 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         for (key, value) in [
             (format!("compile {symbol}, microseconds"), micros),
             (format!("machine code {symbol}, bytes"), u64::from(size)),
+            (format!("roots {symbol}, traced registers"), traced as u64),
+            (format!("roots {symbol}, omitted registers"), omitted as u64),
+            (format!("roots {symbol}, stack-map words"), root_words as u64),
             ("compile, microseconds".to_string(), micros),
             ("machine code, bytes".to_string(), u64::from(size)),
         ] {
@@ -1037,13 +1053,14 @@ impl Emitter<'_, '_> {
         let explicit = self.root_live.is_some();
         let mut words = Vec::with_capacity(self.kinds.len());
         let mut next = 0u32;
-        for kind in self.kinds {
+        for (register, kind) in self.kinds.iter().enumerate() {
             let var = self.builder.declare_var(if *kind == Kind::Float { types::F64 } else { types::I64 });
-            if kind.traced() && explicit {
+            let traced = kind.traced() && !self.loaded.functions[self.function].pointer_free[register];
+            if traced && explicit {
                 words.push(Some(next));
                 next += 1;
             } else {
-                if kind.traced() {
+                if traced {
                     self.builder.declare_var_needs_stack_map(var);
                 }
                 words.push(None);
@@ -2457,3 +2474,7 @@ fn int_condition(op: Cmp) -> IntCC {
         Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
     }
 }
+
+#[cfg(test)]
+#[path = "jit_pointer_free_tests.rs"]
+mod pointer_free_tests;
