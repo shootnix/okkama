@@ -6,6 +6,34 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.5.7] — 2026-11-13
+
+0.5.7 removes the quadratic paths that the hardening audit found in
+Sparrow's async collections and in the runtime's handling of values, and
+makes the engines agree on two cancellation rules the owner decided. It
+changes no public API.
+- **Async.** `AllFutures`, `Raced`, `FirstSuccessful` and `Before`/`Within`
+  listen to each input once (#443), `FutureCompletions` serves its
+  requests as inputs settle (#444), and failures are ordered in one pass
+  (#445): 40 000 sleeping tasks collected in 0.20 s instead of 1.52 s,
+  32 000 completions drained in 0.03 s instead of 5.4 s. A request of a
+  stream with a duplicated pending input no longer deadlocks (#547).
+- **Values and natives.** `join` builds its string in place (#447), ranges
+  in array literals push inline integers (#448), map literals read their
+  operands by position (#449), and natives no longer copy big integers'
+  digits (#451) or widen byte arrays to check a length (#446).
+- **Engines agree.** A cancellation that arrives after an `await` has
+  finished is raised at the next `await` on every engine (#546), and a
+  cancelled `FutureCompletions` cancels its stream on IR and the JVM too
+  (#548).
+- **Release report.** The micro-benchmark A/B
+  (`okkama-docs/benchmarks/reports/2026-11-13-v0.5.7/micro.html`) has no
+  regression: Sparrow −3.5% by geometric mean over 72 reliable pairs, with
+  `map-literal-12` −13% and `channel` −11% past the noise band; the IR
+  engine −0.1%. It caught one regression before the release:
+  `regex-first-match` +8–13% from #450, which was reverted and goes back to
+  0.5.8. Conformance is 1035/1035 on six configurations.
+
 ### Changed
 
 - **Sparrow's future collections no longer rescan every input (#443).**
@@ -5662,7 +5690,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.7...HEAD
+[0.5.7]: https://github.com/shootnix/okkama/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/shootnix/okkama/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/shootnix/okkama/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/shootnix/okkama/compare/v0.5.3...v0.5.4
