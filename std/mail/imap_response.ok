@@ -297,7 +297,9 @@ object ImapResponseProgress {
             else {
                 ImapResponsePartKind.literal;
             };
-            let appended = parts.following(ImapResponsePart(kind: kind, value: buffer.content().bytes()));
+            let appended = parts.following(
+                ImapResponsePart(kind: kind, value: buffer.content().bytes())
+            );
             ^parts = appended;
             let empty is MimeItems<ByteSnapshot> = MimeItems();
             ^pieces = empty;
@@ -312,7 +314,8 @@ object ImapResponseProgress {
     accepted(octet is byte) is ^ImapResponseProgress {
         confirm !done && remaining == 0
             else throw InvalidState.because("IMAP response expects literal bytes or is complete");
-        confirm used < limits::Limits::wire_bytes else throw ImapResponseLimitExceeded.kind("wire_bytes");
+        confirm used < limits::Limits::wire_bytes
+            else throw ImapResponseLimitExceeded.kind("wire_bytes");
         confirm pending.length() < limits::Limits::line_bytes
             else throw ImapResponseLimitExceeded.kind("line_bytes");
         let code = octet.int();
@@ -333,9 +336,17 @@ object ImapResponseProgress {
             };
             let header = ImapResponseHeader(initial);
             let start = used - pending.length();
-            let marker = ImapResponseLine(origin: line, offset: start, structured: header.structured(), limits: limits).marker();
+            let marker = ImapResponseLine(
+                origin: line,
+                offset: start,
+                structured: header.structured(),
+                limits: limits
+            ).marker();
             let extended = parts.following(
-                ImapResponsePart(kind: ImapResponsePartKind.text, value: Utf8Encoded(pending + "\n").bytes())
+                ImapResponsePart(
+                    kind: ImapResponsePartKind.text,
+                    value: Utf8Encoded(pending + "\n").bytes()
+                )
             );
             if marker.present() {
                 confirm literals < limits::Limits::literals
