@@ -1,5 +1,9 @@
 module http/internal/websocket_messages v1.0.0;
 
+// Assembling messages from data frames, and reading Close frames.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/websocket_frame" take WebSocketFrame;
 import "http/websocket" take WebSocketLimits, WebSocketMessage, TextWebSocketMessage,
     BinaryWebSocketMessage, WebSocketFailure, WebSocketClose, WebSocketClosed;
@@ -17,6 +21,7 @@ object WebSocketMessageAssembly does Closing {
     has opcode is Atomic<int>;
     has maximum, frame_maximum is int;
 
+    // An assembly within limits.
     WebSocketMessageAssembly(limits is WebSocketLimits) {
         bytes = ByteBuffer();
         opcode = Atomic(-1);
@@ -24,14 +29,18 @@ object WebSocketMessageAssembly does Closing {
         frame_maximum = limits::Limits::frame_bytes;
     }
 
+    // Whether it was closed.
     closed() is bool {
         bytes.closing().closed();
     }
 
+    // Closes it.
     close() is void {
         bytes.closing().close();
     }
 
+    // Takes a data frame; the message it completes, or none yet.
+    // WebSocketFailure for a bad sequence or invalid UTF-8.
     accept(frame is WebSocketFrame) is @WebSocketMessage {
         confirm !self.closed() else throw WebSocketFailure.because("message assembler closed");
         let kind = frame.opcode();
@@ -85,15 +94,19 @@ object WebSocketMessageAssembly does Closing {
     }
 }
 
+// A Close frame's payload.
 object ParsedWebSocketClose {
     has origin is @byte;
     has from_server is bool;
 
+    // The payload, sent by a server or a client.
     ParsedWebSocketClose(origin is @byte, from_server is bool) {
         self.origin = origin;
         self.from_server = from_server;
     }
 
+    // The code and reason as WebSocketClosed (1005 when empty);
+    // WebSocketFailure for an invalid one.
     closure() is WebSocketClosed {
         if origin.size() == 0 {
             return WebSocketClosed.detailed(1005, "");

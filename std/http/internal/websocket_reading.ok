@@ -1,5 +1,9 @@
 module http/internal/websocket_reading v1.0.0;
 
+// Reading WebSocket frames from a stream, one at a time.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/internal/websocket_frame" take ParsedWebSocketFrameHeader, WebSocketFrame,
     WebSocketMaskedBytes, WebSocketHeaderPrefix;
 import "http/websocket" take WebSocketFailure, WebSocketClosed;
@@ -15,11 +19,14 @@ import "http/internal/wire_bytes" take HttpWireBytes;
 object WebSocketFrameReading {
     has waiting is Future<WebSocketFrame>;
 
+    // Reads from origin, expecting masking or not, payloads up to maximum
+    // bytes.
     WebSocketFrameReading(origin is AsyncReading, masked is bool, maximum is int) {
         let input = WebSocketFrameInput(origin: origin, masked: masked, maximum: maximum);
         waiting = input.reading();
     }
 
+    // The frame, unmasked; WebSocketFailure for an invalid one.
     async frame() is WebSocketFrame {
         let group is FutureGroup<WebSocketFrame> = FutureGroup();
         let cleanup = WebSocketFrameSettlement(group);

@@ -1,5 +1,9 @@
 module http/internal/websocket_upgrade v1.0.0;
 
+// Pieces of the upgrade from HTTP/1.1 to WebSocket on the client.
+//
+// Internal to the http modules; programs do not import it.
+
 import "http/websocket_session" take WebSocketSession;
 import "http/websocket" take WebSocketFailure;
 import "http/internal/websocket_output" take WebSocketOutputSettlement;
@@ -8,11 +12,13 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "io/stream" take AsyncReading, InvalidReadLimit;
 
+// Closes a session that was opened but not handed out.
 object WebSocketOpeningCleanup {
     has group is FutureGroup<WebSocketSession>;
     has waiting is Future<WebSocketSession>;
     has taken is Event;
 
+    // Watches waiting in group, unless taken fires.
     WebSocketOpeningCleanup(
         group is FutureGroup<WebSocketSession>,
         waiting is Future<WebSocketSession>,
@@ -23,6 +29,7 @@ object WebSocketOpeningCleanup {
         self.taken = taken;
     }
 
+    // Cancels the opening and closes what it opened.
     async close() is void {
         if group.active() > 0 {
             group.cancel();
@@ -55,6 +62,7 @@ object WebSocketPrefixedInput does AsyncReading {
     has prefix is @byte;
     has offset is Atomic<int>;
 
+    // prefix, then origin.
     WebSocketPrefixedInput(origin is AsyncReading, prefix is @byte) {
         confirm prefix.size() <= 65536 else throw WebSocketFailure.because("upgrade prefix limit");
         self.origin = origin;
@@ -62,6 +70,7 @@ object WebSocketPrefixedInput does AsyncReading {
         offset = Atomic(0);
     }
 
+    // At most limit bytes: prefix first.
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         let start = offset.value();
