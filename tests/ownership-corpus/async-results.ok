@@ -33,7 +33,7 @@ object Work {
 }
 
 async main() is int {
-    let t = Tap(5);
+    let t = Tap(8);
     let log = Atomic("");
     defer log.close();
     {
@@ -63,5 +63,22 @@ async main() is int {
         t = t.is(log.value(), "L", "discarded awaited result gets lexical owner");
     }
 
+    t.note("discarded awaited result closes at scope exit: " + log.value());
+    t = t.is(log.value(), "LR", "discarded awaited result closes at scope exit");
+    log.replace("");
+    {
+        let outer = Res("O", log);
+        {
+            let before = Res("A", log);
+            await Work().make(log, Event(), Event(ready: true));
+            let after = Res("B", log);
+        }
+
+        t.note("discarded awaited result shares block cleanup order: " + log.value());
+        t = t.is(log.value(), "LBRA", "discarded awaited result shares block cleanup order");
+    }
+
+    t.note("outer cleanup does not destroy awaited result again: " + log.value());
+    t = t.is(log.value(), "LBRAO", "outer cleanup does not destroy awaited result again");
     t.done();
 }

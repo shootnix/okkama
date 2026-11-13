@@ -1281,13 +1281,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     }
 
     fn emit(&mut self, kind: InstKind, ty: Type, span: Span) -> Typed {
-        let call = matches!(kind, InstKind::Call { .. } | InstKind::CallRole { .. });
+        let result = matches!(kind, InstKind::Call { .. } | InstKind::CallRole { .. } | InstKind::Await(_));
         let value = Typed {
             value: self.b.emit(kind, ty.clone(), span),
             ty,
         };
-        // Результат вызова — свежие идентичности вызывающего (§7).
-        if call {
+        // Результат вызова или await учитывается текущей областью (§7, §13.1),
+        // даже если выражение не связано с именем и его значение отбрасывается.
+        if result {
             self.track(&value, span);
         }
         value

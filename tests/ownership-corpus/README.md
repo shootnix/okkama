@@ -350,3 +350,5 @@ results corroborate the four corrections; open disagreements stay in pending/.
 
 Whole-corpus execution in Docker remains assigned to Claude / oracle runner
 #562. #579–#580 and the semantics question #581 are outside this fix.
+
+- #579 (merged): `async-results.ok` holds the awaited-result check again, plus two cleanup-order assertions; the counts above are refreshed with #581.

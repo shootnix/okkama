@@ -79,6 +79,41 @@ fn bindings_own_and_call_results_are_tracked() {
 }
 
 #[test]
+fn discarded_await_results_are_tracked_by_the_enclosing_block() {
+    let module = module(&format!(
+        "{RES} object Work {{ Work(); async make() is Res {{ Res(n: 2); }} }} \
+         async main() is int {{ Res(n: 4); {{ Res(n: 1); await Work().make(); Res(n: 3); }} 0; }}"
+    ));
+    let main = function(&module, "main");
+    let insts: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
+    let awaited = insts.iter().find(|inst| matches!(inst.kind, InstKind::Await(_)))
+        .expect("await exists").result.expect("await returns Res");
+    let tracked_region = |value| {
+        let regions: Vec<_> = insts.iter().filter_map(|inst| match inst.kind {
+            InstKind::RegionTrack { region, value: tracked } if tracked == value => Some(region),
+            _ => None,
+        }).collect();
+        assert_eq!(regions.len(), 1, "each temporary is tracked exactly once:\n{module}");
+        regions[0]
+    };
+    let region = tracked_region(awaited);
+    let calls: Vec<_> = insts.iter().filter_map(|inst| match &inst.kind {
+        InstKind::Call { func, .. } if module.functions[func.0].symbol == "Res.new#0" => inst.result,
+        _ => None,
+    }).collect();
+    assert_eq!(calls.len(), 3, "{module}");
+    assert_ne!(tracked_region(calls[0]), region, "outer scope stays separate:\n{module}");
+    assert_eq!(tracked_region(calls[1]), region, "preceding temporary shares the region:\n{module}");
+    assert_eq!(tracked_region(calls[2]), region, "following temporary shares the region:\n{module}");
+    assert_eq!(count(main, |kind| matches!(kind,
+        InstKind::RegionLeave { region: closed, keep: None } if *closed == region
+    )), 1, "discarded result does not escape the block:\n{module}");
+    assert_eq!(count(main, |kind| matches!(kind,
+        InstKind::RegionUnwind { region: closed, .. } if *closed == region
+    )), 1, "failure also closes the block:\n{module}");
+}
+
+#[test]
 fn defers_run_on_exits_and_join_failures_as_secondary() {
     let module = module(&format!(
         "{RES} object Log {{ Log(); fail() is void {{ confirm false; }} }} \
