@@ -46,11 +46,9 @@ pub const PARKED: u64 = 32;
 /// An async destroy awaited by a region close (#154): a cancellation neither
 /// reaches it nor resumes its awaiter; it stays requested for the next await.
 const SHIELDED: u64 = 64;
-/// A collection driver that learns which inputs settled (#443): waking it
-/// also hands it the settled Future.
+/// A driver told which of the Futures it listens to settled, in settlement
+/// order: a collection (#443) or a stream's listening request (#444).
 pub const INBOX: u64 = 128;
-/// Flags above this bit hold the completion order of a settled Future.
-const ORDER_SHIFT: u64 = 16;
 
 /// Several frames awaiting one Future.
 #[derive(Debug, Default)]
@@ -93,11 +91,6 @@ impl Runtime {
     /// Offset of the state word of a driver frame (after its registers).
     pub(crate) fn driver_slot(&self, frame: Word) -> u64 {
         REGISTERS + self.loaded.functions[self.function_of(frame)].kinds.len() as u64 * 8
-    }
-
-    /// Completion order of a settled Future (0: not settled).
-    pub(crate) fn completion_order(frame: Word) -> u64 {
-        get(frame, FLAGS) >> ORDER_SHIFT
     }
 
     /// Queue a frame whose wait is over. A driver is queued once per park.
@@ -172,9 +165,6 @@ impl Runtime {
     /// Settle a Future and queue the frames awaiting it.
     pub(crate) fn settle(&mut self, frame: Word, state: u64, value: Word) {
         set(frame, STATE, state);
-        self.completions += 1;
-        let flags = get(frame, FLAGS) & ((1 << ORDER_SHIFT) - 1);
-        set(frame, FLAGS, flags | (self.completions << ORDER_SHIFT));
         if state == DONE {
             set(frame, RESULT, value);
         } else {
@@ -201,9 +191,10 @@ impl Runtime {
     fn wake_waiter(&mut self, frame: Word, waiter: Word) {
         if get(waiter, AWAITING) == frame {
             set(waiter, AWAITING, UNBOUND);
-        } else if get(waiter, FLAGS) & INBOX != 0 {
-            // A collection only listens, so a plain `await` skips this.
-            crate::drivers::settled(self, waiter, frame);
+        } else if get(waiter, FLAGS) & INBOX != 0 && !crate::drivers::settled(self, waiter, frame) {
+            // A collection or a stream only listens, so a plain `await`
+            // skips this; a stream serves its requests itself.
+            return;
         }
         self.wake(waiter);
     }

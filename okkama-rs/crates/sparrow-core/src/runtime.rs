@@ -103,8 +103,6 @@ pub struct Runtime {
     pub ready: std::collections::VecDeque<Word>,
     pub spawned: Vec<Word>,
     pub running: Vec<Word>,
-    /// Settled Futures so far (their completion order).
-    pub completions: u64,
     /// Sleeping drivers by deadline; roots.
     pub timers: Vec<(std::time::Instant, Word)>,
     /// Async primitive state by owning object (see `primitives`).
@@ -185,7 +183,6 @@ impl Runtime {
             ready: std::collections::VecDeque::new(),
             spawned: Vec::new(),
             running: Vec::new(),
-            completions: 0,
             timers: Vec::new(),
             states: crate::word::FastMap::default(),
             natives: loaded

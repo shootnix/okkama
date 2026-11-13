@@ -8,7 +8,7 @@
 //! outcome in the waiter's resume word (and its result word) and wakes it; a
 //! waiter that is no longer parked is being cancelled and is skipped.
 use crate::runtime::Runtime;
-use crate::tasks::{self, RESULT, RESUME};
+use crate::tasks::{self, DELIVER_NOW, FLAGS, RESULT, RESUME};
 use crate::word::{Repr, UNBOUND, Word};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -49,12 +49,16 @@ pub struct Stream {
     pub emitted: Vec<bool>,
     pub cancelled: Vec<bool>,
     pub queue: VecDeque<usize>,
+    /// Inputs that settled since the last poll, in settlement order: the
+    /// stream listens once to each unsettled input (#444).
+    pub inbox: Vec<Word>,
+    /// (input, position), sorted: the positions of a settled input.
+    pub positions: Vec<(Word, usize)>,
     /// Pending `completion()` frames, FIFO.
     pub waiters: VecDeque<Word>,
     pub reserved: usize,
     pub delivered: usize,
     pub started: bool,
-    pub initial_order: u64,
     pub aborting: bool,
     pub aborted: Option<Word>,
     pub abort_done: bool,
@@ -387,8 +391,10 @@ impl Runtime {
         }
     }
 
-    /// Queue newly settled inputs and pair them with requests in order;
-    /// `current` (the running request, not parked) is served too.
+    /// Queue the inputs settled since the last poll and pair queued inputs
+    /// with requests in order; `current` (the running request, not parked)
+    /// is served too. Called by requests and, when an input settles, from
+    /// `settle` (#444).
     pub fn stream_poll(&mut self, object: Word, current: Word) {
         let completions = {
             let Some(stream) = self.stream_mut(object) else {
@@ -397,25 +403,27 @@ impl Runtime {
             if !stream.started || stream.aborting {
                 return;
             }
-            let mut ready = Vec::new();
-            for (index, &entry) in stream.entries.iter().enumerate() {
-                if stream.emitted[index] || !matches!(tasks::get(entry, tasks::STATE), tasks::DONE | tasks::FAILURE_STATE) {
-                    continue;
+            let mut inbox = std::mem::take(&mut stream.inbox);
+            for &future in &inbox {
+                let first = stream.positions.partition_point(|&(entry, _)| entry < future);
+                for &(entry, index) in &stream.positions[first..] {
+                    if entry != future {
+                        break;
+                    }
+                    if !std::mem::replace(&mut stream.emitted[index], true) {
+                        stream.queue.push_back(index);
+                    }
                 }
-                let order = Runtime::completion_order(entry);
-                ready.push(if order <= stream.initial_order { (0, 0, index) } else { (1, order, index) });
             }
-            ready.sort_unstable();
-            for (_, _, index) in ready {
-                stream.emitted[index] = true;
-                stream.queue.push_back(index);
-            }
+            inbox.clear();
+            stream.inbox = inbox;
             let mut completions = Vec::new();
             while !stream.queue.is_empty() {
                 let Some(waiter) = stream.waiters.pop_front() else {
                     break;
                 };
-                if waiter != current && !Runtime::parked(waiter) {
+                // A request being cancelled leaves; its own run cleans up.
+                if waiter != current && !Runtime::parked(waiter) && tasks::get(waiter, FLAGS) & DELIVER_NOW != 0 {
                     continue;
                 }
                 let index = stream.queue.pop_front().expect("queued completion");
@@ -425,11 +433,12 @@ impl Runtime {
             completions
         };
         for (waiter, entry) in completions {
-            if waiter == current {
-                tasks::set(waiter, RESUME, COMPLETED);
-                tasks::set(waiter, RESULT, entry);
-            } else {
+            if Runtime::parked(waiter) {
                 self.complete_wait(waiter, COMPLETED, Some(entry));
+            } else {
+                // Running or already queued: it reads the outcome when it runs.
+                tasks::set(waiter, RESUME, COMPLETED | (tasks::get(waiter, RESUME) & !0xff));
+                tasks::set(waiter, RESULT, entry);
             }
         }
     }

@@ -645,7 +645,6 @@ struct Collection {
     inbox: Vec<Word>,
     /// (input, position), sorted: the positions of a settled input.
     positions: Vec<(Word, usize)>,
-    initial_order: u64,
     winner: Option<Word>,
     winner_repr: Repr,
     /// Failures in the order observed, each once.
@@ -674,11 +673,25 @@ fn collection(runtime: &mut Runtime, frame: Word) -> &mut Collection {
     state::<Collection>(runtime, frame).expect("collection")
 }
 
-/// `future`, an input of collection `frame`, settled (#443).
-pub(crate) fn settled(runtime: &mut Runtime, frame: Word, future: Word) {
+/// `future`, which the INBOX driver `frame` listens to, settled. A
+/// collection queues it and is woken (#443). A `completion()` request
+/// listens for its stream: the stream queues it and serves its waiting
+/// requests now, and the listening frame is not woken (#444).
+pub(crate) fn settled(runtime: &mut Runtime, frame: Word, future: Word) -> bool {
     if let Some(c) = state::<Collection>(runtime, frame) {
         c.inbox.push(future);
+        return true;
     }
+    let function = runtime.function_of(frame);
+    if runtime.intrinsics[function] != Some(Intrinsic::StreamCompletion) {
+        return true;
+    }
+    let receiver = param(runtime, frame, function, 0);
+    if let Some(stream) = runtime.stream_mut(receiver) {
+        stream.inbox.push(future);
+        runtime.stream_poll(receiver, UNBOUND);
+    }
+    false
 }
 
 fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, intrinsic: Intrinsic, deliver: bool) -> Step {
@@ -701,7 +714,6 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
             ready: VecDeque::new(),
             inbox: Vec::new(),
             positions: Vec::new(),
-            initial_order: 0,
             winner: None,
             winner_repr,
             failures: Vec::new(),
@@ -726,12 +738,10 @@ fn collect(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, i
                 return Stop;
             }
         }
-        let completions = runtime.completions;
         let c = collection(runtime, frame);
         c.consumed = vec![false; entries.len()];
         c.cancelled = vec![false; entries.len()];
         c.remaining = entries.len();
-        c.initial_order = completions;
         c.started = true;
         // Inputs settled by now go first, by input position. The frame then
         // listens once to each unsettled input; `settled` reports them in
@@ -1006,10 +1016,6 @@ fn completion(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
         Err(Some(failure)) => return Failed(failure),
         Err(None) => return Stop,
     }
-    let entries = runtime.stream_mut(receiver).expect("stream").entries.clone();
-    for &entry in &entries {
-        runtime.remove_waiter(entry, frame);
-    }
     match resume(frame) {
         COMPLETED => return Done(tasks::get(frame, RESULT)),
         REFUSED => return Failed(tasks::get(frame, RESULT)),
@@ -1026,6 +1032,7 @@ fn completion(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
             stream.waiters.push_back(frame);
             if !stream.started && !stream.aborting {
                 stream.started = true;
+                let entries = stream.entries.clone();
                 for &entry in &entries {
                     Runtime::observe(entry);
                     runtime.spawn(ctx, entry);
@@ -1033,8 +1040,27 @@ fn completion(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
                         return Stop;
                     }
                 }
-                let completions = runtime.completions;
-                runtime.stream_mut(receiver).expect("stream").initial_order = completions;
+                let stream = runtime.stream_mut(receiver).expect("stream");
+                // Inputs settled by now are queued by position. This frame
+                // then listens once to each unsettled input for the stream:
+                // `settled` hands them over in settlement order (#444).
+                let mut pending = Vec::new();
+                for (index, &entry) in entries.iter().enumerate() {
+                    if matches!(tasks::get(entry, tasks::STATE), DONE | FAILURE_STATE) {
+                        stream.emitted[index] = true;
+                        stream.queue.push_back(index);
+                    } else {
+                        pending.push(entry);
+                    }
+                }
+                stream.positions = entries.iter().enumerate().map(|(index, &entry)| (entry, index)).collect();
+                stream.positions.sort_unstable();
+                pending.sort_unstable();
+                pending.dedup();
+                tasks::set(frame, FLAGS, tasks::get(frame, FLAGS) | tasks::INBOX);
+                for entry in pending {
+                    runtime.listen(entry, frame);
+                }
             }
         }
         _ if deliver => {
@@ -1049,6 +1075,7 @@ fn completion(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
             }
             stream.aborting = true;
             stream.aborted = Some(failure);
+            let entries = stream.entries.clone();
             for (index, &entry) in entries.iter().enumerate() {
                 if !matches!(tasks::get(entry, tasks::STATE), DONE | FAILURE_STATE) {
                     runtime.stream_mut(receiver).expect("stream").cancelled[index] = true;
@@ -1063,14 +1090,6 @@ fn completion(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
     runtime.stream_poll(receiver, frame);
     if resume(frame) == COMPLETED {
         return Done(tasks::get(frame, RESULT));
-    }
-    if !runtime.stream_mut(receiver).expect("stream").aborting {
-        let stream = runtime.stream_mut(receiver).expect("stream");
-        let pending: Vec<Word> =
-            stream.entries.iter().zip(&stream.emitted).filter(|&(_, &emitted)| !emitted).map(|(&e, _)| e).collect();
-        for entry in pending {
-            runtime.listen(entry, frame);
-        }
     }
     wait(frame, 0);
     Pending
@@ -1111,6 +1130,7 @@ fn drain(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, receiver: Word) -> S
     }
     let stream = runtime.stream_mut(receiver).expect("stream");
     stream.queue.clear();
+    stream.inbox.clear();
     stream.delivered = stream.entries.len();
     stream.reserved = stream.entries.len();
     stream.abort_done = true;

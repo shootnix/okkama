@@ -1,0 +1,83 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+import "async/collect" take FutureCompletions;
+
+// Waits for `mine`, then sets `handoff`: chained, links settle one per turn.
+object Link {
+    has mine is Event;
+    has handoff is Event;
+    has label is string;
+    Link(:mine, :handoff, :label);
+    async run() is string {
+        await mine.wait();
+        handoff.set();
+        label;
+    }
+}
+
+object Chain {
+    has events is @Event;
+    // Link i waits for event i + 1 and sets event i; start() sets event 3.
+    Chain() {
+        events = [Event(), Event(), Event(), Event()];
+    }
+    link(index is int, label is string) is Future<string> {
+        spawn Link(mine: events[index + 1], handoff: events[index], label: label).run();
+    }
+    start() is void {
+        events[3].set();
+    }
+}
+
+// One request: the next settled input, labelled with who got it.
+object Consumer {
+    has stream is FutureCompletions<string>;
+    has name is string;
+    Consumer(:stream, :name);
+    async next() is string {
+        let done = await stream.completion();
+        name + ":" + await done;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+
+    // Requests waiting together are served first come, first served, in
+    // settlement order (l2, l1, l0).
+    let one = Chain();
+    let inputs is @Future<string> = [one.link(0, "l0"), one.link(1, "l1"), one.link(2, "l2")];
+    let stream is FutureCompletions<string> = FutureCompletions(origins: inputs);
+    let a = spawn Consumer(stream: stream, name: "a").next();
+    let b = spawn Consumer(stream: stream, name: "b").next();
+    let c = spawn Consumer(stream: stream, name: "c").next();
+    one.start();
+    out.writeln(await a, " ", await b, " ", await c, ", remaining ", stream.remaining_count());
+
+    // A pending input given twice settles once and is handed out at both
+    // positions.
+    let two = Chain();
+    let shared = two.link(2, "x");
+    let doubled is @Future<string> = [shared, shared];
+    let twice is FutureCompletions<string> = FutureCompletions(origins: doubled);
+    let p = spawn Consumer(stream: twice, name: "p").next();
+    let q = spawn Consumer(stream: twice, name: "q").next();
+    two.start();
+    out.writeln(await p, " ", await q);
+
+    // Cancelling a waiting request cancels the stream's unfinished inputs.
+    let three = Chain();
+    let never is @Future<string> = [three.link(0, "never")];
+    let stuck is FutureCompletions<string> = FutureCompletions(origins: never);
+    let waiting = spawn Consumer(stream: stuck, name: "w").next();
+    waiting.cancel();
+    out.writeln(try {
+        await waiting;
+    }
+    catch error is Cancelled {
+        "w cancelled";
+    });
+    0;
+}
