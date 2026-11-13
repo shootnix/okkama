@@ -54,7 +54,11 @@ object ScramExchange {
         let keys = ScramKeys(password: password, first: parsed);
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let client_key = keys.client();
-        let signature = Hmac(hash: HmacHash.sha256, key: SecretBytes(Sha256(client_key).bytes()), origin: message).bytes();
+        let signature = Hmac(
+            hash: HmacHash.sha256,
+            key: SecretBytes(Sha256(client_key).bytes()),
+            origin: message
+        ).bytes();
         let proof is @byte = (0..32).map() -> index {
             client_key[index] ^ signature[index];
         };
@@ -128,7 +132,13 @@ hidden object ScramKeys {
     }
 
     salted() is SecretBytes {
-        Pbkdf2Secret(hash: KdfHash.sha256, password: password, salt: first.salt(), iterations: first.iterations(), length: 32).secret();
+        Pbkdf2Secret(
+            hash: KdfHash.sha256,
+            password: password,
+            salt: first.salt(),
+            iterations: first.iterations(),
+            length: 32
+        ).secret();
     }
 
     client() is @byte {
