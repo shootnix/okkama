@@ -1,6 +1,6 @@
 module examples/os/environment/variables v1.0.0;
 
-import "os/environment" take Environment, MissingEnvironmentVariable, SearchPath;
+import "os/environment" take Environment, SearchPath;
 import "io/stdout" take Stdout;
 
 // An environment is a snapshot: read it, derive a changed copy for a child
@@ -16,13 +16,9 @@ main() is int {
     ]);
 
     out.writeln("home: ", isolated.home().path());
-    let editor = try {
-        isolated.text("EDITOR");
-    }
-    catch MissingEnvironmentVariable.name(name) {
-        "(no " + name + ")";
-    };
-    out.writeln("editor: " + editor);
+    // A variable reads like a json value: text, int, boolean, list or maybe.
+    out.writeln("editor: ", isolated.maybe("EDITOR").text() else "(no EDITOR)");
+    out.writeln("path entries: ", isolated.list("PATH").size());
 
     let child = isolated.addition("APP_ENV", "production").difference("APP_TOKEN");
     out.writeln("child has APP_ENV: ", child.membership("APP_ENV"));

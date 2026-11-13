@@ -28,7 +28,7 @@ and compares the output.
 | Program | Task |
 |---|---|
 | `fs/directory/list.ok` | list one directory, sorted, with each entry's kind and a file's size |
-| `fs/directory/walk.ok` | walk a whole tree, a directory before its contents, and count files of a kind |
+| `fs/directory/walk.ok` | create nested directories at once, walk a whole tree, a directory before its contents, and count files by extension |
 | `fs/directory/manage.ok` | create, rename and remove a directory; remove a full one |
 | `fs/directory/errors.ok` | catch the cases of `FileError`: missing, already there, not empty |
 
@@ -36,8 +36,8 @@ and compares the output.
 
 | Program | Task |
 |---|---|
-| `fs/path/paths.ok` | join parts, walk up to parents, tidy `.` and doubled separators, name a foreign grammar |
-| `fs/entry/inspect.ok` | ask whether a path exists, its kind, size and permissions; move it, remove it |
+| `fs/path/paths.ok` | join parts, walk up to parents, tidy `.` and doubled separators, take a path apart (parts, stem, extension, relative to a base), name a foreign grammar |
+| `fs/entry/inspect.ok` | ask whether a path exists, its kind, size and permissions; copy it, move it, replace a file on purpose, remove it |
 | `fs/temp/scratch.ok` | a scratch directory and file with unpredictable names; keep one file, let the rest go |
 | `fs/glob/find.ok` | find files by `*`, `?`, classes and `**`; refuse a bad pattern |
 | `fs/link/links.ok` | switch a release with a symbolic link, share a file with a hard link |
@@ -47,21 +47,21 @@ and compares the output.
 
 | Program | Task |
 |---|---|
-| `os/command/capture.ok` | run a program without a shell, collect its output and exit code, feed a pipeline, stop at a limit |
+| `os/command/capture.ok` | `Run` a tool and read its text, run a program with its own environment, collect its output and exit code, feed a pipeline, stop at a limit |
 | `os/process/talk.ok` | write to a running program, read its answer, stop a long-running one with a signal |
-| `os/environment/variables.ok` | read a snapshot, derive a child's environment, find home and the search path |
+| `os/environment/variables.ok` | read variables like json values, derive a child's environment, find home and the search path |
 
 ## toml
 
 | Program | Task |
 |---|---|
-| `toml/read.ok` | parse a document, walk every value with a visitor, read dates and times, report an error's line |
+| `toml/read.ok` | parse a document, read values by name like json, walk every value with a visitor, read dates and times, report an error's line |
 
 ## csv
 
 | Program | Task |
 |---|---|
-| `csv/rows.ok` | read rows with quotes inside, write them back, use another dialect, stream rows, report a bad quote |
+| `csv/rows.ok` | read rows with quotes inside, read records by column name, write them back, use another dialect, stream rows, report a bad quote |
 
 ## archive
 
@@ -153,7 +153,7 @@ installed Okkama finds it; a development build takes `OKKAMA_NATIVE_LIB`.
 
 | Program | Task |
 |---|---|
-| `regex/search.ok` | the first match, every match with named groups, a whole string ignoring case |
+| `regex/search.ok` | the first match, every match with named groups, whether a text matches, a whole string ignoring case |
 | `regex/replace.ok` | replace by a literal or a template with groups, up to a limit; split text |
 
 ## encoding
@@ -189,7 +189,7 @@ container.
 
 | Program | Task |
 |---|---|
-| `async/channel.ok` | a producer and a consumer over a bounded channel, until it closes |
+| `async/channel.ok` | a producer and a consumer over a bounded channel, walked with `for await` until it closes |
 | `async/timeout.ok` | bound an operation by time, race two answers, wait for all of several |
 
 ## http/client, http/xmlrpc
@@ -214,7 +214,7 @@ itself, so it needs no network, and drains its server at the end.
 |---|---|
 | `web/hello.ok` | the smallest web application: one route answers «Привет, Вася!» from `?name=Вася`, «Привет, Незнакомец!» without it; it serves on port 8080 until stopped, for a browser (no `.expected`, `check.py` skips it) |
 | `web/notes.ok` | a JSON service: routes under a prefix, a path parameter, a JSON body, a query parameter with a default, a fallback |
-| `http/websocket/echo.ok` | a WebSocket server checks the Origin against its own URL and answers each message; the client sends, reads and closes |
+| `http/websocket/echo.ok` | a WebSocket server checks the Origin against its own URL and answers each message, walked with `for await`; the client sends, reads and closes |
 
 ## mail
 

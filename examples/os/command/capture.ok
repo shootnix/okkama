@@ -2,6 +2,7 @@ module examples/os/command/capture v1.0.0;
 
 import "fs/path" take Path;
 import "os/command" take Command, InheritedCommand;
+import "os/run" take Run;
 import "os/command_capture" take CommandCapture, CaptureLimitExceeded;
 import "os/directory" take WorkingDirectory;
 import "os/environment" take Environment;
@@ -9,17 +10,16 @@ import "os/pipeline_capture" take PipelineCapture;
 import "io/stdout" take Stdout;
 
 // Run a program and collect what it prints. No shell is involved: each
-// argument reaches the program as one exact string. A bare program name is
-// searched in the command's own PATH. Output is bounded by a limit.
+// argument reaches the program as one exact string. Run finds a program on
+// PATH and runs it with this process's environment; CommandCapture over a
+// Command sets the environment, directory, input and limit. Output is bounded.
 
 async main() is int {
     let out = Stdout();
 
     // Arguments with spaces and semicolons stay whole.
-    let printf = InheritedCommand(program: Path("printf"), arguments: ["%s|%s", "a b", "c;d"]);
-    let printed = await CommandCapture(origin: printf, limit: 1024).completion();
-    out.writeln(printed::Captured::output);
-    out.writeln("success: ", printed.exit().success());
+    out.writeln(await Run("printf", ["%s|%s", "a b", "c;d"]).text());
+    out.writeln("success: ", (await Run("printf", ["x"]).completion()).exit().success());
 
     // Explicit context: an environment of our own, and the exit code.
     let check = Command(

@@ -5,7 +5,7 @@ import "http/handler" take Handling, HandlingResult, WebSocketHandling, WebSocke
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request;
 import "http/header" take Headers, Header, HeaderName;
-import "http/websocket" take WebSocketConnection, WebSocketLimits, TextWebSocketMessage, WebSocketClosed;
+import "http/websocket" take WebSocketConnection, WebSocketLimits;
 import "http/websocket_server" take WebSocketUpgrade;
 import "http/websocket_origin" take SameOriginWebSockets;
 import "http/websocket_client" take WebSocketConnecting, WebSocketPolicy;
@@ -13,7 +13,6 @@ import "http/endpoint" take LoopbackEndpoints;
 import "net/tcp" take TcpListening;
 import "net/dns" take FixedResolution;
 import "url/value" take ParsedUrl;
-import "time/clock" take SystemClock;
 import "time/duration" take Duration;
 import "io/stdout" take Stdout;
 
@@ -38,14 +37,9 @@ object Shouting does Handling, WebSocketHandling {
     }
 
     async handle(connection is WebSocketConnection, request is Request, context is HttpRequestContext) is WebSocketHandling {
-        try {
-            loop {
-                let message = await connection.message();
-                await connection.send(TextWebSocketMessage(message.text().upper() + "!"));
-            }
-        }
-        catch e is WebSocketClosed {
-            self;
+        // The walk ends when the client closes the connection.
+        for await connection -> message {
+            await connection.send_text(message.text().upper() + "!");
         }
         self;
     }
@@ -53,7 +47,6 @@ object Shouting does Handling, WebSocketHandling {
 
 async main() is int {
     let out = Stdout();
-    let clock = SystemClock();
     let listener = await TcpListening(port: 0).listener();
     let site = "http://127.0.0.1:" + listener::Local::port.string();
     let server = HttpServer(listener: listener, handling: Shouting(), url: ParsedUrl(site + "/").parts()).started();
@@ -70,7 +63,7 @@ async main() is int {
         ),
     ).connection();
     for ["hello", "how are you"] -> text {
-        await connection.send(TextWebSocketMessage(text));
+        await connection.send_text(text);
         out.writeln(text + " -> " + (await connection.message()).text());
     }
     await connection.close(1000, "bye");

@@ -21,6 +21,11 @@ main() is int {
     out.writeln(Path("srv", posix).child("/etc/hosts").string());
     out.writeln(Path("/srv", posix).absolute(), " ", Path("srv", posix).absolute());
 
+    // Taking a path apart, by the names alone: nothing asks the disk.
+    let guide = Path("docs/./api/../guide.md", posix).normalized();
+    out.writeln(guide.string(), ": ", guide.parts().join(" / "), ", stem ", guide.stem(), ", extension ", guide.extension());
+    out.writeln(Path("/srv/app/logs", posix).relative_to(Path("/srv", posix)).string());
+
     let windows = PathStyle.windows;
     let build = Path("C:\\build", windows).child("out/app.exe");
     out.writeln(build.string());
