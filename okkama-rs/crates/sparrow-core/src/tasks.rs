@@ -182,17 +182,24 @@ impl Runtime {
         if waiters == UNBOUND {
             return;
         }
-        let list = if heap::kind(self.heap.header_of(waiters)) == heap::FRAME {
-            vec![waiters]
-        } else {
-            std::mem::take(&mut self.heap.payload_mut::<Waiters>(waiters).expect("waiters").0)
-        };
-        for waiter in list {
-            if get(waiter, AWAITING) == frame {
-                set(waiter, AWAITING, UNBOUND);
-            }
-            self.wake(waiter);
+        // One waiter, the common `await`, is the frame itself: woken without
+        // a vector (#440). Several are a `Waiters` list.
+        if heap::kind(self.heap.header_of(waiters)) == heap::FRAME {
+            self.wake_waiter(frame, waiters);
+            return;
         }
+        let list = std::mem::take(&mut self.heap.payload_mut::<Waiters>(waiters).expect("waiters").0);
+        for waiter in list {
+            self.wake_waiter(frame, waiter);
+        }
+    }
+
+    /// Wake `waiter`, which waited for the settled `frame`.
+    fn wake_waiter(&mut self, frame: Word, waiter: Word) {
+        if get(waiter, AWAITING) == frame {
+            set(waiter, AWAITING, UNBOUND);
+        }
+        self.wake(waiter);
     }
 
     /// A Future that is already settled (for drivers' internal races).
