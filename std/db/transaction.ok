@@ -1,28 +1,49 @@
 module db/transaction v1.0.0;
 
+// Transactions.
+//
+//     let change = await db.transaction(TransactionOptions());
+//     try {
+//         await change.execution("UPDATE accounts SET balance = balance - ? WHERE id = ?", DbInteger(10), DbInteger(1));
+//         await change.execution("UPDATE accounts SET balance = balance + ? WHERE id = ?", DbInteger(10), DbInteger(2));
+//         await change.commit();
+//     }
+//     catch failure is DbFailure {
+//         await change.rollback();
+//     }
+//
+// Options give the isolation level, read-only and deferrable; a database
+// refuses the ones it does not support. After commit or rollback the
+// transaction is TransactionEnded.
+
 import "db/statement" take Statement, Execution;
 import "db/row" take RowReading, DbQuery;
 import "db/value" take DbValue;
 import "collections/sequence" take Sequencing;
 
+// The isolation level; default_level leaves the database's own.
 enum Isolation = (default_level, read_uncommitted, read_committed, repeatable_read, serializable);
 
+// How a transaction runs.
 object TransactionOptions {
     has isolation is Isolation;
     has read_only, deferrable is bool;
 
+    // The database's default isolation, read-write, not deferrable.
     TransactionOptions() {
         isolation = Isolation.default_level;
         read_only = false;
         deferrable = false;
     }
 
+    // The options as given.
     TransactionOptions(isolation is Isolation, read_only is bool, deferrable is bool) {
         self.isolation = isolation;
         self.read_only = read_only;
         self.deferrable = deferrable;
     }
 
+    // The isolation, read-only and deferrable.
     cap Mode {
         isolation is Isolation {
             isolation;
@@ -38,15 +59,25 @@ object TransactionOptions {
     }
 }
 
+// An open transaction.
 role Transaction {
+    // Runs a statement that returns no rows.
     async execution(origin is Statement) is Execution;
+    // Runs a statement and reads its rows one at a time.
     async rows(origin is Statement) is RowReading;
+    // Runs sql with values bound to its placeholders.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    // The same, the values one by one.
     async execution(sql is string, values is ...DbValue) is Execution;
+    // A query of sql with values bound; one(), maybe() or all(limit) runs it.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    // The same, the values one by one.
     query(sql is string, values is ...DbValue) is DbQuery;
+    // Commits; IndeterminateCommit when the connection broke during it.
     async commit() is Transaction;
+    // Rolls back.
     async rollback() is Transaction;
+    // Whether it is still open.
     active() is bool;
 }
 

@@ -1,7 +1,20 @@
 module db/error v1.0.0;
 
+// Database errors.
+//
+//     try { await db.execution("INSERT …", DbText(name)); }
+//     catch DbFailure.detailed(kind, operation, code, message) {
+//         if kind == DbFailureKind.constraint { … }        // a unique key, say
+//     }
+//
+// Drivers map their errors to a DbFailureKind and keep the database's own code
+// (SQLSTATE or SQLite code). Messages come from the database; SQL, bound values
+// and connection strings never appear in them.
+
+// What went wrong, across databases.
 enum DbFailureKind = (connection, constraint, syntax, data, permission, busy, deadlock, serialization, timeout, cancelled, resource, unsupported, unexpected);
 
+// What was being done.
 enum DbOperation = (connecting, preparing, executing, fetching, committing, rolling_back, closing, opening_blob, reading_blob, writing_blob, backing_up, script);
 
 // Provider-controlled diagnostics only. A caller supplying its own message is
@@ -65,16 +78,23 @@ hidden object DbOperationText {
     }
 }
 
+// A diagnostic that cannot be reported.
 enum InvalidDbDiagnostic is Error = (invalid);
 
+// The database did not say how many rows were affected.
 enum AffectedRowsUnknown is Error = (unknown);
 
+// The connection was used after close().
 enum DbClosed is Error = (closed);
 
+// The connection is busy with another operation.
 enum DbBusy is Error = (busy);
 
+// The transaction was used after commit or rollback.
 enum TransactionEnded is Error = (ended);
 
+// The connection broke during COMMIT: the transaction may or may not have been
+// committed.
 enum IndeterminateCommit is Error = (indeterminate);
 
 test "a database failure carries its kind, operation and provider code" {

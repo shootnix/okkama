@@ -1,5 +1,8 @@
 module db/acquisition v1.0.0;
 
+// What a pool gets from a connector: the connection and, when the driver has
+// them, its preparing and transaction capabilities.
+
 import "db/connection" take DbConnecting, DbConnection;
 import "db/prepared" take DbPreparing, DbPreparedOpening;
 import "db/error" take DbFailure, DbFailureKind, DbOperation;
@@ -7,26 +10,31 @@ import "db/error" take DbFailure, DbFailureKind, DbOperation;
 // A connector may explicitly retain a second capability at acquisition.
 // The pool never downcasts its portable connection to recover hidden methods.
 role DbAcquiring {
+    // A new connection and its capabilities.
     async acquisition() is DbAcquisition;
 }
 
+// A connection and its optional capabilities.
 object DbAcquisition {
     has connection is DbConnection;
     has preparation is @DbPreparing;
     has transactions is @DbPreparedOpening;
 
+    // A connection without preparation.
     DbAcquisition(connection is DbConnection) {
         self.connection = connection;
         preparation = [];
         transactions = [];
     }
 
+    // A connection that prepares.
     DbAcquisition(connection is DbConnection, preparation is DbPreparing) {
         self.connection = connection;
         self.preparation = [preparation];
         transactions = [];
     }
 
+    // A connection that prepares and opens preparing transactions.
     DbAcquisition(
         connection is DbConnection,
         preparation is DbPreparing,
@@ -37,10 +45,12 @@ object DbAcquisition {
         self.transactions = [transactions];
     }
 
+    // The connection.
     connection() is DbConnection {
         connection;
     }
 
+    // Its preparation; DbFailure (unsupported) when there is none.
     preparing() is DbPreparing {
         confirm preparation.size() == 1
             else throw DbFailure.detailed(
@@ -52,6 +62,7 @@ object DbAcquisition {
         preparation[0];
     }
 
+    // Its preparing transactions; DbFailure (unsupported) when there are none.
     transactions() is DbPreparedOpening {
         confirm transactions.size() == 1
             else throw DbFailure.detailed(
@@ -64,13 +75,16 @@ object DbAcquisition {
     }
 }
 
+// Acquires plain connections from any connector.
 object PortableDbAcquiring does DbAcquiring {
     has origin is DbConnecting;
 
+    // Connects with origin.
     PortableDbAcquiring(origin is DbConnecting) {
         self.origin = origin;
     }
 
+    // A new connection, without preparation.
     async acquisition() is DbAcquisition {
         DbAcquisition(await origin.connection());
     }

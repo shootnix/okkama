@@ -1,33 +1,66 @@
 module db/connection v1.0.0;
 
+// Database connections, whatever the database.
+//
+//     let db = await SqliteMemory().connection();          // or PostgresConnecting(…)
+//     defer await db.settled();
+//     defer db.close();
+//     await db.execution("CREATE TABLE t(x INTEGER)");
+//     await db.execution("INSERT INTO t VALUES (?)", DbInteger(1));
+//     let row = await db.query("SELECT count(*) AS n FROM t").one();
+//     let change = await db.transaction(TransactionOptions());
+//
+// Code written against DbConnection runs on SQLite and PostgreSQL alike. A pool
+// (db/pool) hands out connections too.
+
 import "db/statement" take Statement, Execution;
 import "db/row" take RowReading, DbQuery;
 import "db/value" take DbValue;
 import "collections/sequence" take Sequencing;
 import "db/transaction" take Transaction, TransactionOptions;
 
+// Something statements run on: a connection or a transaction.
 role DbExecuting {
+    // Runs a statement that returns no rows.
     async execution(origin is Statement) is Execution;
+    // Runs a statement and reads its rows one at a time.
     async rows(origin is Statement) is RowReading;
+    // Runs sql with values bound to its placeholders.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    // The same, the values one by one.
     async execution(sql is string, values is ...DbValue) is Execution;
+    // A query of sql with values bound; one(), maybe() or all(limit) runs it.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    // The same, the values one by one.
     query(sql is string, values is ...DbValue) is DbQuery;
 }
 
+// A connection to a database.
 role DbConnection {
+    // Runs a statement that returns no rows.
     async execution(origin is Statement) is Execution;
+    // Runs a statement and reads its rows one at a time.
     async rows(origin is Statement) is RowReading;
+    // Runs sql with values bound to its placeholders.
     async execution(sql is string, values is Sequencing<DbValue>) is Execution;
+    // The same, the values one by one.
     async execution(sql is string, values is ...DbValue) is Execution;
+    // A query of sql with values bound; one(), maybe() or all(limit) runs it.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery;
+    // The same, the values one by one.
     query(sql is string, values is ...DbValue) is DbQuery;
+    // Begins a transaction with options.
     async transaction(options is TransactionOptions) is Transaction;
+    // Whether it was closed.
     closed() is bool;
+    // Closes it; settled() waits for what is still running.
     close() is void;
+    // Waits until everything on it has finished.
     async settled() is bool;
 }
 
+// Something that opens connections.
 role DbConnecting {
+    // A new connection.
     async connection() is DbConnection;
 }

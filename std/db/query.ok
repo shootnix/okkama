@@ -1,5 +1,24 @@
 module db/query v1.0.0;
 
+// Queries: run a statement and take its rows.
+//
+//     let user = await db.query("SELECT name FROM users WHERE id = ?", DbInteger(7)).one();
+//     let found = await db.query("SELECT id FROM users WHERE name = ?", DbText("Ada")).maybe();
+//     let page = await db.query("SELECT * FROM notes ORDER BY id").all(100);
+//
+//     let rows = await Query(origin: db, statement: Statement("SELECT * FROM big")).rows();
+//     loop {
+//         match await rows.next() {
+//             case Maybe.some(row) { row.text("title"); }
+//             else { last; }
+//         }
+//     }
+//     rows.close();
+//
+// one() wants exactly one row (NoRows, TooManyRows), maybe() at most one,
+// all(limit) at most limit (QueryLimitExceeded beyond). Each call runs the
+// statement anew.
+
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement, DbValueSnapshot, DbLimits;
 import "db/row" take Row, RowReading, RowsEnded, DbQuery;
@@ -15,14 +34,17 @@ import "db/value" take DbValue;
 object Query does DbQuery {
     has source is QueryOpening;
 
+    // statement on origin.
     Query(origin is DbExecuting, statement is Statement) {
         source = StatementQueryOpening(origin: origin, statement: statement);
     }
 
+    // prepared with values.
     Query(prepared is PreparedStatement, values is Sequencing<DbValue>) {
         source = PreparedQueryOpening(origin: prepared, values: values);
     }
 
+    // Runs it and gives a cursor.
     async rows() is QueryRows {
         QueryRows(await source.rows());
     }
@@ -49,11 +71,13 @@ object Query does DbQuery {
         collected.values();
     }
 
+    // Runs it and gives its row; NoRows for none, TooManyRows for more.
     async one() is Row {
         let found = await self.maybe();
         found else throw NoRows.none;
     }
 
+    // Runs it and gives its row or none; TooManyRows for more.
     async maybe() is Maybe<Row> {
         let rows = await self.rows();
         defer rows.close();
@@ -82,6 +106,7 @@ object QueryRows {
     has origin is RowReading;
     has ended, stopped, busy is Atomic<bool>;
 
+    // The rows origin reads.
     QueryRows(origin is RowReading) {
         self.origin = origin;
         ended = Atomic(false);
@@ -89,20 +114,24 @@ object QueryRows {
         busy = Atomic(false);
     }
 
+    // The columns.
     columns() is Sequencing<Column> {
         origin.columns();
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.value() || origin.closed();
     }
 
+    // Stops reading and releases the statement.
     close() is void {
         if stopped.compare_and_replace(false, true) {
             origin.close();
         }
     }
 
+    // The next row, or none at the end.
     async next() is Maybe<Row> {
         confirm busy.compare_and_replace(false, true) else throw DbBusy.busy;
         defer busy.replace(false);
@@ -174,16 +203,21 @@ hidden object QueryRowsCollected {
     }
 }
 
+// A negative row limit.
 enum InvalidQueryLimit is Error = (limit(limit is int));
 
+// More rows than the limit.
 enum QueryLimitExceeded is Error = (limit(limit is int));
 
+// The query returned no row.
 enum NoRows is Error = (none);
 
+// The query returned more than one row.
 enum TooManyRows is Error = (exceeded);
 
 // Both query forms share cardinality, limits and cleanup behavior.
 role QueryOpening {
+    // Opens them.
     async rows() is RowReading;
 }
 
@@ -215,4 +249,5 @@ hidden object PreparedQueryOpening does QueryOpening {
     }
 }
 
+// A query failed and so did releasing it; both causes are kept.
 enum QueryCleanupFailure is Error = (detailed(cause is string, cleanup is string));

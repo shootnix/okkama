@@ -1,5 +1,18 @@
 module db/row v1.0.0;
 
+// Rows and columns, read by column name.
+//
+//     let note = await db.query("SELECT id, title, body, pinned FROM notes WHERE id = ?", DbInteger(7)).one();
+//     note.int("id");
+//     note.text("title");
+//     note.maybe("body").text() else "(empty)";      // NULL is none
+//     note.flag("pinned");                           // integer 0 or 1
+//     note.presence("extra").text();                 // tells NULL from a missing column
+//
+// A reader throws RowValueFailure for a value of another kind or NULL,
+// MissingColumn for an unknown name and AmbiguousColumn when two columns share
+// it.
+
 import "runtime/db" as native_db;
 import "async/atomic" take Atomic;
 import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNativeValue, DbNull, DbInteger,
@@ -12,10 +25,12 @@ import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "db/read" take RowValueFailure;
 
+// A column of a result: position, name and declared type.
 object Column {
     has index is int;
     has name, declaration is string;
 
+    // The column; InvalidRow for a negative index.
     Column(index is int, name is string, declaration is string) {
         confirm index >= 0
             && index < 1024
@@ -27,6 +42,7 @@ object Column {
         self.declaration = declaration;
     }
 
+    // Its index, name and declaration.
     cap Parts {
         index is int {
             index;
@@ -46,6 +62,7 @@ object Column {
 object DbColumns {
     has origin is @Column;
 
+    // values within limits.
     DbColumns(values is Sequencing<Column>, limits is DbLimits) {
         let count = values.size();
         confirm count >= 0 && count <= limits::Limits::values
@@ -58,6 +75,7 @@ object DbColumns {
         origin = columns;
     }
 
+    // The columns.
     values() is @Column {
         origin;
     }
@@ -68,6 +86,7 @@ object DbRowSchema {
     has columns is @Column;
     has state is native_db.DbSchemaState;
 
+    // columns within limits.
     DbRowSchema(columns is Sequencing<Column>, limits is DbLimits) {
         self.columns = DbColumns(values: columns, limits: limits).values();
         let names is @string = self.columns.map() -> column {
@@ -76,14 +95,17 @@ object DbRowSchema {
         state = native_db.db_schema(names);
     }
 
+    // The columns.
     columns() is @Column {
         columns;
     }
 
+    // How many.
     size() is int {
         columns.size();
     }
 
+    // The index of name; -1 when none has it, -2 when several do.
     position(name is string) is int {
         native_db.db_position(state, name);
     }
@@ -121,6 +143,7 @@ object DbRowData {
     has page is DbPage;
     has base is int;
 
+    // A row of these cells.
     DbRowData(schema is DbRowSchema, cells is @native_db.DbCellState) {
         confirm schema.size() == cells.size() else throw InvalidRow.invalid;
         confirm native_db.db_cells_bytes(cells) <= DbLimits()::Limits::bytes
@@ -131,6 +154,7 @@ object DbRowData {
         base = 0;
     }
 
+    // Row row of page.
     DbRowData(schema is DbRowSchema, page is DbPage, row is int) {
         confirm schema.size() == page.width() && page.width() > 0 else throw InvalidRow.invalid;
         self.schema = schema;
@@ -140,23 +164,28 @@ object DbRowData {
         base = row * page.width();
     }
 
+    // The schema.
     schema() is DbRowSchema {
         schema;
     }
 
+    // The cells.
     cells() is @native_db.DbCellState {
         cells;
     }
 
+    // The page it lies in.
     page() is DbPage {
         page;
     }
 
+    // Where it starts in the page.
     base() is int {
         base;
     }
 }
 
+// One row of a result.
 object Row does RowValues {
     has schema is DbRowSchema;
     // Owned cells, or (width > 0) the row at `base` of a driver page.
@@ -164,6 +193,7 @@ object Row does RowValues {
     has page is DbPage;
     has base is int;
 
+    // A row of values under columns.
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
         let limits = DbLimits();
@@ -173,6 +203,7 @@ object Row does RowValues {
         base = 0;
     }
 
+    // The same within limits.
     Row(columns is Sequencing<Column>, values is Sequencing<DbValue>, limits is DbLimits) {
         confirm columns.size() == values.size() else throw InvalidRow.invalid;
         schema = DbRowSchema(columns: columns, limits: limits);
@@ -181,6 +212,7 @@ object Row does RowValues {
         base = 0;
     }
 
+    // The row data holds.
     Row(data is DbRowData) {
         schema = data.schema();
         values = data.cells();
@@ -188,6 +220,7 @@ object Row does RowValues {
         base = data.base();
     }
 
+    // How many columns.
     size() is int {
         if page.width() > 0 {
             page.width();
@@ -197,19 +230,23 @@ object Row does RowValues {
         }
     }
 
+    // The columns.
     columns() is Sequencing<Column> {
         schema.columns();
     }
 
+    // The value at index; InvalidRowIndex outside the row.
     item(index is int) is DbValue {
         confirm index >= 0 && index < self.size() else throw InvalidRowIndex.index(index);
         DbNativeValue(self.cell(index));
     }
 
+    // The value of a column.
     value(name is string) is DbValue {
         DbNativeValue(self.cell(self.index(name)));
     }
 
+    // An integer column as int.
     int(name is string) is int {
         let at = self.index(name);
         if page.width() > 0 {
@@ -233,26 +270,32 @@ object Row does RowValues {
         }
     }
 
+    // An integer column as BigInt.
     integer(name is string) is BigInt {
         self.reader(name).integer();
     }
 
+    // A decimal column.
     decimal(name is string) is Decimal {
         self.reader(name).decimal();
     }
 
+    // A float column.
     floating(name is string) is float {
         self.reader(name).floating();
     }
 
+    // A boolean column.
     boolean(name is string) is bool {
         self.reader(name).boolean();
     }
 
+    // An integer column of 0 or 1 as a bool.
     flag(name is string) is bool {
         self.reader(name).flag();
     }
 
+    // A text column.
     text(name is string) is string {
         let at = self.index(name);
         if page.width() > 0 {
@@ -275,14 +318,17 @@ object Row does RowValues {
         }
     }
 
+    // A bytes column.
     bytes(name is string) is @byte {
         self.reader(name).bytes();
     }
 
+    // A column that may be NULL: its readers give none for NULL.
     maybe(name is string) is DbMaybeReader {
         DbMaybeReader(self.selected(name, self.index(name)));
     }
 
+    // A column that may be NULL or missing: its readers give Presence.
     presence(name is string) is DbPresenceReader {
         let at = schema.position(name);
         confirm at != -2 else throw AmbiguousColumn.name(name);
@@ -344,26 +390,39 @@ object Row does RowValues {
 // The answer of connection.query(sql, values): exactly one row, at most one
 // row, or a bounded list. db/query's Query does it.
 role DbQuery {
+    // Exactly one row; NoRows or TooManyRows otherwise.
     async one() is Row;
+    // At most one row.
     async maybe() is Maybe<Row>;
+    // Every row, at most max_rows.
     async all(max_rows is int) is @Row;
 }
 
+// Rows read one at a time.
 role RowReading {
+    // The next row; RowsEnded at the end.
     async row() is Row;
+    // The columns.
     columns() is Sequencing<Column>;
+    // Whether it was closed.
     closed() is bool;
+    // Stops reading.
     close() is void;
 }
 
+// No more rows.
 enum RowsEnded is Error = (ended);
 
+// No column has that name.
 enum MissingColumn is Error = (name(name is string));
 
+// Several columns have that name.
 enum AmbiguousColumn is Error = (name(name is string));
 
+// A row that cannot be built.
 enum InvalidRow is Error = (invalid);
 
+// A column index outside the row.
 enum InvalidRowIndex is Error = (index(index is int));
 
 test "a row reads its cells by name: strict, Maybe and Presence" {
