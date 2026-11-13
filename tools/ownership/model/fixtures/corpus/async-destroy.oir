@@ -1,0 +1,59 @@
+# Full finite translation of tests/ownership-corpus/async-destroy.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin direct
+new.async a A
+destroy.log a 'A<' 'A>'
+new.async b B
+destroy.log b 'B<' 'B>'
+scope.end direct
+check 'B<B>A<A>'
+reset.log
+scope.begin array_scope
+new.async aa A
+destroy.log aa 'A<' 'A>'
+new.async bb B
+destroy.log bb 'B<' 'B>'
+array items aa bb
+scope.end array_scope
+check 'B<B>A<A>'
+reset.log
+scope.begin returned
+future f new R temporary
+future.body f 'new.async localX X' 'destroy.log localX "X<" "X>"' suspend
+unique-cache k f
+await.take result f k
+check 'X<X>'
+use result
+scope.end returned
+check 'X<X>R'
+reset.log
+scope.begin trying
+future failed fail Stop bound
+future.body failed 'new.async localF F' 'destroy.log localF "F<" "F>"' suspend
+await ignored failed
+assert.failure Stop
+check 'F<F>'
+scope.end trying
+check 'F<F>'
+reset.log
+scope.begin task
+scope.begin child
+new older A
+new.async suspended B
+destroy.log suspended 'B<' 'B>'
+defer child emit d
+cleanup.begin child
+cleanup.step child
+check 'dB<'
+cancel child
+check 'dB<'
+cleanup.resume child
+cleanup.step child
+cleanup.step child
+assert.failure Cancelled
+scope.end task
+check 'dB<B>A'
+check 'dB<B>A'
+scope.end main

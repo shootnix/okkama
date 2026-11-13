@@ -1,0 +1,27 @@
+# Full finite translation of tests/ownership-corpus/pending/581-future-completions.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin block
+future a new A bound
+future b new B bound
+completions stream a b a
+future.start a
+future.start b
+future.settle a
+completion.next first stream
+await r first
+use r
+check ''
+completion.next duplicate stream
+await same duplicate
+use same
+check ''
+future.settle b
+completion.next second stream
+await other second
+use other
+check ''
+scope.end block
+check BA
+scope.end main

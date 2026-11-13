@@ -1,0 +1,23 @@
+# Full finite translation of tests/ownership-corpus/all-futures.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin empty
+collect.all empty_result
+use empty_result
+scope.end empty
+check ''
+scope.begin block
+future waiting void - bound
+future.body waiting 'new localL L' suspend
+future failed fail Stop bound
+future.body failed 'new localF F' suspend
+future.start waiting
+future.start failed
+future.settle failed
+collect.all results waiting failed
+assert.failure Stop Cancelled
+check FL
+scope.end block
+check FL
+scope.end main

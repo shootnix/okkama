@@ -1,0 +1,39 @@
+# Draft 3 M2
+profile own
+summary inspect borrow direct
+scope.begin s
+new a A
+assert.provenance a unbound-result
+bind bound a
+assert.provenance a bound
+new staged S
+stage s item staged
+assert.provenance staged staged/carrier-owned
+future f new B bound
+await b f
+assert.provenance b cache-owned
+future g new C bound
+unique-cache kg g
+await.take c g kg
+assert.provenance c extracted-at-existing-boundary
+call.enter cb inspect c
+call.exit cb -
+use c
+future h new T temporary
+unique-cache kh h
+await.take t h kh
+assert.provenance t temporary-await-result
+call.enter ct inspect t
+call.exit ct -
+check T
+scope.begin child
+new local R
+bind r local
+exit.prepare child local
+scope.end child
+exit.commit child s
+assert.provenance local unbound-result
+call.enter cr inspect local
+call.exit cr -
+check TR
+scope.end s

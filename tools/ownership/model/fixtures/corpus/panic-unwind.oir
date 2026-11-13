@@ -1,0 +1,17 @@
+# Full finite translation of tests/ownership-corpus/panic-unwind.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main
+new observer Observer
+destroy.log observer '' ''
+on.destroy observer 'check dBA' 'scope.begin acquired' 'new p P' 'scope.end acquired' 'check dBAP'
+scope.begin outer
+new a A
+scope.begin inner
+new b B
+defer inner emit d
+failure panic panic Deliberate
+scope.unwind inner panic
+scope.unwind outer panic
+scope.unwind main panic
+assert.failure Deliberate

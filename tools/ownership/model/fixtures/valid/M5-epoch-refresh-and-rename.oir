@@ -1,0 +1,20 @@
+# Draft 3 M5
+profile own
+scope.begin s
+new a A
+dynamic.refresh initial a
+scope.transfer s s a
+snapshot.check initial
+scope.split s a p
+dynamic.refresh token a
+own.move p renamed
+snapshot.check token
+# Logical SSA rename leaves epoch unchanged; explicit check uses current holder.
+dynamic.check a s renamed 1
+dynamic.refresh moved a
+snapshot.check moved
+own.admit renamed s
+use a
+dynamic.refresh admitted a
+snapshot.check admitted
+scope.end s

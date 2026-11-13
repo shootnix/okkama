@@ -1,0 +1,16 @@
+# Draft 3 carrier graph
+profile own
+scope.begin s
+future f fail Internal temporary
+new a A
+failure internal typed Internal
+scope.split s a p
+carrier.attach internal p s
+carrier.transfer internal cache:f
+unique-cache unique f
+await.take ignored f unique
+catch Internal caught
+failure.view view caught
+use view
+assert.provenance view temporary-await-result
+scope.end s

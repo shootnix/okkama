@@ -1,0 +1,21 @@
+# Draft 3 M7
+profile own
+scope.begin diagnostic
+scope.begin handler
+scope.begin body
+new a A
+failure f typed Body
+scope.split body a p
+carrier.attach f p handler
+scope.unwind body f
+catch Body caught
+failure.view view caught
+use view
+carrier.transfer caught handler
+carrier.rehome caught diagnostic
+scope.end handler
+use view
+carrier.release caught diagnostic
+use view
+check ''
+scope.end diagnostic

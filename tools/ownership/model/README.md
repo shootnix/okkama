@@ -1,142 +1,130 @@
-# Исполняемый эталон OIR-2 ownership — #582
+# Исполняемый эталон OIR-2 ownership — #582, draft 3
 
 Python 3.9+ и стандартная библиотека. Модель реализует конечные исполнения
-протокола draft 2 от 14 ноября 2026, §§3–10, 14, 21. Это артефакт P0:
-интерпретатор, парсер/принтер небольшого текстового IR, проверка протокола,
-положительные и отрицательные примеры, ручные переводы корпуса.
+ownership-протокола OIR-2 draft 3 от 14 ноября 2026, §§3–10, 14, 21.
+Это независимый артефакт P0: небольшой текстовый IR, интерпретатор,
+ограниченный исчерпывающий verifier, фикстуры и ручные переводы корпуса.
+Целевой движок проекта — Sparrow; ни он, ни другие runtime здесь не запускались.
 
-**Результат:** 110 уникальных `.oir`-фикстур; 73 приняты, 37 отвергнуты с
-ожидаемыми кодом и фрагментом сообщения. Проверены 75 положительных путей.
-Все **133 TAP-проверки из 25 полных программ** корпуса воспроизведены.
-Одиннадцать unittest-тестов дополнительно проверяют каталог, round-trip, другой
-исход checked split, невыполненную ветвь, повреждение holder и повторяемость
-событий. Машиночитаемый отчёт: [results.json](results.json).
+**Результат:** 155 уникальных `.oir`-фикстур; 101 принята на 103 конечных путях,
+54 отвергнуты с ожидаемыми кодом и фрагментом диагностики. Все 21 unittest
+проходят. Каждый из девяти ответов M1–M9 имеет положительные и отрицательные
+свидетельства. Все восемь бывших #581-условных фикстур теперь нормативны.
+Отдельный fake-storage протокол и его фикстура удалены по #583; состояние
+тестов подчиняется Cell/Atomic. Условных фикстур нет.
 
-Из 73 принимаемых примеров 8 имеют статус `proposed-581`, один —
-`unresolved-fake`. Успешное исполнение этих **условных** примеров не означает
-утверждения предложений. Остальные 64 — нормативный поднабор и corpus goldens.
-Runtime Okkama не запускался; сравнение выполнено непосредственно с ожидаемыми
-литералами `t.is(log.value(), "…", …)` в исходниках корпуса. Наблюдения старых
-движков, нормативные ожидания и предложения не смешиваются.
+Переведена **41 полная программа**: прежние 25 и 16 новых. Из 215 исходных
+TAP-проверок совпали **214**; полностью совпадают **40 программ** (25 прежних
+и 15 новых). Один checkpoint `cold-futures.ok` расходится с §10.1 draft 3;
+это явно сохранено как различие источника и нормы, а не выдано за паритет.
+[results.json](results.json) содержит SHA-256 исходников, оба ожидания,
+расписания и покрытие девяти ответов. `result: PASS` означает прохождение
+нормативных проверок модели; отдельное `corpus_parity: DIFFERENCES` сообщает
+о неполном совпадении с корпусом. G0 и compiler gates G1–G5 не объявляются закрытыми.
 
 ## Запуск
 
-Из корня worktree:
+Из корня worktree, только Python:
 
 ```text
 python3 -m unittest discover -s tools/ownership/model -v
 python3 tools/ownership/model/report.py
-python3 tools/ownership/model/model.py verify tools/ownership/model/fixtures/review/02-overlap-split.oir
-python3 tools/ownership/model/model.py run tools/ownership/model/fixtures/valid/pending-abort-after-destroy-prefix.oir --events
+python3 tools/ownership/model/model.py verify tools/ownership/model/fixtures/valid/M7-borrowed-cached-cause.oir
+python3 tools/ownership/model/model.py run tools/ownership/model/fixtures/valid/M9-explicit-service-schedule.oir --events
 python3 tools/ownership/model/model.py format tools/ownership/model/fixtures/review/01-bound-take-aliases.oir
 ```
 
-`run` сначала проверяет все пути, затем исполняет выбранный путь и печатает
-JSON с `destroy`, `log`, `checkpoints`, счётчиками. `destroy` содержит только
-вызовы destroy; `log` также содержит наблюдаемые эффекты тела/defer и может
-сбрасываться, как Atomic log в корпусе. `--events` добавляет события с ID,
-serial, holder, epoch, roots и фазами cleanup. Ошибка verifier даёт код выхода
-1 и `Bномер line N: …`; успешно выполненный typed throw остаётся моделируемым
-исходом программы и сам по себе не является ошибкой verifier.
+`run` сначала проверяет все конечные пути, затем исполняет выбранный путь.
+JSON содержит `destroy`, `log`, `checkpoints` и счётчики; `--events` добавляет
+serial, holder, epoch, roots, фазы cleanup и выбор service. `destroy` перечисляет
+вызовы destroy; `log` отражает наблюдаемые эффекты, включая defer и начало/конец
+async destroy. Verifier error завершает CLI с кодом 1 и `Bномер line N: …`.
+Моделируемый typed throw/panic сам по себе не является ошибкой verifier.
 
-`report.py` заново проверяет фикстуры и записывает только локальный
-`results.json`, включая SHA-256 каждого сравниваемого исходника корпуса.
-Ни одна команда не вызывает компилятор, runtime, subprocess или сеть.
-Для сравнения с корпусом нужны исходники `tests/ownership-corpus`; отдельный
-интерпретатор и его fixtures работают без Rust и без репозитория документации.
+`report.py` заново проверяет каталог и записывает только локальный
+`results.json`, без времени запуска и других случайных полей. Проверки читают
+`tests/ownership-corpus`; отдельно IR работает без Rust, toolchain и репозитория
+документации. Ни одна команда модели не вызывает subprocess, runtime или сеть.
 
-## Устройство и границы
+## Состояние и переходы draft 3
 
 | Файл | Назначение |
 | --- | --- |
-| [ir.py](ir.py) | Парсер, проверка арности, принтер с сохранением кавычек |
-| [machine.py](machine.py) | Состояние, переходы, cleanup и глобальные инварианты |
-| [checker.py](checker.py) | Исчерпывающий обход конечного CFG и edge-results |
-| [model.py](model.py) | CLI |
-| [test_model.py](test_model.py) | Независимые ожидания, проверки и чтение TAP goldens |
-| [fixtures/manifest.json](fixtures/manifest.json) | Ожидаемые destroy/log/checkpoints либо ошибка; статус и связь с review/правилами |
+| [ir.py](ir.py) | Парсер, арность и принтер с сохранением кавычек |
+| [machine.py](machine.py) | Протокол, cleanup, holders и глобальные инварианты |
+| [checker.py](checker.py) | Все конечные CFG-пути и normal/unwind edge-results |
+| [test_model.py](test_model.py) | Каталог, независимые ожидания и чтение TAP-литералов |
+| [report.py](report.py) | Воспроизводимый отчёт, расхождения и расписания |
+| [fixtures/manifest.json](fixtures/manifest.json) | Ручные goldens, диагностика, правила и M1–M9 |
 
-Ссылка — неизменяемый `Value` с selection, deps, полями/позициями и cache views.
-Идентичность имеет монотонный serial, одного holder, epoch, признак свежести
-и состояние `live/destroying/dead`. Обязательства хранятся в множествах-пакетах;
-имена ссылок не являются владельцами. Plain-контейнер не получает фиктивного
-serial, но его содержимое участвует в managed-анализе.
+Ссылка — копируемый `Value` с retention selection, полными deps, полями,
+позициями и зависимостями от кэшей. Identity имеет стабильный ключ, serial,
+единственного holder, owner через запись holder, монотонный epoch, provenance
+и состояние `live/destroying/dead`. Plain-контейнер и служебный holder не
+получают фиктивного resource serial. После каждой инструкции проверяются
+сохранение обязательств и согласованность holder; в конце проверяются все
+области, пакеты, capabilities и pending exits, включая пустые состояния.
 
-Область хранит журнал, staging, defers, pending exit, failure и состояние
-приостановленного cleanup. Пакеты admission, dynamic, cache, inputs, frame,
-carrier и storage имеют отдельные holder ID и явную область-владельца.
-После каждой инструкции проверяются сохранение обязательств, совпадение
-holder с пакетом и отсутствие живых обязательств у закрытого владельца.
-Проверки использования deps, линейности токенов, протокольных передач,
-лексических выходов и очередного destroy выполняются на соответствующем шаге.
-В конце пути проверяются все закрытия, даже пустые пакеты, unique capabilities
-и неподтверждённые pending exits.
+Девять прежних вопросов закрыты нормативно в приложении А.2 draft 3.
+Здесь перечислены реализованные ответы, а не новые вопросы:
 
-Call-entry принимает дедуплицированную свежую часть receiver/аргументов;
-связанные входы остаются borrows. Call-exit закрывает callee до продолжения
-caller. Для ошибок вычисления позднего аргумента callee ещё не создан.
-Незавершённый constructor представлен корневой областью со staged-полями;
-`new` для self появляется только на успешном завершении.
+| Ответ | Исполняемое правило и свидетельство |
+| --- | --- |
+| M1 | Реестр конкретных observation-opcode (§6.5) сохраняет admission caller; объектный метод проходит call boundary. [Положительный](fixtures/valid/M1-observation-registry.oir), [отрицательный](fixtures/invalid/M1-object-method-is-not-observation.oir) |
+| M2 | Шесть состояний provenance §3.3. Bind, staging, carrier/cache publication и call-entry завершают допуск; alias/move/rehome его не восстанавливают. Bound take сохраняет старую границу, temporary take допускает только собственный пакет. [Таблица переходов](fixtures/valid/M2-provenance-table.oir), [недопустимый повторный fresh transfer](fixtures/invalid/M2-bound-take-not-fresh.oir) |
+| M3 | `scope.split/transfer` не извлекают cache, inputs/frame, channel, carrier или pending exit; нужны их протоколы. [Доступный домен](fixtures/valid/M3-holder-domain.oir), отрицательные `M3-*-split` и `B9-split-steals-shared-cache` |
+| M4 | `selected = O ∩ selection`, `rest = O \ selection`, `external_deps = value.deps \ selected`. Полные deps остаются; owner-dependent view удерживает owner без прямого поля. [Удержание и partition](fixtures/valid/M4-retention-and-external-deps.oir), [пустой selected не plain](fixtures/invalid/M4-empty-selection-is-managed.oir) |
+| M5 | Реальная смена holder/owner увеличивает epoch один раз. No-op и логическое SSA-переименование holder не увеличивают его. Alias использует stable key; snapshot проверяется отдельно, refresh проверяет live/lifetime. [Rename/refresh](fixtures/valid/M5-epoch-refresh-and-rename.oir), [rehome инвалидирует snapshot](fixtures/invalid/M5-rehome-stales-snapshot.oir) |
+| M6 | `cleanup_origin` хранится в Failure отдельно от kind, точного Error и primary/secondary. Typed Cleanup catchable, panic — нет. [Typed](fixtures/valid/M6-typed-cleanup-origin.oir), [panic](fixtures/invalid/M6-panic-is-not-typed-cleanup.oir) |
+| M7 | Carrier attach/transfer/rehome/release охватывают весь cause/secondary graph. Default owner — охватывающий handler; корень требует диагностический контекст. Cached cause остаётся borrow, повторный failure имеет один carrier и пакет. [Протокол](fixtures/valid/M7-carrier-protocol.oir), [cached cause](fixtures/valid/M7-borrowed-cached-cause.oir), [запрет release shared cache](fixtures/invalid/M7-cache-carrier-cannot-release.oir) |
+| M8 | Abort имеет отдельную границу и сохраняет исполненный префикс. Отмена во время destroy A при return R даёт A R; отказ defer до destroy даёт R A. [Отмена](fixtures/valid/final-cleanup-cancel-aborts-result.oir), [defer](fixtures/valid/M8-defer-failure-returns-reserve.oir), [запрет commit](fixtures/invalid/M8-cancelled-return-cannot-commit.oir) |
+| M9 | Фазы `open → deferring → service-settle → closing → closed`. Служебные holders отдают остаток в журнал до общего serial-плана. Явный schedule задаёт выбор задач; ошибки не пропускают остальные services. [Расписание](fixtures/valid/M9-explicit-service-schedule.oir), [неполное расписание](fixtures/invalid/M9-incomplete-service-schedule.oir) |
 
-Cleanup исполняет все достигнутые defers в LIFO, затем единый serial-order
-для собственного остатка. После отказа он продолжается. При abort уже
-исполненный префикс сохраняется, резерв результата объединяется с оставшимся
-планом. Есть специальный `self`-borrow, собственная область каждого destroy,
-ручные close-step/suspend/resume, shield, отложенная отмена и resource roots.
+Тест двух допустимых расписаний получает `BYAXO` и `AXBYO`: ресурсы X/Y создаются
+в локальном destroy задач, а O закрывается после service-settle. Повтор одного
+расписания даёт одинаковые события. Порядок объявления оставшихся tasks —
+детерминированная политика модели, а не норма языка. Неявное закрытие запрашивает
+отмену работающих детей; cold Future не запускается. Собственные границы задач
+сохраняются; их уже исполненные эффекты не сортируются заново в плане owner.
 
-Future имеет отдельные inputs/frame/cache и единственный исход. Поддержаны
-холодный escape, never-started/cancelled, явный запуск/settle, повторные await,
-фактический пакет `await.take`, unique-cache и rehome, несколько waiters,
-дубликаты позиций AllFutures/Completions и повторный failure. Race представлен
-явными переходами winner/loser и commit после урегулирования проигравшего.
-Для внутренних carrier учитываются cause и secondaries; обычный Error plain.
-Atomic заимствует; channel передаёт принятый свежий пакет при доставке;
-fake storage сохраняет удалённые/вытесненные свежие входы в журнале.
+## Протокольный IR
 
-Это намеренно **конечный протокольный IR**, а не каноническая грамматика всего
-OIR-2 §15 или интерпретатор Okkama:
+Формы — поднабор модели, а не production-грамматика §15:
 
-- `scope` обозначает стабильную логическую область; её состояние обновляет
-  автомат. Не воспроизводятся все SSA-регистры `%q0/%q1` production IR.
-  Пакетные SSA-токены линейны; значения копируемы.
-- Условные переходы проверяются по обоим рёбрам, `invoke.split` — по обоим
-  исходам независимо от выбранного интерпретатором. Циклический CFG отвергается;
-  конечные итерации примеров развернуты вручную. Это bounded model checker,
-  без доказательства индукции для произвольного цикла и без alias-analysis
-  произвольного исходного языка.
-- Тела вызовов развёрнуты между `call.enter/exit`. Summary проверяет
-  borrow/take и наличие ABI-адаптера; роль/intrinsic не исполняют скрытый native
-  код. Future body — одна из четырёх описанных ниже детерминированных схем.
-  Это позволяет проверять владельцев без второго интерпретатора языка.
-- Управление отказами явно в IR. `failure`, `scope.unwind`, `call.exit … f`
-  задают failure-путь; код после них не перескакивает неявно в catch.
-  Checked split имеет настоящий CFG normal/unwind; precommit-failure builder
-  задаётся операндом `fail`. Это тестируемые точки инъекции, не исчерпывающий
-  перебор отказа каждой аллокации реального runtime.
-- `own/coro/low` проверяют представленные здесь переходы. `high` не принимается;
-  full type/authority/descriptor dictionary/role-target анализ frontend,
-  произвольные native ABI, сериализация worker, настоящий GC и codegen вне
-  модели. В11 проверяет конкретные managed-графы, границы и frame-состояния
-  данного поднабора. `gc` проверяет resource roots, а не машинные stack maps.
-- Асинхронность кооперативная и детерминированная: расписание задаёт программа.
-  Не моделируются ОС, таймеры, физические потоки, SIGKILL, произвольные тела
-  async-action и все расписания scheduler. Канал представлен публикацией и
-  однократной доставкой, без реализации очередей заблокированных send/receive.
-- `unique-cache` консервативен: учитывает все зарегистрированные aliases,
-  views и waiters; не доказывает исчезновение alias по последнему использованию.
-  `drop` означает discarded demand, не уничтожение и не доказательство unique.
-  Ссылочные дескрипторы остаются доступны удерживающим их агрегатам.
+| Семейство | Основные формы |
+| --- | --- |
+| Значения | `plain`; `new/new.async value label [field=value …]`; `object/array`; `alias`; `use`; `drop`; `get/slice/concat/replace`; `deps.view`; `closure/cap/bound/role/any` |
+| Области | `scope.begin S [async]`; `scope.end/unwind`; `bind/rebind`; `stage/staged`; `scope.transfer source target value` |
+| Пакеты | `own.empty/move/join/admit`; `scope.split S value packet`; `own.split[.checked] packet value rest selected external_deps`; `fresh.transfer packet callee` |
+| Dynamic | `own.dynamic packet target reason protocol expected-owner`; `dynamic.check value owner holder epoch`; `dynamic.refresh snapshot value`; `snapshot.check snapshot` |
+| Вызовы | `summary name borrow-or-take direct-or-role-or-closure-or-intrinsic`; `call.enter/exit`; `observe opcode value` |
+| Pending/cleanup | `exit.prepare/commit/abort`; `defer/defer.block`; `cleanup.begin/step/resume`; `cancel`; `service.schedule S futures…`; `service.settle S`; `destroy.direct`; `end packet boundary`; `gc` |
+| Destroy | `on.destroy value 'instruction' …`; `destroy.log value begin-text end-text` задаёт наблюдаемые эффекты до suspend и после resume отдельно от имени identity |
+| Failure | `failure f typed-or-panic-or-cancel exact-error`; `failure.cause/secondary/view`; `catch exact-error saved`; внутри тела `fail kind exact-error` |
+| Carrier | `carrier.attach f packet [owner]`; `carrier.transfer f scope-or-cache:future`; `carrier.rehome/release f owner`; прежнее `carrier f packet owner` — синоним attach |
+| Future | `future f new label bound-or-temporary [inputs…]`; режимы `borrow value`, `void -`, `fail Error`, `literal string`; `future.body f 'instruction' … suspend …` |
+| Task/cache | `future.start/settle/cancel`; `future.request-cancel` только записывает запрос; `await`; `unique-cache`; `await.take`; `cache.rehome`; `waiter/waiter.cancel` |
+| Collectors | `collect.all`; `completions/completion.next`; `race.winner result selected-future losers…`; `group/group.start/group.cancel/group.wait` |
+| Mutable state | `storage name atomic-or-cell-or-channel`; `storage.set/get/remove/clear/close` |
+| Независимая линейность | `succ/succ.take`; `builder.new/push/finish/abandon`; `once/worker/native/error.payload/descriptor.plain` |
+| CFG | `label/jump/branch`; `invoke.split packet value ok-or-fail normal unwind`; `edge.bind`; `unwind.use` |
+| Наблюдения | `emit/emit.label/reset.log/check`; `check.value`; `assert.owner/state/failure/items/provenance/cleanup-origin` |
 
-Счётчики `transfers`, `dynamic:*`, `visited_nodes/edges`, `max_journal` относятся
-к операциям этой модели. Они полезны для различения DAG/журнала/обязательств,
-но не заменяют измерений Champ/Sparrow из §21.4.
+Normal-результаты checked split — `$rest/$selected/$external_deps`, unwind —
+`$packet/$failure`. Пакетные edge-results связываются в начале successor;
+старый consumed input недоступен на обоих рёбрах. Для старого краткого
+`dynamic.check value holder epoch` также проверяется live/holder/epoch;
+четырёхоперандная форма дополнительно сравнивает owner.
 
-## Текстовый IR
+`future.body` содержит конечный префикс до `suspend` и продолжение до исхода.
+Префикс создаёт настоящую область задачи с локальными ресурсами и defers;
+settle закрывает её до публикации cache. Имена локальных SSA-значений в fixture
+уникальны. `literal` представляет свёрнутый plain-результат чистого вычисления,
+например строку `RA`; ownership/deps этим не выдумываются. Прямая публикация
+carrier в cache предназначена для изолированных failure-протоколов с уже
+урегулированными входами, без тела задачи; обычные тела проходят task cleanup.
 
-Одна инструкция на строку; токены разбирает `shlex`, `#` начинает комментарий.
-Строки с пробелами и пустые строки заключаются в кавычки. Имя `&r` читает
-последнюю ссылку binding `r`, в том числе из defer. Имена значений SSA;
-имена локальных значений тела destroy принадлежат конкретному вызову.
+Пример rebind/defer:
 
 ```text
 profile own
@@ -153,201 +141,74 @@ scope.end caller
 check BBA
 ```
 
-Checkpoint — `BBA`: defer читает B, затем B и A уничтожаются. Более сложный
-пример: `fixtures/review/07-rebind-staging-pending.oir`.
+## Корпус и границы проверки
 
-| Семейство | Форма |
-| --- | --- |
-| Значения | `plain v`; `new v label [field=value …]`; `new.async …`; `object v field=value …`; `array v [item …]`; `alias dst src`; `use v`; `drop v` |
-| Проекции | `get dst aggregate field-or-index`; `slice dst array start end`; `concat dst left right`; `replace dst array index value`; `deps.view dst source` |
-| Удержание | `closure/cap/bound/role/any dst values…`; cap содержит полный owner graph |
-| Области | `scope.begin S [async]`; `scope.end S`; `scope.unwind S failure`; `scope.transfer source target value` |
-| Привязки | `bind name value`; `rebind name value`; `stage action field value`; `staged dst action field` |
-| Пакеты | `own.empty p`; `scope.split S value p`; `own.move old new`; `own.split[.checked] p value rest selected deps`; `own.join result p…`; `own.admit p S` |
-| Dynamic | `own.dynamic p target reason protocol expected-owner`; `dynamic.check value holder epoch` |
-| Вызовы | `summary name borrow-or-take direct-or-role-or-closure-or-intrinsic`; `call.enter S summary args…`; `call.exit S result-or-- [failure]` |
-| Pending | `exit.prepare S value`; `exit.commit S target`; `exit.abort S` |
-| Defer/destroy | `defer S opcode args…`; `defer.block S 'instruction' …`; `on.destroy value 'instruction' …`; внутри тела `fail kind name` прекращает это тело |
-| Отказы | `failure f typed-or-panic-or-cancel name`; `failure.cause f cause`; `failure.secondary f secondary`; `carrier f packet owner`; `failure.view value f`; `catch ErrorName saved-carrier` |
-| Cleanup | `cleanup.begin S [failure]`; `cleanup.step S`; `cleanup.resume S`; `cancel S`; `gc values…`; `destroy.direct S value`; `end p boundary` |
-| Независимая линейность | `succ v`; `succ.take v`; `builder.new b`; `builder.push old new value ok-or-fail`; `builder.finish b result`; `builder.abandon b` |
-| Future | `future f new label bound-or-temporary [inputs…]`; вместо `new label`: `borrow value`, `void -`, `fail ErrorName` |
-| Task/cache | `future.start/settle/cancel f`; `await result f`; `unique-cache capability f`; `await.take result f capability`; `cache.rehome f target` |
-| Waiters/collectors | `waiter name f`; `waiter.cancel name f`; `collect.all result f…`; `completions stream f…`; `completion.next result stream` |
-| Frame | `frame.save S frame`; `frame.resume S frame` в профиле `coro` |
-| Mutable storage | `storage name atomic-or-channel-or-fake`; `storage.set name key value`; `storage.get result name key`; `storage.remove name key`; `storage.clear/close name` |
-| Ограничения | `once/worker/native/error.payload/descriptor.plain value` |
-| CFG | `label name`; `jump name`; `branch true-or-false left right`; `invoke.split packet value ok-or-fail normal unwind`; `edge.bind local $result`; `unwind.use value` |
-| Наблюдения | `emit string`; `emit.label value`; `reset.log`; `check expected`; `assert.owner value S`; `assert.state S phase`; `assert.failure primary [secondaries…]`; `assert.items aggregate names…` |
-
-В `invoke.split` normal выдаёт `$rest/$selected/$deps`, unwind —
-`$packet/$failure`. Линейные edge-results нужно связать в начале соответствующего
-successor; старый input недоступен на обоих рёбрах. Встроенные графовые
-наблюдения (`use` агрегата) не являются callee и сохраняют admission в caller.
-`end p boundary` допустим только для всей текущей явно завершаемой области;
-`end p asap` запрещён. Лексические границы в fixtures — исходная аннотация,
-не результат восстановления областей из машинного кода.
-
-## Покрытие
-
-| Раздел каталога | Файлов | Назначение |
-| --- | ---: | --- |
-| `corpus/` | 25 | Полные ручные переводы, все промежуточные TAP log checks |
-| `review/` | 25 | Все пункты 1–24; №19 отдельно для storage и открытого fake lifetime |
-| `valid/` | 26 | Дополнительные протокольные переходы, CFG, cleanup, отмена |
-| `invalid/` | 34 | Отрицательные verifier-примеры; ещё 3 намеренных отказа в `review/` |
-
-Связь с правилами записана также у каждого примера в manifest:
-
-| Правило §14 | Основные проверки |
-| --- | --- |
-| В1 | SSA value/token разделены; копирование aliases; deps у managed графа |
-| В2 | Сохранение creation events, disjoint packets, оба split-результата, consumed tokens, взаимоисключающие CFG edges |
-| В3 | Stable deps, dead borrow, достаточный lifetime escape, полный cap/capture graph |
-| В4 | Стек и однократное закрытие, rebind/staging journals, dynamic-only scope, запрет ASAP |
-| В5 | Проверяемые summaries, fresh/bound inputs, role/closure/intrinsic entry, удержание только с take |
-| В6 | Normal/unwind checked split, видимость edge-results, block-local unwind, все CFG successors |
-| В7 | Reason/target/protocol, owner/epoch, различие borrowed storage и принятого пакета |
-| В8 | Must-use отдельно от ownership, plain-successor, актуальная версия builder, precommit failure |
-| В9 | Inputs/frame/cache holders, ordinary await view, unique take, граница cleanup, rehome, позиции collector |
-| В10 | Общий serial-order, destroying, roots/shield, вторичные отказы, pending commit/abort, продолжение после suspend |
-| В11 | Managed once/Error/native/worker/descriptor ограничения, sync/async создание, coro/low проверки поднабора |
-
-Негативные примеры проходят напрямую через текстовый IR, не через frontend.
-Для каждой ошибки сравниваются код и значимый фрагмент сообщения; случайное
-падение Python или иной verifier error не считается успешным отказом.
-
-Все 25 переводов исходников из `tests/ownership-corpus`:
-
-| Программы | Число TAP-проверок |
+| Раздел | Файлов |
 | --- | ---: |
-| `scopes`, `branches`, `loops`, `rebinds` | 6 + 8 + 6 + 5 |
-| `temporary-receivers`, `temporary-arguments`, `call-chains`, `call-results` | 6 + 5 + 5 + 6 |
-| `fields`, `arrays`, `maps`, `collection-copies` | 6 + 7 + 5 + 5 |
-| `successor-fields`, `successor-staging`, `unwind`, `try-results` | 4 + 4 + 5 + 6 |
-| `defer-order`, `destroy-failures`, `partial-construction`, `confirm-and-errors` | 5 + 4 + 4 + 5 |
-| `closures`, `bound-actions`, `caps`, `roles-generics`, `atomic-resources` | 6 + 5 + 4 + 5 + 6 |
+| `corpus/` | 41 |
+| `review/` | 24 (пункты 1–24; №19 проверяет Atomic/channel) |
+| `valid/` | 39 |
+| `invalid/` | 51 (ещё три ожидаемых отказа в `review/`) |
 
-Переводы написаны вручную по исходникам. Конечные циклы развернуты по посещённым
-итерациям; constant branches сохраняют выбранные тела и их границы. Tap/note,
-чистая арифметика, строковое форматирование и закрытие plain Atomic log не
-порождают ownership-событий и опущены. Порядок создания, вызовы callee,
-связывание/escape, эффекты defer/catch и все log checkpoints сохранены.
-`inspect`/`label` при borrow смоделированы вызовом или контрольным `use`;
-каркас map с plain keys представлен именованными полями.
+Прежние 25 программ: `scopes`, `branches`, `loops`, `rebinds`,
+`temporary-receivers`, `temporary-arguments`, `call-chains`, `call-results`,
+`fields`, `arrays`, `maps`, `collection-copies`, `successor-fields`,
+`successor-staging`, `unwind`, `try-results`, `defer-order`, `destroy-failures`,
+`partial-construction`, `confirm-and-errors`, `closures`, `bound-actions`,
+`caps`, `roles-generics`, `atomic-resources`. Все 133 проверки совпали.
 
-## Выявленные вопросы к draft 2 и предлагаемые исправления
+Новые 16 переводов:
 
-Ниже отделены решения модели от утверждённой семантики. Эти места стали
-существенными именно при записи исполняемых переходов. Исходная спецификация
-не изменялась. Точки входа: OIR-2 §§4–10, 14–15, 21; нумерация review сохранена.
+| Программа | TAP-проверок | Сопоставление |
+| --- | ---: | --- |
+| `pending/581-future-completions` | 4 | 4/4; исторический путь pending сохранён только в источнике |
+| `all-futures`, `580-all-futures` | 3 + 3 | 6/6 |
+| `raced` | 4 | 4/4 |
+| `cold-futures` | 10 | 9/10, расхождение ниже |
+| `async-results` | 8 | 8/8 |
+| `channels`, `channel-transfer` | 8 + 6 | 14/14 |
+| `async-destroy` | 10 | 10/10 |
+| `spawn-cancellation`, `future-group` | 5 + 5 | 10/10 |
+| `panic-unwind`, `secondary-failures` | 2 + 2 | 4/4; намеренные failures, включая primary/secondary проверки |
+| `gen-000`, `gen-001`, `gen-002` | 4 + 4 + 4 | 12/12; block/iteration, nested/fields, normal/throw |
 
-1. **Наблюдения коллекций и общий call-entry — §§4.1, 6.3.**
-   Таблица наблюдений оставляет свежий вход в admission caller, а формулировка
-   про fresh receiver/args у call-entry без исключения принимает его в callee.
-   `temporary-receivers.ok` требует, чтобы `[Res("C")].size()` оставлял C в
-   блоке, а `Res("A").label()` закрывал A при возврате. Решение модели:
-   builtin observation — отдельная инструкция, объектный метод — call.
-   **Правка:** перечислить такие intrinsics в реестре и задать свойство
-   `observation/admission-stays-caller`; явно ограничить §6.3 настоящими
-   call boundaries. [Пример](fixtures/corpus/temporary-receivers.oir).
+Переводы ручные, конечные циклы развернуты. Сохранены создание identity,
+существенные call boundaries, escape, cleanup, control reads и все TAP-проверки.
+Events и gates задают точки расписания; чистая арифметика, TAP plumbing и
+plain Atomic log не создают ресурсных обязательств и опущены. Async destroy
+сохраняет отдельные наблюдения до и после suspend; отсутствие раннего destroy
+проверяется промежуточными чтениями, owners, roots и состояниями.
 
-2. **Свежесть пакета результата требует точного перехода — §§3.3, 6.1, 10.2–10.3.**
-   Недостаточно понимать «свежая часть» как недавно созданную identity или любой
-   явно возвращённый пакет. Публикация в shared cache должна закончить свежесть
-   для call-entry. Иначе `label(await f)` заберёт результат из кэша. Даже
-   `await.take` связанного уникального Future в той же области не должен
-   автоматически делать результат временным входом следующего callee.
-   **Правка:** добавить таблицу admission provenance: unbound result, bound,
-   staged/carrier-owned, cache-owned, extracted-at-existing-boundary,
-   temporary-await result; отдельно
-   указать право fresh call transfer. В модели shared/bound extraction остаётся
-   несвежим; временный take возвращает свежую часть.
-   [Shared](fixtures/review/11-shared-outcome-and-borrowed-take.oir),
-   [bound take](fixtures/valid/bound-unique-take-keeps-original-boundary.oir).
+Это bounded protocol model: CFG-циклы отвергаются, индукции для произвольных
+циклов и alias-analysis frontend нет. Проверяются все ветви и оба исхода
+checked split; остальные failure-точки задаются явным IR. `own/coro/low`
+не заменяют настоящий lowering, codegen, native ABI, worker serialization или
+GC stack maps. `gc` проверяет ресурсные корни. Нет ОС, таймеров, потоков и
+перебора всех scheduler interleavings. Коллекторы используют явные точки
+start/settle; модель не воспроизводит все очереди pending-запросов библиотеки.
+Канал моделирует принятие/доставку пакета и borrowed lifetime; заблокированный
+непринятый send сохраняет пакет у sender. Последний capability совпадает
+с явно закрываемой областью канала; произвольный подсчёт capabilities вне
+поднабора. `unique-cache` консервативно учитывает все зарегистрированные
+aliases/views/waiters/collectors; `drop` не доказывает исчезновение alias.
 
-3. **Владелец области не равен непосредственному holder — §§3.2, 4.2, 5.2, 15.**
-   Буквальное `scope.split` всего множества S способно извлечь cached outcome
-   по ordinary await view, обойдя `unique-cache`; аналогичен обход протокола
-   task inputs или принятого channel packet. **Правка:** определить transferable
-   domain `scope.split`: только непосредственно доступные пакеты/journal S;
-   cache/frame/channel/carrier — дочерние протокольные holders. Их пакеты входят
-   в cleanup S после settle, но извлекаются только своим протоколом. Модель
-   отвергает такой split кодом В9/В7.
-   [Отрицательный пример](fixtures/invalid/B9-split-steals-shared-cache.oir).
+## Новые результаты сверки draft 3
 
-4. **Два значения слова deps в split — §§3.2, 4.2, 15.**
-   `deps = R у других владельцев` описывает внешнюю часть partition; это не
-   полный `deps(value)`. После выбора owned A внешний deps может быть пустым,
-   но alias A всё равно должен зависеть от стабильного `obl(A)`.
-   **Правка:** назвать результат split `external_deps`, явно сохранить полный
-   `value.deps`, определить retention selection для view, зависящего от owner
-   без прямого поля. Нельзя сертифицировать такой view как plain только потому,
-   что `selected` пуст. Модель хранит эти состояния раздельно.
-   [Split](fixtures/review/02-overlap-split.oir),
-   [escape](fixtures/invalid/B3-dangling-escape.oir).
+**Новых неоднозначностей в девяти принятых ответах M1–M9 не обнаружено.**
+Обнаружена одна новая несогласованность нормы с актуальным корпусом:
 
-5. **Правило обновления owner epoch не определено — §§3.2, 7.1, 17.**
-   Обычный alias должен переживать move, а динамический snapshot owner/epoch
-   после move обязан обнаруживать устаревание. При прямом хранении старого epoch
-   в каждом alias эти требования конфликтуют. **Правка:** явно разделить
-   стабильный obligation key/indirection и проверяемый owner snapshot; описать
-   refresh/check после передачи. В модели deps обращается по стабильному ID,
-   epoch меняется при реальном перемещении holder, `dynamic.check` сравнивает
-   snapshot. No-op передачи epoch не меняют.
-   [Живой alias](fixtures/valid/stable-deps-after-token-move.oir),
-   [устаревший snapshot](fixtures/invalid/B7-stale-epoch.oir).
+**Cold Future с plain-исходом — §10.1 против `cold-futures.ok`, TAP №9.**
+`Receiver("R").read(Res("A"))` возвращает вычисленную строку `"RA"`,
+не удерживающую resource identities. §10.1 требует закрыть не удержанные
+исходом свежие входы при завершении action. Поэтому после первого await
+модель уже имеет лог `AR`; повторный await по-прежнему возвращает `RA`.
+Исходник ожидает пустой лог после обоих await и `AR` лишь при выходе
+cache-owner. Решение #581 назначает владельца **кэшированному исходу**;
+само по себе оно не устанавливает lifetime всех не удержанных исходом входов.
 
-6. **«Нормализация» отказа destroy не задаёт catchability — §9.3, пункт 4.**
-   Можно прочитать её как превращение typed Cleanup в неcatchable runtime
-   failure. Корпус `destroy-failures.ok` ловит именно Cleanup. **Правка:**
-   нормативно определить carrier cleanup-origin, сохраняющий исходный kind и
-   точное Error для catch; panic остаётся panic. Primary/secondary priority
-   ортогонален этому признаку. Модель сохраняет typed Error, добавляя событию
-   `cleanup: true`. [Пример](fixtures/corpus/destroy-failures.oir).
-
-7. **Граница внутреннего resource-bearing carrier остаётся неназванной — §9.4.**
-   Требование «явная граница владельца» не определяет, кто этот владелец при
-   throw/rethrow/catch, и когда относительно catch можно закрыть cause/secondaries.
-   Простой admission carrier в покидаемую try-область уничтожил бы payload до
-   наблюдения catch. **Правка:** добавить `carrier.attach(packet, owner)`,
-   transfer/rehome и release; указать общий owner графа cause/secondaries и
-   протокол cache для повторного failure. В модели `carrier f p owner` требует
-   явно назначенную охватывающую область. Это соглашение для внутреннего IR,
-   не разрешение пользовательских ресурсных Error.
-   [Пример с чтением после catch](fixtures/valid/carrier-cause-secondary-roots.oir).
-
-8. **Момент abort результата при отложенной отмене — §§9.1, 9.3, 10.4.**
-   Текст требует доставить cancellation после shielded cleanup и до commit,
-   но стоит явно закрепить порядок резервного результата относительно уже
-   закрытого остатка. Для A(serial 1), return R(serial 2), отмены во время
-   async destroy A модель даёт `A R`, а не ретроспективное `R A`.
-   **Правка:** добавить эту трассу и правило отдельной abort boundary при
-   deferred cancellation; отдельно указать отличие от отказа defer до начала
-   destroy, который возвращает резерв в исходный общий план.
-   [Пример](fixtures/valid/final-cleanup-cancel-aborts-result.oir).
-
-9. **Порядок settle служебных владельцев при закрытии области — §§3.2, 9.3, 10.4–10.5.**
-   Глобальный serial-order ресурсов не задаёт порядок урегулирования нескольких
-   ещё работающих frames/groups. Их cleanup может создавать новые identities,
-   следовательно итоговая трасса зависит от выбранного расписания ещё до общего
-   плана S. **Правка:** выделить service-settle phase и её входное расписание;
-   указать, какие порядки нормативны, а какие являются наблюдениями конкретного
-   schedule. Эталон должен сравнивать трассу при одинаковом schedule, не
-   объявлять порядок обхода таблицы Futures нормой. Модель позволяет явно
-   задавать start/settle/cancel; при неявном закрытии оставшихся tasks использует
-   порядок их объявления как детерминированную политику модели.
-   [Waiters](fixtures/valid/shared-waiter-cancellation.oir),
-   [race](fixtures/valid/race-loser-before-winner-publication.oir).
-
-Уже открытые в самом draft 2 решения не считаются вновь найденными ошибками:
-
-- **#581:** принять/отклонить lifetime cache-owner, rehome и views. Восемь
-  связанных фикстур выполняются по предложению и отдельно помечены.
-- **§7.4:** утвердить владельца свежих ресурсов общего fake storage. Одна
-  фикстура проверяет предложенную область исходного fake и retired journal;
-  она остаётся `unresolved-fake`.
-
-Эти два решения и согласование формулировок выше нужны владельцу спецификации
-для G0. Реализация модели не отмечает утверждение G0 или compiler gates G1–G5.
-P1, backend parity и измерения реального runtime не входят в выполненную #582.
+Модель следует явному правилу §10.1, сохраняет исходное ожидание `""` рядом
+с нормативным `"AR"` в manifest/results и не скрывает различие. Нужна
+синхронизация `cold-futures.ok` с §10.1 либо отдельное уточнение нормы о том,
+что plain-исход должен удерживать такие входы. Это новая граница сверки, а не
+повторное открытие M2 или решения #581. Исходник и read-only спецификация
+не изменялись. Иных новых spec findings в выполненном поднаборе нет.

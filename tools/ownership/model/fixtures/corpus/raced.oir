@@ -1,0 +1,23 @@
+# Full finite translation of tests/ownership-corpus/raced.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main async
+scope.begin block
+future loser new wrong bound
+future.body loser 'new localL L' 'defer @task:loser emit d' suspend
+future winner new W bound
+future.start loser
+race.winner result winner loser
+check dL
+use result
+check dL
+scope.end block
+check dLW
+reset.log
+scope.begin single
+future only new W temporary
+race.winner one only
+use one
+scope.end single
+check W
+scope.end main

@@ -1,0 +1,14 @@
+# Full finite translation of tests/ownership-corpus/secondary-failures.ok
+# Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
+profile own
+scope.begin main
+new observer Observer
+destroy.log observer '' ''
+on.destroy observer 'check BA' 'scope.begin acquired' 'new c C' 'scope.end acquired' 'check BAC'
+new a A
+on.destroy a 'alias aliasA self' 'use aliasA' 'fail typed Cleanup.first'
+new b B
+on.destroy b 'alias aliasB self' 'use aliasB' 'fail typed Cleanup.second'
+failure body typed Body.failed
+scope.unwind main body
+assert.failure Body.failed Cleanup.second Cleanup.first
