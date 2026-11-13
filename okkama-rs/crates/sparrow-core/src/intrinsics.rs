@@ -216,7 +216,7 @@ pub extern "C" fn rt_intrinsic(ctx: *mut Ctx, function: u64, arguments: *const W
     let count = (count as usize).min(words.len());
     words[..count].copy_from_slice(unsafe { std::slice::from_raw_parts(arguments, count) });
     let function = function as usize;
-    runtime.count(|| crate::runtime::Event::Intrinsic(function));
+    runtime.count(|r| format!("intrinsic {}", r.loaded.program.functions[function].symbol));
     let outcome = match runtime.intrinsics[function] {
         Some(Intrinsic::Ordering) => {
             let result = ordering(ctx, runtime, function, words[0]);
