@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Conversion {
+    integer(value is float) is int { value.int(); }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln("before");
+    let x = Conversion().integer(9223372036854775808.0);
+    out.writeln("unreachable");
+    0;
+}

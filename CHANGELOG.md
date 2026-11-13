@@ -6,6 +6,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Sparrow specializes builder and scalar dispatch (#537, review candidate).**
+  Builder creation/finish, map length and rational construction use positional
+  helpers; tagged-small numeric conversions use guarded JIT paths. Collection
+  opportunities, builder reuse and memory accounting are preserved. Low-level
+  nonfinite float-to-int arguments now report a conversion failure instead of
+  aborting while formatting the diagnostic. Performance acceptance and the
+  separate builder-storage experiment await Docker A/B evidence.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

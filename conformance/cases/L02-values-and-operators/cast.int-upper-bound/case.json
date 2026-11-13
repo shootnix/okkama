@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.cast.int-upper-bound",
+  "title": "int() rejects a float at the signed-64 boundary: 9223372036854775808.0",
+  "purpose": "The value-dependent operation fails at runtime after earlier effects.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.SCALAR-CASTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "before\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #537 from VAL.SCALAR-CASTS",
+    "expected_basis": "spec 6.6.1: 2^63 is the exclusive signed-64 upper bound, even though conversion to int truncates first."
+  },
+  "status": "mandatory"
+}

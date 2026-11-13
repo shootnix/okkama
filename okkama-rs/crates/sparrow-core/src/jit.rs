@@ -108,6 +108,11 @@ helpers! {
     region_add = crate::failures::rt_region_add as (ctx, region: Word, value: Word, own: u64); [];
     region_leave = crate::failures::rt_region_leave as (ctx, region: Word, keep: *const Word, count: u64); [Allocates, Collects, Reenters, Fails];
     builder_push = crate::ops::rt_builder_push as (ctx, builder: Word, item: Word) -> Word; [];
+    builder_new = crate::ops::rt_builder_new as (ctx, repr: u64) -> Word; [Allocates, Collects];
+    builder_finish = crate::ops::rt_builder_finish as (ctx, builder: Word, packed: u64) -> Word; [Allocates, Collects];
+    rat_new = crate::ops::rt_rat_new as (ctx, left: Word, right: Word) -> Word; [Allocates, Collects, Fails];
+    map_len = crate::ops::rt_map_len as (ctx, map: Word) -> Word; [Allocates, Collects];
+    scalar_safepoint = crate::ops::rt_scalar_safepoint as (ctx, conversion: u64); [Collects];
     trie_get = crate::ops::rt_trie_get as (ctx, array: Word, position: u64) -> Word; [Allocates];
     int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
     future_new = crate::tasks::rt_future_new as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
@@ -2090,9 +2095,98 @@ impl Emitter<'_, '_> {
                     self.set(&dst.0, flag);
                 }
             }
+            I::BuilderNew { dst } => {
+                let Some(Type::Builder(element)) = self.register_type(&dst.0) else {
+                    self.generic_instruction(pc, instruction);
+                    return Ok(false);
+                };
+                let repr = Kind::of(program, *element).repr();
+                let repr = self.iconst(repr as i64);
+                let result = self.helper(|h| h.builder_new, &[ctx, repr]).expect("result");
+                self.check(pc);
+                self.set(&dst.0, result);
+            }
+            I::BuilderFinish { dst, builder } => {
+                let Some(Type::Array(element)) = self.register_type(&dst.0) else {
+                    self.generic_instruction(pc, instruction);
+                    return Ok(false);
+                };
+                let packed = Kind::of(program, *element) == Kind::Byte;
+                let packed = self.iconst(i64::from(packed));
+                let builder = self.get(builder);
+                let result = self.helper(|h| h.builder_finish, &[ctx, builder, packed]).expect("result");
+                self.check(pc);
+                self.set(&dst.0, result);
+            }
+            I::RatNew { dst, left, right } => {
+                let (left, right) = (self.get(left), self.get(right));
+                let result = self.helper(|h| h.rat_new, &[ctx, left, right]).expect("result");
+                self.check(pc);
+                self.set(&dst.0, result);
+            }
+            I::MapLen { dst, map } if matches!(self.register_type(map), Some(Type::Map(..))) => {
+                let map = self.get(map);
+                let result = self.helper(|h| h.map_len, &[ctx, map]).expect("result");
+                self.check(pc);
+                self.set(&dst.0, result);
+            }
             I::BuilderPush { dst, builder, value } => {
                 let (builder, value) = (self.get(builder), self.word(value));
                 let result = self.helper(|h| h.builder_push, &[ctx, builder, value]).expect("result");
+                self.set(&dst.0, result);
+            }
+            I::Convert { dst, source }
+                if matches!(self.register_type(source), Some(Type::Int)) && matches!(self.register_type(&dst.0), Some(Type::Float)) =>
+            {
+                let value = self.get(source);
+                let small = self.builder.ins().band_imm_u(value, 1);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::F64);
+                self.builder.ins().brif(small, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                let integer = self.builder.ins().sshr_imm_u(value, 1);
+                let result = self.builder.ins().fcvt_from_sint(types::F64, integer);
+                let conversion = self.iconst(0);
+                self.helper(|h| h.scalar_safepoint, &[ctx, conversion]);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(slow);
+                let bits = self.exec_generic(pc, instruction);
+                let result = self.builder.ins().bitcast(types::F64, MemFlagsData::new(), bits);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let result = self.builder.block_params(done)[0];
+                self.set(&dst.0, result);
+            }
+            I::Convert { dst, source }
+                if matches!(self.register_type(source), Some(Type::Float)) && matches!(self.register_type(&dst.0), Some(Type::Int)) =>
+            {
+                let value = self.get(source);
+                let truncated = self.builder.ins().trunc(value);
+                // Ordered comparisons reject NaN and infinities. Both bounds
+                // are exact binary64 powers of two; SMALL_MAX as f64 would
+                // round UP and incorrectly allow 2^62, which needs a BigInt.
+                let lower = self.builder.ins().f64const(word::SMALL_MIN as f64);
+                let upper = self.builder.ins().f64const(-(word::SMALL_MIN as f64));
+                let above = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, truncated, lower);
+                let below = self.builder.ins().fcmp(FloatCC::LessThan, truncated, upper);
+                let small = self.builder.ins().band(above, below);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(small, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                // The trapping conversion is reached only after the range
+                // proof; tagging cannot overflow the tagged-small domain.
+                let integer = self.builder.ins().fcvt_to_sint(types::I64, truncated);
+                let doubled = self.builder.ins().ishl_imm_u(integer, 1);
+                let result = self.builder.ins().bor_imm_u(doubled, 1);
+                let conversion = self.iconst(1);
+                self.helper(|h| h.scalar_safepoint, &[ctx, conversion]);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let result = self.builder.block_params(done)[0];
                 self.set(&dst.0, result);
             }
             I::Convert { dst, source }
@@ -2457,3 +2551,7 @@ fn int_condition(op: Cmp) -> IntCC {
         Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
     }
 }
+
+#[cfg(test)]
+#[path = "dispatch_537_tests.rs"]
+mod dispatch_537_tests;
