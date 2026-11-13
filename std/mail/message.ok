@@ -1,8 +1,21 @@
 module mail/message v1.0.0;
 
-// Content and delivery preparation do not infer an SMTP envelope.
-// Bodies are borrowed; rendering uses MIME bounds and observes bytes once.
-// Address/origination policy remains with future addressed-message consumers.
+// E-mail messages (RFC 5322 with MIME): built, rendered, parsed.
+//
+//     let message = MailMessage(
+//         from: "Ada <ada@example.test>",
+//         to: ["Grace <grace@example.test>"],
+//         subject: "Lunch on Thursday?",
+//         text: "Shall we try the new place?\r\n",
+//     );
+//     message.bytes();                                 // wire form, CRLF
+//     message.string();                                // for reading, \n
+//     let back = ParsedMail(bytes).message();
+//     back.headers().first("Subject");
+//
+// MailMessage(from:, to:, subject:, text:) adds Date, a fresh Message-ID,
+// MIME-Version and a UTF-8 Content-Type. A message knows nothing of the SMTP
+// envelope; DeliveredMail is the copy to hand to a server, without Bcc.
 
 import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody,
     TextBody;
@@ -24,21 +37,25 @@ import "time/duration" take Duration, DurationUnit;
 import "mime/media_type" take MimeItems, MimePosition;
 import "error" take InvalidArgument;
 
+// An e-mail: header fields and a MIME body.
 object MailMessage does ByteSource {
     has content is MimePart;
     has bounds is MimeLimits;
 
+    // The message part is.
     MailMessage(part is MimePart) {
         content = part;
         bounds = part.limits();
     }
 
+    // headers with body, within the default MIME limits.
     MailMessage(headers is MessageHeaders, body is MimeBody) {
         let limits = MimeLimits();
         bounds = limits;
         content = MimePart(headers: headers, body: body, limits: limits);
     }
 
+    // The same within limits.
     MailMessage(headers is MessageHeaders, body is MimeBody, limits is MimeLimits) {
         bounds = limits;
         content = MimePart(headers: headers, body: body, limits: limits);
@@ -104,22 +121,27 @@ object MailMessage does ByteSource {
         );
     }
 
+    // The message as a MIME part.
     part() is MimePart {
         content;
     }
 
+    // Its header fields.
     headers() is MessageHeaders {
         content.headers();
     }
 
+    // Its body.
     body() is MimeBody {
         content.body();
     }
 
+    // Its MIME limits.
     limits() is MimeLimits {
         bounds;
     }
 
+    // The message on the wire: RFC 5322 bytes with CRLF.
     bytes() is @byte {
         content.bytes();
     }
@@ -131,20 +153,24 @@ object MailMessage does ByteSource {
     }
 }
 
+// A message read from bytes.
 object ParsedMail {
     has origin is @byte;
     has limits is MimeLimits;
 
+    // Reads origin within the default MIME limits.
     ParsedMail(origin is @byte) {
         self.origin = origin;
         limits = MimeLimits();
     }
 
+    // Reads origin within limits.
     ParsedMail(origin is @byte, limits is MimeLimits) {
         self.origin = origin;
         self.limits = limits;
     }
 
+    // The message; InvalidMime or InvalidMail says where the bytes are wrong.
     message() is MailMessage {
         try {
             let part = ParsedMime(origin: origin, limits: limits).part();
@@ -156,13 +182,16 @@ object ParsedMail {
     }
 }
 
+// The bytes to hand to a mail server: the message without Bcc and Resent-Bcc.
 object DeliveredMail does ByteSource {
     has content is MailMessage;
 
+    // The delivery copy of origin.
     DeliveredMail(origin is MailMessage) {
         content = origin;
     }
 
+    // The bytes.
     bytes() is @byte {
         let entries = content.headers().entries();
         let size = entries.size();
@@ -180,47 +209,57 @@ object DeliveredMail does ByteSource {
     }
 }
 
+// A Message-ID such as `<id@example.test>`, checked.
 object MessageId {
     has origin is string;
 
+    // Checks origin; InvalidMail when it is not one.
     MessageId(origin is string) {
         MailIdentifier(origin).validate();
         self.origin = origin;
     }
 
+    // The id.
     string() is string {
         origin;
     }
 }
 
+// A message that is not valid; offset and reason say where and why.
 enum InvalidMail is Error = (located(offset is int, reason is string));
 
 // Numeric dates are immutable snapshots; a custom zone is observed once.
 object MailDate {
     has text is string;
 
+    // origin, its offset known.
     MailDate(origin is ZonedDateTime) {
         text = MailDatePrinting(origin: origin, known: true).string();
     }
 
+    // origin; an unknown offset is written `-0000`.
     MailDate(origin is ZonedDateTime, offset_known is bool) {
         text = MailDatePrinting(origin: origin, known: offset_known).string();
     }
 
+    // `Thu, 13 Nov 2026 10:00:00 +0100`.
     string() is string {
         text;
     }
 }
 
+// A Date field read.
 object ParsedMailDate {
     has origin is string;
     has maximum is int;
 
+    // The field's text.
     ParsedMailDate(origin is string) {
         self.origin = origin;
         maximum = 4096;
     }
 
+    // The text, at most maximum_bytes long.
     ParsedMailDate(origin is string, maximum_bytes is int) {
         confirm maximum_bytes >= 0
             else throw InvalidArgument.because("mail date bound must be nonnegative");
@@ -228,10 +267,12 @@ object ParsedMailDate {
         maximum = maximum_bytes;
     }
 
+    // The date and time; InvalidMail for text that is not a date.
     date_time() is ZonedDateTime {
         MailDateParsing(origin: origin, maximum: maximum).parsed().date_time();
     }
 
+    // Whether the offset was known (`-0000` says it was not).
     offset_known() is bool {
         MailDateParsing(origin: origin, maximum: maximum).parsed().offset_known();
     }

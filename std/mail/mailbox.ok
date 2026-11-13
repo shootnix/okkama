@@ -1,13 +1,20 @@
 module mail/mailbox v1.0.0;
 
-// Protocol flag values, stored snapshots and trusted-local Maildir operations.
-// Constructors are pure except explicit snapshots. Maildir filesystem effects
-// occur only in messages/add/remove/deliver and ChangedMaildirFlags.result().
-// Operations acquire the permanent .okkama-maildir.lock immediately (shared
-// reads, exclusive mutations); callers must control the local path namespace.
-// ChangedMaildirFlags snapshots supported DFRST flags before I/O and preserves
-// message bytes/inode/mtime on rename. Recent is a legacy observation, not a
-// stored Maildir flag. See docs/std/maildir.md for limits and commit failures.
+// Message flags, stored messages and Maildir folders.
+//
+//     let box = Maildir(Path("Mail/inbox")).created();
+//     box.add(message);
+//     for box.messages() -> stored {
+//         stored::Mail::identifier;
+//         stored.flags().membership(SystemFlag(SystemMailFlag.seen));
+//     }
+//     ChangedMaildirFlags(origin: box, identifier: id, flags: MailFlags(SystemFlag(SystemMailFlag.seen))).mail();
+//
+// A Maildir keeps one message per file in new/ and cur/ and delivers through
+// tmp/, so a reader never sees half a message. Operations take
+// `.okkama-maildir.lock` (shared to read, exclusive to change). Flags D, F, R,
+// S and T are kept in file names; Recent is not stored. By default a Maildir
+// reads at most 1000 messages and 64 MiB.
 
 import "compare" take Comparing, Order;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -31,37 +38,52 @@ import "encoding/hex" take HexEncoded;
 import "fs/stat" take FileKind;
 import "io/buffer" take ByteBuffer;
 
+// A system flag or a keyword.
 enum MailFlagKind = (system, keyword);
 
+// The system flags of IMAP: \Answered, \Flagged, \Deleted, \Seen, \Draft and
+// \Recent.
 enum SystemMailFlag = (answered, flagged, deleted, seen, draft, recent);
 
+// A message flag.
 role MailFlag {
+    // System flag or keyword.
     kind() is MailFlagKind;
+    // As IMAP writes it.
     string() is string;
+    // The system flag; WrongMailFlagKind for a keyword.
     system() is SystemMailFlag;
+    // The keyword; WrongMailFlagKind for a system flag.
     keyword() is string;
+    // Orders flags.
     order(other is MailFlag) is Order;
 }
 
+// A system flag.
 object SystemFlag does MailFlag, Comparing<MailFlag> {
     has origin is SystemMailFlag;
 
+    // The flag.
     SystemFlag(origin is SystemMailFlag) {
         self.origin = origin;
     }
 
+    // MailFlagKind.system.
     kind() is MailFlagKind {
         MailFlagKind.system;
     }
 
+    // The flag.
     system() is SystemMailFlag {
         origin;
     }
 
+    // WrongMailFlagKind.
     keyword() is string {
         throw WrongMailFlagKind.detailed(MailFlagKind.keyword, MailFlagKind.system);
     }
 
+    // `\Seen` and the like.
     string() is string {
         match origin {
             case SystemMailFlag.answered {
@@ -85,14 +107,17 @@ object SystemFlag does MailFlag, Comparing<MailFlag> {
         }
     }
 
+    // Orders by name, ignoring ASCII case.
     order(other is MailFlag) is Order {
         MailFlagName(self.string()).key().order(MailFlagName(other.string()).key());
     }
 }
 
+// A keyword flag such as `$Forwarded`.
 object KeywordFlag does MailFlag, Comparing<MailFlag> {
     has origin is string;
 
+    // Checks origin as an IMAP atom; InvalidMailFlag otherwise.
     KeywordFlag(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 255
             else throw InvalidMailFlag.located(0, "keyword length outside 1..255");
@@ -115,29 +140,36 @@ object KeywordFlag does MailFlag, Comparing<MailFlag> {
         self.origin = origin;
     }
 
+    // MailFlagKind.keyword.
     kind() is MailFlagKind {
         MailFlagKind.keyword;
     }
 
+    // WrongMailFlagKind.
     system() is SystemMailFlag {
         throw WrongMailFlagKind.detailed(MailFlagKind.system, MailFlagKind.keyword);
     }
 
+    // The keyword.
     keyword() is string {
         origin;
     }
 
+    // The keyword.
     string() is string {
         origin;
     }
 
+    // Orders by name, ignoring ASCII case.
     order(other is MailFlag) is Order {
         MailFlagName(origin).key().order(MailFlagName(other.string()).key());
     }
 }
 
+// A system flag asked of a keyword, or the reverse.
 enum WrongMailFlagKind is Error = (detailed(expected is MailFlagKind, actual is MailFlagKind));
 
+// Text that is not a flag; offset says where.
 enum InvalidMailFlag is Error = (located(offset is int, reason is string));
 
 hidden object MailFlagName {
@@ -166,6 +198,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
     has entries is @MailFlag;
     has maximum is int;
 
+    // The flags, each once.
     MailFlags(entries is Sequencing<MailFlag>) {
         self.entries = MailFlagEntries(origin: entries, maximum: 256).values();
         maximum = 256;
@@ -178,31 +211,38 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
         maximum = 256;
     }
 
+    // The flags, at most maximum_entries.
     MailFlags(entries is Sequencing<MailFlag>, maximum_entries is int) {
         self.entries = MailFlagEntries(origin: entries, maximum: maximum_entries).values();
         maximum = maximum_entries;
     }
 
+    // How many.
     size() is int {
         entries.size();
     }
 
+    // The flag at index.
     item(index is int) is MailFlag {
         entries[index];
     }
 
+    // The first flag.
     first() is MailFlag {
         entries.first();
     }
 
+    // The last flag.
     last() is MailFlag {
         entries.last();
     }
 
+    // Walks the flags.
     cursor() is Cursor<MailFlag> {
         entries.cursor();
     }
 
+    // Whether value is one of them.
     membership(value is MailFlag) is bool {
         let key = MailFlagName(MailFlagSnapshot(value).flag().string()).key();
         entries.reduce(false) -> found, entry {
@@ -210,6 +250,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
         };
     }
 
+    // These flags and value.
     addition(value is MailFlag) is Set<MailFlag> {
         let snapshot = MailFlagSnapshot(value).flag();
         if self.membership(snapshot) {
@@ -220,6 +261,7 @@ object MailFlags does Set<MailFlag>, Sequencing<MailFlag>, Iterating<MailFlag> {
         MailFlags(entries: following, maximum_entries: maximum);
     }
 
+    // These flags without value.
     difference(value is MailFlag) is Set<MailFlag> {
         let key = MailFlagName(MailFlagSnapshot(value).flag().string()).key();
         let following is @MailFlag = entries.filter() -> entry {
@@ -322,11 +364,13 @@ hidden object MailFlagCursor {
     }
 }
 
+// A message kept in a mailbox, with its id and flags.
 object StoredMail {
     has identifier is string;
     has content is MailMessage;
     has marks is MailFlags;
 
+    // As given.
     StoredMail(identifier is string, message is MailMessage, flags is Set<MailFlag>) {
         MailStorageIdentifier(identifier).validate();
         self.identifier = identifier;
@@ -334,6 +378,7 @@ object StoredMail {
         content = StoredMailContent(origin: message, limits: message.limits()).message();
     }
 
+    // As given, within limits.
     StoredMail(
         identifier is string,
         message is MailMessage,
@@ -346,14 +391,17 @@ object StoredMail {
         content = StoredMailContent(origin: message, limits: limits).message();
     }
 
+    // The message.
     message() is MailMessage {
         content;
     }
 
+    // Its flags.
     flags() is Set<MailFlag> {
         marks;
     }
 
+    // Its id in the mailbox.
     cap Mail {
         identifier is string {
             identifier;
@@ -397,20 +445,25 @@ hidden object MailStorageIdentifier {
     }
 }
 
+// A mailbox or a stored name that is not valid; offset says where.
 enum InvalidMailbox is Error = (located(offset is int, reason is string));
 
+// A mailbox over a limit; kind says which.
 enum MailboxLimitExceeded is Error = (kind(kind is string));
 
+// How much of a Maildir is read.
 object MaildirLimits {
     has messages, wire_bytes is int;
     has mime is MimeLimits;
 
+    // 1000 messages, 64 MiB and the default MIME limits.
     MaildirLimits() {
         messages = 1000;
         wire_bytes = 67108864;
         mime = MimeLimits();
     }
 
+    // The limits as given.
     MaildirLimits(messages is int, wire_bytes is int, mime is MimeLimits) {
         confirm messages >= 0 && wire_bytes >= 0
             else throw InvalidArgument.because("maildir bounds must be nonnegative");
@@ -419,10 +472,12 @@ object MaildirLimits {
         self.mime = mime;
     }
 
+    // The MIME limits of a message.
     mime() is MimeLimits {
         mime;
     }
 
+    // Messages and bytes in all.
     cap Limits {
         messages is int {
             messages;
@@ -522,28 +577,34 @@ hidden object MaildirName {
     }
 }
 
+// A Maildir folder.
 object Maildir {
     has origin is Path;
     has bounds is MaildirLimits;
 
+    // The folder at path, with the default limits.
     Maildir(path is Path) {
         origin = path;
         bounds = MaildirLimits();
     }
 
+    // The folder within limits.
     Maildir(path is Path, limits is MaildirLimits) {
         origin = path;
         bounds = limits;
     }
 
+    // Its path.
     path() is Path {
         origin;
     }
 
+    // Its limits.
     limits() is MaildirLimits {
         bounds;
     }
 
+    // Every message in new/ and cur/, with its flags.
     messages() is Sequencing<StoredMail> {
         let access = MaildirAccess(path: origin, mode: FileLockMode.shared);
         defer access.close();
@@ -581,10 +642,12 @@ object Maildir {
         self;
     }
 
+    // Delivers message through tmp/ into new/.
     add(message is MailMessage) is void {
         MaildirDelivery(origin: self, message: message).deliver();
     }
 
+    // Removes the message identifier; MissingStoredMail when there is none.
     remove(identifier is string) is void {
         let name = MaildirName(identifier);
         confirm !name.current()
@@ -730,12 +793,14 @@ hidden object MaildirCommitRelease {
     }
 }
 
+// A message's flags changed by renaming its file.
 object ChangedMaildirFlags {
     has origin is Maildir;
     has identifier is string;
     has marks is MailFlags;
     has name is MaildirName;
 
+    // Gives identifier in origin the flags.
     ChangedMaildirFlags(origin is Maildir, identifier is string, flags is Set<MailFlag>) {
         let base = MaildirName(identifier);
         confirm !base.current()
@@ -748,6 +813,7 @@ object ChangedMaildirFlags {
         name = target;
     }
 
+    // Renames the file and gives the stored message; the bytes are untouched.
     mail() is StoredMail {
         let access = MaildirAccess(path: origin.path(), mode: FileLockMode.exclusive);
         defer access.close();
@@ -859,8 +925,11 @@ hidden object MaildirPublication {
     }
 }
 
+// No message has that id.
 enum MissingStoredMail is Error = (identifier(identifier is string));
 
+// The change was made, but a later step failed; identifier, code and reason say
+// what.
 enum CommittedMaildirFailure is Error = (detailed(
     identifier is string,
     code is string,
