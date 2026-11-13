@@ -1,6 +1,6 @@
 //! Process workers (`worker.spawn`, `worker.bind`): a synchronous action runs
 //! in a child `sparrow-next --worker FILE.spb`; arguments and the result cross
-//! as OKW1 transfer values (the previous engine's wire format).
+//! as OKW2 transfer values (the previous engine's wire format).
 //!
 //! Core words carry no tags, so values are encoded and decoded by the static
 //! types of the entry function's parameters and result. Only primitives and
@@ -21,7 +21,7 @@ use okkama_sparrow::{Type, TypeRef};
 use std::io::Write;
 use std::rc::Rc;
 
-const FRAME: &[u8; 4] = b"OKW1";
+const FRAME: &[u8; 4] = b"OKW2";
 const TRAILER: &[u8; 4] = b"OKL1";
 const NOT_TRANSFERABLE: &str = "spawn cannot transfer objects, closures, Futures or native handles";
 
@@ -379,7 +379,9 @@ fn settle(runtime: &mut Runtime, output: &Output, result: Option<TypeRef>) -> Re
         .and_then(|length| end.checked_sub(length))
         .ok_or_else(|| "invalid worker response length".to_owned())?;
     if !raw[start..end].starts_with(FRAME) {
-        return Err("invalid worker response frame".into());
+        let found = raw.get(start..start + 4).unwrap_or(&raw[start..end]);
+        return Err(format!("unsupported worker response frame version {} (this runtime reads OKW2)",
+            String::from_utf8_lossy(found)));
     }
     // The action's output, into the process buffer (#132).
     okkama_runtime_core::stdout::write(&raw[..start]).map_err(|e| e.to_string())?;

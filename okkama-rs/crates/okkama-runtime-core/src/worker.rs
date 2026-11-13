@@ -2,7 +2,7 @@
 //! JVM, общий для исполнителей. Родитель запускает ту же программу тем же
 //! движком с `OKKAMA_SPAWN_WORKER`; вместо `main` она читает запрос из stdin:
 //! каталог, символ функции-входа и аргументы. Ответ — последняя рамка stdout
-//! `OKW1`: печать самого действия идёт перед ней.
+//! `OKW2`: печать самого действия идёт перед ней.
 use crate::failure::{Failure, Kind as FailureKind};
 use crate::heap::{ArrayHeap, maps};
 use crate::{IntValue, Value, sched};
@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 pub const MODE: &str = "OKKAMA_SPAWN_WORKER";
-const FRAME: &[u8; 4] = b"OKW1";
+const FRAME: &[u8; 4] = b"OKW2";
 
 const NONE: u8 = 0;
 const INT: u8 = 1;
@@ -308,8 +308,12 @@ fn run(
     };
     let (true, Some(at)) = (status.success(), frame) else {
         let code = status.code().unwrap_or(1);
+        if let Some(found) = output.windows(4).find(|bytes| bytes.starts_with(b"OKW")) {
+            let found = String::from_utf8_lossy(found);
+            return Ok(Err(format!("unsupported worker frame version {found} (this runtime reads OKW2)")));
+        }
         return Ok(Err(if stderr.is_empty() {
-            format!("spawn worker exited with status {code}")
+            format!("spawn worker exited with status {code}; expected worker frame OKW2")
         } else {
             stderr.trim().to_string()
         }));

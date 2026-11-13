@@ -1,4 +1,4 @@
-//! Native endpoint протокола `ocs-adapter/1` (`conformance/adapters/PROTOCOL.md`).
+//! Native endpoint протокола `ocs-adapter/2` (`conformance/adapters/PROTOCOL.md`).
 //!
 //! `--ocs-capabilities` reports supported modes for OCS_RUST_ENGINE.
 //! `--ocs-request R --ocs-response P` parses/checks the linked source and runs
@@ -17,7 +17,7 @@ use okkama_compiler::lowering::{self, LinkError, LoweringError, RootFile};
 use okkama_compiler::source::SourceFile;
 use okkama_compiler::syntax::{self, ParseMode, ParseOptions, ast, prune};
 
-const PROTOCOL: &str = "ocs-adapter/1";
+const PROTOCOL: &str = "ocs-adapter/2";
 
 pub(super) fn capabilities() -> Outcome {
     let engine = match engine() {

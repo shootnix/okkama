@@ -12,7 +12,7 @@ from .model import CATEGORIES, STAGES
 
 STATUSES = ("PASS", "FAIL", "UNSUPPORTED", "NOT_RUN", "BLOCKED", "TIMEOUT", "CRASH", "HARNESS_ERROR")
 
-PROTOCOL = "ocs-adapter/1"
+PROTOCOL = "ocs-adapter/2"
 ADAPTER_OUTCOMES = ("completed", "accepted", "rejected", "failed", "internal-error", "unsupported")
 
 

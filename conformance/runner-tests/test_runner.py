@@ -30,7 +30,7 @@ SRC_OK = "module app v1.0.0;\n\nmain() is int {\n    0;\n}\n"
 
 def base_case(cid, **over):
     d = {
-        "schema": "ocs-case/1", "id": "L00." + cid, "title": "t " + cid, "purpose": "self-test",
+        "schema": "ocs-case/2", "id": "L00." + cid, "title": "t " + cid, "purpose": "self-test",
         "level": "L00", "contracts": [{"contract": "T.ONE", "aspects": ["normal"]}],
         "mode": "run", "sources": ["main.ok"], "entry": "main.ok",
         "expect": {"outcome": "success", "exit_status": 0, "stdout": {"text": "hello\n"}},
@@ -61,10 +61,10 @@ class MiniSuite(object):
         os.makedirs(os.path.join(self.root, "profiles"))
         os.makedirs(os.path.join(self.root, "adapters", "fake"))
         shutil.copy(os.path.join(HERE, "fake_adapter.py"), os.path.join(self.root, "adapters", "fake", "fake_adapter.py"))
-        json.dump({"schema": "ocs-adapter-config/1", "protocol": "ocs-adapter/1", "name": "fake",
+        json.dump({"schema": "ocs-adapter-config/2", "protocol": "ocs-adapter/2", "name": "fake",
                    "command": [sys.executable, "{adapter_dir}/fake_adapter.py"], "pass_env": ["PATH"]},
                   open(os.path.join(self.root, "adapters", "fake", "adapter.json"), "w"))
-        json.dump({"schema": "ocs-ledger/1", "description": "self-test", "implementation_observed": "fake",
+        json.dump({"schema": "ocs-ledger/2", "description": "self-test", "implementation_observed": "fake",
                    "entries": [{"id": "D-999", "subject": "synthetic", "sources": [], "observed": "", "intended_contract": "",
                                 "authority": "", "conformance_expectation": "", "resolution": "unresolved", "cases": [], "contracts": []}]},
                   open(os.path.join(self.root, "contracts", "discrepancy-ledger.json"), "w"))
@@ -76,11 +76,11 @@ class MiniSuite(object):
         self.profile("full-release", "release-gate", {"levels": list(model.LEVELS)}, members=["everything"])
 
     def contracts(self, items):
-        json.dump({"schema": "ocs-contracts/1", "family": "T", "contracts": items},
+        json.dump({"schema": "ocs-contracts/2", "family": "T", "contracts": items},
                   open(os.path.join(self.root, "contracts", "t.json"), "w"))
 
     def profile(self, name, kind, select, members=None):
-        doc = {"schema": "ocs-profile/1", "name": name, "kind": kind, "description": "self-test", "select": select}
+        doc = {"schema": "ocs-profile/2", "name": name, "kind": kind, "description": "self-test", "select": select}
         if members:
             doc["members"] = members
         json.dump(doc, open(os.path.join(self.root, "profiles", name + ".json"), "w"))
@@ -465,10 +465,10 @@ class ModelValidation(unittest.TestCase):
         self.bad(status="unresolved")
 
     def test_response_validation(self):
-        self.assertIsNotNone(validate_response({"protocol": "ocs-adapter/1", "mode": "run", "outcome": "completed"}, "run"))
-        self.assertIsNotNone(validate_response({"protocol": "ocs-adapter/1", "mode": "run", "outcome": "rejected",
+        self.assertIsNotNone(validate_response({"protocol": "ocs-adapter/2", "mode": "run", "outcome": "completed"}, "run"))
+        self.assertIsNotNone(validate_response({"protocol": "ocs-adapter/2", "mode": "run", "outcome": "rejected",
                                                 "failure": {"stage": "runtime", "category": "syntax"}}, "run"))
-        self.assertIsNone(validate_response({"protocol": "ocs-adapter/1", "mode": "run", "outcome": "completed",
+        self.assertIsNone(validate_response({"protocol": "ocs-adapter/2", "mode": "run", "outcome": "completed",
                                              "exit_status": 0}, "run"))
 
     def test_judge_direct_signal_without_response(self):

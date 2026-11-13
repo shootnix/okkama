@@ -709,7 +709,7 @@ fn ir_file_and_stdin_include_module_function_and_return() {
     let source = b"module app v1.0.0; main() is int { 1 + 1; }";
     let file = TempFile::new("ir-addition.ok", source);
     let expected = concat!(
-        "oir 1 high\n",
+        "oir 2 high\n",
         "module app v1.0.0\n",
         "requires core\n",
         "entry @main\n",
@@ -743,7 +743,7 @@ fn ir_keeps_all_statements_and_nested_additions() {
     assert_eq!(
         stdout(&output),
         concat!(
-            "oir 1 high\n",
+            "oir 2 high\n",
             "module app v1.0.0\n",
             "requires core\n",
             "entry @main\n",
@@ -782,7 +782,7 @@ fn ir_explicit_return_is_canonical_and_missing_imports_are_errors() {
     assert_eq!(
         stdout(&output),
         concat!(
-            "oir 1 high\n",
+            "oir 2 high\n",
             "module app/math v1.2.3\n",
             "requires core\n",
             "entry @main\n",

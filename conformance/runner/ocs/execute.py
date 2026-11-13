@@ -15,8 +15,8 @@ import time
 
 from .judge import Observation, judge
 
-ADAPTER_CONFIG_SCHEMA = "ocs-adapter-config/1"
-FIXTURE_SCHEMA = "ocs-fixture/1"
+ADAPTER_CONFIG_SCHEMA = "ocs-adapter-config/2"
+FIXTURE_SCHEMA = "ocs-fixture/2"
 OUTPUT_LIMIT = 16 * 1024 * 1024
 
 # The environment every case starts from. Host variables are NOT inherited
@@ -41,9 +41,9 @@ class Adapter(object):
             self.config = json.loads(fh.read().decode("utf-8"))
         cfg = self.config
         if cfg.get("schema") != ADAPTER_CONFIG_SCHEMA:
-            raise AdapterConfigError("%s: schema must be %s" % (path, ADAPTER_CONFIG_SCHEMA))
-        if cfg.get("protocol") != "ocs-adapter/1":
-            raise AdapterConfigError("%s: unsupported protocol %r" % (path, cfg.get("protocol")))
+            raise AdapterConfigError("%s: unsupported schema %r (this runner reads %s)" % (path, cfg.get("schema"), ADAPTER_CONFIG_SCHEMA))
+        if cfg.get("protocol") != "ocs-adapter/2":
+            raise AdapterConfigError("%s: unsupported protocol %r (this runner reads ocs-adapter/2)" % (path, cfg.get("protocol")))
         for key in ("name", "command"):
             if key not in cfg:
                 raise AdapterConfigError("%s: missing %s" % (path, key))
@@ -154,7 +154,7 @@ def start_fixture(suite_root, name, work, scratch, env):
     with open(meta_path, "rb") as fh:
         meta = json.loads(fh.read().decode("utf-8"))
     if meta.get("schema") != FIXTURE_SCHEMA:
-        raise FixtureError("fixture %s: bad schema" % name)
+        raise FixtureError("fixture %s: unsupported schema %r (this runner reads %s)" % (name, meta.get("schema"), FIXTURE_SCHEMA))
     kind = meta.get("kind")
     if kind == "files":
         src = os.path.join(fdir, meta["path"])
@@ -258,7 +258,7 @@ def run_case(case, adapter, suite_root, stdlib_root, options):
         case_env = {k: substitute(v, fixtures) for k, v in case.get("env", {}).items()}
 
         request = {
-            "protocol": "ocs-adapter/1",
+            "protocol": "ocs-adapter/2",
             "mode": case.mode,
             "sources": [os.path.join(work, s) for s in case["sources"]],
             "args": args,

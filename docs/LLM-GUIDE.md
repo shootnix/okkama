@@ -356,7 +356,21 @@ not needed (#292).
 | `failures.rs` | failures, cleanup regions, resource identities and graph walks (`descriptor_flags`: closed-world reachability of `destroy`), failure reports |
 | `intrinsics.rs`, `primitives.rs` | runtime-provided functions; Atomic, Event, Lock, channels, groups |
 | `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
-| `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
+| `worker.rs`, `worker_process.rs` | process workers (OKW2 format), child `--worker FILE.spb` |
+
+### Форматы с явной версией
+
+| Формат | Где записывается | Где читается | Версия |
+|---|---|---|---|
+| SPB (`SPRW` + u16) | `okkama-sparrow::encode`, assembler | `okkama-sparrow::decode`, Sparrow VM | 16 |
+| Кадры process worker (`OKW2`) | `okkama-runtime-core`, `sparrow-core` workers | оба worker reader | OKW2 |
+| Текст OIR (`oir 2 high`) | `okkama-compiler/src/ir/print.rs` | compiler/IR tooling | 2 |
+| OCS cases, contracts, profiles, fixtures, adapter protocol/config и run/coverage/gate/diff/mutation reports | `conformance/runner/ocs`, suite files и `tools/write_schemas.py` | OCS runner/validators и consumers | schema/protocol 2 |
+| Ownership census JSON (`schema`) | `tools/ownership/oracle.py` | oracle report consumers | 2 |
+| Blade manifests и lockfiles | `okkama-rs/crates/blade` | Blade | не изменялось: формат относится к package workflow |
+| TAP test output | test runners | TAP consumers | явной версии в формате проекта нет |
+
+Несовпадающая версия формата отклоняется; старые SPB, OKW и OCS версии не читаются.
 
 **Register allocation** (`codegen/sparrow/registers.rs`) is checked by an
 independent must-analysis (`check.rs`): every read finds its value in its

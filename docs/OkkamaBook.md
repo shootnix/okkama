@@ -4927,7 +4927,7 @@ absolute in the parent before the worker changes directory, so relative CLI
 source paths work too. An embedder that runs programs which `spawn` must pass
 Tomato the worker command, and a `spawn` without one fails with
 `process workers require an explicit worker command`. Arguments and results
-cross as binary `OKW1` frames, an implementation detail rather than part of the
+cross as binary `OKW2` frames, an implementation detail rather than part of the
 language. This is process isolation, not exposed POSIX `fork` semantics.
 
 ### 31.5.2 Bounded typed channels
