@@ -281,8 +281,7 @@ hidden object ImapUidSeen {
 }
 
 test "UID snapshots deduplicate and preserve stable identifiers" {
-    let uids = ImapUidSet(ImapUid(BigInt(4294967295)), ImapUid(BigInt(1)), ImapUid(BigInt(1))
-    );
+    let uids = ImapUidSet(ImapUid(BigInt(4294967295)), ImapUid(BigInt(1)), ImapUid(BigInt(1)));
     test.is(uids.argument(), "4294967295,1");
     test.is(uids.entries().size(), 2);
 }

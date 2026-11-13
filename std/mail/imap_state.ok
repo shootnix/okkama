@@ -110,7 +110,10 @@ hidden object ImapSelectionProgress {
                 let values = ParsedImapData(response).entries();
                 confirm values.size() == 3 && values.item(1).kind() == ImapValueKind.atom
                     else throw InvalidImapData.because("invalid numeric mailbox update");
-                let number = ImapUnsigned(origin: values.item(1).string(), nonzero: name == "EXPUNGE").int();
+                let number = ImapUnsigned(
+                    origin: values.item(1).string(),
+                    nonzero: name == "EXPUNGE"
+                ).int();
                 if name == "EXISTS" {
                     confirm count < 0 || number >= count
                         else throw InvalidImapData.because("EXISTS cannot decrease without EXPUNGE");

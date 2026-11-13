@@ -23,11 +23,21 @@ object ImapResponseReading {
     has pending is Future<ImapResponseRead>;
 
     ImapResponseReading(origin is AsyncReading) {
-        pending = ImapResponseInput(origin: origin, prefix: [], limits: ImapResponseLimits(), chunk_bytes: 4096).read();
+        pending = ImapResponseInput(
+            origin: origin,
+            prefix: [],
+            limits: ImapResponseLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     ImapResponseReading(origin is AsyncReading, prefix is @byte) {
-        pending = ImapResponseInput(origin: origin, prefix: prefix, limits: ImapResponseLimits(), chunk_bytes: 4096).read();
+        pending = ImapResponseInput(
+            origin: origin,
+            prefix: prefix,
+            limits: ImapResponseLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     ImapResponseReading(
@@ -36,7 +46,12 @@ object ImapResponseReading {
         limits is ImapResponseLimits,
         chunk_bytes is int
     ) {
-        pending = ImapResponseInput(origin: origin, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
+        pending = ImapResponseInput(
+            origin: origin,
+            prefix: prefix,
+            limits: limits,
+            chunk_bytes: chunk_bytes
+        ).read();
     }
 
     read() is Future<ImapResponseRead> {
