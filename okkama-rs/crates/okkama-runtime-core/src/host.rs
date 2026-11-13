@@ -325,8 +325,14 @@ fn read_nowait(file: &std::fs::File, buffer: &mut [u8], offset: u64) -> std::io:
         iov_base: buffer.as_mut_ptr().cast(),
         iov_len: buffer.len(),
     };
+    // The system call, not glibc's wrapper: the Linux packages are linked
+    // against glibc 2.17, which has no preadv2 (2.26; #545). Kernels before
+    // 4.6 answer ENOSYS, and the caller then checks the page cache instead.
+    // On 64-bit targets the offset is the low half and the high half is 0.
     // SAFETY: one iovec over a live buffer; the descriptor is borrowed for the call.
-    let count = unsafe { libc::preadv2(file.as_raw_fd(), &piece, 1, offset, libc::RWF_NOWAIT) };
+    let count = unsafe {
+        libc::syscall(libc::SYS_preadv2, file.as_raw_fd(), &piece as *const libc::iovec, 1, offset, 0, libc::RWF_NOWAIT)
+    };
     usize::try_from(count).map_err(|_| std::io::Error::last_os_error())
 }
 
