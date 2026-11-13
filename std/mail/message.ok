@@ -76,13 +76,24 @@ object MailMessage does ByteSource {
             EncodedWord(subject).string();
         };
         let utc = FixedZone(name: "UTC", offset: Duration(seconds: 0));
+        // A Date has whole seconds; the system clock does not (#518).
+        let elapsed = clock.instant().unix_duration()::Span::seconds;
+        let truncated = elapsed.int();
+        let whole = if elapsed < truncated.rat() {
+            truncated - 1;
+        }
+        else {
+            truncated;
+        };
         let headers = MessageHeaders(
             MessageHeader(name: MessageHeaderName("From"), value: from),
             MessageHeader(name: MessageHeaderName("To"), value: addresses.join(", ")),
             MessageHeader(name: MessageHeaderName("Subject"), value: title),
             MessageHeader(
                 name: MessageHeaderName("Date"),
-                value: MailDate(ZonedDateTime(instant: clock.instant(), zone: utc)).string()
+                value: MailDate(
+                    ZonedDateTime(instant: Instant(Duration(seconds: whole)), zone: utc)
+                ).string()
             ),
             MessageHeader(
                 name: MessageHeaderName("Message-ID"),
@@ -783,6 +794,36 @@ test "a message from its fields sets its date, identifier and content type" {
             random: PcgRandom(1)
         );
     };
+}
+
+test "a message from its fields drops the fraction of the clock's second (#518)" {
+    let late = ManualClock(Instant(Duration(seconds: 1700000000).plus(Duration(milliseconds: 750))));
+    let message = MailMessage(
+        from: "ada@example.test",
+        to: ["grace@example.test"],
+        subject: "x",
+        text: "",
+        clock: late,
+        random: PcgRandom(3)
+    );
+    test.is(message.headers().first(MessageHeaderName("Date")), "Tue, 14 Nov 2023 22:13:20 +0000");
+    let early = ManualClock(Instant(Duration(seconds: -1).plus(Duration(milliseconds: 250))));
+    let before = MailMessage(
+        from: "ada@example.test",
+        to: ["grace@example.test"],
+        subject: "x",
+        text: "",
+        clock: early,
+        random: PcgRandom(3)
+    );
+    test.is(before.headers().first(MessageHeaderName("Date")), "Wed, 31 Dec 1969 23:59:59 +0000");
+    let now = MailMessage(
+        from: "ada@example.test",
+        to: ["grace@example.test"],
+        subject: "x",
+        text: ""
+    );
+    test.ok(now.headers().first(MessageHeaderName("Date")).ends_with(" +0000"));
 }
 
 test "mail date tokens and message identifiers are read by position" {
