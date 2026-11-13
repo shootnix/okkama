@@ -1,8 +1,17 @@
 module mail/pop3 v1.0.0;
 
-// Immutable bounded protocol observations, independent of transport/auth.
-// Number is a transaction position. UIDL is a maildrop-scoped opaque identity;
-// neither its spelling nor a message number is an RFC Message-ID.
+// POP3 values (RFC 1939, RFC 2449): message numbers, unique ids, listings and
+// capabilities.
+//
+//     let listing = await session.messages();
+//     for listing -> message {
+//         message.number().number();
+//         message.size();
+//         if message.identified() { message.identifier().string(); }     // UIDL
+//     }
+//
+// A number is a position in this session; a UIDL id is stable in the maildrop.
+// Neither is a Message-ID. Listings are bounded: 4096 messages by default.
 
 import "mail/pop3_reply" take PopReply;
 import "collections/sequence" take Sequencing;
@@ -13,29 +22,36 @@ import "encoding/single_byte" take Latin1Decoded;
 import "mime/media_type" take MimeItems;
 import "error" take InvalidArgument;
 
+// The CAPA features std uses: UIDL and TOP.
 enum PopFeature = (uidl, top);
 
+// A message number in the current session: 1 to 2³¹−1.
 object PopNumber {
     has origin is int;
 
+    // Checks origin; InvalidPopData outside the range.
     PopNumber(origin is int) {
         confirm origin > 0 && origin <= 2147483647
             else throw InvalidPopData.because("message number outside supported 1..2147483647");
         self.origin = origin;
     }
 
+    // The number.
     number() is int {
         origin;
     }
 
+    // Its decimal text.
     string() is string {
         origin.string();
     }
 }
 
+// A UIDL id: 1 to 70 printable ASCII characters.
 object PopIdentifier {
     has origin is string;
 
+    // Checks origin; InvalidPopData otherwise.
     PopIdentifier(origin is string) {
         let bytes = Utf8Encoded(origin).bytes();
         confirm bytes.size() > 0 && bytes.size() <= 70
@@ -47,19 +63,23 @@ object PopIdentifier {
         self.origin = origin;
     }
 
+    // The id.
     string() is string {
         origin;
     }
 }
 
+// How large a listing may be.
 object PopListingLimits {
     has entries, digits is int;
 
+    // 4096 messages, sizes of at most 40 digits.
     PopListingLimits() {
         entries = 4096;
         digits = 40;
     }
 
+    // The limits as given.
     PopListingLimits(entries is int, decimal_digits is int) {
         confirm entries >= 0 && decimal_digits > 0
             else throw InvalidArgument.because("invalid POP3 listing limits");
@@ -67,6 +87,7 @@ object PopListingLimits {
         digits = decimal_digits;
     }
 
+    // Messages and digits per number.
     cap Limits {
         entries is int {
             entries;
@@ -78,11 +99,13 @@ object PopListingLimits {
     }
 }
 
+// One message of a listing: number, size and UIDL id if known.
 object PopMessage {
     has number is PopNumber;
     has size is BigInt;
     has identifiers is @PopIdentifier;
 
+    // As given; at most one id.
     PopMessage(number is PopNumber, size is BigInt, identifiers is @PopIdentifier) {
         confirm size.sign() >= 0 && identifiers.size() <= 1
             else throw InvalidPopData.because("inconsistent message observation");
@@ -91,29 +114,35 @@ object PopMessage {
         self.identifiers = identifiers;
     }
 
+    // Its number.
     number() is PopNumber {
         number;
     }
 
+    // Its size in bytes, as the server counts it.
     size() is BigInt {
         size;
     }
 
+    // Whether the UIDL id is known.
     identified() is bool {
         identifiers.size() == 1;
     }
 
+    // The UIDL id; MissingPopIdentifier when it is not known.
     identifier() is PopIdentifier {
         confirm self.identified() else throw MissingPopIdentifier.missing;
         identifiers[0];
     }
 }
 
+// What a CAPA reply advertises.
 object PopCapabilities {
     has names is @string;
     has features is Set<PopFeature>;
     has available is bool;
 
+    // Reads reply; a negative reply means the server has no CAPA.
     PopCapabilities(reply is PopReply) {
         let recognized is MimeItems<PopFeature> = MimeItems();
         let advertised is MimeItems<string> = MimeItems();
@@ -157,14 +186,17 @@ object PopCapabilities {
         available = reply::Reply::successful;
     }
 
+    // Whether CAPA succeeded.
     available() is bool {
         available;
     }
 
+    // Every capability line.
     names() is Sequencing<string> {
         names;
     }
 
+    // The features std knows.
     features() is Set<PopFeature> {
         features;
     }
@@ -227,10 +259,12 @@ hidden object PopDataLines {
     }
 }
 
+// What STAT says: how many messages and how many bytes.
 object PopMailboxState {
     has count is int;
     has size is BigInt;
 
+    // Reads a STAT reply within limits.
     PopMailboxState(reply is PopReply, limits is PopListingLimits) {
         confirm reply::Reply::successful && !reply::Reply::multiline
             else throw InvalidPopData.because("STAT requires positive single reply");
@@ -246,10 +280,12 @@ object PopMailboxState {
         size = total;
     }
 
+    // Bytes in all.
     size() is BigInt {
         size;
     }
 
+    // The number of messages.
     cap Mailbox {
         count is int {
             count;
@@ -257,9 +293,11 @@ object PopMailboxState {
     }
 }
 
+// The messages of LIST and, when given, UIDL.
 object PopListing {
     has entries is @PopMessage;
 
+    // Joins the LIST reply with the UIDL replies, within limits.
     PopListing(reply is PopReply, identifiers is @PopReply, limits is PopListingLimits) {
         confirm identifiers.size() <= 1
             else throw InvalidPopData.because("one optional UIDL reply required");
@@ -316,15 +354,19 @@ object PopListing {
         }
     }
 
+    // The messages; InvalidPopData when the replies disagree.
     messages() is Sequencing<PopMessage> {
         entries;
     }
 }
 
+// A POP3 value that is not valid; reason says why.
 enum InvalidPopData is Error = (because(reason is string));
 
+// A listing over a limit; kind says which.
 enum PopListingLimitExceeded is Error = (kind(kind is string));
 
+// The message has no UIDL id.
 enum MissingPopIdentifier is Error = (missing);
 
 test "POP3 number and opaque identifier have different identities" {
