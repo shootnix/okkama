@@ -112,7 +112,7 @@ impl Runtime {
 
     /// A cold Future of async `function` with its parameters.
     pub fn future_new(&mut self, function: usize, arguments: &[Word]) -> Word {
-        self.count(|| crate::runtime::Event::Future(function));
+        self.count(|r| format!("future {}", r.loaded.program.functions[function].symbol));
         let source = &self.loaded.program.functions[function];
         let registers = source.registers.len();
         let words = 1 + FIXED_WORDS + registers + usize::from(self.loaded.functions[function].driver);
@@ -495,7 +495,7 @@ pub const AWAIT_PENDING: u64 = 2;
 #[inline(never)]
 pub extern "C" fn rt_await(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
     let (ctx, runtime) = unsafe { parts(ctx_ptr) };
-    runtime.count(|| crate::runtime::Event::Named("await"));
+    runtime.count(|_| "await".into());
     if let Some(failure) = runtime.deliverable_cancel() {
         ctx.failure = failure;
         ctx.status = FAILED;

@@ -860,7 +860,7 @@ pub extern "C" fn rt_exec(
     // SAFETY: the loaded program is never mutated while machine code runs, so
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
-    runtime.count(|| crate::runtime::Event::Exec(instruction.mnemonic()));
+    runtime.count(|_| format!("exec {}", instruction.mnemonic()));
     // The instruction's uses in visit order, as the call site recorded them
     // when it was compiled, and one word for each.
     // SAFETY: the table lives with the machine code; the caller spilled one

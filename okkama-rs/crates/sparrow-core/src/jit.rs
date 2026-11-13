@@ -601,12 +601,11 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     }
     if let (Some(stats), Some(started)) = (stats, started) {
         let micros = started.elapsed().as_micros() as u64;
-        use crate::runtime::Event;
         for (key, value) in [
-            (Event::Compile(function), micros),
-            (Event::MachineCode(function), u64::from(size)),
-            (Event::Named("compile, microseconds"), micros),
-            (Event::Named("machine code, bytes"), u64::from(size)),
+            (format!("compile {symbol}, microseconds"), micros),
+            (format!("machine code {symbol}, bytes"), u64::from(size)),
+            ("compile, microseconds".to_string(), micros),
+            ("machine code, bytes".to_string(), u64::from(size)),
         ] {
             *stats.entry(key).or_default() += value;
         }

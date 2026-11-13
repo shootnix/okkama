@@ -857,7 +857,7 @@ unsafe fn parts<'a>(ctx: *mut Ctx) -> (&'a mut Ctx, &'a mut Runtime) {
 #[inline(never)]
 pub extern "C" fn rt_region_add(ctx: *mut Ctx, region: Word, value: Word, own: u64) {
     let (_, runtime) = unsafe { parts(ctx) };
-    runtime.count(|| crate::runtime::Event::Named("region add"));
+    runtime.count(|_| "region add".into());
     runtime.region_add(region, value, own != 0);
 }
 
@@ -866,7 +866,7 @@ pub extern "C" fn rt_region_add(ctx: *mut Ctx, region: Word, value: Word, own: u
 #[inline(never)]
 pub extern "C" fn rt_region_leave(ctx_ptr: *mut Ctx, region: Word, keep: *const Word, count: u64) {
     let (_, runtime) = unsafe { parts(ctx_ptr) };
-    runtime.count(|| crate::runtime::Event::Named("region leave"));
+    runtime.count(|_| "region leave".into());
     let keep = if count == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(keep, count as usize) } };
     if let Some(failure) = runtime.region_close(ctx_ptr, region, keep, None) {
         let ctx = unsafe { &mut *ctx_ptr };
@@ -879,7 +879,7 @@ pub extern "C" fn rt_region_leave(ctx_ptr: *mut Ctx, region: Word, keep: *const 
 #[inline(never)]
 pub extern "C" fn rt_created(ctx: *mut Ctx, descriptor: u64, object: Word) {
     let (_, runtime) = unsafe { parts(ctx) };
-    runtime.count(|| crate::runtime::Event::Resource(descriptor as usize));
+    runtime.count(|r| format!("resource {}", r.loaded.program.objects[descriptor as usize].name));
     runtime.created(descriptor as usize, object);
 }
 
@@ -892,7 +892,7 @@ pub extern "C" fn rt_failure_op(ctx_ptr: *mut Ctx, function: u64, pc: u64, uses:
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I =
         unsafe { &*(&runtime.loaded.program.functions[function as usize].code[pc as usize] as *const I) };
-    runtime.count(|| crate::runtime::Event::Region(instruction.mnemonic(), function as usize));
+    runtime.count(|r| format!("region {} in {}", instruction.mnemonic(), r.loaded.program.functions[function as usize].symbol));
     // Uses in visit order; a region may keep many registers, so spill past 16.
     let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
     let mut spilled = Vec::new();
