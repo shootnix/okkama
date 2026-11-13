@@ -80,6 +80,7 @@ pub struct Totals {
     pub reasons: BTreeMap<String, usize>,
     pub region_static: usize,
     pub region_dynamic: usize,
+    pub param_adopts_removed: usize,
 }
 
 impl Totals {
@@ -90,6 +91,7 @@ impl Totals {
         self.unknown += other.unknown;
         self.region_static += other.region_static;
         self.region_dynamic += other.region_dynamic;
+        self.param_adopts_removed += other.param_adopts_removed;
         for (reason, count) in &other.reasons {
             *self.reasons.entry(reason.clone()).or_default() += count;
         }
@@ -951,12 +953,21 @@ fn reasons_json(reasons: &BTreeSet<String>) -> String {
 impl Totals {
     fn json(&self) -> String {
         let reasons = self.reasons.iter().map(|(reason, count)| format!("{}:{count}", quoted(reason))).collect::<Vec<_>>().join(",");
-        format!("{{\"scope\":{},\"result\":{},\"aggregate\":{},\"unknown\":{},\"reasons\":{{{reasons}}},\"region_ops\":{{\"static\":{},\"dynamic\":{}}}}}",
-            self.scope, self.result, self.aggregate, self.unknown, self.region_static, self.region_dynamic)
+        format!("{{\"scope\":{},\"result\":{},\"aggregate\":{},\"unknown\":{},\"reasons\":{{{reasons}}},\"param_adopts_removed\":{},\"region_ops\":{{\"static\":{},\"dynamic\":{}}}}}",
+            self.scope, self.result, self.aggregate, self.unknown, self.param_adopts_removed, self.region_static, self.region_dynamic)
     }
 }
 
 impl Report {
+    /// Attach prototype counts after the normal census, without global state (#555).
+    pub fn record_param_adopts(&mut self, removed: &[usize]) {
+        self.totals.param_adopts_removed = 0;
+        for function in &mut self.functions {
+            function.totals.param_adopts_removed = removed.get(function.function).copied().unwrap_or(0);
+            self.totals.param_adopts_removed += function.totals.param_adopts_removed;
+        }
+    }
+
     /// Stable, dependency-free JSON, including all sites and parameter summaries.
     pub fn to_json(&self) -> String {
         let functions = self.functions.iter().map(|function| {

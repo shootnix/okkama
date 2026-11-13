@@ -513,7 +513,8 @@ fn lower_analyzed(
         };
         return Err((owners[func.0], LoweringError::invalid(module.functions[func.0].span, message)));
     }
-    let passes = if optimize { Passes::from_env() } else { Passes { enabled: Some(Vec::new()), sabotage: false } };
+    let passes = if optimize { Passes::from_env() } else { Passes { enabled: Some(Vec::new()), sabotage: false, param_adopts: false } };
+    let param_adopts_removed = passes.elide_param_adopts(&mut module);
     // Регионы, которые ничем не владеют, не открываются и не закрываются.
     // Раньше хвостовых вызовов: в программе с `destroy` пустой `region.leave`
     // после вызова иначе оставляет его вызовом (#285).
@@ -566,7 +567,9 @@ fn lower_analyzed(
         ));
     }
     if let Some(path) = std::env::var_os("OKKAMA_OWNERSHIP_REPORT") {
-        let _ = std::fs::write(path, ir::ownership::analyze(&module).to_json());
+        let mut report = ir::ownership::analyze(&module);
+        report.record_param_adopts(&param_adopts_removed);
+        let _ = std::fs::write(path, report.to_json());
     }
     Ok((module, analysis.warnings.clone()))
 }
@@ -740,6 +743,7 @@ pub fn inspect(
 struct Passes {
     enabled: Option<Vec<String>>,
     sabotage: bool,
+    param_adopts: bool,
 }
 
 /// The IR passes in pipeline order.
@@ -757,12 +761,26 @@ impl Passes {
     fn from_env() -> Self {
         let selected = SELECTED.read().expect("pass selection").clone();
         let spec = selected.unwrap_or_else(|| std::env::var("OKKAMA_IR_PASSES").unwrap_or_default());
+        Self::from_spec(&spec, std::env::var("OKKAMA_OWNERSHIP_PROTOTYPE").ok().as_deref())
+    }
+
+    fn from_spec(spec: &str, prototype: Option<&str>) -> Self {
         let mut names: Vec<String> = spec.split(',').map(|name| name.trim().to_string()).filter(|name| !name.is_empty()).collect();
         let sabotage = names.iter().any(|name| name == "sabotage-int-add");
         names.retain(|name| name != "sabotage-int-add");
         // `none` names no pass, so every pass is off.
         let enabled = (!names.is_empty() && !names.iter().any(|name| name == "all")).then_some(names);
-        Self { enabled, sabotage }
+        // Separate from the default pass list; only an explicit opt-in enables it (#555).
+        let param_adopts = prototype == Some("1");
+        Self { enabled, sabotage, param_adopts }
+    }
+
+    fn elide_param_adopts(&self, module: &mut ir::Module) -> Vec<usize> {
+        let mut removed = Vec::new();
+        if self.param_adopts {
+            ir::param_adopts::elide_param_adopts(module, &mut removed);
+        }
+        removed
     }
 
     fn on(&self, pass: &str) -> bool {
@@ -781,5 +799,32 @@ fn sabotage_int_add(module: &mut ir::Module) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod param_adopts_tests {
+    use super::*;
+
+    #[test]
+    fn prototype_off_keeps_printed_oir_byte_identical() {
+        let source = SourceFile::new("test.ok", "module app v1.0.0; \
+            object Res { Res(); read() is int { 1; } destroy {} } \
+            main() is int { let r = Res(); r.read(); }").expect("source");
+        let program = crate::syntax::parse(&source, &crate::syntax::ParseOptions::default()).expect("parse");
+        let module = lower_program(&program).expect("lower");
+        let before = module.to_string();
+        for switch in [None, Some("0"), Some("true"), Some(""), Some(" 1")] {
+            for spec in ["", "all", "none", "param-adopts"] {
+                let passes = Passes::from_spec(spec, switch);
+                let mut after = module.clone();
+                assert!(passes.elide_param_adopts(&mut after).is_empty());
+                assert_eq!(after.to_string().as_bytes(), before.as_bytes());
+            }
+        }
+        assert!(!PASSES.contains(&"param-adopts"));
+        let mut enabled = module.clone();
+        assert!(Passes::from_spec("all", Some("1")).elide_param_adopts(&mut enabled).iter().sum::<usize>() > 0);
+        ir::verify(&enabled).expect("prototype verifies");
     }
 }
