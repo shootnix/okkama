@@ -15,6 +15,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   is byte-for-byte the same. One 64 KiB line: 1.18 s → 0.30 ms; 60 bytes:
   1.96 → 0.36 µs. Implemented by Codex, reviewed and verified by Claude.
 
+- **base32 and base64 look symbols up in a table, in one pass (#461).**
+  Decoding 64 base64 characters: 4.17 → 0.37 µs; 87 KiB: 7.1 → 0.37 ms.
+  Accepted inputs, error offsets and their order are unchanged.
+  Implemented by Codex, reviewed and verified by Claude.
+
+- **Regex character matching allocates nothing per character (#462).**
+  Case variants come from the character case iterators instead of three
+  `String`s and a `Vec` per character. A case-insensitive class search:
+  34.0 → 11.9 µs; a case-insensitive literal: 12.7 → 6.3 µs. The set of
+  case variants is unchanged. Implemented by Codex, reviewed and verified
+  by Claude.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in
