@@ -51,6 +51,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   a copy is made only for a value the native keeps. `IntegerBytes` of a
   200-bit value: 242 → 175 ns; of a 4 000-bit value: 1 460 → 1 350 ns.
 
+- **A map literal finds its operands at once (#449).** The generic helper
+  looked up each operand by searching the instruction's uses, so a map
+  literal of k entries made O(k²) comparisons. A map literal now reads its
+  entries by position, with the search as fallback; instructions with a
+  few operands keep the search, which costs them nothing. A 64-entry
+  literal: 6.25 → 2.98 µs; `map-literal-12` −12%, `map-literal-8` −8%.
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request
