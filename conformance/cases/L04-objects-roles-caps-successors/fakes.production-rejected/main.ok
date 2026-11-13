@@ -1,5 +1,7 @@
 module app v1.0.0;
 
+import "async/atomic" take Atomic;
+
 import "io/stdout" take Stdout;
 
 role Books {
@@ -8,15 +10,16 @@ role Books {
     count() is int;
 
     fake {
+        has titles is Atomic<%int:string> = Atomic([:]);
         has prefix is string = "fake:";
         remember(id is int, title is string) is void {
-            fake.storage.set(id, title);
+            titles.replace(titles.value() + [id: title]);
         }
         title(id is int) is string {
-            prefix + fake.storage.get(id);
+            prefix + titles.value()[id];
         }
         count() is int {
-            fake.storage.size();
+            titles.value().size();
         }
     }
 }

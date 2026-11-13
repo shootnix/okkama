@@ -2355,9 +2355,9 @@ identity; it does not copy the object.
 
 An escaping action transfers ownership of captured local resources through the
 same rules as an object containing those resources. Unreferenced locals are
-not retained. A reference to `self`, or to the implicit receiver of
-`fake.storage`, retains that receiver. Access permissions from the declaring
-action remain in force even when the receiver is not captured.
+not retained. A reference to `self` or one of its fields or actions retains
+that receiver. Access permissions from the declaring action remain in force
+even when the receiver is not captured.
 
 Anonymous actions use ordinary lexical scope. A local binding becomes visible
 only after its initializer has been checked, so an anonymous action assigned to
@@ -2754,7 +2754,7 @@ that result. A valued `last resource;` transfers the reachable
 resource out of its loop; `last;` without a value keeps ordinary loop control.
 
 The runtime can omit ownership walks for a completed immutable object only when
-it has no destroy bodies, intrinsic state or fake storage, and every actual field
+it has no destroy bodies or intrinsic state, and every actual field
 is already proven resource-free. Its detached field table is frozen before that
 proof is retained. Declared types alone are insufficient. Futures, actions,
 capability-bearing fields and uncertified host objects keep conservative traversal.
@@ -3013,44 +3013,13 @@ role Package {
   shape, parameter types, return type) and may read fields and stage
   successor updates through `^field`.
 
-### 23.1 Hidden fake storage
+For mutable test-local values, use `Cell` from `cell`: `value()` reads the
+value and `replace(value)` updates it. Use `Atomic` from `async/atomic` for
+async code or state kept in object and fake fields; `Cell` cannot be stored in
+fields. A fake field such as `has calls is Atomic<int> = Atomic(0);` gives each
+construction its own state. Ordinary test objects use the same containers.
 
-Fake actions may also use a small mutable KV store for test scenarios where a
-double must remember calls or emulate a repository:
-
-```okkama
-role Books {
-    remember(id is int, title is string) is void;
-    title(id is int) is string;
-
-    fake {
-        remember(id is int, title is string) is void {
-            fake.storage.set(id, title);
-        }
-
-        title(id is int) is string {
-            fake.storage.get(id);
-        }
-    }
-}
-```
-
-The complete positional-only API is `set(key, value)`, `get(key)`,
-`has(key)`, `remove(key)`, `clear()`, and `size()`. Missing `get` and `remove`
-keys are programming errors—there is no null or optional result. Keys follow
-ordinary map-key restrictions; `any`, `byte`, and composite keys are invalid.
-Values may include objects and opaque `any`.
-
-This is a test-runtime intrinsic, not a mutable Okkama map. It is available
-only as a direct `fake.storage.<operation>(...)` call inside that fake's action
-bodies. It cannot be stored, returned, passed, exposed as `self.storage`, or
-observed through fields, equality, debug output, conformance, or nominal type.
-
-Each `Role.fake()` call creates an isolated storage identity. A fake and all
-of its successors share one identity, so repository state survives an
-ordinary `is ^Role` transition without copying the KV contents.
-
-### 23.2 Test blocks
+### 23.1 Test blocks
 
 Test blocks are declared at module, object, or role level:
 

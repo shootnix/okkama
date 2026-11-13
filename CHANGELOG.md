@@ -15,6 +15,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   and tracking awaited values remains safe (#579). The ownership corpus restores
   the #579–#581 checks and makes returned await aliases explicit borrows.
 
+### Removed
+
+Removed hidden fake storage from the test profile, including its six operations,
+compiler checks and runtime support on IR, Sparrow and JVM (#583). Use `Cell`
+for mutable synchronous test values and `Atomic` for async code or object and
+fake fields; role fakes and their ordinary typed fields remain available.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

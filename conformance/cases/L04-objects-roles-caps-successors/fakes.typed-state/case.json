@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fakes.typed-state",
+  "title": "Role fakes use ordinary typed state and share fields with successors",
+  "purpose": "Check per-construction Atomic fields, receiver captures, successors, synchronous Cell locals and async Atomic locals.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "ROLE.FAKES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": "ignore",
+    "justification": "Assertions cover the state; the test report format is not normative."
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#chapter-23-role-fakes-and-testing"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "Owner decision 2026-11-14, issue #583",
+    "expected_basis": "Cell holds synchronous local state; Atomic is an ordinary typed field, initialized per fake construction and shared by receiver captures and successors."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,36 @@
+module app v1.0.0;
+import "cell" take Cell;
+import "async/atomic" take Atomic;
+role Counter {
+    add() is void;
+    count() is int;
+    successor() is ^Counter;
+    reading() is () is int;
+    fake {
+        has count is Atomic<int> = Atomic(0);
+        has generation is int = 0;
+        add() is void { count.replace(count.value() + 1); }
+        count() is int { count.value(); }
+        successor() is ^Counter { ^generation = generation + 1; }
+        reading() is () is int { () is int { count.value(); }; }
+    }
+}
+test "typed state" {
+    let total = Cell(0);
+    let first = Counter.fake();
+    let second = Counter.fake();
+    first.add();
+    total.replace(first.count());
+    test.is(total.value(), 1);
+    test.is(second.count(), 0);
+    let successor = first.successor();
+    successor.add();
+    test.is(first.count(), 2);
+    let read = first.reading();
+    test.is(read(), 2);
+}
+async test "async state" {
+    let count = Atomic(0);
+    count.replace(1);
+    test.is(count.value(), 1);
+}

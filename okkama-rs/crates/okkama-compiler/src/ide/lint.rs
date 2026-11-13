@@ -609,8 +609,7 @@ fn walk_expr(expr: &thir::Expr, visit: &mut dyn FnMut(&thir::Expr)) {
                 | Callee::Builtin { receiver, .. } => walk_expr(receiver, visit),
                 Callee::Ctor { .. }
                 | Callee::Native(_)
-                | Callee::Test(_)
-                | Callee::FakeStorage(_) => {}
+                | Callee::Test(_) => {}
             }
             for arg in args {
                 walk_expr(arg, visit);

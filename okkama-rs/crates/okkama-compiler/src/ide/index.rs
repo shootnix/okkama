@@ -840,7 +840,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                     self.push_typed(at, hover, definition, result.as_ref());
                 }
             }
-            Callee::Test(_) | Callee::FakeStorage(_) => {}
+            Callee::Test(_) => {}
         }
     }
 

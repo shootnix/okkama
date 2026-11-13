@@ -188,20 +188,13 @@ impl Checker<'_, '_> {
             ast::ExprKind::Binary {
                 op, left, right, ..
             } => {
-                // `fake.storage.get(k)` операнд получает тип другого операнда.
-                if is_fake_get(left) && !is_fake_get(right) {
-                    let rhs = self.value(right, None);
-                    let ty = Self::ty_of(&rhs).taken();
-                    let lhs = self.value(left, Some(&ty));
-                    return self.binary_values(*op, lhs, rhs, span);
-                }
                 let lhs = self.value(left, None);
                 // An object, a role or a role-bounded type on the left: the
                 // operator role it declares (#215).
                 if Self::operator_operand(*op, &lhs) {
                     return self.operator_call(*op, lhs, right, span);
                 }
-                let rhs = if is_fake_get(right) || matches!(lhs.ty, Some(Ty::Variant(..))) {
+                let rhs = if matches!(lhs.ty, Some(Ty::Variant(..))) {
                     let ty = Self::ty_of(&lhs).taken();
                     self.value(right, Some(&ty))
                 } else {
@@ -2091,26 +2084,6 @@ fn holds_any(ty: &Ty) -> bool {
         Ty::Map(key, value) => holds_any(key) || holds_any(value),
         _ => false,
     }
-}
-
-/// `fake.storage.get(...)`: тип чтения хранилища fake даёт контекст.
-fn is_fake_get(expr: &ast::Expr) -> bool {
-    let ast::ExprKind::Call { callee, .. } = &strip_grouping(expr).kind else {
-        return false;
-    };
-    let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind else {
-        return false;
-    };
-    let ast::ExprKind::Get {
-        object: inner,
-        name: view,
-    } = &strip_grouping(object).kind
-    else {
-        return false;
-    };
-    name.text == "get"
-        && view.text == "storage"
-        && matches!(&strip_grouping(inner).kind, ast::ExprKind::Name(fake) if fake.text == "fake")
 }
 
 /// Первый тип, не пересекающий границу процесса-воркера (§18.1).

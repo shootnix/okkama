@@ -24,6 +24,7 @@ module compression/read v1.0.0;
 // releases owned buffers through the retained internal stream. No borrowed source
 // or codec is closed. These streams do not implement iteration/cursors.
 
+import "async/atomic" take Atomic;
 import "compression/state" take Compressing, Decompressing, CompressionOutput;
 import "io/stream" take Reading, Closing, InvalidReadLimit;
 import "io/buffer" take ByteBuffer;
@@ -200,14 +201,13 @@ role CompressionFlow {
     finished() is bool;
 
     fake {
+        has stored_position is Atomic<int> = Atomic(0);
+        has stored_queued is Atomic<@byte> = Atomic(@byte());
+        has stored_done is Atomic<bool> = Atomic(false);
+
         input(limit is int) is @byte {
             confirm limit > 0 else throw InvalidReadLimit.limit(limit);
-            let position is int = if fake.storage.has("position") {
-                fake.storage.get("position");
-            }
-            else {
-                0;
-            };
+            let position is int = stored_position.value();
             let amount = if limit < 3 - position {
                 limit;
             }
@@ -218,43 +218,38 @@ role CompressionFlow {
             let result is @byte = (position..position + amount).map() -> i {
                 data[i];
             };
-            fake.storage.set("position", position + amount);
+            stored_position.replace(position + amount);
             result;
         }
 
         write(origin is @byte) is void {
             confirm !self.finished() else throw InvalidState.because("flow has finished");
-            let before is @byte = if fake.storage.has("queued") {
-                fake.storage.get("queued");
-            }
-            else {
-                [];
-            };
+            let before is @byte = stored_queued.value();
             let result is @byte = before + origin;
-            fake.storage.set("queued", result);
+            stored_queued.replace(result);
         }
 
         output() is Reading {
-            let result is @byte = if self.finished() && fake.storage.has("queued") {
-                fake.storage.get("queued");
+            let result is @byte = if self.finished() {
+                stored_queued.value();
             }
             else {
                 [];
             };
             if self.finished() {
                 let empty is @byte = [];
-                fake.storage.set("queued", empty);
+                stored_queued.replace(empty);
             }
             CompressionOutput(result);
         }
 
         finish() is void {
             confirm !self.finished() else throw InvalidState.because("flow has finished");
-            fake.storage.set("done", true);
+            stored_done.replace(true);
         }
 
         finished() is bool {
-            fake.storage.has("done");
+            stored_done.value();
         }
     }
 }

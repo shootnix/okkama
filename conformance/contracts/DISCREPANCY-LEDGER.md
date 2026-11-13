@@ -141,10 +141,10 @@ Summary: 4 deferred, 43 resolved.
 
 **Byte values as map keys**
 
-- Sources: `docs/okkama-spec-11072026.md section 6.3 (byte listed as a map key; identity distinct from int)`; `docs/OkkamaBook.md section 5.3 ("Byte-valued map keys are currently unsupported")`; `docs/okkama-llm-context-1.0.md sections 8 and 11 (keys cannot be byte) versus section 4 (byte listed)`; `docs/okkama-spec-11072026.md section 13 (fake storage rejects byte keys)`
+- Sources: `docs/okkama-spec-11072026.md section 6.3 (byte listed as a map key; identity distinct from int)`; `docs/OkkamaBook.md section 5.3 ("Byte-valued map keys are currently unsupported")`; `docs/okkama-llm-context-1.0.md sections 8 and 11 (keys cannot be byte) versus section 4 (byte listed)`
 - Observed: okkama-pl (Perl) at git f1ad6d43: `[byte(1): "byte", 1: "int"]` works with distinct keys.
 - Intended contract: byte values are not valid map keys.
-- Authority: Language owner decision (19.10.2026): "no". Spec 6.3 must remove byte from the key list (the book and fake-storage rules already agree).
+- Authority: Language owner decision (19.10.2026): "no". Spec 6.3 must remove byte from the key list (the book already agrees).
 - Conformance expectation: Mandatory COLL.MAP-BYTE-KEYS: a byte key is rejected (statically or when evaluated). Perl accepts it: DEF-004.
 - Resolution: **resolved**
 - Contracts: `COLL.MAP-BYTE-KEYS`
