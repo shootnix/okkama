@@ -18,7 +18,7 @@ mod verify;
 
 pub use asm::{AsmError, assemble, disassemble};
 pub use codec::{CodecError, MAX_FILE_BYTES, VERSION, decode, encode};
-pub use liveness::{MAX_LIVENESS_BYTES, live_counts, live_sets, live_weight, written};
+pub use liveness::{LiveSets, MAX_LIVENESS_BYTES, live_counts, live_sets, live_weight, written};
 pub use okkama_runtime_abi as abi;
 pub use operand::{Access, Operand};
 
