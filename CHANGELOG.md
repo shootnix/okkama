@@ -51,6 +51,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   is unchanged, since Cranelift dominates it. Implemented by Codex, reviewed
   and verified by Claude.
 
+- **Case-insensitive regexes match whole case folding classes (#550).**
+  With `ignore_case`, a letter now matches every member of its simple case
+  folding class, in both directions: `K`, `k` and the Kelvin sign `K`
+  match each other, as do `Å`/`å`/`Å`, `Ω`/`ω`/`Ω`, `S`/`s`/`ſ`,
+  `Σ`/`σ`/`ς` and `ß`/`ẞ`. Before, the Kelvin sign matched `k` but not
+  `K`. Turkish dotless `ı` and dotted `İ` now match only themselves, so
+  `i` no longer matches `ı`. ASCII mode is unchanged. Implemented by
+  Codex, reviewed and verified by Claude.
+
 ### Fixed
 
 - **The quoted-printable docs say what the encoder does with tabs (#549).**
