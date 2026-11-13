@@ -53,15 +53,12 @@ impl Heap {
                     } else {
                         (base64_alphabet(native, self.text(args[1])?)?, 6, 4)
                     };
-                let source = points(self.text(args[0])?);
-                let (invalid, end) = shape(&source, alphabet, width, quantum);
-                if matches!(native, Base32InvalidOffset | Base64InvalidOffset) {
-                    Slot::small(invalid)
+                let decode = matches!(native, Base32Decode | Base64Decode);
+                let parsed = base_parsed(self.text(args[0])?, alphabet, width, quantum, decode);
+                if decode {
+                    self.native_byte_array(parsed.map_err(|_| failed(native))?)?
                 } else {
-                    if invalid != -1 {
-                        return Err(failed(native));
-                    }
-                    self.native_byte_array(decoded(&source, end, alphabet, width))?
+                    Slot::small(parsed.err().unwrap_or(-1))
                 }
             }
             Base85Encode => {
@@ -127,7 +124,12 @@ fn index(alphabet: &[u8], symbol: u32) -> i64 {
 
 /// Символ на каждые `width` бит, затем `=` до кратности `quantum`.
 fn encoded(octets: &[u8], alphabet: &[u8], width: u32, quantum: usize) -> String {
-    let mut result = String::new();
+    let octets_per_quantum = quantum * width as usize / 8;
+    let capacity = octets
+        .len()
+        .div_ceil(octets_per_quantum)
+        .checked_mul(quantum);
+    let mut result = String::with_capacity(capacity.unwrap_or(0));
     let mut buffer: u64 = 0;
     let mut bits = 0u32;
     let mask = (1u64 << width) - 1;
@@ -170,65 +172,81 @@ fn expected_padding(width: u32, remainder: usize) -> i64 {
     }
 }
 
-/// `(первое неверное смещение или -1, конец данных)`, как `shape` JVM.
-fn shape(source: &[u32], alphabet: &[u8], width: u32, quantum: usize) -> (i64, usize) {
-    let size = source.len();
-    if size == 0 {
-        return (-1, 0);
+// Compile-time tables avoid per-symbol alphabet scans (#461).
+const fn reverse_alphabet(alphabet: &[u8]) -> [u8; 128] {
+    let mut reverse = [u8::MAX; 128];
+    let mut at = 0;
+    while at < alphabet.len() {
+        reverse[alphabet[at] as usize] = at as u8;
+        at += 1;
     }
-    let mut data_end = size;
-    let mut padding = 0i64;
-    let mut inside = false;
-    for (offset, symbol) in source.iter().enumerate() {
-        if *symbol == u32::from('=') {
-            if !inside {
-                inside = true;
-                data_end = offset;
-            }
+    reverse
+}
+
+const BASE32_REVERSE: [u8; 128] = reverse_alphabet(BASE32.as_bytes());
+const BASE64_STANDARD_REVERSE: [u8; 128] = reverse_alphabet(BASE64_STANDARD.as_bytes());
+const BASE64_URL_REVERSE: [u8; 128] = reverse_alphabet(BASE64_URL.as_bytes());
+
+// Borrow input until validation finishes; only successful parses return bytes (#461).
+fn base_parsed(
+    source: &str,
+    alphabet: &[u8],
+    width: u32,
+    quantum: usize,
+    decode: bool,
+) -> Result<Vec<u8>, i64> {
+    let reverse = if width == 5 {
+        &BASE32_REVERSE
+    } else if alphabet == BASE64_URL.as_bytes() {
+        &BASE64_URL_REVERSE
+    } else {
+        &BASE64_STANDARD_REVERSE
+    };
+    let mut octets = Vec::new();
+    if decode
+        && let Some(capacity) = (source.len() / quantum).checked_mul(quantum * width as usize / 8)
+    {
+        octets.reserve_exact(capacity);
+    }
+    let mut size = 0usize;
+    let mut data_end = 0usize;
+    let mut padding = 0usize;
+    let mut buffer = 0u64;
+    let mut bits = 0u32;
+    // Scalar enumeration preserves offsets for every non-ASCII error (#461).
+    for (offset, symbol) in source.chars().enumerate() {
+        size = offset + 1;
+        if symbol == '=' {
             padding += 1;
             continue;
         }
-        if inside || index(alphabet, *symbol) < 0 {
-            return (offset as i64, 0);
+        let value = reverse.get(symbol as usize).copied().unwrap_or(u8::MAX);
+        if padding != 0 || value == u8::MAX {
+            return Err(offset as i64);
         }
+        data_end += 1;
+        buffer = (buffer << width) | u64::from(value);
+        bits += width;
+        if bits >= 8 {
+            bits -= 8;
+            if decode {
+                octets.push(((buffer >> bits) & 255) as u8);
+            }
+        }
+        buffer &= (1u64 << bits) - 1;
     }
+    // Tail errors must not hide length or padding errors (#461).
     if !size.is_multiple_of(quantum) {
-        return (size as i64, 0);
+        return Err(size as i64);
     }
     let expected = expected_padding(width, data_end % quantum);
-    if expected < 0 || padding != expected {
-        return (data_end as i64, 0);
+    if expected < 0 || padding != expected as usize {
+        return Err(data_end as i64);
     }
-    let mut buffer: u64 = 0;
-    let mut bits = 0u32;
-    for symbol in &source[..data_end] {
-        buffer = (buffer << width) | index(alphabet, *symbol) as u64;
-        bits += width;
-        while bits >= 8 {
-            bits -= 8;
-        }
-        buffer &= (1u64 << bits) - 1;
+    if buffer != 0 {
+        return Err(data_end as i64 - 1);
     }
-    if bits > 0 && buffer & ((1u64 << bits) - 1) != 0 {
-        return (data_end as i64 - 1, 0);
-    }
-    (-1, data_end)
-}
-
-fn decoded(source: &[u32], data_end: usize, alphabet: &[u8], width: u32) -> Vec<u8> {
-    let mut octets = Vec::new();
-    let mut buffer: u64 = 0;
-    let mut bits = 0u32;
-    for symbol in &source[..data_end] {
-        buffer = (buffer << width) | index(alphabet, *symbol) as u64;
-        bits += width;
-        while bits >= 8 {
-            bits -= 8;
-            octets.push(((buffer >> bits) & 255) as u8);
-        }
-        buffer &= (1u64 << bits) - 1;
-    }
-    octets
+    Ok(octets)
 }
 
 fn base64_alphabet(native: Native, name: &str) -> Result<&'static [u8], Error> {
@@ -454,6 +472,129 @@ fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn base_result(source: &str, alphabet: &[u8], width: u32, quantum: usize) -> Result<Vec<u8>, i64> {
+        let result = base_parsed(source, alphabet, width, quantum, true);
+        assert_eq!(
+            base_parsed(source, alphabet, width, quantum, false).map(|_| ()),
+            result.as_ref().map(|_| ()).map_err(|offset| *offset)
+        );
+        result
+    }
+
+    #[test]
+    fn base_codec_vectors() {
+        for (input, b64, b32) in [
+            ("", "", ""),
+            ("f", "Zg==", "MY======"),
+            ("fo", "Zm8=", "MZXQ===="),
+            ("foo", "Zm9v", "MZXW6==="),
+            ("foob", "Zm9vYg==", "MZXW6YQ="),
+            ("fooba", "Zm9vYmE=", "MZXW6YTB"),
+            ("foobar", "Zm9vYmFy", "MZXW6YTBOI======"),
+        ] {
+            for name in ["standard", "url"] {
+                let alphabet = base64_alphabet(Native::Base64Decode, name).unwrap();
+                assert_eq!(encoded(input.as_bytes(), alphabet, 6, 4), b64);
+                assert_eq!(base_result(b64, alphabet, 6, 4).unwrap(), input.as_bytes());
+            }
+            assert_eq!(encoded(input.as_bytes(), BASE32.as_bytes(), 5, 8), b32);
+            assert_eq!(
+                base_result(b32, BASE32.as_bytes(), 5, 8).unwrap(),
+                input.as_bytes()
+            );
+        }
+        for (name, spelling) in [("standard", "+/8="), ("url", "-_8=")] {
+            let alphabet = base64_alphabet(Native::Base64Decode, name).unwrap();
+            assert_eq!(encoded(&[251, 255], alphabet, 6, 4), spelling);
+            assert_eq!(base_result(spelling, alphabet, 6, 4).unwrap(), [251, 255]);
+        }
+        assert!(base64_alphabet(Native::Base64Decode, "base64url").is_err());
+    }
+
+    #[test]
+    fn base_codec_invalid_offsets() {
+        for name in ["standard", "url"] {
+            let alphabet = base64_alphabet(Native::Base64Decode, name).unwrap();
+            for (source, offset) in [
+                ("Zm!v", 2),
+                ("Zm é", 2),
+                ("Zm9vé", 4),
+                ("Zm9v😀", 4),
+                ("Z=g=", 2),
+                ("=AAA", 1),
+                ("====", 0),
+                ("Z===", 1),
+                ("Zg======", 2),
+                ("Zh==", 1),
+                ("Zm9=", 2),
+                ("Zh=", 3),
+                ("Zh==!", 4),
+                ("Z", 1),
+                ("Zg", 2),
+                ("Zm8", 3),
+                ("Zg==\n", 4),
+            ] {
+                assert_eq!(
+                    base_result(source, alphabet, 6, 4),
+                    Err(offset),
+                    "{name}: {source}"
+                );
+            }
+            let other = if name == "standard" { "-_8=" } else { "+/8=" };
+            assert_eq!(base_result(other, alphabet, 6, 4), Err(0));
+        }
+        for (source, offset) in [
+            ("M!======", 1),
+            ("MYé=====", 2),
+            ("MY😀=====", 2),
+            ("My======", 1),
+            ("M=Y=====", 2),
+            ("=AAAAAAA", 1),
+            ("========", 0),
+            ("M=======", 1),
+            ("MY==============", 2),
+            ("MZ======", 1),
+            ("MZXR====", 3),
+            ("MZXW7===", 4),
+            ("MZXW6YR=", 6),
+            ("MZ=====", 7),
+            ("MZ======!", 8),
+        ] {
+            assert_eq!(
+                base_result(source, BASE32.as_bytes(), 5, 8),
+                Err(offset),
+                "{source}"
+            );
+        }
+        for size in 1..8 {
+            assert_eq!(
+                base_result(&"A".repeat(size), BASE32.as_bytes(), 5, 8),
+                Err(size as i64)
+            );
+        }
+    }
+
+    #[test]
+    fn base_codec_long_round_trip() {
+        let input: Vec<u8> = (0u8..=255).cycle().take(100_000).collect();
+        for (alphabet, width, quantum) in [
+            (BASE32.as_bytes(), 5, 8),
+            (BASE64_STANDARD.as_bytes(), 6, 4),
+            (BASE64_URL.as_bytes(), 6, 4),
+        ] {
+            let spelling = encoded(&input, alphabet, width, quantum);
+            assert_eq!(
+                base_result(&spelling, alphabet, width, quantum).unwrap(),
+                input
+            );
+            let invalid = format!("{spelling}é");
+            assert_eq!(
+                base_result(&invalid, alphabet, width, quantum),
+                Err(spelling.len() as i64)
+            );
+        }
+    }
 
     #[test]
     fn qp_empty() {
