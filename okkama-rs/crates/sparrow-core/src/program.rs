@@ -150,7 +150,8 @@ impl Loaded {
     }
 
     /// Field representations for the collector. Async frames keep every
-    /// register after the fixed frame words (see `tasks`).
+    /// register after the fixed frame words, an optional driver slot, and
+    /// retained arguments independent of reused registers (see `tasks`).
     pub fn layouts(&self) -> Layouts {
         let p = &self.program;
         Layouts {
@@ -182,7 +183,8 @@ impl Loaded {
             frames: self
                 .functions
                 .iter()
-                .map(|f| {
+                .zip(&p.functions)
+                .map(|(f, source)| {
                     // state, result, failure, waiter, awaiting, resume, flags
                     let mut layout = vec![
                         Repr::Raw,
@@ -197,6 +199,7 @@ impl Loaded {
                     if f.driver {
                         layout.push(Repr::Ref);
                     }
+                    layout.extend(source.params.iter().map(|param| f.kinds[param.0 as usize].repr()));
                     layout
                 })
                 .collect(),

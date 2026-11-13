@@ -274,7 +274,7 @@ impl Runtime {
                     found.push(object);
                     continue;
                 }
-                heap::ARRAY | heap::CLOSURE | heap::PAYLOAD => {}
+                heap::ARRAY | heap::CLOSURE | heap::PAYLOAD | heap::FRAME => {}
                 _ => continue,
             }
             if header & heap::SUMMARY != 0 && self.summary_holds(object, via, &mut oldest) {
@@ -287,6 +287,22 @@ impl Runtime {
             seen.push(object);
             let base = pending.len();
             match heap::kind(header) {
+                heap::FRAME => {
+                    // Ownership follows retained inputs and the cached result,
+                    // not scheduler edges, local registers or region entries.
+                    // Frames (and containers reaching them) cannot be summarized:
+                    // completing a Future can add a newly created result.
+                    events += 1;
+                    let function = heap::payload(header) as usize;
+                    let source = &self.loaded.program.functions[function];
+                    let layout = &self.heap.layouts.frames[function];
+                    let retained = layout.len() - source.params.len();
+                    for index in (retained..layout.len()).rev() {
+                        pending.push((self.heap.field(object, index), layout[index]));
+                    }
+                    pending.push((crate::tasks::get(object, crate::tasks::RESULT), layout[1]));
+                    continue;
+                }
                 heap::ARRAY => {
                     let repr = Repr::from_bits((header >> 9) & 3);
                     let elements = self.heap.elements(object);
@@ -368,7 +384,7 @@ impl Runtime {
                     && self.resources.identities.get(&value).is_some_and(|i| i.owner == Owner::Free)
             }
             heap::ARRAY => header & heap::PACKED == 0 && Repr::from_bits((header >> 9) & 3) == Repr::Ref,
-            heap::CLOSURE | heap::PAYLOAD => true,
+            heap::CLOSURE | heap::PAYLOAD | heap::FRAME => true,
             _ => false,
         }
     }

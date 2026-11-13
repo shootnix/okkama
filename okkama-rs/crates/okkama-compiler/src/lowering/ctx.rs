@@ -1508,8 +1508,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             }),
             Type::Array(element) | Type::Builder(element) => self.is_plain(element),
             Type::Map(_, value) | Type::MapBuilder(_, value) => self.is_plain(value),
-            // В box и в захватах может лежать объект: владение отслеживается.
-            Type::Any | Type::Fn(_) | Type::Cap(_) => false,
+            // Boxes, captures and Future dependencies may retain owned objects.
+            Type::Any | Type::Fn(_) | Type::Cap(_) | Type::Future(_) => false,
             _ => true,
         }
     }
@@ -1778,7 +1778,7 @@ fn settled_plain(
             settled_plain(value, objects, fn_plain, role_plain, variant_plain)
         }
         Type::Fn(sig) => fn_plain(sig),
-        Type::Any | Type::Cap(_) => false,
+        Type::Any | Type::Cap(_) | Type::Future(_) => false,
         _ => true,
     }
 }
@@ -1793,7 +1793,7 @@ fn decl_plain_ty(ty: &Ty, objects: &[bool], roles: &[bool]) -> bool {
         }
         Ty::Array(element) | Ty::Successor(element) => decl_plain_ty(element, objects, roles),
         Ty::Map(_, value) => decl_plain_ty(value, objects, roles),
-        Ty::Any | Ty::Action(_) | Ty::Cap(..) | Ty::Variant(..) => false,
+        Ty::Any | Ty::Action(_) | Ty::Cap(..) | Ty::Variant(..) | Ty::Future(_) => false,
         _ => true,
     }
 }

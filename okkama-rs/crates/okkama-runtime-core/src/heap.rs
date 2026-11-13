@@ -2391,6 +2391,38 @@ mod tests {
     }
 
     #[test]
+    fn cold_future_keep_transfers_fresh_dependencies_and_preserves_borrows() {
+        let borrowed = Rc::new(Object::new(0, vec![]));
+        let receiver = Rc::new(Object::new(0, vec![Value::Object(borrowed.clone())]));
+        let argument = Rc::new(Object::new(0, vec![]));
+        let outer = Region::new();
+        outer.adopt(&Value::Object(borrowed.clone()));
+        let make = Region::new();
+        make.track(&Value::Object(receiver.clone()));
+        make.adopt(&Value::Object(argument.clone()));
+        let future = Value::Future(crate::sched::cold(
+            Box::new(|| Ok(Value::Undef)),
+            vec![Value::Object(receiver.clone()), Value::Object(argument.clone()),
+                 Value::Object(receiver.clone()), Value::Object(borrowed.clone())],
+        ));
+        let mut closing = make.begin_close(std::slice::from_ref(&future));
+        assert!(make.next_destroyed(&mut closing).is_none());
+        assert_eq!(receiver.owner.get(), FREE);
+        assert_eq!(argument.owner.get(), FREE);
+        assert_eq!(borrowed.owner.get(), outer.id);
+        let caller = Region::new();
+        caller.adopt(&future);
+        caller.adopt(&future);
+        let mut closing = caller.begin_close(&[]);
+        assert!(Rc::ptr_eq(&caller.next_destroyed(&mut closing).unwrap(), &argument));
+        assert!(Rc::ptr_eq(&caller.next_destroyed(&mut closing).unwrap(), &receiver));
+        assert!(caller.next_destroyed(&mut closing).is_none());
+        let mut closing = outer.begin_close(&[]);
+        assert!(Rc::ptr_eq(&outer.next_destroyed(&mut closing).unwrap(), &borrowed));
+        assert!(outer.next_destroyed(&mut closing).is_none());
+    }
+
+    #[test]
     fn reused_walks_preserve_ownership_and_destruction_order() {
         let a = Rc::new(Object::new(0, vec![]));
         let b = Rc::new(Object::new(0, vec![Value::Object(a.clone())]));
