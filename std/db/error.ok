@@ -78,7 +78,12 @@ enum TransactionEnded is Error = (ended);
 enum IndeterminateCommit is Error = (indeterminate);
 
 test "a database failure carries its kind, operation and provider code" {
-    let failure = DbFailure.detailed(DbFailureKind.constraint, DbOperation.executing, "2067", "UNIQUE constraint failed");
+    let failure = DbFailure.detailed(
+        DbFailureKind.constraint,
+        DbOperation.executing,
+        "2067",
+        "UNIQUE constraint failed"
+    );
     let code = try {
         throw failure;
     }

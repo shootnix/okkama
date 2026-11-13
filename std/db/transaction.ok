@@ -55,7 +55,11 @@ test "transaction options default to the server's isolation, read-write" {
     test.is(plain::Mode::isolation == Isolation.default_level, true);
     test.is(plain::Mode::read_only, false);
     test.is(plain::Mode::deferrable, false);
-    let report = TransactionOptions(isolation: Isolation.serializable, read_only: true, deferrable: true);
+    let report = TransactionOptions(
+        isolation: Isolation.serializable,
+        read_only: true,
+        deferrable: true
+    );
     test.is(report::Mode::isolation == Isolation.serializable, true);
     test.is(report::Mode::read_only && report::Mode::deferrable, true);
 }
