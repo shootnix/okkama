@@ -1,13 +1,17 @@
 module mail/smtp v1.0.0;
 
-// Immutable EHLO observations; no connection, TLS or authentication effects.
-// Construct from a successful 250 reply. Its first line is greeting metadata,
-// never an extension. Keyword matching is ASCII-insensitive; original extension
-// spelling/unknown parameters are retained. Duplicate keywords are rejected.
-// SIZE absent, SIZE without a parameter and explicit SIZE 0 remain distinct.
-// SASL names use their uppercase 1..20-character grammar; duplicates collapse.
-// A capability advertises server behavior, not verified TLS or permission to
-// send credentials. New post-STARTTLS EHLO replies require fresh snapshots.
+// SMTP server capabilities: what an EHLO reply advertises (RFC 5321 §4.1.1.1).
+//
+//     let capabilities = SmtpCapabilities(ehlo_reply);
+//     capabilities.features().membership(SmtpFeature.start_tls);
+//     capabilities.mechanisms();                         // ["PLAIN", "SCRAM-SHA-256"]
+//     if capabilities.has_maximum_size() { capabilities.maximum_size(); }
+//
+// Built from a successful 250 reply; its first line is the greeting, not an
+// extension. Keywords match without regard to ASCII case; unknown extensions
+// and parameters are kept. SIZE absent, SIZE without a value and SIZE 0 stay
+// distinct. A capability says what the server offers, not that TLS was
+// verified; after STARTTLS a new EHLO needs new capabilities.
 
 import "mail/smtp_reply" take SmtpReply;
 import "collections/sequence" take Sequencing;
@@ -16,12 +20,15 @@ import "mime/media_type" take MimeItems;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "numbers/bigint" take BigInt;
 
+// The extensions std knows by name.
 enum SmtpFeature = (size, eight_bit_mime, smtp_utf8, pipelining, start_tls, authentication, dsn, enhanced_status_codes, chunking, binary_mime);
 
+// One EHLO line: a keyword and its parameters.
 object SmtpExtension {
     has original, name is string;
     has arguments is @string;
 
+    // Reads one line; InvalidSmtpCapabilities when it is not an extension.
     SmtpExtension(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 512
             else throw InvalidSmtpCapabilities.because("extension length outside 1..512");
@@ -62,19 +69,23 @@ object SmtpExtension {
         arguments = parameters;
     }
 
+    // The keyword, uppercase.
     name() is string {
         name;
     }
 
+    // Its parameters as spelled.
     parameters() is Sequencing<string> {
         arguments;
     }
 
+    // The line as it was.
     string() is string {
         original;
     }
 }
 
+// The capabilities of an EHLO reply.
 object SmtpCapabilities {
     has extensions is @SmtpExtension;
     has features is Set<SmtpFeature>;
@@ -82,6 +93,8 @@ object SmtpCapabilities {
     has size_available is bool;
     has size_value is BigInt;
 
+    // Reads reply; InvalidSmtpCapabilities when it is not a 250 or repeats a
+    // keyword.
     SmtpCapabilities(reply is SmtpReply) {
         confirm reply.code() == 250
             else throw InvalidSmtpCapabilities.because("EHLO requires a 250 reply");
@@ -151,30 +164,37 @@ object SmtpCapabilities {
         });
     }
 
+    // Every extension, in order.
     extensions() is Sequencing<SmtpExtension> {
         extensions;
     }
 
+    // The known features advertised.
     features() is Set<SmtpFeature> {
         features;
     }
 
+    // The SASL mechanisms of AUTH, uppercase.
     mechanisms() is Sequencing<string> {
         mechanisms;
     }
 
+    // Whether SIZE gives a limit.
     has_maximum_size() is bool {
         size_available;
     }
 
+    // The SIZE value (0 means no limit); MissingSmtpSize when SIZE gives none.
     maximum_size() is BigInt {
         confirm size_available else throw MissingSmtpSize.missing;
         size_value;
     }
 }
 
+// An EHLO reply that cannot be read; reason says why.
 enum InvalidSmtpCapabilities is Error = (because(reason is string));
 
+// SIZE is absent or has no value.
 enum MissingSmtpSize is Error = (missing);
 
 hidden object SmtpKnownFeature {

@@ -1,24 +1,24 @@
 module mail/smtp_reading v1.0.0;
 
-// One lazy read of one SMTP reply from a borrowed asynchronous byte stream.
-// result() always returns the same Future, including after failure/cancellation.
-// Pass remainder() explicitly to the next operation, using the same stream.
-// No read occurs when the prefix already contains a complete reply.
+// Reading one SMTP reply from a stream, keeping the bytes read past it.
 //
-// Only one operation may consume a stream at a time. This adapter does not own
-// or close the stream. A started failure/cancellation can consume a prefix:
-// the caller must discard that protocol session, not retry this read or replay
-// an SMTP command. Within/Before compose around result() and drain cancellation
-// cleanup through the awaited source future. No implicit timeout or retry.
+//     let read = await SmtpReplyReading(socket).read();
+//     read.reply().code();                 // 220
+//     let next = await SmtpReplyReading(origin: socket, prefix: read.remainder()).read();
+//
+// One read at a time per stream. A read that fails part way may have consumed
+// input: the session is then over; do not retry it.
 
 import "io/stream" take AsyncReading;
 import "mail/smtp_reply" take SmtpReply, SmtpReplyDecoder, SmtpReplyLimits, SmtpLimitExceeded;
 import "io/decorators" take InvalidReading;
 import "error" take InvalidArgument;
 
+// Reads one reply.
 object SmtpReplyReading {
     has pending is Future<SmtpReplyRead>;
 
+    // Reads from origin with the default limits.
     SmtpReplyReading(origin is AsyncReading) {
         pending = SmtpReplyInput(
             origin: origin,
@@ -28,6 +28,7 @@ object SmtpReplyReading {
         ).read();
     }
 
+    // Reads prefix first, then origin.
     SmtpReplyReading(origin is AsyncReading, prefix is @byte) {
         pending = SmtpReplyInput(
             origin: origin,
@@ -37,6 +38,7 @@ object SmtpReplyReading {
         ).read();
     }
 
+    // The same within limits, chunk_bytes at a time.
     SmtpReplyReading(
         origin is AsyncReading,
         prefix is @byte,
@@ -51,30 +53,36 @@ object SmtpReplyReading {
         ).read();
     }
 
+    // The reply and what came after it; the same future on every call.
     read() is Future<SmtpReplyRead> {
         pending;
     }
 }
 
+// A reply read from a stream, and the bytes after it.
 object SmtpReplyRead {
     has value is SmtpReply;
     has tail is @byte;
     has count is int;
 
+    // What decoder completed.
     SmtpReplyRead(decoder is SmtpReplyDecoder) {
         value = decoder.finish();
         tail = decoder.remainder();
         count = decoder.consumed();
     }
 
+    // The reply.
     reply() is SmtpReply {
         value;
     }
 
+    // The bytes read past it.
     remainder() is @byte {
         tail;
     }
 
+    // How many bytes the reply took.
     consumed() is int {
         count;
     }

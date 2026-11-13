@@ -1,23 +1,17 @@
 module mail/mbox_store v1.0.0;
 
-// Trusted local mboxrd archives. Mbox is a pure coordinate for an EXISTING
-// regular file; session() exclusively locks path + ".okkama-mbox.lock" before
-// reading. Contention fails immediately; the permanent lock inode is retained.
+// An mbox file changed in place, under a lock.
 //
-//     let session=Mbox(path).session();defer session.close();
-//     session=session.add(record); // explicit MboxRecord envelope metadata
-//     session=session.remove(session.messages().first().identifier());
+//     let session = Mbox(Path("archive.mbox")).session();
+//     defer session.close();
+//     let added = session.add(record);
+//     let removed = added.remove(added.messages().first()::Mail::identifier);
 //
-// Commands return successors: surviving IDs remain stable within that session
-// lineage, never across reopen. Copies share the lease; closing any closes all.
-// messages()/records() are eager snapshots and survive later mutations/close.
-// Each mutation checks the exact current archive against its original bytes,
-// prepares bounded output/snapshots, and atomically renames a private temporary
-// file. All fallible message work precedes commit. Stale content is MboxConflict.
-// No automatic retries, compatibility with other clients' locks, persistent
-// UID/flag-header inference, metadata preservation or fsync durability claim.
-// Replacement is owner-only (0600); trusted path ownership is required.
-// See docs/std/mbox-session.md for failure and ownership details.
+// session() locks `archive.mbox.okkama-mbox.lock` and fails at once when
+// another holds it. Each change checks the file still holds what was read
+// (MboxConflict otherwise), writes a private temporary file and renames it over
+// the old one. Ids stay valid within one session, not across reopening. The
+// file must exist.
 
 import "mail/mbox" take MboxRecord, MboxArchive, ParsedMbox, MboxLimits, MboxLimitExceeded;
 import "mail/mailbox" take StoredMail, MailFlag, MailFlags, MissingStoredMail, InvalidMailbox;
@@ -36,33 +30,40 @@ import "random/source" take SecureRandom;
 import "encoding/hex" take HexEncoded;
 import "error" take InvalidArgument, InvalidState;
 
+// An mbox file.
 object Mbox {
     has origin is Path;
     has bounds is MboxLimits;
 
+    // The file at path, with the default limits.
     Mbox(path is Path) {
         origin = path;
         bounds = MboxLimits();
     }
 
+    // The file within limits.
     Mbox(path is Path, limits is MboxLimits) {
         origin = path;
         bounds = limits;
     }
 
+    // Its path.
     path() is Path {
         origin;
     }
 
+    // Its limits.
     limits() is MboxLimits {
         bounds;
     }
 
+    // Locks the file and reads it.
     session() is MboxSession {
         MboxSession(self);
     }
 }
 
+// A locked mbox file and what it holds.
 object MboxSession does Closing {
     has origin is Mbox;
     has lease is MboxLease;
@@ -70,6 +71,7 @@ object MboxSession does Closing {
     has nonce is string;
     has serial is int;
 
+    // Locks and reads origin.
     MboxSession(origin is Mbox) {
         let access = MboxLease(origin.path());
         let token = try {
@@ -112,20 +114,24 @@ object MboxSession does Closing {
         serial = initial.messages().size();
     }
 
+    // The messages, with ids.
     messages() is Sequencing<StoredMail> {
         lease.check();
         view.messages();
     }
 
+    // The records.
     records() is Sequencing<MboxRecord> {
         lease.check();
         view.records();
     }
 
+    // Whether it was closed.
     closed() is bool {
         lease.closed();
     }
 
+    // Releases the lock.
     close() is void {
         lease.close();
     }
@@ -169,6 +175,8 @@ object MboxSession does Closing {
         ^serial = serial + 1;
     }
 
+    // Removes the message identifier and gives the session after it;
+    // MissingStoredMail when there is none.
     remove(identifier is string) is ^MboxSession {
         self.current();
         let before = view.identifiers();
@@ -205,8 +213,10 @@ object MboxSession does Closing {
     }
 }
 
+// The file changed since the session read it.
 enum MboxConflict is Error = (conflict);
 
+// The change was made, but a later step failed; code and reason say what.
 enum CommittedMboxFailure is Error = (detailed(code is string, reason is string));
 
 hidden object MboxLease does Closing {
