@@ -6,6 +6,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Sparrow's future collections no longer rescan every input (#443).**
+  `AllFutures`, `Raced`, `FirstSuccessful` and `Before`/`Within` listened
+  to every unfinished input again on each wake-up and picked each settled
+  input with a full scan, so n inputs cost O(n²). A collection now listens
+  to each input once and is told which inputs settled, in settlement order.
+  On Linux, 1 CPU: 20 000 inputs settling one after another take 0.017 s of
+  CPU instead of 2.48 s; 40 000 sleeping tasks collected with `AllFutures`
+  take 0.20 s instead of 1.52 s. The order is unchanged: inputs settled at
+  the start by position, the rest by settlement. Async micro-benchmarks are
+  within ±1.5%, the run-to-run spread of the baseline.
+
 ## [0.5.6] — 2026-11-13
 
 0.5.6 fixes the language bugs found while documenting std and writing the

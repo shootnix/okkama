@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.collect.settlement-order",
+  "title": "Collections consume inputs settled before the start by position, then in settlement order",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.COLLECT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "completions: p1 p2 l2 l1 l0\nall: l0 l1 l2 l1\nrace: b\nrace later: l2\nfirst successful: x1\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/collect.ok",
+    "docs/async-guide.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #443 (0.5.7) from the cited contract text",
+    "expected_basis": "async/collect: already-settled inputs are ordered by input position, later ones by settlement; AllFutures keeps input order and every position, duplicates included; Raced takes the first settlement; FirstSuccessful ignores failures while success is possible."
+  },
+  "status": "mandatory"
+}

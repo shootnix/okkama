@@ -1,0 +1,108 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+import "async/collect" take AllFutures, Raced, FirstSuccessful, FutureCompletions;
+
+// Waits for `mine`, then sets `handoff`: chained, links settle one per turn.
+object Link {
+    has mine is Event;
+    has handoff is Event;
+    has label is string;
+    Link(:mine, :handoff, :label);
+    async run() is string {
+        await mine.wait();
+        handoff.set();
+        label;
+    }
+}
+
+enum Broken is Error = (broken(label is string));
+
+object Breaking {
+    has mine is Event;
+    has handoff is Event;
+    has label is string;
+    Breaking(:mine, :handoff, :label);
+    async run() is string {
+        await mine.wait();
+        handoff.set();
+        throw Broken.broken(label);
+    }
+}
+
+object Now {
+    has label is string;
+    Now(:label);
+    async run() is string {
+        label;
+    }
+}
+
+object Chain {
+    has events is @Event;
+    // Three events; link i waits for event i + 1 and sets event i.
+    Chain() {
+        events = [Event(), Event(), Event(), Event()];
+    }
+    link(index is int, label is string) is Future<string> {
+        spawn Link(mine: events[index + 1], handoff: events[index], label: label).run();
+    }
+    breaking(index is int, label is string) is Future<string> {
+        spawn Breaking(mine: events[index + 1], handoff: events[index], label: label).run();
+    }
+    start() is void {
+        events[3].set();
+    }
+}
+
+object Line {
+    has values is @string;
+    Line(:values);
+    string() is string {
+        values.join(" ");
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+
+    // Settled before the start: by input position, whatever their own order;
+    // then the rest as they settle (here l2, l1, l0).
+    let one = Chain();
+    let late = spawn Now(label: "p2").run();
+    let early = spawn Now(label: "p1").run();
+    let inputs is @Future<string> = [one.link(0, "l0"), early, one.link(1, "l1"), late, one.link(2, "l2")];
+    one.start();
+    let stream is FutureCompletions<string> = FutureCompletions(origins: inputs);
+    let order = (0..5).map() -> index { await (await stream.completion()); };
+    out.writeln("completions: ", Line(values: order).string());
+
+    // AllFutures keeps input order; a duplicate input is reported at both positions.
+    let two = Chain();
+    let shared = two.link(1, "l1");
+    let all is @Future<string> = [two.link(0, "l0"), shared, two.link(2, "l2"), shared];
+    two.start();
+    let values = await AllFutures(origins: all).results();
+    out.writeln("all: ", values.item(0), " ", values.item(1), " ", values.item(2), " ", values.item(3));
+
+    // Raced: of the inputs settled before the start, the first by position wins.
+    let three = Chain();
+    let c = spawn Now(label: "c").run();
+    let b = spawn Now(label: "b").run();
+    let race is @Future<string> = [three.link(0, "never"), b, c];
+    out.writeln("race: ", await Raced(origins: race).winner());
+
+    // Raced after the start: the first to settle wins (l2), not the first input.
+    let four = Chain();
+    let later is @Future<string> = [four.link(0, "l0"), four.link(1, "l1"), four.link(2, "l2")];
+    four.start();
+    out.writeln("race later: ", await Raced(origins: later).winner());
+
+    // FirstSuccessful skips the failure that settles first (x2) and takes x1.
+    let five = Chain();
+    let attempts is @Future<string> = [five.breaking(0, "x0"), five.link(1, "x1"), five.breaking(2, "x2")];
+    five.start();
+    out.writeln("first successful: ", await FirstSuccessful(origins: attempts).outcome());
+    0;
+}

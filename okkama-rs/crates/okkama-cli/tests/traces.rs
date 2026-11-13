@@ -56,6 +56,18 @@ fn the_core_and_the_ir_engine_print_the_same_report() {
         ),
         "{cleanup}"
     );
+    // AllFutures on the core: the first failure observed stays primary, the
+    // rest follow in input order, a failure given twice once (#443, #445).
+    // The IR engine cancels these siblings before they fail (#546).
+    let collect = stderr(&okkama(&["run", "--engine", "sparrow"], &program("collect"), true));
+    assert!(
+        collect.starts_with(
+            "Broken: Broken.broken(\"f3\")\nSecondary cleanup failure:\n  Broken: Broken.broken(\"f1\")\n\
+             Secondary cleanup failure:\n  Broken: Broken.broken(\"f0\")\n\
+             Secondary cleanup failure:\n  Broken: Broken.broken(\"f2\")\n  --> "
+        ),
+        "{collect}"
+    );
     let core = stderr(&okkama(&["run", "--engine", "sparrow"], &program("recursion"), true));
     let stack = &core[core.find("Stack trace").unwrap()..];
     let frames: Vec<&str> = stack.lines().skip(1).map(|line| line.split(" (").next().unwrap()).collect();
