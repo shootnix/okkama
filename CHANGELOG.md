@@ -90,6 +90,14 @@ folding classes. It changes no public API.
 
 ### Fixed
 
+- **CI tests take minutes, not an hour (#557).** The Tests job linked each of
+  the ~90 test binaries with fat LTO: 35 min on Ubuntu, 55 on macOS. It now
+  builds under the gate profile (release optimisations, no LTO) and runs the
+  tests with cargo-nextest in parallel, every failure in one report and a
+  flaky test retried once and marked: 6.5 and 4.4 min. CI also runs on
+  release branches, so each merged ticket is tested while work goes on. The
+  fat-LTO binaries are still exercised by the conformance and std jobs.
+
 - **The SIGTERM drain test waits for the slow request instead of a second
   (#556).** It slept a fixed second before signalling; on a loaded runner
   the server had not taken `/slow` yet and the test read an empty answer.
