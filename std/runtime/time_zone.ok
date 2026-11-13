@@ -1,15 +1,26 @@
 module runtime/time_zone v1.0.0;
 
+// The native layer under time/zone: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+
+// The version of the time zone database.
 native timezone_version() is string;
 
+// Whether the database has name.
 native timezone_known(name is string) is bool;
 
+// The offset of zone name at instant, in seconds.
 native timezone_offset(name is string, instant is rat) is int;
 
+// Whether daylight time is in effect then.
 native timezone_daylight(name is string, instant is rat) is bool;
 
+// The zone's abbreviation then.
 native timezone_abbreviation(name is string, instant is rat) is string;
 
+// The instants a local time may mean in the zone: none in a gap, two in an
+// overlap.
 native timezone_local_candidates(
     name is string,
     year is int,
@@ -21,6 +32,7 @@ native timezone_local_candidates(
     nanosecond is int,
 ) is int;
 
+// The instant of a local time in the zone, by the fold rule.
 native timezone_local_instant(
     name is string,
     year is int,

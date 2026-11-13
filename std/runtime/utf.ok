@@ -1,24 +1,37 @@
 module runtime/utf v1.0.0;
 
+// The native layer under encoding/utf, http/sse, io/stdin, json: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+//
 // Portable UTF codec boundary for encoding/utf. Every backend implements the
 // same scalar-value, byte-order and malformed-prefix contract.
 
+// origin in UTF-8.
 native utf8_encode(origin is string) is @byte;
 
+// UTF-8 bytes as text.
 native utf8_decode(origin is @byte) is string;
 
+// How many bytes of origin are valid UTF-8.
 native utf8_valid_prefix(origin is @byte) is int;
 
+// origin in UTF-16 in byte order.
 native utf16_encode(origin is string, order is string) is @byte;
 
+// UTF-16 bytes as text.
 native utf16_decode(origin is @byte, order is string) is string;
 
+// How many bytes of origin are valid UTF-16.
 native utf16_valid_prefix(origin is @byte, order is string) is int;
 
+// origin in UTF-32 in byte order.
 native utf32_encode(origin is string, order is string) is @byte;
 
+// UTF-32 bytes as text.
 native utf32_decode(origin is @byte, order is string) is string;
 
+// How many bytes of origin are valid UTF-32.
 native utf32_valid_prefix(origin is @byte, order is string) is int;
 
 // Encoders/decoders preserve all Unicode scalars, including noncharacters.

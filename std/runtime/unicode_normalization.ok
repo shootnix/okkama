@@ -1,8 +1,13 @@
 module runtime/unicode_normalization v1.0.0;
 
+// The native layer under unicode/normalization: the calls those modules make
+// into the host runtime. Programs use those modules instead; these declarations
+// may change with the runtime.
+//
 // Portable Unicode 16.0.0 normalization boundary. A backend may use vendored
 // tables, platform libraries or VM intrinsics, but NFC/NFD/NFKC/NFKD results
 // must conform to Unicode 16.0.0. Applications should use the immutable
 // Normalized value from unicode/normalization.
 
+// origin in form NFC, NFD, NFKC or NFKD.
 native normalized_text(origin is string, form is string) is string;

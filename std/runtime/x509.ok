@@ -1,27 +1,42 @@
 module runtime/x509 v1.0.0;
 
+// The native layer under crypto/x509/certificate, crypto/x509/trust: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+
 // Private immutable snapshot ABI. Parsing is deterministic; system_certificates
 // explicitly reads host CA sources. No live certificate/key pointers escape.
 native certificate_facts(origin is @byte) is string;
 
+// notBefore and notAfter of the decoded facts.
 native certificate_times(facts is string) is @string;
 
+// The SubjectPublicKeyInfo DER.
 native certificate_spki(facts is string) is @byte;
 
+// The subject's or issuer's RDNs and attributes.
 native certificate_names(facts is string, issuer is bool) is @@@string;
 
+// The subjectAltName DNS names and addresses.
 native certificate_san(facts is string) is @@string;
 
+// basicConstraints.
 native certificate_constraints(facts is string) is @string;
 
+// keyUsage bits.
 native certificate_key_usages(facts is string) is @int;
 
+// extendedKeyUsage OIDs.
 native certificate_purposes(facts is string) is @string;
 
+// Every extension: OID, critical, DER value.
 native certificate_extensions(facts is string) is @@string;
 
+// The system's trusted roots, as DER.
 native system_certificates() is @@byte;
 
+// The verified path of chain to roots for the identity, time and purpose; it
+// throws why not.
 native verify_chain(
     chain is @@byte,
     roots is @@byte,

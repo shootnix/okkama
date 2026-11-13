@@ -1,11 +1,17 @@
 module runtime/stdio v1.0.0;
 
+// The native layer under io/stdin, io/stdout: the calls those modules make into
+// the host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Portable raw standard-stream boundary. A write reports its accepted prefix;
 // io/stdout turns a short count into IncompleteWrite. No text encoding,
 // newline policy or host-native stream object crosses this ABI.
 
+// Writes data to standard output; how many bytes went.
 native stdout_write(data is @byte) is int;
 
+// Writes data to standard error; how many bytes went.
 native stderr_write(data is @byte) is int;
 
 // Writes out what standard output holds back (#132). The runtimes buffer
@@ -15,6 +21,8 @@ native stderr_write(data is @byte) is int;
 // when the program ends.
 native stdout_flush() is bool;
 
+// At most limit bytes of standard input; [] at the end.
 native stdin_read(limit is int) is @byte;
 
+// The next line of standard input, with its newline.
 native stdin_read_line() is @byte;

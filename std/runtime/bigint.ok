@@ -1,28 +1,43 @@
 module runtime/bigint v1.0.0;
 
+// The native layer under numbers/bigint: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 // Portable arbitrary-precision integer value boundary.
 native bigint_valid(origin is string) is bool;
 
+// origin as canonical decimal text.
 native bigint_canonical(origin is string) is string;
 
+// -1, 0 or 1.
 native bigint_sign(origin is string) is int;
 
+// How many bits the magnitude takes.
 native bigint_bits(origin is string) is int;
 
+// left − right.
 native bigint_difference(left is string, right is string) is string;
 
+// -1, 0 or 1 as left is less, equal or greater.
 native bigint_order(left is string, right is string) is int;
 
+// left + right.
 native bigint_sum(left is string, right is string) is string;
 
+// left × right.
 native bigint_product(left is string, right is string) is string;
 
+// left ÷ right, truncated.
 native bigint_quotient(left is string, right is string) is string;
 
+// The remainder of the truncated division, with the sign of left.
 native bigint_remainder(left is string, right is string) is string;
 
+// The greatest common divisor.
 native bigint_gcd(left is string, right is string) is string;
 
+// The least common multiple.
 native bigint_lcm(left is string, right is string) is string;
 
 // maximum_bits is positive; expected limit failure is resource_exhausted.

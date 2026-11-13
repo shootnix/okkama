@@ -1,23 +1,38 @@
 module runtime/regex v1.0.0;
 
+// The native layer under regex/escape, regex/match, regex/pattern,
+// regex/replace: the calls those modules make into the host runtime. Programs
+// use those modules instead; these declarations may change with the runtime.
+
+// A compiled regular expression.
 native object RegexState;
 
+// A search in a string.
 native object RegexQueryState;
 
+// One match and its captures.
 native object RegexMatchState;
 
+// A parsed replacement template.
 native object RegexReplacementState;
 
+// The result of a substitution.
 native object RegexSubstitutionState;
 
+// expression with flags, not yet compiled.
 native regex_state_create(expression is string, flags is @int) is RegexState;
 
+// Compiles it: the status and, on failure, the offset.
 native regex_state_prepare(state is RegexState) is %string:int;
 
+// How many capture groups.
 native regex_state_group_count(state is RegexState) is int;
 
+// The named groups and their indexes.
 native regex_state_group_names(state is RegexState) is %string:int;
 
+// Searches origin between start and end: mode 0 a first match, then a prefix or
+// an entire match.
 native regex_query_create(
     state is RegexState,
     origin is string,
@@ -26,38 +41,53 @@ native regex_query_create(
     mode is int,
 ) is RegexQueryState;
 
+// Whether it matched.
 native regex_query_found(state is RegexQueryState) is bool;
 
+// The match.
 native regex_query_match(state is RegexQueryState) is RegexMatchState;
 
+// How many captures.
 native regex_match_capture_count(state is RegexMatchState) is int;
 
+// The name of capture index, or "".
 native regex_match_capture_name(state is RegexMatchState, index is int) is string;
 
+// The index of the capture called name, or -1.
 native regex_match_capture_index(state is RegexMatchState, name is string) is int;
 
+// The start and end of capture index, as a map.
 native regex_match_capture_span(state is RegexMatchState, index is int) is %string:int;
 
+// template, not yet parsed.
 native regex_replacement_state(template is string) is RegexReplacementState;
 
+// Parses it: the status and, on failure, the offset.
 native regex_replacement_prepare(state is RegexReplacementState) is %string:int;
 
+// Its literal parts and group references, in order.
 native regex_replacement_tokens(state is RegexReplacementState) is @string;
 
+// origin with every metacharacter escaped.
 native regex_escape(origin is string) is string;
 
+// An empty result.
 native regex_substitution_state() is RegexSubstitutionState;
 
+// Whether a result is stored.
 native regex_substitution_ready(state is RegexSubstitutionState) is bool;
 
+// Stores string and how many replacements were made.
 native regex_substitution_store(
     state is RegexSubstitutionState,
     string is string,
     amount is int,
 ) is bool;
 
+// The text.
 native regex_substitution_string(state is RegexSubstitutionState) is string;
 
+// How many replacements were made.
 native regex_substitution_amount(state is RegexSubstitutionState) is int;
 
 // Private regex memo/query boundary, not a user pattern utility namespace.

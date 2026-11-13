@@ -1,14 +1,23 @@
 module runtime/process v1.0.0;
 
+// The native layer under cli/arguments, logging/named, os/command_capture,
+// os/pipeline_capture: the calls those modules make into the host runtime.
+// Programs use those modules instead; these declarations may change with the
+// runtime.
+//
 // Shared lazy process capability. Logical strings cross this boundary; each
 // runtime provider performs its own host encoding and process setup.
 
+// A child process and its pipes.
 native object ProcessState;
 
+// A finished process with its output and errors.
 native object CapturedProcess;
 
+// A pipeline of processes being described.
 native object PipelineState;
 
+// A finished pipeline with its statuses, output and errors.
 native object CapturedPipeline;
 
 // Exact host-split arguments, excluding interpreter/source options.
@@ -17,8 +26,10 @@ native process_arguments() is @@byte;
 // Existing process provider observation; no logging-specific native state.
 native process_current_id() is int;
 
+// A process not yet started.
 native process_state_create() is ProcessState;
 
+// Starts program with arguments in directory with environment.
 native process_state_start(
     state is ProcessState,
     program is string,
@@ -27,36 +38,50 @@ native process_state_start(
     environment is %string:string,
 ) is bool;
 
+// Whether it started.
 native process_state_started(state is ProcessState) is bool;
 
+// Its process id.
 native process_state_id(state is ProcessState) is int;
 
+// Whether it is still running.
 native process_state_running(state is ProcessState) is bool;
 
+// Waits for it to end: its exit code or signal.
 native async process_state_exit(state is ProcessState) is %string:int;
 
+// Sends signal.
 native process_state_signal(state is ProcessState, signal is int) is bool;
 
+// Closes its pipes.
 native process_state_close(state is ProcessState) is bool;
 
+// Writes source to its input; how many bytes went.
 native process_state_input_write(state is ProcessState, source is @byte) is int;
 
+// Flushes its input.
 native process_state_input_flush(state is ProcessState) is bool;
 
+// Whether its input is closed.
 native process_state_input_closed(state is ProcessState) is bool;
 
+// Closes its input.
 native process_state_input_close(state is ProcessState) is bool;
 
+// At most limit bytes of its output; [] at the end.
 native process_state_output_read(state is ProcessState, limit is int) is @byte;
 
+// At most limit bytes of its error output; [] at the end.
 native process_state_errors_read(state is ProcessState, limit is int) is @byte;
 
 // The same streams, asynchronously (#196): a read or a write waits without
 // holding up other tasks. An empty result is the end of the stream.
 native async process_state_output_read_async(state is ProcessState, limit is int) is @byte;
 
+// The same without blocking.
 native async process_state_errors_read_async(state is ProcessState, limit is int) is @byte;
 
+// Writes to its input without blocking.
 native async process_state_input_write_async(state is ProcessState, source is @byte) is int;
 
 // Atomically communicates with a started child: writes all input, closes
@@ -68,17 +93,22 @@ native async process_state_capture(
     limit is int,
 ) is CapturedProcess;
 
+// The exit code or signal.
 native captured_process_status(origin is CapturedProcess) is %string:int;
 
 // 0 means complete, 1 means stdout exceeded its limit, 2 means stderr did.
 native captured_process_overflow(origin is CapturedProcess) is int;
 
+// Its output.
 native captured_process_output(origin is CapturedProcess) is @byte;
 
+// Its error output.
 native captured_process_errors(origin is CapturedProcess) is @byte;
 
+// An empty pipeline.
 native pipeline_state_create() is PipelineState;
 
+// Adds program with arguments, directory and environment as the next stage.
 native pipeline_state_add(
     state is PipelineState,
     program is string,
@@ -87,19 +117,24 @@ native pipeline_state_add(
     environment is %string:string,
 ) is bool;
 
+// Runs the pipeline with input, keeping at most limit bytes of output.
 native async pipeline_state_capture(
     state is PipelineState,
     input is @byte,
     limit is int,
 ) is CapturedPipeline;
 
+// Each stage's exit code or signal.
 native captured_pipeline_statuses(origin is CapturedPipeline) is @%string:int;
 
 // 0 means complete, 1 means final stdout overflow, 2 means stderr overflow.
 native captured_pipeline_overflow_stream(origin is CapturedPipeline) is int;
 
+// The stage whose output went over the limit, or -1.
 native captured_pipeline_overflow_index(origin is CapturedPipeline) is int;
 
+// The last stage's output.
 native captured_pipeline_output(origin is CapturedPipeline) is @byte;
 
+// Each stage's error output.
 native captured_pipeline_errors(origin is CapturedPipeline) is @@byte;

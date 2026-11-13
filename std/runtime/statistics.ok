@@ -1,30 +1,42 @@
 module runtime/statistics v1.0.0;
 
+// The native layer under statistics: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+//
 // Portable bulk boundary for numerically sensitive statistical algorithms.
 // Every backend must implement the same finite-float semantics.
 
+// The mean.
 native statistics_mean(values is @float) is float;
 
+// The geometric mean.
 native statistics_geometric_mean(values is @float) is float;
 
+// The harmonic mean.
 native statistics_harmonic_mean(values is @float) is float;
 
+// The median, choosing the low, high or middle value for an even count.
 native statistics_median(values is @float, choice is string) is float;
 
+// count − 1 cut points by method.
 native statistics_quantiles(
     values is @float,
     count is int,
     method is string,
 ) is @float;
 
+// The variance, of a sample or the population.
 native statistics_variance(values is @float, sample is bool) is float;
 
+// Whether the paired statistic can be computed.
 native statistics_paired_valid(
     left is @float,
     right is @float,
     result is string,
 ) is bool;
 
+// The statistic result names over pairs of left and right.
 native statistics_paired(
     left is @float,
     right is @float,

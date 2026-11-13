@@ -1,11 +1,20 @@
 module runtime/snapshot v1.0.0;
 
+// The native layer under testing/snapshot: the calls those modules make into
+// the host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
+// The directory snapshots are kept in.
 native object SnapshotRootState;
 
+// Opens the directory path.
 native snapshot_root_open(path is @byte) is SnapshotRootState;
 
+// Closes it.
 native snapshot_root_close(root is SnapshotRootState) is bool;
 
+// The snapshot called name, at most limit bytes.
 native snapshot_read(root is SnapshotRootState, name is string, limit is int) is @byte;
 
+// Writes the snapshot called name.
 native snapshot_write(root is SnapshotRootState, name is string, content is @byte) is bool;

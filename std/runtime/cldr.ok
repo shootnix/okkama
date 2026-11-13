@@ -1,5 +1,11 @@
 module runtime/cldr v1.0.0;
 
+// The native layer under locale/internal/currencies,
+// locale/internal/day_periods, locale/internal/gregorian,
+// locale/internal/likely: the calls those modules make into the host runtime.
+// Programs use those modules instead; these declarations may change with the
+// runtime.
+//
 // CLDR tables as runtime data (#223). tools/generate-cldr*.py write them to
 // cldr-<family>.dat; the runtime reads a file the first time one of its
 // tables is asked for. A table name starts with its family and a dot

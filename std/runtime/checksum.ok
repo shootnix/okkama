@@ -1,15 +1,22 @@
 module runtime/checksum v1.0.0;
 
+// The native layer under checksum/adler32, checksum/crc: the calls those
+// modules make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Checksums of checksum/crc and checksum/adler32 (#193), continued from a
 // seed. checksum_crc32 takes and gives a finalized CRC-32/ISO-HDLC (as zlib);
 // checksum_crc16 runs the CCITT register (polynomial 0x1021, MSB first, no
 // reflection, no final xor) from the seed; checksum_adler32 gives the packed
 // sums of RFC 1950, normalizing both halves of the seed.
 
+// The CRC-32 of origin, continuing from initial.
 native checksum_crc32(origin is @byte, initial is int) is int;
 
+// The CRC-16 of origin, continuing from initial.
 native checksum_crc16(origin is @byte, initial is int) is int;
 
+// The Adler-32 of origin, continuing from initial.
 native checksum_adler32(origin is @byte, initial is int) is int;
 
 test "reference vectors" {

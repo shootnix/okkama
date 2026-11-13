@@ -1,5 +1,9 @@
 module runtime/random_distribution v1.0.0;
 
+// The native layer under random/distribution: the calls those modules make into
+// the host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+
 // Portable finite-float primitives used by random/distribution algorithms.
 native distribution_uniform(
     start is float,
@@ -7,16 +11,23 @@ native distribution_uniform(
     fraction is float,
 ) is float;
 
+// The natural logarithm.
 native distribution_log(value is float) is float;
 
+// e to the value.
 native distribution_exp(value is float) is float;
 
+// The square root.
 native distribution_sqrt(value is float) is float;
 
+// The cosine.
 native distribution_cos(value is float) is float;
 
+// The arccosine.
 native distribution_acos(value is float) is float;
 
+// base to exponent.
 native distribution_power(base is float, exponent is float) is float;
 
+// value as an angle within one turn.
 native distribution_angle(value is float) is float;

@@ -1,6 +1,11 @@
 module runtime/crypto v1.0.0;
 
+// The native layer under http/cache_admission, http/digest: the calls those
+// modules make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+
 // Existing core.crypto ABI; no provider or interpreter changes.
 native digest(algorithm is string, origin is @byte) is @byte;
 
+// Whether left and right are equal, in time that depends only on their lengths.
 native secure_equal(left is @byte, right is @byte) is bool;

@@ -1,12 +1,19 @@
 module runtime/fs v1.0.0;
 
+// The native layer under db/sqlite, fs/directory, fs/entry, fs/file: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+
 // Portable lexical path helpers. Style is 0 for POSIX and 1 for Windows.
 native path_join(parts is @string, style is int) is string;
 
+// The parent of origin in style; "" when it has none.
 native path_parent(origin is string, style is int) is string;
 
+// origin with part appended in style.
 native path_child(origin is string, part is string, style is int) is string;
 
+// Whether origin is absolute in style.
 native path_absolute(origin is string, style is int) is bool;
 
 // The anchor (volume and root, "" for a relative path), then the names: `.` and
@@ -16,40 +23,59 @@ native path_parts(origin is string, style is int) is @string;
 // Raw filesystem capabilities shared by every high-level filesystem module.
 native object FileHandle;
 
+// An open directory stream.
 native object DirectoryHandle;
 
+// An open file with its mode and text encoding.
 native object FileState;
 
+// A held file lock.
 native object FileLockState;
 
+// A temporary directory, removed when closed.
 native object TemporaryDirectoryState;
 
+// A watch on a path.
 native object FileWatchState;
 
+// path as the host's path bytes.
 native path_encode(path is string) is @byte;
 
+// Host path bytes as text.
 native path_decode(path is @byte) is string;
 
+// Opens path with the host's flags and mode; a handle.
 native open(path is @byte, flags is int, mode is int) is FileHandle;
 
+// At most size bytes from handle; [] at the end.
 native read(handle is FileHandle, size is int) is @byte;
 
+// Writes bytes to handle; how many were written.
 native write(handle is FileHandle, bytes is @byte) is int;
 
+// Moves handle to offset from origin (0 start, 1 current, 2 end); the new
+// position.
 native seek(handle is FileHandle, offset is int, origin is int) is int;
 
+// Flushes handle's buffers.
 native flush(handle is FileHandle) is bool;
 
+// Cuts handle's file to size bytes.
 native truncate(handle is FileHandle, size is int) is bool;
 
+// Flushes handle's file to the disk.
 native sync(handle is FileHandle) is bool;
 
+// Takes a shared lock on handle's file.
 native lock_shared(handle is FileHandle) is bool;
 
+// Takes an exclusive lock on handle's file.
 native lock_exclusive(handle is FileHandle) is bool;
 
+// Releases handle's lock.
 native unlock(handle is FileHandle) is bool;
 
+// Closes handle.
 native close(handle is FileHandle) is bool;
 
 // Lazy high-level file state. mode is FileMode's stable 0..4 ABI code;
@@ -61,28 +87,38 @@ native file_state_create(path is @byte, mode is int, encoding is string, binary 
 // encoding applies when text is picked.
 native file_state_open(path is @byte, mode is int, encoding is string) is FileState;
 
+// The rest of state's file as text.
 native file_state_read_text(state is FileState) is string;
 
+// The next line of state's file, without its newline.
 native file_state_read_line(state is FileState) is string;
 
 // The next batch of lines: whole lines up to about limit bytes (one longer
 // line whole), the final unterminated line at the end, [] when none is left.
 native file_state_read_lines(state is FileState, limit is int) is @string;
 
+// At most limit bytes of state's file.
 native file_state_read(state is FileState, limit is int) is @byte;
 
+// Writes value; how many bytes were written.
 native file_state_write(state is FileState, value is @byte) is int;
 
+// Writes values as text, and a newline when newline; how many bytes.
 native file_state_write_text(state is FileState, values is @string, newline is bool) is int;
 
+// Flushes state's buffers.
 native file_state_flush(state is FileState) is bool;
 
+// Closes state.
 native file_state_close(state is FileState) is bool;
 
+// The current position.
 native file_state_position(state is FileState) is int;
 
+// Moves to offset from origin (0 start, 1 current, 2 end); the new position.
 native file_state_seek(state is FileState, offset is int, origin is int) is int;
 
+// Cuts the file to size bytes.
 native file_state_truncate(state is FileState, size is int) is bool;
 
 // mode: 0 shared, 1 exclusive; waiting: 0 wait, 1 immediate.
@@ -95,56 +131,81 @@ native file_state_locked(state is FileState, mode is int) is bool;
 // Empties a text file and writes values from its start.
 native file_state_rewrite_text(state is FileState, values is @string) is int;
 
+// Whether the lock was released.
 native file_lock_closed(state is FileLockState) is bool;
 
+// Releases the lock.
 native file_lock_close(state is FileLockState) is bool;
 
+// The whole file at path.
 native file_content(path is @byte) is @byte;
 
+// The names in the directory at path, sorted.
 native directory_entries(path is @byte) is @string;
 
+// Removes the directory at path and everything in it, without following links.
 native directory_remove_tree(path is @byte) is bool;
 
+// The paths below root matching the glob pattern.
 native matching_paths(root is @byte, pattern is string) is @string;
 
+// Starts watching path.
 native file_watch_create(path is @byte) is FileWatchState;
 
+// The next change: its kind and path.
 native async file_watch_event(state is FileWatchState) is %string:string;
 
+// Whether the watch was closed.
 native file_watch_closed(state is FileWatchState) is bool;
 
+// Stops watching.
 native file_watch_close(state is FileWatchState) is bool;
 
+// A new temporary file in directory, named with prefix, open for writing.
 native temporary_file_create(directory is @byte, prefix is string) is FileState;
 
+// Whether state was closed.
 native file_state_closed(state is FileState) is bool;
 
+// The temporary file's path.
 native temporary_file_path(state is FileState) is @byte;
 
+// Keeps the temporary file as destination instead of removing it.
 native temporary_file_preserve(state is FileState, destination is @byte) is bool;
 
+// A new temporary directory in directory, named with prefix.
 native temporary_directory_create(directory is @byte, prefix is string) is TemporaryDirectoryState;
 
+// Its path.
 native temporary_directory_path(state is TemporaryDirectoryState) is @byte;
 
+// Whether it was removed.
 native temporary_directory_closed(state is TemporaryDirectoryState) is bool;
 
+// Removes it and everything in it.
 native temporary_directory_close(state is TemporaryDirectoryState) is bool;
 
+// The facts of the file at path, following links: kind, size, mode, owner,
+// times.
 native stat(path is @byte) is %string:int;
 
+// The same without following a final link.
 native lstat(path is @byte) is %string:int;
 
+// Makes the directory path with mode.
 native mkdir(path is @byte, mode is int) is bool;
 
 // mkdir with every missing parent; an existing directory is no failure, as
 // `mkdir -p` (#125).
 native mkdir_all(path is @byte, mode is int) is bool;
 
+// Removes the empty directory path.
 native rmdir(path is @byte) is bool;
 
+// Removes the file path.
 native unlink(path is @byte) is bool;
 
+// Renames source to target, replacing target.
 native rename(source is @byte, target is @byte) is bool;
 
 // rename that refuses an existing target (already_exists) instead of
@@ -156,24 +217,35 @@ native rename_noreplace(source is @byte, target is @byte) is bool;
 // written beside the target and renamed over it.
 native copy_file(source is @byte, target is @byte, replace is bool) is bool;
 
+// Makes target a hard link to source.
 native link(source is @byte, target is @byte) is bool;
 
+// Makes link_path a symbolic link to target.
 native symlink(target is @byte, link_path is @byte) is bool;
 
+// Where the link at path points.
 native readlink(path is @byte) is @byte;
 
+// The current directory.
 native cwd() is @byte;
 
+// Changes the current directory to path.
 native chdir(path is @byte) is bool;
 
+// Sets path's permission bits to mode.
 native chmod(path is @byte, mode is int) is bool;
 
+// Sets path's owner and group.
 native chown(path is @byte, owner is int, group is int) is bool;
 
+// Opens the directory path for reading.
 native opendir(path is @byte) is DirectoryHandle;
 
+// The next name in handle; [] at the end.
 native readdir(handle is DirectoryHandle) is @byte;
 
+// Starts handle over.
 native rewinddir(handle is DirectoryHandle) is bool;
 
+// Closes handle.
 native closedir(handle is DirectoryHandle) is bool;

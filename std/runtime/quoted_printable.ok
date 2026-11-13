@@ -1,9 +1,16 @@
 module runtime/quoted_printable v1.0.0;
 
+// The native layer under encoding/quoted_printable: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Portable strict RFC 2045 quoted-printable boundary.
 
+// origin quoted-printable (RFC 2045).
 native quoted_printable_encode(origin is @byte) is @byte;
 
+// Where origin stops being quoted-printable, or -1.
 native quoted_printable_invalid_offset(origin is @byte) is int;
 
+// The bytes of quoted-printable origin.
 native quoted_printable_decode(origin is @byte) is @byte;

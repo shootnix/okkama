@@ -1,12 +1,18 @@
 module runtime/number_text v1.0.0;
 
+// The native layer under json, math/decimal, numbers/bigint, strings/parse: the
+// calls those modules make into the host runtime. Programs use those modules
+// instead; these declarations may change with the runtime.
+//
 // Integer spellings of strings/parse::Number.int: an optional '-', then for
 // radix 0 an optional 0b/0o/0x prefix (base 10 otherwise), then at least one
 // digit 0-9a-zA-Z below the base. Any length; radix is 0 or 2..36.
 // int_parse fails with invalid_input where int_parse_valid is false.
 
+// Whether text is an integer in radix.
 native int_parse_valid(text is string, radix is int) is bool;
 
+// The integer text writes in radix.
 native int_parse(text is string, radix is int) is int;
 
 // Decimal float spellings of strings/parse::Number.float (#170): an optional
@@ -15,6 +21,7 @@ native int_parse(text is string, radix is int) is int;
 // where float_parse_valid is false.
 native float_parse_valid(text is string) is bool;
 
+// The float text writes.
 native float_parse(text is string) is float;
 
 test "integer spellings" {

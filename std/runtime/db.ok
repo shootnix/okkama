@@ -1,56 +1,87 @@
 module runtime/db v1.0.0;
 
+// The native layer under db/postgres, db/read, db/row, db/sqlite: the calls
+// those modules make into the host runtime. Programs use those modules instead;
+// these declarations may change with the runtime.
+
 // Immutable native cells and shared column lookup; owned independently of cursors.
 native object DbCellState;
 
+// Column names indexed for lookup.
 native object DbSchemaState;
 
+// A NULL cell.
 native db_null() is DbCellState;
 
+// A boolean cell.
 native db_boolean(value is bool) is DbCellState;
 
+// An integer cell from decimal text.
 native db_integer(value is string) is DbCellState;
 
+// A float cell.
 native db_floating(value is float) is DbCellState;
 
+// A decimal cell from its text.
 native db_decimal(value is string) is DbCellState;
 
+// A text cell.
 native db_text(value is string) is DbCellState;
 
+// A bytes cell.
 native db_bytes(value is @byte) is DbCellState;
 
+// The kind code of cell: 0 null, 1 boolean, 2 integer, 3 floating, 4 decimal, 5
+// text, 6 bytes.
 native db_kind(cell is DbCellState) is int;
 
+// The boolean of cell.
 native db_boolean_value(cell is DbCellState) is bool;
 
+// The integer of cell as decimal text.
 native db_integer_value(cell is DbCellState) is string;
 
+// Whether cell's integer fits in int.
 native db_int_valid(cell is DbCellState) is bool;
 
+// The integer of cell as int.
 native db_int_value(cell is DbCellState) is int;
 
+// The float of cell.
 native db_floating_value(cell is DbCellState) is float;
 
+// The decimal of cell as text.
 native db_decimal_value(cell is DbCellState) is string;
 
+// The text of cell.
 native db_text_value(cell is DbCellState) is string;
 
+// The bytes of cell.
 native db_bytes_value(cell is DbCellState) is @byte;
 
+// names indexed for lookup.
 native db_schema(names is @string) is DbSchemaState;
 
+// The index of name in schema; -1 when none, -2 when several.
 native db_position(schema is DbSchemaState, name is string) is int;
 
+// How many bytes cells take.
 native db_cells_bytes(cells is @DbCellState) is int;
 
+// A capture of one value's print events.
 native object DbCaptureState;
 
+// A capture expecting kind.
 native db_capture(kind is int) is DbCaptureState;
 
+// Records an event of kind; its state flags.
 native db_capture_emit(capture is DbCaptureState, kind is int) is int;
 
+// Records the event's cell.
 native db_capture_publish(capture is DbCaptureState, cell is DbCellState) is bool;
 
+// Completes the capture, sealing it when seal.
 native db_capture_complete(capture is DbCaptureState, seal is bool) is bool;
 
+// The captured cell.
 native db_capture_value(capture is DbCaptureState) is DbCellState;

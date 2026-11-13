@@ -1,10 +1,17 @@
 module runtime/hex v1.0.0;
 
+// The native layer under encoding/hex: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Portable hexadecimal boundary for encoding/hex. Backends must emit the
 // canonical lowercase alphabet and decode only validated ASCII hex pairs.
 
+// origin in lowercase hex.
 native hex_encode(origin is @byte) is string;
 
+// How many characters of origin are hex.
 native hex_valid_prefix(origin is string) is int;
 
+// The bytes of hex origin.
 native hex_decode(origin is string) is @byte;

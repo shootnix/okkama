@@ -1,8 +1,13 @@
 module runtime/signal v1.0.0;
 
+// The native layer under web/app: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+//
 // Waits for one of the named process signals, "TERM", "INT" or "HUP", and
 // answers its name (#80). A signal is handled while some wait wants it; when
 // the wait ends, by the signal or by cancellation, the signal gets its earlier
 // action back, so the next one ends the process as usual.
 
+// Waits for one of the named signals; the one that came.
 native async signal_wait(names is @string) is string;

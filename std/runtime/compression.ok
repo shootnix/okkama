@@ -1,10 +1,15 @@
 module runtime/compression v1.0.0;
 
+// The native layer under compression/internal/codec: the calls those modules
+// make into the host runtime. Programs use those modules instead; these
+// declarations may change with the runtime.
+//
 // Streaming DEFLATE (RFC 1951) with its zlib (RFC 1950) and gzip (RFC 1952)
 // framings. One state compresses or decompresses one stream; failures are
 // NativeFailure of domain core.compression: invalid_input for damaged data,
 // resource_exhausted past the output limit, invalid_state after the end.
 
+// A streaming compressor or decompressor.
 native object CodecState;
 
 // format: "deflate", "zlib" or "gzip". level 0..9 compresses; limit is the

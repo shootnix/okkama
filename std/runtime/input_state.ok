@@ -1,24 +1,38 @@
 module runtime/input_state v1.0.0;
 
+// The native layer under io/stdin: the calls those modules make into the host
+// runtime. Programs use those modules instead; these declarations may change
+// with the runtime.
+//
 // Opaque mutable buffer owned by one io/stdin.Utf8Input decorator. It stores
 // undecoded bytes and lifecycle flags, never the wrapped Reading capability.
 
+// Bytes read from input, kept until whole lines or characters.
 native object Utf8InputState;
 
+// An empty state.
 native input_state_create() is Utf8InputState;
 
+// Appends value; the new size.
 native input_state_append(state is Utf8InputState, value is @byte) is int;
 
+// How many bytes are kept.
 native input_state_size(state is Utf8InputState) is int;
 
+// Where the first line ends, or -1.
 native input_state_line_offset(state is Utf8InputState) is int;
 
+// Takes size bytes from the front.
 native input_state_take(state is Utf8InputState, size is int) is @byte;
 
+// Whether the input ended.
 native input_state_eof(state is Utf8InputState) is bool;
 
+// Marks the end of input.
 native input_state_finish(state is Utf8InputState) is bool;
 
+// Whether it was closed.
 native input_state_closed(state is Utf8InputState) is bool;
 
+// Frees it.
 native input_state_close(state is Utf8InputState) is bool;

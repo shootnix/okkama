@@ -1,9 +1,16 @@
 module runtime/base32 v1.0.0;
 
+// The native layer under encoding/base32: the calls those modules make into the
+// host runtime. Programs use those modules instead; these declarations may
+// change with the runtime.
+//
 // Portable strict RFC 4648 Base32 boundary for encoding/base32.
 
+// origin in Base32 (RFC 4648).
 native base32_encode(origin is @byte) is string;
 
+// Where origin stops being Base32, or -1.
 native base32_invalid_offset(origin is string) is int;
 
+// The bytes of Base32 origin.
 native base32_decode(origin is string) is @byte;

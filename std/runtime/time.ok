@@ -1,14 +1,21 @@
 module runtime/time v1.0.0;
 
+// The native layer under testing/time, time/clock: the calls those modules make
+// into the host runtime. Programs use those modules instead; these declarations
+// may change with the runtime.
+//
 // Portable clock boundary. Clock readings are integral nanoseconds supplied
 // by the active runtime. Waiting accepts canonical arbitrary-precision decimal
 // text so the stdlib never narrows Duration through the host integer width.
 
+// The wall clock, in nanoseconds since the Unix epoch.
 native wall_clock() is int;
 
+// The monotonic clock, in nanoseconds.
 native monotonic_clock() is int;
 
 // Identity allocation does not read or change a clock.
 native clock_domain(fresh is bool) is string;
 
+// Sleeps for duration nanoseconds without blocking other tasks.
 native async sleep_nanoseconds(duration is string) is bool;
