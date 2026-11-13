@@ -59,20 +59,54 @@ enum InvalidSqliteBlob is Error = (invalid);
 hidden object RefusedBlobs does SqliteBlobOpening {
     RefusedBlobs();
 
-    async opened_blob(database is string, table is string, column is string, row is BigInt, writable is bool) is SqliteBlob {
+    async opened_blob(
+        database is string,
+        table is string,
+        column is string,
+        row is BigInt,
+        writable is bool
+    ) is SqliteBlob {
         throw InvalidSqliteBlob.invalid;
     }
 }
 
 test "a blob handle names its database, table and column without NUL" {
-    OpenedSqliteBlob(origin: RefusedBlobs(), database: "main", table: "files", column: "data", row: BigInt(1), writable: false);
+    OpenedSqliteBlob(
+        origin: RefusedBlobs(),
+        database: "main",
+        table: "files",
+        column: "data",
+        row: BigInt(1),
+        writable: false
+    );
     test.throws(InvalidSqliteBlob) {
-        OpenedSqliteBlob(origin: RefusedBlobs(), database: "", table: "files", column: "data", row: BigInt(1), writable: false);
+        OpenedSqliteBlob(
+            origin: RefusedBlobs(),
+            database: "",
+            table: "files",
+            column: "data",
+            row: BigInt(1),
+            writable: false
+        );
     };
     test.throws(InvalidSqliteBlob) {
-        OpenedSqliteBlob(origin: RefusedBlobs(), database: "main", table: "fi" + Utf8Decoded([0.byte()]).string() + "les", column: "data", row: BigInt(1), writable: false);
+        OpenedSqliteBlob(
+            origin: RefusedBlobs(),
+            database: "main",
+            table: "fi" + Utf8Decoded([0.byte()]).string() + "les",
+            column: "data",
+            row: BigInt(1),
+            writable: false
+        );
     };
     test.throws(InvalidSqliteBlob) {
-        OpenedSqliteBlob(origin: RefusedBlobs(), database: "main", table: "files", column: "d".repeat(1025), row: BigInt(1), writable: true);
+        OpenedSqliteBlob(
+            origin: RefusedBlobs(),
+            database: "main",
+            table: "files",
+            column: "d".repeat(1025),
+            row: BigInt(1),
+            writable: true
+        );
     };
 }
