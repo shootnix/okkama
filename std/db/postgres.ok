@@ -82,10 +82,12 @@ import "runtime/postgres" as native_pg;
 import "db/read" take DbPage;
 import "cell" take Cell;
 
+// The user and, when the server asks for one, the password.
 object PostgresCredentials {
     has user is string;
     has password is @SecretBytes;
 
+    // user without a password, for trust authentication.
     PostgresCredentials(user is string) {
         confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1
             else throw InvalidPostgresOptions.because("user must be nonempty without NUL");
@@ -93,6 +95,7 @@ object PostgresCredentials {
         password = [];
     }
 
+    // user with password.
     PostgresCredentials(user is string, password is SecretBytes) {
         confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1
             else throw InvalidPostgresOptions.because("user must be nonempty without NUL");
@@ -100,10 +103,12 @@ object PostgresCredentials {
         self.password = [password];
     }
 
+    // Whether there is a password.
     has_password() is bool {
         password.size() == 1;
     }
 
+    // The password; DbFailure when there is none.
     password() is SecretBytes {
         confirm password.size() == 1
             else throw DbFailure.detailed(
@@ -115,6 +120,7 @@ object PostgresCredentials {
         password[0];
     }
 
+    // The user.
     cap Credentials {
         user is string {
             user;
@@ -122,11 +128,14 @@ object PostgresCredentials {
     }
 }
 
+// The database and how the driver talks to it.
 object PostgresOptions {
     has database, application is string;
     has md5, cleartext is bool;
     has batch is int;
 
+    // database, application name okkama, no MD5 or cleartext passwords, 256
+    // rows per batch.
     PostgresOptions(database is string) {
         confirm database != ""
             else throw InvalidPostgresOptions.because("database must be nonempty");
@@ -137,6 +146,8 @@ object PostgresOptions {
         batch = 256;
     }
 
+    // The options as given; InvalidPostgresOptions for an empty database or a
+    // batch outside 1..65536.
     PostgresOptions(
         database is string,
         application is string,
@@ -155,6 +166,8 @@ object PostgresOptions {
         self.batch = batch;
     }
 
+    // The database, application name, whether MD5 and cleartext passwords are
+    // allowed, and rows per batch.
     cap Settings {
         database is string {
             database;
@@ -188,6 +201,8 @@ object PgTransport does Closing {
     has origin is Closing;
     has cancel is PgCancelRoute;
 
+    // A transport over input and output, closing origin, without a cancel
+    // route.
     PgTransport(input is AsyncReading, output is AsyncWriting, origin is Closing) {
         self.input = input;
         self.output = output;
@@ -195,6 +210,7 @@ object PgTransport does Closing {
         cancel = PgNoCancelRoute();
     }
 
+    // The same, cancelling through cancel.
     PgTransport(
         input is AsyncReading,
         output is AsyncWriting,
@@ -207,22 +223,27 @@ object PgTransport does Closing {
         self.cancel = cancel;
     }
 
+    // The bytes from the server.
     input() is AsyncReading {
         input;
     }
 
+    // The bytes to the server.
     output() is AsyncWriting {
         output;
     }
 
+    // Where cancel requests go.
     cancel_route() is PgCancelRoute {
         cancel;
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Ends the connection.
     close() is void {
         origin.close();
     }
@@ -233,7 +254,10 @@ object PgTransport does Closing {
 // cancel() returns once the server has taken the request, so a later
 // statement on the connection can no longer be hit by it.
 role PgCancelRoute {
+    // Whether cancel requests can be sent.
     routed() is bool;
+    // Asks the server to cancel what backend process runs, proving it with
+    // secret.
     async cancel(process is int, secret is @byte) is void;
 }
 
@@ -276,17 +300,22 @@ hidden object PgCancelTcp does PgCancelRoute {
     }
 }
 
+// How to reach the server: plain TCP or TLS.
 role PostgresTransporting {
+    // A new transport.
     async transport() is PgTransport;
 }
 
+// A plaintext TCP connection to the server.
 object PostgresTcp does PostgresTransporting {
     has endpoint is IpEndpoint;
 
+    // To endpoint.
     PostgresTcp(endpoint is IpEndpoint) {
         self.endpoint = endpoint;
     }
 
+    // Connects.
     async transport() is PgTransport {
         let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
         PgTransport(
@@ -305,12 +334,15 @@ object PostgresTls does PostgresTransporting {
     has server is CertificateIdentity;
     has policy is TlsClientPolicy;
 
+    // To endpoint, verifying the certificate is server's under policy.
     PostgresTls(endpoint is IpEndpoint, server is CertificateIdentity, policy is TlsClientPolicy) {
         self.endpoint = endpoint;
         self.server = server;
         self.policy = policy;
     }
 
+    // Connects, sends SSLRequest and completes a verified handshake; DbFailure
+    // when the server refuses TLS.
     async transport() is PgTransport {
         let tcp = await TcpConnecting(remote: endpoint, options: TcpOptions(true, true)).connection();
         await PgTlsStart(tcp: tcp, server: server, policy: policy, cancel: endpoint).transport();
@@ -577,12 +609,15 @@ hidden object PgTransportUnpublished {
     }
 }
 
+// A PostgreSQL database to connect to.
 object PostgresDatabase {
     has transport is PostgresTransporting;
     has credentials is PostgresCredentials;
     has options is PostgresOptions;
     has entropy is Entropy;
 
+    // The database reached through transport, logging in with credentials;
+    // entropy makes SCRAM nonces.
     PostgresDatabase(
         transport is PostgresTransporting,
         credentials is PostgresCredentials,
@@ -619,10 +654,13 @@ object PostgresDatabase {
         entropy = SystemEntropy();
     }
 
+    // Its options.
     options() is PostgresOptions {
         options;
     }
 
+    // A new connection: startup, authentication, then ready; DbFailure when
+    // that fails.
     async connection() is PostgresConnection {
         let channel = await transport.transport();
         let published = Event();
@@ -693,22 +731,27 @@ object PostgresDatabase {
 object PostgresConnector does DbConnecting {
     has origin is PostgresDatabase;
 
+    // Connects to origin.
     PostgresConnector(origin is PostgresDatabase) {
         self.origin = origin;
     }
 
+    // A new connection.
     async connection() is DbConnection {
         await origin.connection();
     }
 }
 
+// A PostgreSQL database as a DbAcquiring, for prepared pools.
 object PostgresAcquiring does DbAcquiring {
     has origin is PostgresDatabase;
 
+    // Connects to origin.
     PostgresAcquiring(origin is PostgresDatabase) {
         self.origin = origin;
     }
 
+    // A new connection with its preparation.
     async acquisition() is DbAcquisition {
         let connection = await origin.connection();
         DbAcquisition(connection: connection, preparation: connection, transactions: connection);
@@ -937,46 +980,57 @@ hidden object PgScramRefused {
     }
 }
 
+// A connection to PostgreSQL; one operation at a time.
 object PostgresConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedOpening, Closing {
     has origin is PgSession;
 
+    // The connection over origin.
     PostgresConnection(origin is PgSession) {
         self.origin = origin;
     }
 
+    // Runs statement.
     async execution(statement is Statement) is Execution {
         await origin.execution(statement, 0);
     }
 
+    // Runs statement and streams its rows.
     async rows(statement is Statement) is RowReading {
         await origin.rows(statement, 0);
     }
 
+    // Begins a transaction with options.
     async transaction(options is TransactionOptions) is Transaction {
         await origin.begin(options);
     }
 
+    // Prepares text.
     async prepared(text is string) is PreparedStatement {
         await origin.prepare(text, 0);
     }
 
+    // Begins a transaction that can prepare statements.
     async prepared_transaction(options is TransactionOptions) is DbPreparedTransaction {
         let transaction = await origin.begin(options);
         DbPreparedTransaction(origin: transaction, preparation: transaction);
     }
 
+    // The server_version the server reported.
     server_version() is string {
         origin.server_version();
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes the transport.
     close() is void {
         origin.close();
     }
 
+    // true at once: each operation is finished before it returns.
     async settled() is bool {
         true;
     }
@@ -997,6 +1051,7 @@ object PostgresConnection does DbConnection, DbExecuting, DbPreparing, DbPrepare
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound to $1..$n.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
@@ -1030,6 +1085,8 @@ object PgSession does Closing {
     has process is int = 0;
     has secret is @byte = @byte();
 
+    // A session over transport, with the backend's process id and secret for
+    // cancelling.
     PgSession(
         transport is PgTransport,
         input is PgInput,
@@ -1060,6 +1117,7 @@ object PgSession does Closing {
         transaction_prepared = Atomic(@string());
     }
 
+    // A session without cancel data.
     PgSession(
         transport is PgTransport,
         input is PgInput,
@@ -1086,14 +1144,17 @@ object PgSession does Closing {
         transaction_prepared = Atomic(@string());
     }
 
+    // The server version.
     server_version() is string {
         version;
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready() || transport.closed();
     }
 
+    // Closes it.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -1104,6 +1165,7 @@ object PgSession does Closing {
         }
     }
 
+    // Sends bytes.
     async send(bytes is @byte, operation is DbOperation) is void {
         try {
             await output.send(bytes);
@@ -1141,6 +1203,7 @@ object PgSession does Closing {
         }
     }
 
+    // The next message.
     async message(operation is DbOperation) is PgMessage {
         try {
             await input.message();
@@ -1155,6 +1218,7 @@ object PgSession does Closing {
         }
     }
 
+    // A new id for a reader or statement.
     next_id() is int {
         let id = serial.value() + 1;
         serial.replace(id);
@@ -1166,6 +1230,7 @@ object PgSession does Closing {
         await self.through_ready(PgOutcome(operation));
     }
 
+    // Reads on until ReadyForQuery.
     async through_ready(outcome is PgOutcome) is PgOutcome {
         loop {
             let ready = self.buffered(outcome.operation());
@@ -1362,6 +1427,7 @@ object PgSession does Closing {
         complete.set();
     }
 
+    // Throws unless token may act now.
     permit(token is int) is void {
         confirm !self.closed() else throw DbClosed.closed;
         if transaction.value() > 0 && status.value() == "I" {
@@ -1375,14 +1441,17 @@ object PgSession does Closing {
         confirm reader.value() == 0 else throw DbBusy.busy;
     }
 
+    // Whether transaction token is open.
     active(token is int) is bool {
         !self.closed() && transaction.value() == token && status.value() != "I";
     }
 
+    // Whether the statements of token are closed.
     prepared_closed(token is int) is bool {
         self.closed() || (token > 0 && !self.active(token));
     }
 
+    // Runs statement for token.
     async execution(statement is Statement, token is int) is Execution {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1407,6 +1476,7 @@ object PgSession does Closing {
         outcome.execution();
     }
 
+    // Opens the rows of statement for token.
     async rows(statement is Statement, token is int) is RowReading {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1434,6 +1504,7 @@ object PgSession does Closing {
         self.reading(outcome, outcome.description(), "", Event(), token);
     }
 
+    // Prepares text for token.
     async prepare(text is string, token is int) is PreparedStatement {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1466,6 +1537,7 @@ object PgSession does Closing {
         );
     }
 
+    // Runs prepared statement name with values.
     async prepared_execution(
         name is string,
         parameters is int,
@@ -1495,6 +1567,7 @@ object PgSession does Closing {
         outcome.execution();
     }
 
+    // Opens the rows of prepared statement name with values.
     async prepared_rows(
         name is string,
         parameters is int,
@@ -1527,6 +1600,7 @@ object PgSession does Closing {
         self.reading(outcome, description, name, source_closed, token);
     }
 
+    // A reader of an answer.
     reading(
         outcome is PgOutcome,
         description is PgDescription,
@@ -1550,6 +1624,7 @@ object PgSession does Closing {
         );
     }
 
+    // The next portion of reader id.
     async fetch(id is int) is PgOutcome {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1576,6 +1651,7 @@ object PgSession does Closing {
         }
     }
 
+    // Closes prepared statement name on the next operation.
     unprepare(name is string) is void {
         let kept is @string = transaction_prepared.value().filter() -> entry {
             entry != name;
@@ -1589,6 +1665,7 @@ object PgSession does Closing {
         }
     }
 
+    // Closes every prepared statement.
     end_prepared() is void {
         let names = transaction_prepared.value();
         transaction_prepared.replace(@string());
@@ -1597,6 +1674,7 @@ object PgSession does Closing {
         }
     }
 
+    // Begins a transaction.
     async begin(options is TransactionOptions) is PgTransaction {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1619,6 +1697,7 @@ object PgSession does Closing {
         PgTransaction(owner: self, token: id);
     }
 
+    // Commits or rolls back token.
     async finish(token is int, commit is bool, state is Atomic<int>) is bool {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -1787,6 +1866,7 @@ object PgOutcome {
     has count is Atomic<int>;
     has finished, copy is Atomic<bool>;
 
+    // For operation.
     PgOutcome(operation is DbOperation) {
         self.operation = operation;
         tags = Atomic(@string());
@@ -1803,14 +1883,17 @@ object PgOutcome {
         copy = Atomic(false);
     }
 
+    // The operation.
     operation() is DbOperation {
         operation;
     }
 
+    // Records a CommandComplete tag.
     tag(value is string) is void {
         tags.replace(@string(tags.value()..., value));
     }
 
+    // Records a DataRow.
     row(body is @byte) is void {
         self.data_rows(
             PgDataRows(
@@ -1820,6 +1903,7 @@ object PgOutcome {
         );
     }
 
+    // Records a run of DataRows.
     data_rows(run is PgDataRows) is void {
         if run.count() > 0 {
             data.replace(data.value().prefix(run.bytes()));
@@ -1828,32 +1912,39 @@ object PgOutcome {
         }
     }
 
+    // How many rows so far.
     rows() is int {
         rows.value();
     }
 
+    // Records the row description.
     describe(value is PgDescription) is void {
         columns.replace([value]);
     }
 
+    // Records the parameter count.
     parameters(value is int) is void {
         count.replace(value);
     }
 
+    // Records a failure.
     fail(value is DbFailure) is void {
         if failures.value().size() == 0 {
             failures.replace([value]);
         }
     }
 
+    // Records a refused COPY.
     copied() is void {
         copy.replace(true);
     }
 
+    // Marks the end of the answer.
     end() is void {
         finished.replace(true);
     }
 
+    // Whether the answer ended.
     ended() is bool {
         finished.value();
     }
@@ -1887,10 +1978,12 @@ object PgOutcome {
         );
     }
 
+    // The parameter count.
     parameter_count() is int {
         count.value();
     }
 
+    // The row description.
     description() is PgDescription {
         if columns.value().size() == 1 {
             columns.value()[0];
@@ -1900,6 +1993,7 @@ object PgOutcome {
         }
     }
 
+    // The last CommandComplete tag.
     last_tag() is string {
         let all = tags.value();
         if all.size() == 0 {
@@ -1910,6 +2004,7 @@ object PgOutcome {
         }
     }
 
+    // Throws the failure recorded, if any.
     check() is void {
         confirm !copy.value()
             else throw DbFailure.detailed(
@@ -1923,6 +2018,7 @@ object PgOutcome {
         }
     }
 
+    // The execution, with the rows affected from the tag.
     execution() is Execution {
         self.check();
         PgCommandTag(self.last_tag()).execution();
@@ -1957,12 +2053,14 @@ object PgDescription {
     has columns is @Column;
     has types is @int;
 
+    // No columns.
     PgDescription() {
         columns = [];
         schema = DbRowSchema(columns: self.columns, limits: DbLimits());
         types = [];
     }
 
+    // Reads a RowDescription.
     PgDescription(fields is PgFields) {
         let count = fields.int16();
         let names = Cell(@string());
@@ -1986,14 +2084,17 @@ object PgDescription {
         types = found;
     }
 
+    // The columns.
     columns() is @Column {
         columns;
     }
 
+    // The type OIDs.
     types() is @int {
         types;
     }
 
+    // The row schema.
     schema() is DbRowSchema {
         schema;
     }
@@ -2374,6 +2475,7 @@ hidden object PgFailureKind {
     }
 }
 
+// The rows of a streaming answer.
 object PgRows does RowReading, Closing {
     has owner is PgSession;
     has id, token is int;
@@ -2384,6 +2486,7 @@ object PgRows does RowReading, Closing {
     has eof, stopped, source_closed is Event;
     has busy is Atomic<bool>;
 
+    // Reader id of owner, starting with first.
     PgRows(
         owner is PgSession,
         id is int,
@@ -2409,10 +2512,12 @@ object PgRows does RowReading, Closing {
         busy = Atomic(false);
     }
 
+    // The columns.
     columns() is Sequencing<Column> {
         description.columns();
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready()
             || source_closed.ready()
@@ -2420,6 +2525,7 @@ object PgRows does RowReading, Closing {
             || (token > 0 && !owner.active(token));
     }
 
+    // Closes it; the rest of the answer is discarded on the next operation.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -2429,6 +2535,7 @@ object PgRows does RowReading, Closing {
         }
     }
 
+    // The next row; RowsEnded at the end.
     async row() is Row {
         confirm !self.closed() else throw DbClosed.closed;
         confirm busy.compare_and_replace(false, true) else throw DbBusy.busy;
@@ -2468,36 +2575,43 @@ object PgRows does RowReading, Closing {
     }
 }
 
+// An open PostgreSQL transaction.
 object PgTransaction does Transaction, DbExecuting, DbPreparing {
     has owner is PgSession;
     has token is int;
     has outcome is Atomic<int>;
 
+    // Transaction token of owner.
     PgTransaction(owner is PgSession, token is int) {
         self.owner = owner;
         self.token = token;
         outcome = Atomic(0);
     }
 
+    // Whether it is still open.
     active() is bool {
         outcome.value() == 0 && owner.active(token);
     }
 
+    // Runs statement.
     async execution(statement is Statement) is Execution {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.execution(statement, token);
     }
 
+    // Runs statement and streams its rows.
     async rows(statement is Statement) is RowReading {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.rows(statement, token);
     }
 
+    // Prepares text.
     async prepared(text is string) is PreparedStatement {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.prepare(text, token);
     }
 
+    // Commits.
     async commit() is Transaction {
         if outcome.value() == 3 {
             throw IndeterminateCommit.indeterminate;
@@ -2520,6 +2634,7 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
         self;
     }
 
+    // Rolls back.
     async rollback() is Transaction {
         if outcome.value() == 2 {
             return self;
@@ -2548,6 +2663,7 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound to $1..$n.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
@@ -2619,6 +2735,7 @@ hidden object PgPrepared does PreparedStatement, Closing {
     }
 }
 
+// Options or a URL that cannot be used; reason says why.
 enum InvalidPostgresOptions is Error = (because(reason is string));
 
 test "startup message carries protocol 3.0 and UTF-8 session settings" {
