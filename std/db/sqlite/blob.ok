@@ -1,9 +1,21 @@
 module db/sqlite/blob v1.0.0;
 
+// SQLite BLOBs read and written in pieces, without loading them whole.
+//
+//     let blob = await OpenedSqliteBlob(origin: db, database: "main", table: "files",
+//         column: "data", row: BigInt(7), writable: false).blob();
+//     let head = await blob.bytes(offset: BigInt(0), limit: 16);    // the first 16 bytes
+//     blob.close();
+//
+// A BLOB cannot change size: reads and writes stay within it, 64 KiB at a
+// time.
+
 import "numbers/bigint" take BigInt;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
+// Something that opens BLOBs.
 role SqliteBlobOpening {
+    // Opens the BLOB in column of row in table of database.
     async opened_blob(
         database is string,
         table is string,
@@ -13,20 +25,29 @@ role SqliteBlobOpening {
     ) is SqliteBlob;
 }
 
+// An open BLOB.
 role SqliteBlob {
+    // limit bytes from offset, at most 64 KiB; InvalidSqliteBlob past its end.
     async bytes(offset is BigInt, limit is int) is @byte;
+    // Writes source at offset, at most 64 KiB; InvalidSqliteBlob past its end.
     async write(offset is BigInt, source is @byte) is SqliteBlob;
+    // Its size in bytes.
     size() is int;
+    // Whether it was closed.
     closed() is bool;
+    // Closes it.
     close() is void;
 }
 
+// A BLOB to open.
 object OpenedSqliteBlob {
     has origin is SqliteBlobOpening;
     has database, table, column is string;
     has row is BigInt;
     has writable is bool;
 
+    // The BLOB in column of row in table of database, writable or not;
+    // InvalidSqliteBlob for an empty name.
     OpenedSqliteBlob(
         origin is SqliteBlobOpening,
         database is string,
@@ -49,11 +70,13 @@ object OpenedSqliteBlob {
         self.writable = writable;
     }
 
+    // Opens it.
     async blob() is SqliteBlob {
         await origin.opened_blob(database, table, column, row, writable);
     }
 }
 
+// A BLOB that cannot be opened as asked.
 enum InvalidSqliteBlob is Error = (invalid);
 
 hidden object RefusedBlobs does SqliteBlobOpening {

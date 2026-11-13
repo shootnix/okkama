@@ -1,5 +1,20 @@
 module db/sqlite v1.0.0;
 
+// SQLite databases, in a file or in memory.
+//
+//     let db = await SqliteDatabase(path: Path("app.db"), options: SqliteOptions()).connection();
+//     let scratch = await SqliteMemory().connection();
+//     defer db.close();
+//     await db.execution("CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, title TEXT)");
+//     await db.execution("INSERT INTO notes(title) VALUES (?)", DbText("hello"));
+//     let change = await db.transaction(options: TransactionOptions(), mode: SqliteTransactionMode.immediate);
+//
+// By default a file is created when missing, foreign keys are on, there is no
+// busy timeout and the journal mode is SQLite's own. A connection is also a
+// DbConnection, so portable code and pools (through SqliteConnector or
+// SqliteAcquiring) take it. The work runs on a native worker; calls never block
+// the event loop. BLOB streaming, scripts and backups are in the submodules.
+
 import "runtime/database" as sqlite;
 import "runtime/db" as native_db;
 import "runtime/fs" take path_encode;
@@ -40,13 +55,17 @@ import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "time/clock" take SystemClock;
 
+// The journal mode; default_mode leaves SQLite's.
 enum SqliteJournal = (default_mode, delete_mode, wal, memory);
 
+// How a SQLite database is opened.
 object SqliteOptions {
     has read_only, create, foreign_keys is bool;
     has busy is Duration;
     has journal is SqliteJournal;
 
+    // Read-write, created when missing, foreign keys on, no busy timeout,
+    // default journal.
     SqliteOptions() {
         read_only = false;
         create = true;
@@ -55,6 +74,8 @@ object SqliteOptions {
         journal = SqliteJournal.default_mode;
     }
 
+    // The options as given; InvalidSqliteOptions for read_only with create, or
+    // a busy timeout outside 0-60 s in whole milliseconds.
     SqliteOptions(
         read_only is bool,
         create is bool,
@@ -74,10 +95,12 @@ object SqliteOptions {
         self.journal = journal;
     }
 
+    // How long to wait for a lock held by another connection.
     busy_timeout() is Duration {
         busy;
     }
 
+    // Read-only, creation, foreign keys and the journal mode.
     cap Settings {
         read_only is bool {
             read_only;
@@ -97,43 +120,53 @@ object SqliteOptions {
     }
 }
 
+// A SQLite database file.
 object SqliteDatabase {
     has path is Path;
     has options is SqliteOptions;
 
+    // The database at path, opened with options.
     SqliteDatabase(path is Path, options is SqliteOptions) {
         self.path = path;
         self.options = options;
     }
 
+    // Its path.
     path() is Path {
         path;
     }
 
+    // Its options.
     options() is SqliteOptions {
         options;
     }
 
+    // A new connection; DbFailure when it cannot be opened.
     async connection() is SqliteConnection {
         await SqliteOpening(path: path_encode(path.string()), memory: false, options: options).connection();
     }
 }
 
+// A private in-memory database; it is gone when its connection closes.
 object SqliteMemory {
     has options is SqliteOptions;
 
+    // With options.
     SqliteMemory(options is SqliteOptions) {
         self.options = options;
     }
 
+    // With the default options.
     SqliteMemory() {
         options = SqliteOptions();
     }
 
+    // Its options.
     options() is SqliteOptions {
         options;
     }
 
+    // A new connection to a new empty database.
     async connection() is SqliteConnection {
         await SqliteOpening(path: [], memory: true, options: options).connection();
     }
@@ -144,39 +177,47 @@ object SqliteMemory {
 object SqliteConnector does DbConnecting {
     has origin is SqliteDatabase;
 
+    // Connects to origin.
     SqliteConnector(origin is SqliteDatabase) {
         self.origin = origin;
     }
 
+    // A new connection.
     async connection() is DbConnection {
         await origin.connection();
     }
 }
 
+// A SQLite database as a DbAcquiring, for prepared pools.
 object SqliteAcquiring does DbAcquiring {
     has origin is SqliteDatabase;
 
+    // Connects to origin.
     SqliteAcquiring(origin is SqliteDatabase) {
         self.origin = origin;
     }
 
+    // A new connection with its preparation.
     async acquisition() is DbAcquisition {
         let connection = await origin.connection();
         DbAcquisition(connection: connection, preparation: connection, transactions: connection);
     }
 }
 
+// One opening of a connection.
 object SqliteOpening {
     has path is @byte;
     has memory is bool;
     has options is SqliteOptions;
 
+    // Opens path (in memory when memory) with options.
     SqliteOpening(path is @byte, memory is bool, options is SqliteOptions) {
         self.path = path;
         self.memory = memory;
         self.options = options;
     }
 
+    // The connection.
     async connection() is SqliteConnection {
         confirm !(memory && options::Settings::read_only) else throw InvalidSqliteOptions.invalid;
         let journal = match options::Settings::journal {
@@ -291,34 +332,43 @@ hidden object SqliteTaskCleanup<T> {
     }
 }
 
+// A connection to a SQLite database.
 object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedOpening, SqliteBlobOpening, SqliteScripting, SqliteBackupMaking, Closing {
     has origin is SqliteSession;
 
+    // The connection over origin.
     SqliteConnection(origin is SqliteSession) {
         self.origin = origin;
     }
 
+    // Runs statement.
     async execution(origin is Statement) is Execution {
         await self.origin.execution(origin);
     }
 
+    // Runs statement and reads its rows.
     async rows(origin is Statement) is RowReading {
         await self.origin.rows(origin);
     }
 
+    // Begins a deferred transaction.
     async transaction(options is TransactionOptions) is Transaction {
         await origin.begin(options, SqliteTransactionMode.deferred);
     }
 
+    // Prepares text.
     async prepared(text is string) is PreparedStatement {
         await origin.prepare(text);
     }
 
+    // Begins a transaction that can prepare statements.
     async prepared_transaction(options is TransactionOptions) is DbPreparedTransaction {
         let transaction = await origin.begin(options, SqliteTransactionMode.deferred);
         DbPreparedTransaction(origin: transaction, preparation: transaction);
     }
 
+    // Opens the BLOB in column of row in table of database, for writing when
+    // writable.
     async opened_blob(
         database is string,
         table is string,
@@ -329,22 +379,27 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
         await origin.open_blob(database, table, column, row, writable, 0);
     }
 
+    // Runs every statement of source; one Execution each.
     async script(source is string) is Sequencing<Execution> {
         await origin.script(source, 0);
     }
 
+    // Copies the database to target, pages at a time, within timeout.
     async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport {
         await origin.backup(target, pages, clock, timeout);
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Closes it.
     close() is void {
         origin.close();
     }
 
+    // Waits until its worker has finished.
     async settled() is bool {
         await origin.settled();
     }
@@ -353,6 +408,7 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
         origin.close();
     }
 
+    // Begins a transaction in mode.
     async transaction(options is TransactionOptions, mode is SqliteTransactionMode) is SqliteTransaction {
         await origin.begin(options, mode);
     }
@@ -369,6 +425,7 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
@@ -380,6 +437,7 @@ object SqliteConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedO
     }
 }
 
+// The worker side of a connection; used inside db/sqlite.
 object SqliteSession does Closing {
     has state is sqlite.SqliteState;
     has lock is Lock;
@@ -390,6 +448,7 @@ object SqliteSession does Closing {
     has fetch_id is Atomic<int>;
     has shape is Atomic<@SqliteShape>;
 
+    // The native connection state.
     SqliteSession(state is sqlite.SqliteState, read_only is bool) {
         let no_shape is @SqliteShape = [];
         shape = Atomic(no_shape);
@@ -408,14 +467,17 @@ object SqliteSession does Closing {
         fetch_id = Atomic(0);
     }
 
+    // Whether it was closed.
     closed() is bool {
         sqlite.sqlite_closed(state);
     }
 
+    // Closes it.
     close() is void {
         sqlite.sqlite_close(state);
     }
 
+    // Waits until its worker has finished.
     async settled() is bool {
         try {
             await sqlite.sqlite_settled(state);
@@ -425,10 +487,12 @@ object SqliteSession does Closing {
         }
     }
 
+    // Runs statement outside a transaction.
     async execution(statement is Statement) is Execution {
         await self.execution_for(statement, 0);
     }
 
+    // Runs statement for the transaction token.
     async execution_for(statement is Statement, token is int) is Execution {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -444,10 +508,12 @@ object SqliteSession does Closing {
         frame.execution();
     }
 
+    // Opens the rows of statement.
     async rows(statement is Statement) is RowReading {
         await self.rows_for(statement, 0);
     }
 
+    // Opens the rows of statement for token.
     async rows_for(statement is Statement, token is int) is RowReading {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -468,10 +534,12 @@ object SqliteSession does Closing {
         rows;
     }
 
+    // Prepares text.
     async prepare(text is string) is PreparedStatement {
         await self.prepare_for(text, 0);
     }
 
+    // Prepares text for token.
     async prepare_for(text is string, token is int) is PreparedStatement {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -492,6 +560,7 @@ object SqliteSession does Closing {
         SqlitePrepared(owner: self, id: id, token: token);
     }
 
+    // Runs prepared statement id with values.
     async prepared_execution(id is int, values is Sequencing<DbValue>, token is int) is Execution {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -507,6 +576,7 @@ object SqliteSession does Closing {
         frame.execution();
     }
 
+    // Opens the rows of prepared statement id with values.
     async prepared_rows(
         id is int,
         values is Sequencing<DbValue>,
@@ -562,6 +632,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Finalizes prepared statement id.
     unprepare(id is int) is void {
         let kept is @int = transaction_prepared.value().filter() -> entry {
             entry != id;
@@ -575,6 +646,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Finalizes every prepared statement.
     end_prepared() is void {
         let ids = transaction_prepared.value();
         transaction_prepared.replace([]);
@@ -583,6 +655,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Whether the statements of token are closed.
     prepared_closed(token is int) is bool {
         self.closed() || (token > 0 && !self.active(token));
     }
@@ -604,6 +677,7 @@ object SqliteSession does Closing {
         SqliteFrame(state: reply, operation: operation);
     }
 
+    // Waits until the worker is idle.
     async barrier() is void {
         try {
             await sqlite.sqlite_settled(state);
@@ -613,6 +687,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Opens a BLOB for token.
     async open_blob(
         database is string,
         table is string,
@@ -636,6 +711,7 @@ object SqliteSession does Closing {
         SqliteBlobHandle(owner: self, id: id, size: frame.size(), writable: writable, token: token);
     }
 
+    // Whether BLOB id is open for token.
     blob_active(id is int, token is int) is bool {
         !self.closed()
             && blob.value() == id
@@ -647,6 +723,7 @@ object SqliteSession does Closing {
             });
     }
 
+    // Closes BLOB id.
     blob_close(id is int) is void {
         if blob.value() == id {
             blob.replace(0);
@@ -656,6 +733,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Reads from BLOB id.
     async blob_bytes(id is int, offset is BigInt, limit is int, token is int) is @byte {
         let guard = await lock.guard();
         defer guard.close();
@@ -668,6 +746,7 @@ object SqliteSession does Closing {
         frame.bytes();
     }
 
+    // Writes to BLOB id.
     async blob_write(id is int, offset is BigInt, source is @byte, token is int) is bool {
         let guard = await lock.guard();
         defer guard.close();
@@ -680,6 +759,7 @@ object SqliteSession does Closing {
         true;
     }
 
+    // Runs a script for token.
     async script(source is string, token is int) is Sequencing<Execution> {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -694,6 +774,7 @@ object SqliteSession does Closing {
         frame.executions();
     }
 
+    // Backs up to target; DbBusy while rows or a BLOB are open.
     async backup(target is Path, pages is int, clock is Timing, timeout is Duration) is BackupReport {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -736,12 +817,14 @@ object SqliteSession does Closing {
         }
     }
 
+    // Ends backup id.
     backup_close(id is int) is void {
         if !self.closed() {
             sqlite.sqlite_backup_close(state, id);
         }
     }
 
+    // Throws unless token may act now.
     permit(token is int) is void {
         confirm !self.closed() else throw DbClosed.closed;
         if transaction.value() > 0 && sqlite.sqlite_autocommit(state) {
@@ -753,10 +836,12 @@ object SqliteSession does Closing {
         confirm transaction.value() == token else throw DbBusy.busy;
     }
 
+    // Whether transaction token is open.
     active(token is int) is bool {
         !self.closed() && transaction.value() == token && !sqlite.sqlite_autocommit(state);
     }
 
+    // Begins a transaction.
     async begin(options is TransactionOptions, mode is SqliteTransactionMode) is SqliteTransaction {
         confirm !self.closed() else throw DbClosed.closed;
         confirm (options::Mode::isolation == Isolation.default_level
@@ -800,6 +885,7 @@ object SqliteSession does Closing {
         SqliteTransaction(owner: self, token: id);
     }
 
+    // Runs a transaction control statement.
     async control(sql is string, operation is DbOperation) is bool {
         let frame = await self.reply(
             sqlite.sqlite_control(state, Utf8Encoded(sql).bytes()),
@@ -809,6 +895,7 @@ object SqliteSession does Closing {
         true;
     }
 
+    // Commits or rolls back token.
     async finish(token is int, commit is bool, outcome is Atomic<int>) is bool {
         confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
@@ -869,6 +956,7 @@ object SqliteSession does Closing {
         true;
     }
 
+    // Rolls back token without waiting.
     abandon(token is int) is void {
         if transaction.value() == token || token == 0 {
             transaction.replace(0);
@@ -885,6 +973,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Releases cursor id.
     release(id is int) is void {
         if reader.value() == id {
             reader.replace(0);
@@ -900,6 +989,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // Drops the pending page of cursor id.
     clear_fetch(id is int) is void {
         if fetch_id.value() == id {
             fetches.replace([]);
@@ -907,6 +997,7 @@ object SqliteSession does Closing {
         }
     }
 
+    // The next page of cursor id, at most maximum rows.
     async batch(id is int, maximum is int) is SqliteFrame {
         confirm !self.closed() && reader.value() == id else throw DbClosed.closed;
         let waiting = sqlite.sqlite_fetch(state, id, maximum);
@@ -917,11 +1008,13 @@ object SqliteSession does Closing {
     }
 }
 
+// The columns of a result shape, reused while it repeats.
 object SqliteShape {
     has names, declarations is @string;
     has columns is @Column;
     has schema is DbRowSchema;
 
+    // As given.
     SqliteShape(
         names is @string,
         declarations is @string,
@@ -934,14 +1027,17 @@ object SqliteShape {
         self.schema = schema;
     }
 
+    // The columns.
     columns() is @Column {
         columns;
     }
 
+    // The row schema.
     schema() is DbRowSchema {
         schema;
     }
 
+    // Whether names and declarations are this shape's.
     matches(names is @string, declarations is @string) is bool {
         self.names == names && self.declarations == declarations;
     }
@@ -1230,10 +1326,12 @@ hidden object SqliteBoundValue {
     }
 }
 
+// One reply of the worker; used inside db/sqlite.
 object SqliteFrame {
     has state is sqlite.SqliteReplyState;
     has stopped is Event;
 
+    // The reply state of operation; DbFailure when it reports one.
     SqliteFrame(state is sqlite.SqliteReplyState, operation is DbOperation) {
         self.state = state;
         stopped = Event();
@@ -1250,6 +1348,7 @@ object SqliteFrame {
         }
     }
 
+    // Frees it.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -1261,30 +1360,37 @@ object SqliteFrame {
         self.close();
     }
 
+    // How many values.
     size() is int {
         Number(sqlite.sqlite_reply_info(state)["size"]).int();
     }
 
+    // The bytes of a BLOB read.
     bytes() is @byte {
         sqlite.sqlite_reply_blob_bytes(state);
     }
 
+    // Whether a backup finished.
     done() is bool {
         sqlite.sqlite_reply_info(state)["done"] == "1";
     }
 
+    // Whether the database was busy.
     busy() is bool {
         sqlite.sqlite_reply_info(state)["busy"] == "1";
     }
 
+    // Pages copied by a backup.
     copies() is BigInt {
         BigInt(sqlite.sqlite_reply_info(state)["copies"]);
     }
 
+    // Pages in all.
     total() is BigInt {
         BigInt(sqlite.sqlite_reply_info(state)["total"]);
     }
 
+    // The executions of a script.
     executions() is @Execution {
         let values is @Execution = sqlite.sqlite_reply_executions(state).map() -> value {
             if value == "unknown" {
@@ -1297,10 +1403,12 @@ object SqliteFrame {
         values;
     }
 
+    // The id of what was opened.
     identifier() is int {
         sqlite.sqlite_reply_id(state);
     }
 
+    // Whether a cursor reached its end.
     ended() is bool {
         sqlite.sqlite_reply_eof(state);
     }
@@ -1310,6 +1418,7 @@ object SqliteFrame {
         sqlite.sqlite_reply_deferred(state);
     }
 
+    // The execution.
     execution() is Execution {
         if sqlite.sqlite_reply_affected_known(state) {
             Execution(BigInt(sqlite.sqlite_reply_affected(state)));
@@ -1319,14 +1428,17 @@ object SqliteFrame {
         }
     }
 
+    // The column names.
     names() is @string {
         sqlite.sqlite_reply_names(state);
     }
 
+    // The declared column types.
     declarations() is @string {
         sqlite.sqlite_reply_declarations(state);
     }
 
+    // The columns.
     columns() is @Column {
         let names = sqlite.sqlite_reply_names(state);
         let declarations = sqlite.sqlite_reply_declarations(state);
@@ -1436,8 +1548,10 @@ hidden object SqliteNativeError {
     }
 }
 
+// Options that cannot be used together.
 enum InvalidSqliteOptions is Error = (invalid);
 
+// BEGIN DEFERRED, IMMEDIATE or EXCLUSIVE.
 enum SqliteTransactionMode = (deferred, immediate, exclusive);
 
 hidden object SqliteOrigin {
@@ -1452,15 +1566,18 @@ hidden object SqliteOrigin {
     }
 }
 
+// Transactions of one mode on a connection.
 object SqliteTransactions {
     has origin is SqliteOrigin;
     has mode is SqliteTransactionMode;
 
+    // On origin in mode.
     SqliteTransactions(origin is SqliteConnection, mode is SqliteTransactionMode) {
         self.origin = SqliteOrigin(origin);
         self.mode = mode;
     }
 
+    // Begins one with options.
     async transaction(options is TransactionOptions) is SqliteTransaction {
         await origin.transaction(options, mode);
     }
@@ -1484,31 +1601,38 @@ hidden object SqliteBeginCleanup {
     }
 }
 
+// An open SQLite transaction.
 object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobOpening, SqliteScripting {
     has owner is SqliteSession;
     has token is int;
     has outcome is Atomic<int>;
 
+    // Transaction token of owner.
     SqliteTransaction(owner is SqliteSession, token is int) {
         self.owner = owner;
         self.token = token;
         outcome = Atomic(0);
     }
 
+    // Whether it is still open.
     active() is bool {
         outcome.value() == 0 && owner.active(token);
     }
 
+    // Runs statement.
     async execution(origin is Statement) is Execution {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.execution_for(origin, token);
     }
 
+    // Runs statement and reads its rows.
     async rows(origin is Statement) is RowReading {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.rows_for(origin, token);
     }
 
+    // Opens the BLOB in column of row in table of database, for writing when
+    // writable.
     async opened_blob(
         database is string,
         table is string,
@@ -1520,16 +1644,19 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
         await owner.open_blob(database, table, column, row, writable, token);
     }
 
+    // Runs every statement of source; one Execution each.
     async script(source is string) is Sequencing<Execution> {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.script(source, token);
     }
 
+    // Prepares text.
     async prepared(text is string) is PreparedStatement {
         confirm self.active() else throw TransactionEnded.ended;
         await owner.prepare_for(text, token);
     }
 
+    // Commits.
     async commit() is Transaction {
         if outcome.value() == 3 {
             throw IndeterminateCommit.indeterminate;
@@ -1543,6 +1670,7 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
         self;
     }
 
+    // Rolls back.
     async rollback() is Transaction {
         if outcome.value() == 2 {
             return self;
@@ -1571,6 +1699,7 @@ object SqliteTransaction does Transaction, DbExecuting, DbPreparing, SqliteBlobO
         await self.execution(sql, listed);
     }
 
+    // A query of sql with values bound.
     query(sql is string, values is Sequencing<DbValue>) is DbQuery {
         Query(origin: self, statement: Statement(text: sql, values: values));
     }
