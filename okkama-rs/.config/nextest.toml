@@ -1,0 +1,18 @@
+# cargo-nextest configuration (#557). CI runs `--profile ci`.
+
+[profile.default]
+fail-fast = false
+
+[profile.ci]
+fail-fast = false
+# A test that fails and then passes is reported as FLAKY in the summary;
+# file a ticket for it, the retry only keeps one sample from rerunning the job.
+retries = 1
+slow-timeout = { period = "120s" }
+failure-output = "immediate-final"
+
+# Tests that measure time or serve over sockets run with nothing beside them:
+# a busy runner otherwise fails them by noise, not by a regression.
+[[profile.ci.overrides]]
+filter = 'binary(large_functions) | binary(signals) | binary(budgets) | binary(runtime_budgets) | binary(native_budgets) | binary(vectors)'
+threads-required = "num-cpus"
