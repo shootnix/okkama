@@ -912,7 +912,8 @@ pub extern "C" fn rt_failure_op(ctx_ptr: *mut Ctx, function: u64, pc: u64, uses:
     });
     let registers: &[okkama_sparrow::Register] = if count <= inline.len() { &inline[..count] } else { &spilled };
     let words = unsafe { std::slice::from_raw_parts(uses, count) };
-    let value = |register: &okkama_sparrow::Register| words[registers.iter().position(|r| r == register).expect("used register")];
+    let operands = crate::ops::Operands::new(registers, words);
+    let value = |register: &okkama_sparrow::Register| operands.value(register);
     let result = match instruction {
         I::RegionEnter { .. } => runtime.heap.allocate_array(Repr::Ref, &[UNBOUND; 1 + REGION_SLOTS]),
         I::RegionAdopt { region, value: v } | I::RegionTrack { region, value: v } => {

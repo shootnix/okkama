@@ -864,9 +864,8 @@ pub extern "C" fn rt_exec(
     // word per register.
     let registers = unsafe { std::slice::from_raw_parts(registers, count as usize) };
     let words = unsafe { std::slice::from_raw_parts(uses, count as usize) };
-    let value = |register: &okkama_sparrow::Register| {
-        words[registers.iter().position(|r| r == register).expect("used register")]
-    };
+    let operands = Operands::new(registers, words);
+    let value = |register: &okkama_sparrow::Register| operands.value(register);
     if runtime.limits.memory.is_some()
         && let Some(bytes) = result_bytes(runtime, instruction, &value)
             && runtime.would_exceed(bytes) {
@@ -885,7 +884,7 @@ pub extern "C" fn rt_exec(
         }
         // The init of a constant runs machine code: it needs the context.
         I::GlobalGet { global, .. } => crate::intrinsics::global(ctx, runtime, *global as usize),
-        _ => execute(runtime, function, instruction, &value),
+        _ => execute(runtime, function, instruction, &operands),
     };
     match outcome {
         Ok(word) => {
@@ -899,6 +898,31 @@ pub extern "C" fn rt_exec(
             ctx.failure = runtime.failure_new(FailureKind::Program(message));
             ctx.status = crate::runtime::FAILED;
             0
+        }
+    }
+}
+
+/// The words of an instruction's uses, in the order the call site recorded
+/// them (the instruction's visit order, a register used twice twice).
+pub(crate) struct Operands<'a> {
+    registers: &'a [okkama_sparrow::Register],
+    words: &'a [Word],
+}
+impl<'a> Operands<'a> {
+    pub(crate) fn new(registers: &'a [okkama_sparrow::Register], words: &'a [Word]) -> Self {
+        Self { registers, words }
+    }
+    /// The word of `register`, searched: an instruction has a few uses.
+    pub(crate) fn value(&self, register: &okkama_sparrow::Register) -> Word {
+        self.words[self.registers.iter().position(|r| r == register).expect("used register")]
+    }
+    /// The word of `register`, the use at `index` in visit order: one
+    /// comparison for an instruction with many uses, which a search would
+    /// make quadratic (#449); a search if the order differs.
+    pub(crate) fn nth(&self, index: usize, register: &okkama_sparrow::Register) -> Word {
+        match self.registers.get(index) {
+            Some(r) if r == register => self.words[index],
+            _ => self.value(register),
         }
     }
 }
@@ -933,7 +957,8 @@ fn def_repr(runtime: &Runtime, function: usize, instruction: &I) -> Repr {
     repr
 }
 
-fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn Fn(&okkama_sparrow::Register) -> Word) -> Outcome {
+fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &Operands<'_>) -> Outcome {
+    let value = |register: &okkama_sparrow::Register| operands.value(register);
     // SAFETY: as in rt_exec, the loaded program is immutable during execution.
     let kinds: &[Kind] = unsafe { &*(runtime.loaded.functions[function].kinds.as_slice() as *const [Kind]) };
     match instruction {
@@ -1354,8 +1379,9 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             // What the entries own, counted as they go in, so the heap does
             // not walk the keys again to charge them (#325).
             let mut owned = 0;
-            for (key, item) in entries {
-                let (key, item) = (value(key), value(item));
+            // Uses in visit order: each entry's key, then its value.
+            for (index, (key, item)) in entries.iter().enumerate() {
+                let (key, item) = (operands.nth(2 * index, key), operands.nth(2 * index + 1, item));
                 let k = runtime.checked_key(key, key_kind, key_type)?;
                 let bytes = MAP_ENTRY_BYTES + k.owned_bytes();
                 if map.entries.upsert(k, (key, item)) {
