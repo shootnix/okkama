@@ -72,7 +72,7 @@ impl Heap {
                 let alphabet = base85_alphabet(native, name)?;
                 let mut bytes = Vec::new();
                 let invalid = base85_parsed(
-                    &points(self.text(args[0])?),
+                    self.text(args[0])?,
                     name,
                     &alphabet,
                     (native == Base85Decode).then_some(&mut bytes),
@@ -110,23 +110,8 @@ impl Heap {
         Ok(Outcome::Value(value))
     }
 }
-fn points(text: &str) -> Vec<u32> {
-    text.chars().map(u32::from).collect()
-}
-
 fn ascii85() -> String {
     (33u8..=117).map(char::from).collect()
-}
-
-/// Позиция символа в алфавите (ASCII-алфавиты: байт = символ).
-fn index(alphabet: &[u8], symbol: u32) -> i64 {
-    if symbol > 0x7f {
-        return -1;
-    }
-    alphabet
-        .iter()
-        .position(|candidate| u32::from(*candidate) == symbol)
-        .map_or(-1, |at| at as i64)
 }
 
 /// Символ на каждые `width` бит, затем `=` до кратности `quantum`.
@@ -301,69 +286,86 @@ fn word_bytes(word: u64, out: &mut Vec<u8>, count: usize) {
     }
 }
 
+// Compile-time tables avoid per-symbol alphabet scans (#551).
+const ASCII85_REVERSE: [u8; 128] = {
+    let mut reverse = [u8::MAX; 128];
+    let mut value = 0;
+    while value < 85 {
+        reverse[value + 33] = value as u8;
+        value += 1;
+    }
+    reverse
+};
+const RFC1924_REVERSE: [u8; 128] = reverse_alphabet(RFC1924.as_bytes());
+
 // An optional borrowed sink preserves error order without collecting validation output (#459).
 fn base85_parsed(
-    source: &[u32],
+    source: &str,
     name: &str,
     alphabet: &[u8],
     mut octets: Option<&mut Vec<u8>>,
 ) -> i64 {
-    let mut values: Vec<u64> = Vec::new();
-    let mut group_start = 0usize;
-    let size = source.len();
-    for (offset, symbol) in source.iter().enumerate() {
-        if name == "ascii85" && *symbol == u32::from('z') {
-            if !values.is_empty() {
+    let reverse = if name == "ascii85" {
+        &ASCII85_REVERSE
+    } else {
+        &RFC1924_REVERSE
+    };
+    let mut word = 0u64;
+    let mut amount = 0usize;
+    let mut spelling = [0u8; 5];
+    let mut size = 0usize;
+    // Scalar enumeration preserves error offsets without materialising the input (#551).
+    for (offset, symbol) in source.chars().enumerate() {
+        size = offset + 1;
+        if name == "ascii85" && symbol == 'z' {
+            if amount != 0 {
                 return offset as i64;
             }
             if let Some(octets) = octets.as_mut() {
                 word_bytes(0, octets, 4);
             }
-            group_start = offset + 1;
             continue;
         }
-        let value = index(alphabet, *symbol);
-        if value < 0 {
+        let value = reverse.get(symbol as usize).copied().unwrap_or(u8::MAX);
+        if value == u8::MAX {
             return offset as i64;
         }
-        if values.is_empty() {
-            group_start = offset;
-        }
-        values.push(value as u64);
-        if values.len() == 5 {
-            let word = values.iter().fold(0u64, |word, value| word * 85 + value);
+        spelling[amount] = symbol as u8;
+        amount += 1;
+        word = word * 85 + u64::from(value);
+        if amount == 5 {
             if word > 0xFFFF_FFFF {
                 return offset as i64;
             }
             if let Some(octets) = octets.as_mut() {
                 word_bytes(word, octets, 4);
             }
-            values.clear();
-            group_start = offset + 1;
+            word = 0;
+            amount = 0;
         }
     }
-    if values.len() == 1 {
+    if amount == 1 {
         return size as i64;
     }
-    if !values.is_empty() {
-        let amount = values.len();
-        while values.len() < 5 {
-            values.push(84);
+    if amount != 0 {
+        for _ in amount..5 {
+            word = word * 85 + 84;
         }
-        let word = values.iter().fold(0u64, |word, value| word * 85 + value);
         if word > 0xFFFF_FFFF {
             return size as i64 - 1;
         }
-        // The canonical tail check needs at most three bytes even without an output sink (#459).
+        // Fixed buffers keep the canonical tail check allocation-free (#551).
         let partial = (word as u32).to_be_bytes();
         let partial = &partial[..amount - 1];
-        let canonical = base85_encoded(partial, name, alphabet);
-        let end = (group_start + amount).min(size);
-        let spelling: String = source[group_start..end]
-            .iter()
-            .filter_map(|symbol| char::from_u32(*symbol))
-            .collect();
-        if canonical != spelling {
+        let mut padded = [0u8; 4];
+        padded[..amount - 1].copy_from_slice(partial);
+        let mut word = u32::from_be_bytes(padded);
+        let mut canonical = [0u8; 5];
+        for digit in canonical.iter_mut().rev() {
+            *digit = alphabet[(word % 85) as usize];
+            word /= 85;
+        }
+        if canonical[..amount] != spelling[..amount] {
             return size as i64 - 1;
         }
         if let Some(octets) = octets {
@@ -500,7 +502,7 @@ mod tests {
     use super::*;
 
     fn base85_result(
-        source: &[u32],
+        source: &str,
         name: &str,
         alphabet: &[u8],
         out: Option<&mut Vec<u8>>,
@@ -514,6 +516,70 @@ mod tests {
         let invalid = qp_parsed(source, out);
         assert_eq!(qp_parsed(source, None), invalid);
         invalid
+    }
+
+    #[test]
+    fn base85_551_alphabet_symbols_round_trip() {
+        for name in ["ascii85", "rfc1924"] {
+            let alphabet = base85_alphabet(Native::Base85Decode, name).unwrap();
+            for (value, symbol) in alphabet.iter().enumerate() {
+                let mut digits = [alphabet[0]; 5];
+                digits[4] = *symbol;
+                let source = std::str::from_utf8(&digits).unwrap();
+                let mut out = Vec::new();
+                assert_eq!(base85_result(source, name, &alphabet, Some(&mut out)), -1);
+                assert_eq!(out, (value as u32).to_be_bytes());
+                let encoded = base85_encoded(&out, name, &alphabet);
+                if name == "ascii85" && value == 0 {
+                    assert_eq!(encoded, "z");
+                } else {
+                    assert_eq!(encoded, source);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn base85_551_error_order_and_offsets() {
+        for name in ["ascii85", "rfc1924"] {
+            let alphabet = base85_alphabet(Native::Base85Decode, name).unwrap();
+            let zero = char::from(alphabet[0]);
+            let high = char::from(alphabet[84]);
+            for (source, expected) in [
+                (format!("{zero}{zero}{zero}{zero}{zero}😀"), 5),
+                (format!("{zero}{high}é"), 2),
+                (format!("{high}{high}é"), 2),
+                (format!("{zero}{zero}{zero}{zero}{zero}{zero}"), 6),
+                (format!("{zero}{zero}{zero}{zero}{zero}{high}{high}"), 6),
+            ] {
+                let mut out = Vec::new();
+                assert_eq!(
+                    base85_result(&source, name, &alphabet, Some(&mut out)),
+                    expected,
+                    "{name}: {source}"
+                );
+            }
+        }
+        let alphabet = base85_alphabet(Native::Base85Decode, "ascii85").unwrap();
+        for (source, expected) in [("zz!!😀", 4), ("z!!z", 3), ("zz!", 3), ("z!u", 2)] {
+            let mut out = Vec::new();
+            assert_eq!(
+                base85_result(source, "ascii85", &alphabet, Some(&mut out)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn base85_551_large_round_trip() {
+        let input: Vec<u8> = (0..100_000).map(|n| (n * 19) as u8).collect();
+        for name in ["ascii85", "rfc1924"] {
+            let alphabet = base85_alphabet(Native::Base85Decode, name).unwrap();
+            let encoded = base85_encoded(&input, name, &alphabet);
+            let mut out = Vec::new();
+            assert_eq!(base85_result(&encoded, name, &alphabet, Some(&mut out)), -1);
+            assert_eq!(out, input);
+        }
     }
 
     #[test]
@@ -533,7 +599,7 @@ mod tests {
             ] {
                 let mut out = Vec::new();
                 assert_eq!(
-                    base85_result(&points(&source), name, &alphabet, Some(&mut out)),
+                    base85_result(&source, name, &alphabet, Some(&mut out)),
                     expected,
                     "{name}: {source}"
                 );
@@ -543,7 +609,7 @@ mod tests {
                 let spelling = base85_encoded(&input, name, &alphabet);
                 let mut out = Vec::new();
                 assert_eq!(
-                    base85_result(&points(&spelling), name, &alphabet, Some(&mut out)),
+                    base85_result(&spelling, name, &alphabet, Some(&mut out)),
                     -1
                 );
                 assert_eq!(out, input);
@@ -555,7 +621,7 @@ mod tests {
             } {
                 let mut out = Vec::new();
                 assert_eq!(
-                    base85_result(&points(source), name, &alphabet, Some(&mut out)),
+                    base85_result(source, name, &alphabet, Some(&mut out)),
                     expected
                 );
                 if name == "ascii85" && source == "z" {
