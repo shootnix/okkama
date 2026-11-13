@@ -181,8 +181,7 @@ object DbPool does Closing {
         owner.closed();
     }
 
-    // Closes it: no more leases; idle connections close, leased ones when
-    // returned.
+    // Closes it: idle connections close and every lease is revoked.
     close() is void {
         owner.close();
     }
@@ -237,8 +236,7 @@ object DbPreparedPool does Closing {
         owner.closed();
     }
 
-    // Closes it: no more leases; idle connections close, leased ones when
-    // returned.
+    // Closes it: idle connections close and every lease is revoked.
     close() is void {
         owner.close();
     }
