@@ -20,11 +20,21 @@ object SmtpReplyReading {
     has pending is Future<SmtpReplyRead>;
 
     SmtpReplyReading(origin is AsyncReading) {
-        pending = SmtpReplyInput(origin: origin, prefix: [], limits: SmtpReplyLimits(), chunk_bytes: 4096).read();
+        pending = SmtpReplyInput(
+            origin: origin,
+            prefix: [],
+            limits: SmtpReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     SmtpReplyReading(origin is AsyncReading, prefix is @byte) {
-        pending = SmtpReplyInput(origin: origin, prefix: prefix, limits: SmtpReplyLimits(), chunk_bytes: 4096).read();
+        pending = SmtpReplyInput(
+            origin: origin,
+            prefix: prefix,
+            limits: SmtpReplyLimits(),
+            chunk_bytes: 4096
+        ).read();
     }
 
     SmtpReplyReading(
@@ -33,7 +43,12 @@ object SmtpReplyReading {
         limits is SmtpReplyLimits,
         chunk_bytes is int
     ) {
-        pending = SmtpReplyInput(origin: origin, prefix: prefix, limits: limits, chunk_bytes: chunk_bytes).read();
+        pending = SmtpReplyInput(
+            origin: origin,
+            prefix: prefix,
+            limits: limits,
+            chunk_bytes: chunk_bytes
+        ).read();
     }
 
     read() is Future<SmtpReplyRead> {
