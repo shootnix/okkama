@@ -40,11 +40,14 @@ import "csv" take CsvRows, CsvDialect, InvalidCsv, InvalidCsvLimits, CsvLimitExc
 //
 // Run tests: okkama run -t std/csv/input.ok
 
+// A whole CSV document read from a reader.
 object CsvInput {
     has origin is Reading;
     has dialect is CsvDialect;
     has maximum_bytes, maximum_input, maximum_field, maximum_rows, maximum_columns is int;
 
+    // Reads origin as comma-separated with CRLF, within 4 MiB read, 1 MiB of
+    // input, 64 KiB per field, 10000 rows and 1024 columns.
     CsvInput(origin is Reading) {
         self.origin = origin;
         dialect = CsvDialect(delimiter: ",", quote: "\"", line_ending: "\r\n");
@@ -55,6 +58,7 @@ object CsvInput {
         maximum_columns = 1024;
     }
 
+    // The same in dialect.
     CsvInput(origin is Reading, dialect is CsvDialect) {
         self.origin = origin;
         self.dialect = dialect;
@@ -65,6 +69,7 @@ object CsvInput {
         maximum_columns = 1024;
     }
 
+    // The same within these limits.
     CsvInput(
         origin is Reading,
         maximum_bytes is int,
@@ -89,6 +94,7 @@ object CsvInput {
         self.maximum_columns = maximum_columns;
     }
 
+    // Every row; InvalidCsv says where the text is wrong.
     read() is @@string {
         let buffer = ByteBuffer();
         loop {
@@ -122,6 +128,7 @@ object CsvInput {
     }
 }
 
+// More bytes than the limit.
 enum CsvByteLimitExceeded is Error = (exceeded);
 
 test "resource decoding and repeated EOF" {

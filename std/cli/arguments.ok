@@ -1,5 +1,13 @@
 module cli/arguments v1.0.0;
 
+// The process's arguments, as bytes or text.
+//
+//     let arguments = ProcessArguments().strings();      // without the program name
+//     ProcessArguments().first();                        // the first argument's bytes
+//
+// Arguments are the bytes the system passed, never shell text. At most 4096
+// arguments and 1 MiB are read by default.
+
 import "collections/sequence" take Sequencing, EmptySequence;
 import "collections/iteration" take Cursor, Iterating;
 import "error" take OutOfRange;
@@ -11,6 +19,7 @@ import "encoding/utf" take Utf8Decoded, InvalidUtf8;
 object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
     has origin is @@byte;
 
+    // The arguments of this process, at most 4096 and 1 MiB.
     ProcessArguments() {
         origin = ArgumentSnapshot(
             arguments: process_arguments(),
@@ -19,6 +28,7 @@ object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
         ).items();
     }
 
+    // These arguments, for tests.
     ProcessArguments(arguments is Sequencing<@byte>) {
         origin = ArgumentSnapshot(
             arguments: arguments,
@@ -27,6 +37,7 @@ object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
         ).items();
     }
 
+    // These arguments within the limits; ArgumentLimitExceeded beyond.
     ProcessArguments(arguments is Sequencing<@byte>, maximum_arguments is int, maximum_bytes is int) {
         origin = ArgumentSnapshot(
             arguments: arguments,
@@ -35,24 +46,29 @@ object ProcessArguments does Sequencing<@byte>, Iterating<@byte> {
         ).items();
     }
 
+    // Walks the arguments.
     cursor() is Cursor<@byte> {
         origin.cursor();
     }
 
+    // How many.
     size() is int {
         origin.size();
     }
 
+    // The argument at index.
     item(index is int) is @byte {
         confirm index >= 0 && index < origin.size() else throw OutOfRange.because("out of range");
         origin[index];
     }
 
+    // The first argument.
     first() is @byte {
         confirm origin.size() > 0 else throw EmptySequence.empty;
         origin[0];
     }
 
+    // The last argument.
     last() is @byte {
         confirm origin.size() > 0 else throw EmptySequence.empty;
         origin[origin.size() - 1];
@@ -112,8 +128,10 @@ hidden object ArgumentParts {
     }
 }
 
+// An argument that is not UTF-8; index and offset say where.
 enum InvalidArgumentEncoding is Error = (located(index is int, offset is int));
 
+// More arguments or bytes than the limits.
 enum ArgumentLimitExceeded is Error = (exceeded);
 
 test "argument boundaries do not reinterpret shell text" {

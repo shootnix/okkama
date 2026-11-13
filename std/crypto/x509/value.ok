@@ -1,5 +1,7 @@
 module crypto/x509/value v1.0.0;
 
+// Values of certificates: validity periods and basic constraints.
+
 import "time/clock" take Instant;
 import "compare" take Order;
 
@@ -8,6 +10,7 @@ import "compare" take Order;
 object CertificateValidity {
     has starts, ends is Instant;
 
+    // From starts to ends.
     CertificateValidity(starts is Instant, ends is Instant) {
         confirm starts.order(ends) != Order.greater
             else throw InvalidCertificate.because("validity ends before it starts");
@@ -15,10 +18,12 @@ object CertificateValidity {
         self.ends = ends;
     }
 
+    // notBefore.
     starts() is Instant {
         starts;
     }
 
+    // notAfter.
     ends() is Instant {
         ends;
     }
@@ -30,11 +35,13 @@ object CertificateConstraints {
     has authority is bool;
     has depth is @int;
 
+    // A CA or not, without a path length.
     CertificateConstraints(authority is bool) {
         self.authority = authority;
         depth = [];
     }
 
+    // A CA with a path length limit.
     CertificateConstraints(authority is bool, maximum_depth is int) {
         confirm authority
             else throw InvalidCertificate.because("path depth requires a certificate authority");
@@ -44,22 +51,27 @@ object CertificateConstraints {
         depth = [maximum_depth];
     }
 
+    // Whether it is a CA.
     authority() is bool {
         authority;
     }
 
+    // Whether there is a path length limit.
     limited() is bool {
         depth.size() > 0;
     }
 
+    // The path length limit; MissingCertificateDepth when none.
     maximum_depth() is int {
         confirm self.limited() else throw MissingCertificateDepth.missing;
         depth[0];
     }
 }
 
+// No path length limit.
 enum MissingCertificateDepth is Error = (missing);
 
+// A certificate that is not valid; reason says why.
 enum InvalidCertificate is Error = (because(reason is string));
 
 test "path depth absence differs from present zero" {

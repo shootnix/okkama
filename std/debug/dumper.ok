@@ -32,6 +32,7 @@ module debug/dumper v1.0.0;
 import "runtime/debug" take data_kind, data_type, data_size, data_leaf, data_names, data_keys,
     data_items;
 
+// A dump of a value for debugging.
 object Dumper {
     has value is any;
     // Deeper levels are shown as `{...}` / `[...]`.
@@ -39,6 +40,7 @@ object Dumper {
     // Longer collections show their first elements and `... N more`.
     has limit is int = 100;
 
+    // Dumps target.
     Dumper(target is any) {
         value = target;
     }
@@ -88,6 +90,7 @@ object Dumper {
         text + " (" + data_type(value) + ")";
     }
 
+    // The dump of item at indent and nesting level.
     render(item is any, indent is string, level is int) is string {
         let category = data_kind(item);
         if category == "array" {
@@ -102,6 +105,7 @@ object Dumper {
         data_leaf(item);
     }
 
+    // The dump of an array.
     array(item is any, indent is string, level is int) is string {
         let count = data_size(item);
         let head = data_type(item) + " (" + count.string() + ")";
@@ -125,6 +129,7 @@ object Dumper {
         head + " [\n" + lines.join(",\n") + self.more(count, shown, inner) + "\n" + indent + "]";
     }
 
+    // The dump of a map.
     map(item is any, indent is string, level is int) is string {
         let count = data_size(item);
         let head = data_type(item) + " (" + count.string() + ")";
@@ -149,6 +154,7 @@ object Dumper {
         head + " {\n" + lines.join(",\n") + self.more(count, shown, inner) + "\n" + indent + "}";
     }
 
+    // The dump of an object.
     object(item is any, indent is string, level is int) is string {
         let head = data_type(item);
         let names = data_names(item);
@@ -167,6 +173,7 @@ object Dumper {
         head + " {\n" + lines.join(",\n") + "\n" + indent + "}";
     }
 
+    // The line saying how many items were left out.
     more(count is int, shown is int, inner is string) is string {
         if count > shown {
             return ",\n" + inner + "... " + (count - shown).string() + " more";

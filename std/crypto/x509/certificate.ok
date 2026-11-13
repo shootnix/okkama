@@ -1,13 +1,17 @@
 module crypto/x509/certificate v1.0.0;
 
-// ParsedCertificate(bytes).value() validates a bounded DER envelope and asks
-// OpenSSL to decode its certificate/public key. It neither verifies a signature
-// nor asks a clock, resolver, filesystem trust store, or peer hostname.
-// Exact DER plus a deterministic private facts snapshot define identity;
-// repeated getters acquire no persistent host pointers. Names preserve RDN
-// groups and DER member order. Unsupported text encodings fail on observation.
-// Limits: 1 MiB input, 8192 envelope nodes, nesting 32, 128 extensions/groups,
-// 32 attributes per RDN, 4096 scalars per decoded value, 65536 per decoded name.
+// X.509 certificates read from DER: subject, issuer, validity, key, names and
+// extensions.
+//
+//     let certificate = ParsedCertificate(der).certificate();
+//     certificate.subject();
+//     certificate.validity().ends();
+//     certificate.names().dns();                  // subjectAltName DNS names
+//     certificate.extensions().key_usages();
+//
+// Reading checks the DER envelope and decodes the certificate; it does not
+// verify a signature or a chain (crypto/x509/trust does). Input is bounded: 1
+// MiB, 8192 DER nodes, nesting 32, 128 extensions.
 
 import "runtime/x509" as x509;
 import "crypto/x509/value" take CertificateValidity, CertificateConstraints, InvalidCertificate;
@@ -22,22 +26,27 @@ import "net/ip" take IpAddress;
 import "collections/set" take Set, OrderedSet;
 import "encoding/hex" take HexDecoded;
 
+// A certificate read from DER bytes.
 object ParsedCertificate {
     has origin is @byte;
 
+    // The bytes.
     ParsedCertificate(origin is @byte) {
         self.origin = origin;
     }
 
+    // The certificate; InvalidCertificate for bytes that are not one.
     certificate() is Certificate {
         Certificate(origin);
     }
 }
 
+// An X.509 certificate.
 object Certificate {
     has origin is @byte;
     has facts is string;
 
+    // The certificate of DER origin.
     Certificate(origin is @byte) {
         try {
             facts = x509.certificate_facts(origin);
@@ -59,18 +68,22 @@ object Certificate {
         self.origin = origin;
     }
 
+    // Its DER bytes.
     der() is @byte {
         origin;
     }
 
+    // Its subject.
     subject() is DistinguishedName {
         CertificateName(facts: facts, issuer: false).name();
     }
 
+    // Its issuer.
     issuer() is DistinguishedName {
         CertificateName(facts: facts, issuer: true).name();
     }
 
+    // When it is valid.
     validity() is CertificateValidity {
         let times = x509.certificate_times(facts);
         CertificateValidity(
@@ -79,10 +92,12 @@ object Certificate {
         );
     }
 
+    // Its public key.
     public_key() is PublicKey {
         CertificatePublicKey(x509.certificate_spki(facts));
     }
 
+    // Its subjectAltName DNS names and addresses.
     names() is CertificateNames {
         try {
             let entries = x509.certificate_san(facts);
@@ -175,6 +190,7 @@ object CertificateNames {
     has dns is @string;
     has ips is @IpAddress;
 
+    // The names of origin.
     CertificateNames(origin is Certificate) {
         let snapshot = origin.names();
         let names is @string = snapshot.dns().map() -> value {
@@ -187,15 +203,18 @@ object CertificateNames {
         ips = addresses;
     }
 
+    // These names.
     CertificateNames(dns is @string, ips is @IpAddress) {
         self.dns = dns;
         self.ips = ips;
     }
 
+    // The DNS names.
     dns() is Sequencing<string> {
         dns;
     }
 
+    // The IP addresses.
     ips() is Sequencing<IpAddress> {
         ips;
     }
@@ -206,6 +225,7 @@ object CertificateNames {
 object CertificateChain {
     has origin is @Certificate;
 
+    // The certificates, leaf first.
     CertificateChain(certificates is Sequencing<Certificate>) {
         let count = certificates.size();
         confirm count > 0
@@ -238,11 +258,13 @@ object CertificateChain {
         origin = values;
     }
 
+    // The certificates.
     certificates() is Sequencing<Certificate> {
         origin;
     }
 }
 
+// The bits of keyUsage.
 enum CertificateKeyUsage = (digital_signature, content_commitment, key_encipherment, data_encipherment, key_agreement, key_cert_sign, crl_sign, encipher_only, decipher_only);
 
 // Purposes retain exact EKU OIDs, including unknown purposes. Construction is
@@ -250,34 +272,41 @@ enum CertificateKeyUsage = (digital_signature, content_commitment, key_encipherm
 object CertificatePurpose {
     has identifier is string;
 
+    // An extended key usage OID, such as 1.3.6.1.5.5.7.3.1 for TLS servers.
     CertificatePurpose(identifier is string) {
         self.identifier = CertificateObjectIdentifier(identifier).identifier();
     }
 
+    // The OID.
     identifier() is string {
         identifier;
     }
 }
 
+// One extension: its OID, whether it is critical, and its DER value.
 object CertificateExtension {
     has identifier is string;
     has critical is bool;
     has origin is @byte;
 
+    // As given.
     CertificateExtension(identifier is string, critical is bool, origin is @byte) {
         self.identifier = CertificateObjectIdentifier(identifier).identifier();
         self.critical = critical;
         self.origin = origin;
     }
 
+    // The OID.
     identifier() is string {
         identifier;
     }
 
+    // Whether it is critical.
     critical() is bool {
         critical;
     }
 
+    // Its DER value.
     bytes() is @byte {
         origin;
     }
@@ -288,10 +317,12 @@ object CertificateExtension {
 object CertificateExtensions {
     has facts is string;
 
+    // As decoded.
     CertificateExtensions(facts is string) {
         self.facts = facts;
     }
 
+    // Every extension.
     items() is Sequencing<CertificateExtension> {
         let records = x509.certificate_extensions(facts);
         let values is @CertificateExtension = records.map() -> record {
@@ -304,6 +335,7 @@ object CertificateExtensions {
         values;
     }
 
+    // The extension of the OID; MissingCertificateExtension when absent.
     extension(identifier is string) is CertificateExtension {
         let wanted = CertificateObjectIdentifier(identifier).identifier();
         let records = x509.certificate_extensions(facts);
@@ -319,6 +351,7 @@ object CertificateExtensions {
         throw MissingCertificateExtension.identifier(wanted);
     }
 
+    // The OIDs of the critical ones.
     critical() is Sequencing<string> {
         let records = x509.certificate_extensions(facts);
         let critical = records.filter() -> record {
@@ -330,6 +363,7 @@ object CertificateExtensions {
         values;
     }
 
+    // basicConstraints.
     constraints() is CertificateConstraints {
         try {
             let value = x509.certificate_constraints(facts);
@@ -354,6 +388,7 @@ object CertificateExtensions {
         }
     }
 
+    // keyUsage.
     key_usages() is Set<CertificateKeyUsage> {
         try {
             let all is @CertificateKeyUsage = [
@@ -386,6 +421,7 @@ object CertificateExtensions {
         }
     }
 
+    // extendedKeyUsage.
     purposes() is Set<CertificatePurpose> {
         try {
             let identifiers = x509.certificate_purposes(facts);
@@ -425,6 +461,7 @@ hidden object CertificateObjectIdentifier {
     }
 }
 
+// The certificate has no such extension.
 enum MissingCertificateExtension is Error = (identifier(identifier is string));
 
 test "unknown purpose OIDs remain exact metadata" {
@@ -438,10 +475,13 @@ test "unknown purpose OIDs remain exact metadata" {
     });
 }
 
+// A certificate over a limit.
 enum CertificateLimitExceeded is Error = (exceeded);
 
+// The certificate decoder is not available here.
 enum CertificateBackendUnavailable is Error = (unavailable);
 
+// A name in an encoding std does not read.
 enum UnsupportedCertificateName is Error = (unsupported);
 
 test "empty DER is rejected before certificate publication" {

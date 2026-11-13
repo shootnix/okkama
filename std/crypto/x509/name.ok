@@ -1,13 +1,22 @@
 module crypto/x509/name v1.0.0;
 
+// Distinguished names: the subject and issuer of a certificate, kept as their
+// RDN groups in DER order.
+//
+//     for certificate.subject().relative_names() -> group {
+//         for group.attributes() -> attribute { attribute.identifier(); attribute.value(); }
+//     }
+
 import "collections/sequence" take Sequencing;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 import "strings/parse" take Number;
 
+// One attribute: an OID and its text, such as 2.5.4.3 (CN).
 object NameAttribute {
     has identifier, value is string;
 
+    // As given.
     NameAttribute(identifier is string, value is string) {
         confirm identifier.length() <= 1024 && value.length() <= 4096
             else throw InvalidDistinguishedName.because("attribute limit exceeded");
@@ -27,19 +36,23 @@ object NameAttribute {
         self.value = value;
     }
 
+    // The OID.
     identifier() is string {
         identifier;
     }
 
+    // The text.
     value() is string {
         value;
     }
 }
 
+// One RDN: a group of attributes.
 object RelativeDistinguishedName {
     has origin is @NameAttribute;
     has cost is int;
 
+    // The attributes, at most 32.
     RelativeDistinguishedName(attributes is Sequencing<NameAttribute>) {
         let count = attributes.size();
         confirm count > 0 && count <= 32
@@ -74,18 +87,22 @@ object RelativeDistinguishedName {
         self.cost = cost;
     }
 
+    // The attributes.
     attributes() is Sequencing<NameAttribute> {
         origin;
     }
 
+    // How many characters they hold.
     scalars() is int {
         cost;
     }
 }
 
+// A distinguished name.
 object DistinguishedName {
     has origin is @RelativeDistinguishedName;
 
+    // The RDNs, in order.
     DistinguishedName(relative_names is Sequencing<RelativeDistinguishedName>) {
         let count = relative_names.size();
         confirm count >= 0 && count <= 128
@@ -118,11 +135,13 @@ object DistinguishedName {
         origin = values;
     }
 
+    // The RDNs.
     relative_names() is Sequencing<RelativeDistinguishedName> {
         origin;
     }
 }
 
+// A name that is not valid; reason says why.
 enum InvalidDistinguishedName is Error = (because(reason is string));
 
 test "two attributes in one RDN retain their membership" {

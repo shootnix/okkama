@@ -26,11 +26,14 @@ import "csv/input" take CsvByteLimitExceeded;
 import "runtime/csv_state" take CsvState, csv_state_create, csv_state_feed, csv_state_advance,
     csv_state_row, csv_state_offset, csv_state_request, csv_state_closed, csv_state_close;
 
+// CSV rows read one at a time.
 object CsvStream does Closing {
     has origin is Reading;
     has upstream is Maybe<AsyncReading>;
     has state is CsvState;
 
+    // Reads origin within 4 MiB read, 1 MiB of input, 64 KiB per field, 10000
+    // rows and 1024 columns.
     CsvStream(origin is Reading) {
         self.origin = origin;
         upstream = Maybe<AsyncReading>.none;
@@ -44,12 +47,14 @@ object CsvStream does Closing {
         state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
     }
 
+    // Reads origin, which may block, within the same limits.
     CsvStream(origin is AsyncReading) {
         self.origin = ByteBuffer("").reading();
         upstream = Maybe.some(origin);
         state = csv_state_create(4194304, 1048576, 65536, 10000, 1024);
     }
 
+    // The same within these limits.
     CsvStream(
         origin is AsyncReading,
         maximum_bytes is int,
@@ -75,6 +80,7 @@ object CsvStream does Closing {
         );
     }
 
+    // The same within these limits.
     CsvStream(
         origin is Reading,
         maximum_bytes is int,
@@ -100,6 +106,7 @@ object CsvStream does Closing {
         );
     }
 
+    // The next row; EndOfCsv at the end, ClosedCsvStream after close().
     row() is @string {
         confirm !self.asynchronous() else throw AsyncCsvOrigin.walked;
         loop {
@@ -207,17 +214,21 @@ object CsvStream does Closing {
         }
     }
 
+    // Whether it was closed.
     closed() is bool {
         csv_state_closed(state);
     }
 
+    // Stops reading.
     close() is void {
         csv_state_close(state);
     }
 }
 
+// No more rows.
 enum EndOfCsv is Error = (reached);
 
+// The stream was read after close().
 enum ClosedCsvStream is Error = (closed);
 
 test "rows come one at a time, then the end, stable until close" {
