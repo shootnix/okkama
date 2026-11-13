@@ -285,6 +285,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - Links and hover from the model (#513), doctests and the `missing-docs`
     lint (#514), and roff, HTML and JSON (#515) follow.
 
+- **All of std is documented (#512).** Every one of the 498 modules has an
+  overview, and every public declaration and member has a doc comment, so
+  `okkama man` gives a page for each. The overviews of the modules programs use
+  start with a working example: each was run, or type-checked when it needs a
+  network.
+  Writing them corrected comments that had drifted from the code.
+  - Overviews that sat after the imports moved right after `module`.
+  - The generated `locale/internal` modules carry their doc comments in
+    their generators, so regeneration keeps them.
+  - `okkama man` notes a long comment glued to the first declaration after
+    the imports (the old place of overviews): it stays that declaration's,
+    and a blank line makes it the overview. The text under an Errors heading
+    no longer runs into the error list.
+
 ### Fixed
 
 - **`MailMessage(from:, to:, subject:, text:)` works with the system clock
