@@ -41,6 +41,9 @@ pub struct Resources {
     /// an identity no newer than `summarized` drops them all.
     summaries: HashMap<Word, u64>,
     summarized: u64,
+    /// `SPARROW_TRACE_DESTROY=FILE`: one line per destroyed identity, type and
+    /// creation serial, the oracle for static ownership (#555).
+    trace: Option<std::fs::File>,
 }
 
 /// A container whose elements `resource_graph` is walking: its subtree is
@@ -102,6 +105,8 @@ impl Resources {
         Self {
             enabled: program.objects.iter().any(|o| o.destroy.is_some()),
             flags: descriptor_flags(program),
+            trace: std::env::var_os("SPARROW_TRACE_DESTROY")
+                .and_then(|path| std::fs::OpenOptions::new().create(true).append(true).open(path).ok()),
             ..Self::default()
         }
     }
@@ -641,8 +646,13 @@ impl Runtime {
                 continue;
             }
             identity.owner = Owner::Dead;
+            let serial = identity.serial;
             let descriptor = heap::payload(self.heap.header_of(object)) as usize;
             let Some(destroy) = self.loaded.program.objects[descriptor].destroy else { continue };
+            if let Some(trace) = &mut self.resources.trace {
+                use std::io::Write;
+                let _ = writeln!(trace, "{} {serial}", self.loaded.program.objects[descriptor].name);
+            }
             if self.loaded.program.functions[destroy.0 as usize].is_async {
                 if awaits {
                     self.roots.pop();
