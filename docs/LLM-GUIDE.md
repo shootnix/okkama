@@ -242,6 +242,12 @@ Since 0.5.5 the release report is the micro-benchmark A/B
 tag rebuilt and the candidate, one session, Linux containers. The
 cross-language ladder report is made on demand. Compare releases with a
 back-to-back A/B, not against an older report, and never against a PGO build.
+- Micro, 0.5.8 against 0.5.7 (report
+  `okkama-docs/benchmarks/reports/2026-11-14-v0.5.8/micro.html`): no
+  regression, no pair past the noise band; Sparrow −2.1% by geometric mean
+  over 69 reliable pairs, the IR engine +0.1%. The release's gains are on
+  large inputs outside the set (#460, #461, #551, #462); measure those per
+  ticket.
 - Micro, 0.5.7 against 0.5.6 (report
   `okkama-docs/benchmarks/reports/2026-11-13-v0.5.7/micro.html`): no
   regression; Sparrow −3.5% by geometric mean over 72 reliable pairs

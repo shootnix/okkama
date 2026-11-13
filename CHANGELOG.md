@@ -6,6 +6,34 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.5.8] — 2026-11-14
+
+0.5.8 removes allocations that grow with the input from the encodings, the
+regex engine and Sparrow's standard output. It also rebuilds the JIT's
+liveness analysis, and makes case-insensitive regexes match whole case
+folding classes. It changes no public API.
+- **Encodings.** Quoted-printable encodes in one pass (#460): one 64 KiB
+  line takes 0.30 ms instead of 1.18 s. base32, base64 (#461) and base85
+  (#551) look symbols up in tables. Validity checks build no output (#459).
+- **Regex.** Character matching allocates nothing per character (#462). A
+  case-insensitive class search takes 11.9 µs instead of 34 µs.
+- **Behaviour change.** With `ignore_case`, a letter now matches its whole
+  simple case folding class (#550). `K`, `k` and the Kelvin sign match each
+  other. Turkish `ı` and `İ` match only themselves, so `i` no longer
+  matches `ı`.
+- **Sparrow.** stdout and stderr write without copying the bytes (#458).
+  The JIT's liveness analysis keeps one slab per function (#455, #456),
+  with identical results and unchanged compile time.
+- **Declined with numbers.** #454 (sort maps in the JIT) gave no gain.
+  #450 (event statistics) was tried twice and taxed the default path: the
+  regex benchmark rose 10% in the first attempt, and constructor and
+  successor rose 3.5% in the second.
+- **Release report.** The micro-benchmark A/B
+  (`okkama-docs/benchmarks/reports/2026-11-14-v0.5.8/micro.html`) shows no
+  regression. Sparrow is −2.1% by geometric mean over 69 reliable pairs,
+  with no pair past the noise band; the IR engine is +0.1%. Conformance is
+  1035/1035 on six configurations.
+
 ### Changed
 
 - **Quoted-printable encodes in one pass (#460).** The encoder made a
@@ -5751,7 +5779,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.7...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/shootnix/okkama/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/shootnix/okkama/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/shootnix/okkama/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/shootnix/okkama/compare/v0.5.4...v0.5.5
