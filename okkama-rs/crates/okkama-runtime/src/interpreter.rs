@@ -336,6 +336,7 @@ pub(crate) fn execute_function(
                     let Some(body) = module.objects.get(object.declaration).and_then(|o| o.destroy) else {
                         continue;
                     };
+                    state.trace_destroy(&object, &module.objects[object.declaration].name);
                     if !module.functions[body.0].is_async() {
                         destroy = Some((body, object));
                         break;

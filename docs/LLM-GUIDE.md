@@ -147,6 +147,12 @@ off the persistent `okkama.rt.PMap`, #336), `OKKAMA_TRACE=off` (no stack in fail
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
 
+`OKKAMA_TRACE_DESTROY=FILE` (IR) and `SPARROW_TRACE_DESTROY=FILE` (Sparrow)
+append `<ObjectTypeName> <creation serial>\n` before each selected sync or async
+destroy (#561). Names retain module qualification. Serials start at 1 and count
+objects whose declared types can reach a destroy-bearing identity, including
+containers without their own destroy; each engine run starts a new counter.
+
 ## 4. Isolation: the cage and Docker
 
 **Cage** (macOS sandbox + limits; no network, no process spawning):

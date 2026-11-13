@@ -4,6 +4,7 @@ use okkama_compiler::{ir, source::Span};
 
 #[derive(Debug, Default)]
 pub(crate) struct State {
+    destroy_trace: std::cell::RefCell<crate::destroy_trace::DestroyTrace>,
     native: std::cell::RefCell<okkama_runtime_core::native::Context>,
     objects: okkama_runtime_core::heap::ObjectHeap,
     arrays: okkama_runtime_core::heap::ArrayHeap,
@@ -15,6 +16,7 @@ impl State {
     }
 
     pub(crate) fn set_enums(&self, module: &ir::Module) {
+        *self.destroy_trace.borrow_mut() = crate::destroy_trace::DestroyTrace::new(module);
         self.native.borrow_mut().objects = module
             .objects
             .iter()
@@ -288,7 +290,19 @@ impl State {
         if declaration.builtin {
             return Err(invalid_state(span, "runtime objects are created by the runtime"));
         }
-        Ok(self.objects.allocate(id.0, fields))
+        Ok(self.allocate_object(id.0, fields))
+    }
+
+    fn allocate_object(&self, declaration: usize, fields: Vec<Value>) -> Value {
+        let value = self.objects.allocate(declaration, fields);
+        if let Value::Object(object) = &value {
+            self.destroy_trace.borrow_mut().created(object);
+        }
+        value
+    }
+
+    pub(crate) fn trace_destroy(&self, object: &okkama_runtime_core::heap::Object, name: &str) {
+        self.destroy_trace.borrow_mut().destroy(object, name);
     }
 
     pub(crate) fn object_get(
@@ -347,8 +361,11 @@ impl State {
         updates: Vec<(usize, Value)>,
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        self.objects
-            .successor(value, updates)
-            .map_err(|e| invalid_state(span, e.message))
+        let value = self.objects.successor(value, updates)
+            .map_err(|e| invalid_state(span, e.message))?;
+        if let Value::Object(object) = &value {
+            self.destroy_trace.borrow_mut().created(object);
+        }
+        Ok(value)
     }
 }
