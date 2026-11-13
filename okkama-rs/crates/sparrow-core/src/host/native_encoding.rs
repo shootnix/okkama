@@ -336,51 +336,49 @@ fn base85_parsed(source: &[u32], name: &str, alphabet: &[u8], octets: &mut Vec<u
     -1
 }
 
-fn qp_token(octet: u8, trailing: bool) -> String {
+fn qp_token(octet: u8, trailing: bool) -> ([u8; 3], usize) {
     if octet == 61 || !(32..=126).contains(&octet) || ((octet == 9 || octet == 32) && trailing) {
-        format!("={octet:02X}")
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        (
+            [b'=', HEX[usize::from(octet >> 4)], HEX[usize::from(octet & 15)]],
+            3,
+        )
     } else {
-        char::from(octet).to_string()
+        ([octet, 0, 0], 1)
     }
 }
 
 /// Мягкие переносы `=\r\n`: строка не длиннее 76 (75, если токены ещё есть).
-fn qp_folded(result: &mut String, tokens: &mut Vec<String>, hard_break: bool) {
-    let mut line = String::new();
-    while !tokens.is_empty() {
-        let limit = if tokens.len() > 1 { 75 } else { 76 };
-        if line.len() + tokens[0].len() > limit {
-            result.push_str(&line);
-            result.push_str("=\r\n");
-            line.clear();
-            continue;
-        }
-        line.push_str(&tokens.remove(0));
+fn qp_folded(result: &mut Vec<u8>, column: &mut usize, octet: u8, trailing: bool) {
+    let (token, width) = qp_token(octet, trailing);
+    let limit = if trailing { 76 } else { 75 };
+    if *column + width > limit {
+        result.extend_from_slice(b"=\r\n");
+        *column = 0;
     }
-    result.push_str(&line);
-    if hard_break {
-        result.push_str("\r\n");
-    }
+    result.extend_from_slice(&token[..width]);
+    *column += width;
 }
 
 fn qp_encode(origin: &[u8]) -> Vec<u8> {
-    let mut result = String::new();
-    let mut tokens = Vec::new();
+    let mut result = Vec::new();
+    let mut column = 0;
     let size = origin.len();
     let mut offset = 0;
     while offset < size {
         if origin[offset] == 13 && offset + 1 < size && origin[offset + 1] == 10 {
-            qp_folded(&mut result, &mut tokens, true);
+            result.extend_from_slice(b"\r\n");
+            column = 0;
             offset += 2;
             continue;
         }
+        // Lookahead preserves the final-token limit without buffering a line (#460).
         let trailing = offset + 1 == size
             || (offset + 2 < size && origin[offset + 1] == 13 && origin[offset + 2] == 10);
-        tokens.push(qp_token(origin[offset], trailing));
+        qp_folded(&mut result, &mut column, origin[offset], trailing);
         offset += 1;
     }
-    qp_folded(&mut result, &mut tokens, false);
-    result.into_bytes()
+    result
 }
 
 fn qp_hex(octet: u8) -> i64 {
@@ -453,3 +451,92 @@ fn qp_parsed(octets: &[u8], decoded: &mut Vec<u8>) -> i64 {
     -1
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qp_empty() {
+        assert_eq!(qp_encode(b""), b"");
+    }
+
+    #[test]
+    fn qp_column_boundaries() {
+        for size in [75, 76] {
+            let input = vec![b'a'; size];
+            assert_eq!(qp_encode(&input), input);
+            let input = [input, b"\r\n".to_vec()].concat();
+            assert_eq!(qp_encode(&input), input);
+        }
+        assert_eq!(
+            qp_encode(&[b'a'; 77]),
+            format!("{}=\r\naa", "a".repeat(75)).as_bytes()
+        );
+        for (prefix, suffix, expected) in [
+            (73, "=", format!("{}=3D", "a".repeat(73))),
+            (73, "=b", format!("{}=\r\n=3Db", "a".repeat(73))),
+            (74, "=", format!("{}=\r\n=3D", "a".repeat(74))),
+            (75, "=", format!("{}=\r\n=3D", "a".repeat(75))),
+        ] {
+            let input = format!("{}{suffix}", "a".repeat(prefix));
+            assert_eq!(qp_encode(input.as_bytes()), expected.as_bytes());
+        }
+    }
+
+    #[test]
+    fn qp_whitespace_and_line_breaks() {
+        for (input, expected) in [
+            ("=", "=3D"),
+            ("a b\tc", "a b=09c"),
+            ("a  ", "a =20"),
+            ("a\t", "a=09"),
+            ("a \t", "a =09"),
+            ("a  \r\n", "a =20\r\n"),
+            ("a\t\r\n", "a=09\r\n"),
+            ("\r\na\r\n\r\nb", "\r\na\r\n\r\nb"),
+            ("a\nb\rc", "a=0Ab=0Dc"),
+            ("\r\r\n\n", "=0D\r\n=0A"),
+        ] {
+            assert_eq!(qp_encode(input.as_bytes()), expected.as_bytes());
+        }
+        let input = format!("{}  b", "a".repeat(74));
+        assert_eq!(
+            qp_encode(input.as_bytes()),
+            format!("{} =\r\n b", "a".repeat(74)).as_bytes()
+        );
+    }
+
+    #[test]
+    fn qp_arbitrary_octets() {
+        for octet in 0u8..=255 {
+            let expected = match octet {
+                33..=60 | 62..=126 => char::from(octet).to_string(),
+                _ => format!("={octet:02X}"),
+            };
+            assert_eq!(qp_encode(&[octet]), expected.as_bytes());
+        }
+    }
+
+    #[test]
+    fn qp_long_physical_line() {
+        let input: Vec<u8> = b"a= \t\x80\xff\rX\nZ"
+            .iter()
+            .copied()
+            .cycle()
+            .take(10_000)
+            .collect();
+        let encoded = qp_encode(&input);
+        let text = std::str::from_utf8(&encoded).unwrap();
+        let lines: Vec<_> = text.split("\r\n").collect();
+        assert!(lines.len() > 1);
+        for (index, line) in lines.iter().enumerate() {
+            assert!(line.len() <= 76);
+            if index + 1 < lines.len() {
+                assert!(line.ends_with('='));
+            }
+        }
+        let mut decoded = Vec::new();
+        assert_eq!(qp_parsed(&encoded, &mut decoded), -1);
+        assert_eq!(decoded, input);
+    }
+}
