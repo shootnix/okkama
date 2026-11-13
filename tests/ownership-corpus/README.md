@@ -11,17 +11,17 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 
 ## Inventory and validation
 
-- Main directory: **96 programs, 427 TAP assertions** (36 handwritten programs
-  with 187 assertions, plus 60 generated programs with 240 assertions).
+- Main directory: **96 programs, 430 TAP assertions** (36 handwritten programs
+  with 190 assertions, plus 60 generated programs with 240 assertions).
 - 94 main programs expect exit code 0 with all TAP assertions passing.
 - Two main programs intentionally exit 1 after two passing cleanup assertions
   each: `panic-unwind.ok` and `secondary-failures.ok`.
-- `pending/`: four programs with 10 assertions tied to #578–#581. Discover
+- `pending/`: three programs with 9 assertions tied to #578, #580 and #581. Discover
   these separately; never treat them as ordinary passing oracle inputs.
 - `rejected/`: six compile-negative fixtures, not executable oracle inputs.
-- Across main and pending: 100 executable programs, 437 assertions. All
+- Across main and pending: 99 executable programs, 439 assertions. All
   original assertions are retained exactly once; only the four incorrect
-  expectations listed below changed.
+  expectations listed below changed. #579 adds two cleanup-order assertions.
 - Claude's original 0.5.8 IR/Sparrow results: 849 passing and 25 failing
   check executions (437 checks on each engine). Those saved results were
   inspected without running programs. Existing passing expectations remain
@@ -32,9 +32,10 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 - All 100 executable files passed the checker after relocation; all six
   negative fixtures were rejected for their intended rule. TAP plans match
   literal assertion counts.
-- No programs, cargo, Docker, release gate or benchmarks were run in this
-  revision. Runtime verification of the revised sources belongs to oracle
-  runner #562; comparison here is against the saved original observations.
+- No programs, cargo, Docker, release gate or benchmarks were run in the
+  corpus relocation revision. Runtime verification of the revised sources
+  belongs to oracle runner #562; comparison here is against the saved original
+  observations.
 
 Programs import `tap` from `t/support` through `OKKAMA_IMPORT_DIRS`; oracle
 runner #562 will set it. From the repository root, check a positive file with:
@@ -84,7 +85,6 @@ expectations (`B`, `D`, `ACB`, `ED`) are unchanged.
 | Pending file | Original checks | Unchanged expectations | Status |
 | --- | --- | --- | --- |
 | [578-cold-futures.ok](pending/578-cold-futures.ok) | `cold-futures` 1, 3 | `""`, `""` | #578: escaping cold Future loses fresh receiver and arguments; both engines |
-| [579-async-results.ok](pending/579-async-results.ok) | `async-results` 6 | `"LR"` | #579: discarded awaited result is never destroyed; both engines |
 | [580-all-futures.ok](pending/580-all-futures.ok) | `all-futures` 1–3 | `""`, `""`, `"BA"` | #580: Sparrow releases results early and in creation order; IR passes |
 | [581-future-completions.ok](pending/581-future-completions.ok) | `future-completions` 1–4 | `""`, `""`, `""`, `"BA"` | #581: open cached-outcome ownership semantics; expectations follow its proposal |
 
@@ -94,7 +94,8 @@ rule about the owner across multiple consumers. Other pending expectations
 remain Book requirements despite runtime disagreement.
 
 Main `cold-futures` retains original checks 2, 4–6; main `async-results`
-retains 1–5; main `all-futures` retains 4–6. Necessary setup is preserved or
+restores all original checks 1–6 for #579 and adds LIFO/exactly-once checks;
+main `all-futures` retains 4–6. Necessary setup is preserved or
 repeated in the pending fixture; passing assertions are not moved or removed.
 All of `future-completions` is pending, so there is no empty main file.
 
@@ -136,7 +137,7 @@ order.
 | [bound-actions.ok](bound-actions.ok) | 5 | 18.5, 20.2: bound receiver lifetime, escaping method reference |
 | [caps.ok](caps.ok) | 4 | 16.3, 19, 20.2: caps retain hidden resources and original snapshot |
 | [roles-generics.ok](roles-generics.ok) | 5 | 22, 25, 20.2: role returns, generic wrappers, any transport |
-| [async-results.ok](async-results.ok) | 5 | 20.2, 31.5: result transfer across suspension and repeated awaits |
+| [async-results.ok](async-results.ok) | 8 | 20.2, 31.5: result transfer across suspension, repeated awaits, discarded-result cleanup and LIFO order (#579) |
 | [cold-futures.ok](cold-futures.ok) | 4 | 20.2, 31.5: lazy futures retain receiver and arguments before startup |
 | [spawn-cancellation.ok](spawn-cancellation.ok) | 5 | 15, 20.3, 31.5: cooperative spawn, cancellation waits for child cleanup |
 | [future-group.ok](future-group.ok) | 5 | 20.2–20.3, 31.5; async/scope: supervised resources and duplicate registration |
@@ -318,7 +319,7 @@ results corroborate the four corrections; open disagreements stay in pending/.
    the cleanup sequence; Claude must inspect stderr to validate the primary
    and secondary diagnostic carrier behavior.
 
-## Completion record
+## Corpus relocation completion record
 
 - [x] Move the entire corpus, generator, README and rejected fixtures out of `t/`.
 - [x] Use `tap` through `OKKAMA_IMPORT_DIRS` and document runner #562's setup.
@@ -333,4 +334,22 @@ results corroborate the four corrections; open disagreements stay in pending/.
 - [x] Remove `.corpus-run/` after inspecting its results. No commit made.
 
 Revised runtime execution remains assigned to oracle runner #562 and was not
-performed here. Tickets #578–#580 and the semantics question #581 remain open.
+performed here. Tickets #578, #580 and the semantics question #581 remain pending.
+
+## #579 discarded awaited results
+
+- [x] Restore the original `"LR"` assertion to `async-results.ok` and remove
+  its duplicate setup from `pending/579-async-results.ok`.
+- [x] Add `"LBRA"` / `"LBRAO"` assertions: the awaited result closes between
+  newer and older block identities, and outer cleanup does not destroy it again.
+- [x] Check the updated file with `okkama check`; its TAP plan matches all
+  eight literal assertions.
+- [x] Verify the compiler with `cargo check`, `lowering_ownership` (12 tests),
+  `--lib` (116 tests), and `clippy --all-targets -- -D warnings`, all for
+  `-p okkama-compiler --offline -j 4`.
+- [ ] Verify the eight assertions on IR and Sparrow in Docker (Claude).
+
+The lowering regression checks `region.track` on the awaited SSA value in
+the same region as adjacent ordinary call results, separate from the outer
+region, with both normal and failure cleanup. It failed before the fix because
+the awaited value had no tracking operation.
