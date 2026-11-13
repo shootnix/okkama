@@ -66,6 +66,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   from the source. `[i..i + 1000]`: 11.7 → 0.91 µs; `[i..i + 8]`: 166 →
   53 ns; a reduce from a 1 000-element initial array: 1 145 → 938 ns.
 
+- **Sparrow's statistics count without formatting (#450).** With
+  `SPARROW_CORE_STATS` on, every counted event (each generic instruction,
+  native call, Future, await) formatted a `String` key first. Events are
+  now small keys, named when the report is written; the report is the
+  same. A `join` loop under statistics: 87 → 65 ns per join (32 ns
+  without statistics, unchanged).
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request
