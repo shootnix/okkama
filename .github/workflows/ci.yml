@@ -1,9 +1,11 @@
-# Тесты и conformance на каждый push в develop и каждый pull request.
+# Тесты и conformance на каждый push в develop и в релизную ветку и на каждый
+# pull request. Релизная ветка пушится после каждого влитого тикета: CI идёт
+# параллельно работе, а не одним прогоном в конце релиза (#557).
 name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, "release/**"]
   pull_request:
   workflow_dispatch:
 
@@ -31,20 +33,30 @@ jobs:
           java-version: "22"
       - name: Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
-      - uses: actions/cache@v4
+      # Dependencies only: workspace crates are rebuilt anyway, so a rerun of
+      # a failed job starts from compiled dependencies (#557).
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            okkama-rs/target
-          key: test-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
-          restore-keys: test-${{ runner.os }}-
+          workspaces: okkama-rs -> target
+          shared-key: tests-gate
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      # The gate profile: release optimisations without fat LTO. Linking each
+      # of the ~90 test binaries with fat LTO took most of the job (#557); the
+      # fat-LTO binaries are built and exercised by the conformance and std
+      # jobs and by the packages workflow.
       - name: Build
         working-directory: okkama-rs
-        run: cargo build --release --locked -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
+        run: cargo build --profile gate --locked -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
+      # Every test binary in parallel, all failures in one report, one retry
+      # marked FLAKY (okkama-rs/.config/nextest.toml).
       - name: Test
         working-directory: okkama-rs
-        run: cargo test --release --locked --workspace
+        run: cargo nextest run --cargo-profile gate --locked --workspace --profile ci
+      - name: Doctests
+        working-directory: okkama-rs
+        run: cargo test --doc --profile gate --locked --workspace
 
   conformance:
     name: Conformance (${{ matrix.engine }})
