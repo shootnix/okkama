@@ -156,11 +156,11 @@ fn check_once_lets(ctx: &ctx::Ctx<'_, '_>, functions: &[ir::Function]) -> std::r
     let mut closures: Vec<(ir::FnSig, Vec<ir::Type>)> = Vec::new();
     for function in functions {
         for inst in function.blocks.iter().flat_map(|block| &block.insts) {
-            if let (ir::InstKind::FnClosure { captures, .. }, Some(result)) = (&inst.kind, inst.result) {
-                if let ir::Type::Fn(sig) = &function.values[result.0] {
-                    let captured = captures.iter().map(|value| function.values[value.0].clone()).collect();
-                    closures.push(((**sig).clone(), captured));
-                }
+            if let (ir::InstKind::FnClosure { captures, .. }, Some(result)) = (&inst.kind, inst.result)
+                && let ir::Type::Fn(sig) = &function.values[result.0]
+            {
+                let captured = captures.iter().map(|value| function.values[value.0].clone()).collect();
+                closures.push(((**sig).clone(), captured));
             }
         }
     }
