@@ -26,6 +26,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   order stays the same: the first failure observed is primary, the others
   follow by input position. 32 000 inputs that all fail: 952 ms → 9 ms.
 
+- **`FutureCompletions` hands out settled inputs as they settle (#444).**
+  Each `completion()` request removed itself from every input, scanned and
+  sorted all of them, and listened to every unfinished input again: O(n)
+  per request, O(n²) to drain a stream. The stream now listens to each
+  input once and serves waiting requests at the moment an input settles.
+  32 000 inputs settling one after another drain in 0.028 s of CPU
+  instead of 5.39 s; 32 000 already-settled inputs in 0.017 s instead of
+  2.08 s. Futures no longer carry a completion-order stamp; notifications
+  give the order. Async micro-benchmarks are within ±2%.
+
+### Fixed
+
+- **A `FutureCompletions` request no longer hangs when another request
+  polls first (#547).** A request woken by a settled input was dropped
+  from the waiting requests if another request served the stream before it
+  ran, and nothing served it again. Two requests on a stream with one
+  pending input given twice deadlocked. Only a request that is being
+  cancelled leaves the queue now.
+
 ## [0.5.6] — 2026-11-13
 
 0.5.6 fixes the language bugs found while documenting std and writing the

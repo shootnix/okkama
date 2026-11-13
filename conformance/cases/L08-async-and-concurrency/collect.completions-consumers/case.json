@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.collect.completions-consumers",
+  "title": "FutureCompletions serves concurrent requests in order, duplicate inputs at every position, and cancels on a cancelled request",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.COLLECT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "a:l2 b:l1 c:l0, remaining 0\np:x q:x\nw cancelled\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/collect.ok",
+    "docs/async-guide.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #444 (0.5.7) from the cited contract text",
+    "expected_basis": "async/collect: every input position is returned once, including duplicate future identities; concurrent completion requests and simultaneous settlements are paired FIFO; cancelling a pending completion request cancels the stream's unfinished inputs."
+  },
+  "status": "mandatory"
+}
