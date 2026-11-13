@@ -996,7 +996,12 @@ fn collect_finish(runtime: &mut Runtime, frame: Word, function: usize) -> Step {
         } else {
             runtime.heap.allocate_array(kind.repr(), &values)
         };
-        return Done(runtime.heap.object_new(owner, &[array]));
+        let result = runtime.heap.object_new(owner, &[array]);
+        // Like obj.new, register the wrapper's identity so the awaiter's
+        // region can adopt its result graph. An unregistered object stops
+        // the ownership walk, leaving its resources free for later callees.
+        runtime.created(owner as usize, result);
+        return Done(result);
     }
     match winner {
         Some(winner) => Done(winner),
