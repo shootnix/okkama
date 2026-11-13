@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Sparrow GC layouts (#437).** Object, closure and async-frame tracing uses
+  precomputed indices for reference and integer slots, skipping raw fields.
+  Full layouts remain available through `Heap::layouts()`; the tables are
+  read-only after heap construction so trace descriptors cannot become stale.
+  Collection-time benefit and descriptor memory cost await isolated A/B review.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

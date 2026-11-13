@@ -277,7 +277,7 @@ impl Runtime {
                         continue;
                     }
                     seen.push(object);
-                    let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
+                    let layout = &self.heap.layouts().objects[heap::payload(header) as usize];
                     for (index, &field) in layout.iter().enumerate().rev() {
                         pending.push((self.heap.field(object, index), field));
                     }
@@ -305,7 +305,7 @@ impl Runtime {
                     events += 1;
                     let function = heap::payload(header) as usize;
                     let source = &self.loaded.program.functions[function];
-                    let layout = &self.heap.layouts.frames[function];
+                    let layout = &self.heap.layouts().frames[function];
                     let retained = layout.len() - source.params.len();
                     for index in (retained..layout.len()).rev() {
                         pending.push((self.heap.field(object, index), layout[index]));
@@ -319,7 +319,7 @@ impl Runtime {
                     pending.extend(elements.iter().rev().map(|&e| (e, repr)));
                 }
                 heap::CLOSURE => {
-                    let layout = &self.heap.layouts.closures[heap::payload(header) as usize];
+                    let layout = &self.heap.layouts().closures[heap::payload(header) as usize];
                     for (index, &field) in layout.iter().enumerate().rev() {
                         pending.push((self.heap.field(object, index), field));
                     }
@@ -406,7 +406,7 @@ impl Runtime {
         if heap::kind(header) != heap::OBJECT {
             return None;
         }
-        let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
+        let layout = &self.heap.layouts().objects[heap::payload(header) as usize];
         for (index, &field) in layout.iter().enumerate() {
             if field.pointer(self.heap.field(value, index)).is_some_and(|pointer| self.may_reach_free(pointer)) {
                 return None;

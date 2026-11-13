@@ -253,7 +253,7 @@ fn build(runtime: &mut Runtime, ty: TypeRef, values: &[Word]) -> Word {
 /// entry ahead of the call's arguments.
 pub fn bind(runtime: &mut Runtime, action: Word, entry: Word, fields: Vec<(Word, Repr)>) -> Word {
     let function = crate::heap::payload(runtime.heap.header_of(action));
-    let words = runtime.heap.layouts.closures[function as usize].len();
+    let words = runtime.heap.layouts().closures[function as usize].len();
     let captures: Vec<Word> = (0..words).map(|i| runtime.heap.field(action, i)).collect();
     let bound = runtime.heap.closure_new(function, &captures);
     runtime.state_new(bound, State::WorkerBinding { entry, fields });
