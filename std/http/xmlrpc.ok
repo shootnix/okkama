@@ -461,7 +461,12 @@ object XmlRpcLimits {
     }
 
     XmlRpcLimits(depth is int, values is int, text_bytes is BigInt, binary_bytes is BigInt) {
-        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
+        XmlRpcBudget(
+            depth: depth,
+            values: values,
+            text_bytes: text_bytes,
+            binary_bytes: binary_bytes
+        );
         self.depth = depth;
         self.values = values;
         self.text_bytes = text_bytes.int();
@@ -476,7 +481,12 @@ object XmlRpcLimits {
         binary_bytes is BigInt,
         nil_enabled is bool
     ) {
-        XmlRpcBudget(depth: depth, values: values, text_bytes: text_bytes, binary_bytes: binary_bytes);
+        XmlRpcBudget(
+            depth: depth,
+            values: values,
+            text_bytes: text_bytes,
+            binary_bytes: binary_bytes
+        );
         self.depth = depth;
         self.values = values;
         self.text_bytes = text_bytes.int();
@@ -541,7 +551,8 @@ hidden object XmlRpcUsage {
 
     node(depth is int) is void {
         confirm depth <= limits::Limits::depth else throw XmlRpcLimitExceeded.kind("depth");
-        confirm values.value() < limits::Limits::values else throw XmlRpcLimitExceeded.kind("values");
+        confirm values.value() < limits::Limits::values
+            else throw XmlRpcLimitExceeded.kind("values");
         values.replace(values.value() + 1);
     }
 
@@ -785,7 +796,10 @@ hidden object XmlRpcDateText {
     string() is string {
         let date = origin.date();
         let time = origin.time();
-        XmlRpcPadded(value: date::Calendar::year, width: 4).string() + XmlRpcPadded(value: date::Calendar::month, width: 2).string() + XmlRpcPadded(
+        XmlRpcPadded(value: date::Calendar::year, width: 4).string() + XmlRpcPadded(
+            value: date::Calendar::month,
+            width: 2
+        ).string() + XmlRpcPadded(
             value: date::Calendar::day,
             width: 2
         ).string() + "T" + XmlRpcPadded(value: time::Clock::hour, width: 2).string() + ":" + XmlRpcPadded(
@@ -1102,7 +1116,9 @@ hidden object XmlRpcParsing {
                             self.close("member");
                             confirm collected.value().size() < 4096
                                 else throw XmlRpcLimitExceeded.kind("container_items");
-                            collected.replace(collected.value().prefix(XmlRpcMember(name: name, value: value)));
+                            collected.replace(
+                                collected.value().prefix(XmlRpcMember(name: name, value: value))
+                            );
                         }
                         self.close("struct");
                     }
@@ -1400,7 +1416,9 @@ hidden object XmlRpcFaultCapture does XmlRpcWriting {
             let member = values.item(index);
             confirm member.name() == "faultCode" || member.name() == "faultString"
                 else throw InvalidXmlRpc.because("unknown fault member");
-            member.value().print(XmlRpcFaultScalar(name: member.name(), code: code, message: message));
+            member.value().print(
+                XmlRpcFaultScalar(name: member.name(), code: code, message: message)
+            );
         }
     }
 
