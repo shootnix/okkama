@@ -653,7 +653,7 @@ struct Emitter<'a, 'b> {
     spill_area: Option<cranelift_codegen::ir::StackSlot>,
     /// Registers live before each instruction, for explicit roots (#354);
     /// `None`: Cranelift's frontend keeps the stack maps.
-    root_live: Option<Vec<Vec<u64>>>,
+    root_live: Option<okkama_sparrow::LiveSets>,
     roots: Option<Roots>,
 }
 
