@@ -13,7 +13,12 @@ module http/xmlrpc v1.0.0;
 // decimal text when read), dateTime.iso8601 (local, whole seconds), base64,
 // array, struct and, when the limits allow it, nil. Everything read is bounded
 // by XmlRpcLimits: depth 64, 4096 values, 1 MiB of text and 1 MiB of binary by
-// default. XmlRpcHandling answers POSTs on one path with a XmlRpcCalling.
+// default.
+//
+// A server is an XmlRpcCalling behind XmlRpcHandling, which answers POSTs on
+// one path; it returns XmlRpcSuccess(value) or XmlRpcFailure(XmlRpcFault(code:,
+// message:)). Values show themselves to an XmlRpcWriting, one callback per
+// kind. See examples/http/xmlrpc/greet.ok.
 
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
