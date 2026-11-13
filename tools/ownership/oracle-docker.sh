@@ -47,8 +47,8 @@ exec docker run --rm --network none \
     -e ORACLE_BUILD_TIMEOUT="${ORACLE_BUILD_TIMEOUT:-1800}" \
     -v "$ROOT:/src:ro" -v "$RESULTS:/out" \
     -v okkama-cargo-registry:/usr/local/cargo/registry \
-    "${MOUNTS[@]}" -w /out okkama-dev bash -c '
+    ${MOUNTS[@]+"${MOUNTS[@]}"} -w /out okkama-dev bash -c '
         set -euo pipefail
         /src/tools/ownership/toolchain.sh
         exec python3 /work/tools/ownership/oracle.py "$@" --root /work --toolchain /tc
-    ' oracle "$MODE" --out /out/artifacts --json "/out/$MODE.json" "${ARGS[@]}"
+    ' oracle "$MODE" --out /out/artifacts --json "/out/$MODE.json" ${ARGS[@]+"${ARGS[@]}"}
