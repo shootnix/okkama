@@ -1,5 +1,18 @@
 module i18n/gettext v1.0.0;
 
+// GNU gettext catalogs: PO text and compiled MO files.
+//
+//     let document = ParsedPo(po_text).document();
+//     for document.entries() -> entry { entry::Entry::identity; entry::Entry::translations; }
+//     PoString(document).string();                              // back to PO text
+//
+//     let catalog = GettextCatalog(origin: mo_bytes, locale: Locale("ru"));
+//     catalog.text(MessageKey(context: "menu", identity: "Open"));
+//     catalog.plural(key, PluralNumber("3"));                   // by the file's Plural-Forms
+//
+// Plural-Forms formulas are evaluated with 64-bit unsigned arithmetic on every
+// host. The charset comes from the catalog's header.
+
 import "locale/tag" take Locale;
 import "i18n/catalog" take MessageKey, MissingMessage, WrongMessageEntry, Translating;
 import "i18n/plural" take PluralNumber;
@@ -17,6 +30,7 @@ import "compare" take Order;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches, EntireRegexMatch;
 
+// A catalog that cannot be read; offset and reason say where and why.
 enum InvalidCatalog is Error = (located(offset is int, reason is string));
 
 // Builders use local persistent lists, then materialize in linear traversal.
@@ -124,6 +138,7 @@ hidden object GettextContains {
     }
 }
 
+// The charset a catalog declares.
 object GettextCharset {
     has name is string;
 
@@ -724,6 +739,7 @@ hidden object GettextExpressionParsing {
     }
 }
 
+// A Plural-Forms formula.
 object GettextPluralRule {
     has amount is int;
     has expression is GettextExpression;
@@ -775,8 +791,10 @@ object GettextPluralRule {
     }
 }
 
+// Translator, extracted, reference, flag or previous comment.
 enum PoCommentKind = (translator, extracted, reference, flag, previous);
 
+// One comment line of a PO entry.
 object PoComment {
     has kind is PoCommentKind;
     has origin is string;
@@ -802,6 +820,7 @@ object PoComment {
     }
 }
 
+// The comments of a PO entry, by kind.
 object PoComments {
     has records is @PoComment;
 
@@ -885,6 +904,7 @@ object PoComments {
     }
 }
 
+// One PO entry: context, identity, plural identity, translations and comments.
 object PoEntry {
     has context, identity, plural, sorted_key is string;
     has translations is @string;
@@ -991,6 +1011,7 @@ object PoEntry {
     }
 }
 
+// One field of a catalog's header entry.
 object GettextHeader {
     has name, value is string;
 
@@ -1008,6 +1029,7 @@ object GettextHeader {
     }
 }
 
+// The header of a catalog: the msgstr of the empty msgid.
 object GettextMetadata {
     has values is @GettextHeader;
 
@@ -1077,6 +1099,7 @@ object GettextMetadata {
     }
 }
 
+// The entries of a PO file.
 object PoDocument {
     has entries is @PoEntry;
     has metadata is GettextMetadata;
@@ -1370,6 +1393,7 @@ hidden object PoEscaped {
     }
 }
 
+// A PO document as PO text.
 object PoString {
     has result is string;
 
@@ -1644,6 +1668,7 @@ hidden object PoEntryFields {
     }
 }
 
+// PO text read into a document.
 object ParsedPo {
     has result is PoDocument;
 
@@ -2016,6 +2041,7 @@ hidden object MoWords {
     }
 }
 
+// An MO file read into a document.
 object ParsedMo {
     has result is PoDocument;
 
@@ -2100,6 +2126,7 @@ object ParsedMo {
     }
 }
 
+// A compiled MO catalog to look messages up in.
 object GettextCatalog does Translating {
     has locale is Locale;
     has document is PoDocument;

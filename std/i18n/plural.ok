@@ -1,5 +1,14 @@
 module i18n/plural v1.0.0;
 
+// Plural categories (CLDR): which form of a word a number takes in a language.
+//
+//     PluralCategoryOf(origin: PluralNumber("21"), locale: Locale("ru"), kind: PluralKind.cardinal).category();   // one
+//     PluralCategoryOf(origin: PluralNumber("1.5"), locale: Locale("en"), kind: PluralKind.cardinal).category();  // other
+//     PluralCategoryOf(origin: PluralNumber("2"), locale: Locale("en"), kind: PluralKind.ordinal).category();     // two (2nd)
+//
+// A PluralNumber keeps its visible decimals: "1" and "1.0" differ, as CLDR says
+// they do.
+
 import "locale/tag" take Locale;
 import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt;
@@ -8,8 +17,10 @@ import "encoding/utf" take Utf8Encoded;
 import "i18n/operands" take PluralOperands;
 import "locale/internal/plurals" take CldrPlurals;
 
+// The CLDR plural categories.
 enum PluralCategory = (zero, one, two, few, many, other);
 
+// Cardinal (1 book) or ordinal (1st).
 enum PluralKind = (cardinal, ordinal);
 
 // Preserve the spelling's visible fraction precision, unlike Decimal's numeric
@@ -176,6 +187,7 @@ hidden object CanonicalPluralNumber {
     }
 }
 
+// The plural category of a number in a locale.
 object PluralCategoryOf {
     has origin is PluralNumber;
     has locale is Locale;
@@ -212,6 +224,7 @@ object PluralCategoryOf {
     }
 }
 
+// Text that is not a plain decimal number; reason says why.
 enum InvalidPluralNumber is Error = (because(reason is string));
 
 test "visible decimal precision affects English cardinal category" {

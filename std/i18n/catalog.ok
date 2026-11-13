@@ -1,11 +1,31 @@
 module i18n/catalog v1.0.0;
 
+// Message catalogs: translated text looked up by key, with plural forms.
+//
+//     let unread = MessageKey(context: "", identity: "unread");
+//     let russian = MessageCatalog(locale: Locale("ru"), entries: [
+//         SingularMessage(key: MessageKey(context: "menu", identity: "Open"), text: "Открыть"),
+//         PluralMessage(key: unread, forms: [
+//             PluralForm(category: PluralCategory.one, text: "непрочитанное письмо"),
+//             PluralForm(category: PluralCategory.few, text: "непрочитанных письма"),
+//             PluralForm(category: PluralCategory.many, text: "непрочитанных писем"),
+//             PluralForm(category: PluralCategory.other, text: "непрочитанного письма"),
+//         ]),
+//     ]);
+//     russian.plural(unread, PluralNumber("21"));            // "непрочитанное письмо"
+//     FallbackTranslation(primary: russian, fallback: english);
+//
+// A key is a context and an identity, so one English word can carry several
+// meanings. A plural message has one form per CLDR category of the locale and
+// always an `other`. Catalogs hold at most 4096 entries.
+
 import "locale/tag" take Locale;
 import "i18n/plural" take PluralNumber, PluralCategory, PluralKind, PluralCategoryOf;
 import "collections/sequence" take Sequencing;
 import "collections/ordering" take SortedBy;
 import "compare" take Comparing, Order;
 
+// What a message is looked up by: a context and an identity.
 object MessageKey does Comparing<MessageKey> {
     has context, identity is string;
     has present is bool;
@@ -60,8 +80,10 @@ object MessageKey does Comparing<MessageKey> {
     }
 }
 
+// A key that is not valid.
 enum InvalidMessageKey is Error = (invalid);
 
+// One message of a catalog.
 role MessageEntry {
     key() is MessageKey;
     plural() is bool;
@@ -70,6 +92,7 @@ role MessageEntry {
     kind() is PluralKind;
 }
 
+// The text of one plural category.
 object PluralForm {
     has category is PluralCategory;
     has text is string;
@@ -92,6 +115,7 @@ object PluralForm {
     }
 }
 
+// A message with one text.
 object SingularMessage does MessageEntry {
     has key is MessageKey;
     has text is string;
@@ -124,6 +148,7 @@ object SingularMessage does MessageEntry {
     }
 }
 
+// A message with a text per plural category.
 object PluralMessage does MessageEntry {
     has key is MessageKey;
     has forms is @PluralForm;
@@ -191,12 +216,14 @@ hidden object PluralFormSnapshot {
     }
 }
 
+// Something messages are looked up in.
 role Translating {
     membership(key is MessageKey) is bool;
     text(key is MessageKey) is string;
     plural(key is MessageKey, count is PluralNumber) is string;
 }
 
+// The messages of one locale.
 object MessageCatalog does Translating {
     has locale is Locale;
     has entries is SortedBy<MessageEntry, MessageKey>;
@@ -303,6 +330,7 @@ object MessageCatalog does Translating {
     }
 }
 
+// Messages looked up in one catalog, then another.
 object FallbackTranslation does Translating {
     has primary, fallback is Translating;
 
@@ -334,10 +362,13 @@ object FallbackTranslation does Translating {
     }
 }
 
+// No message has the key.
 enum MissingMessage is Error = (key(context is string, identity is string));
 
+// A plural text was asked of a singular message, or the reverse.
 enum WrongMessageEntry is Error = (detailed(expected_plural is bool, actual_plural is bool));
 
+// A catalog that cannot be built; reason says why.
 enum InvalidMessageCatalog is Error = (because(reason is string));
 
 test "catalog retains exact translation including empty text" {
