@@ -1,5 +1,13 @@
 module logging/syslog v1.0.0;
 
+// Syslog over UDP (RFC 5424).
+//
+//     let logs = SyslogLogs(origin: udp, facility: SyslogFacility.daemon, host: "web-1", application: "shop",
+//         capacity: 1024, overflow: LogOverflow.drop_oldest, scope: scope);
+//
+// Records are queued and sent in the background; levels map to severities
+// (critical 2, error 3, warning 4, info 6, debug 7).
+
 import "logging/level" take LogLevel;
 import "logging/record" take LogRecord, LogContext;
 import "logging/name" take LogName;
@@ -16,6 +24,7 @@ import "numbers/bigint" take BigInt;
 import "time/duration" take Duration, DurationUnit;
 import "time/rfc3339" take Rfc3339;
 
+// The syslog facility.
 enum SyslogFacility = (kernel, user, mail, daemon, authorization, syslog, printer, news, uucp, clock, private_authorization, ftp, ntp, audit, alert, clock2, local0, local1, local2, local3, local4, local5, local6, local7);
 
 hidden object SyslogFacilityCode {
@@ -103,13 +112,16 @@ hidden object SyslogFacilityCode {
     }
 }
 
+// The syslog severity of a level.
 object SyslogSeverity {
     has origin is LogLevel;
 
+    // The level.
     SyslogSeverity(origin is LogLevel) {
         self.origin = origin;
     }
 
+    // critical 2, error 3, warning 4, info 6, debug 7.
     code() is int {
         match origin {
             case LogLevel.debug {
@@ -154,11 +166,14 @@ hidden object SyslogHeaderName {
     }
 }
 
+// How syslog messages are made.
 object SyslogOptions {
     has facility is SyslogFacility;
     has host, application is string;
     has maximum is int;
 
+    // facility, host and application names, at most maximum_payload bytes a
+    // message; InvalidSyslogOptions otherwise.
     SyslogOptions(
         facility is SyslogFacility,
         host is string,
@@ -173,6 +188,7 @@ object SyslogOptions {
         maximum = maximum_payload;
     }
 
+    // The facility, host, application and payload limit.
     cap Settings {
         facility is SyslogFacility {
             facility;
@@ -198,11 +214,13 @@ object SyslogMessage does ByteSource {
     has record is LogRecord;
     has options is SyslogOptions;
 
+    // record as an RFC 5424 message under options.
     SyslogMessage(record is LogRecord, options is SyslogOptions) {
         self.record = record;
         self.options = options;
     }
 
+    // The message.
     bytes() is @byte {
         once let encoded is @byte = self.encoded();
         encoded;
@@ -254,15 +272,18 @@ object SyslogMessage does ByteSource {
     }
 }
 
+// Sends records as syslog datagrams.
 object UdpSyslogDelivery does LogDelivering {
     has origin is UdpConnection;
     has options is SyslogOptions;
 
+    // Over origin with options.
     UdpSyslogDelivery(origin is UdpConnection, options is SyslogOptions) {
         self.origin = origin;
         self.options = options;
     }
 
+    // Sends record.
     async deliver(record is LogRecord) is int {
         let packet = SyslogMessage(record: record, options: options);
         let count = await origin.send(packet);
@@ -271,9 +292,11 @@ object UdpSyslogDelivery does LogDelivering {
     }
 }
 
+// Records sent to syslog in the background.
 object SyslogLogs does LogWriting, LogDraining, Closing {
     has queue is QueuedLogs;
 
+    // Over origin with options, queued as queue_options say, in scope.
     SyslogLogs(
         origin is UdpConnection,
         options is SyslogOptions,
@@ -287,6 +310,7 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         );
     }
 
+    // The same, the options given one by one.
     SyslogLogs(
         origin is UdpConnection,
         facility is SyslogFacility,
@@ -306,26 +330,32 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
         );
     }
 
+    // Queues record.
     write(record is LogRecord) is void {
         queue.write(record);
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         true;
     }
 
+    // Waits until the queue is empty.
     async drain() is void {
         await queue.drain();
     }
 
+    // How many records were dropped.
     dropped_records() is BigInt {
         queue.dropped_records();
     }
 
+    // Whether it was closed.
     closed() is bool {
         queue.closed();
     }
 
+    // Stops taking records.
     close() is void {
         queue.close();
     }
@@ -335,6 +365,7 @@ object SyslogLogs does LogWriting, LogDraining, Closing {
     }
 }
 
+// Options that cannot be used.
 enum InvalidSyslogOptions is Error = (invalid);
 
 hidden object SyslogTestRecord {

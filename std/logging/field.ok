@@ -1,5 +1,10 @@
 module logging/field v1.0.0;
 
+// Structured fields of log records: JSON members.
+//
+//     LogFields(JsonField("user", 7), JsonField("ms", 12));
+//     CombinedLogFields(base: common, added: extra).fields();
+
 import "collections/sequence" take Sequencing;
 import "json" take Json, JsonKind, JsonField, ParsedJson, JsonError;
 import "encoding/utf" take Utf8Encoded;
@@ -9,6 +14,7 @@ import "encoding/utf" take Utf8Encoded;
 object LogFields {
     has origin is Json;
 
+    // The members; InvalidLogField for a repeated name.
     LogFields(members is Sequencing<JsonField>) {
         let size = members.size();
         confirm size >= 0 && size <= 256
@@ -43,23 +49,28 @@ object LogFields {
         origin = LogFieldLimits(fields).json();
     }
 
+    // The members of a JSON object; InvalidLogField for another value.
     LogFields(values is Json) {
         origin = LogFieldLimits(values).json();
     }
 
+    // Whether a field has the name.
     membership(name is string) is bool {
         origin.has(name);
     }
 
+    // The field's value; MissingLogField when absent.
     value(name is string) is Json {
         confirm self.membership(name) else throw MissingLogField.name(name);
         origin.get(name);
     }
 
+    // The fields as a JSON object.
     values() is Json {
         origin;
     }
 
+    // The fields, in order.
     members() is @JsonField {
         origin.names().map() -> name {
             JsonField(name, origin.get(name));
@@ -94,22 +105,28 @@ hidden object LogFieldLimits {
     }
 }
 
+// No fields.
 object EmptyLogFields {
+    // No fields.
     EmptyLogFields();
 
+    // The empty fields.
     fields() is LogFields {
         LogFields();
     }
 }
 
+// Two sets of fields together, the added ones winning.
 object CombinedLogFields {
     has base, added is LogFields;
 
+    // base with added on top.
     CombinedLogFields(base is LogFields, added is LogFields) {
         self.base = base;
         self.added = added;
     }
 
+    // The fields.
     fields() is LogFields {
         if added.values().size() == 0 {
             return base;
@@ -121,8 +138,10 @@ object CombinedLogFields {
     }
 }
 
+// No field has that name.
 enum MissingLogField is Error = (name(name is string));
 
+// Fields that cannot be built; reason says why.
 enum InvalidLogField is Error = (because(reason is string));
 
 test "log fields keep member order, reject bad names and merge by name" {

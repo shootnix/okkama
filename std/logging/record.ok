@@ -1,5 +1,8 @@
 module logging/record v1.0.0;
 
+// Log records: when, how important, the message, the logger's context and an
+// optional cause.
+
 import "logging/name" take LogName;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields;
@@ -7,11 +10,13 @@ import "time/clock" take Instant;
 import "json" take JsonField;
 import "time/duration" take Duration, DurationUnit;
 
+// The logger a record comes from: name, fields and process id.
 object LogContext {
     has origin is LogName;
     has fields is LogFields;
     has process is int;
 
+    // As given; InvalidLogProcess for a negative process id.
     LogContext(name is LogName, fields is LogFields, process is int) {
         confirm process >= 0 else throw InvalidLogProcess.invalid;
         origin = name;
@@ -19,19 +24,23 @@ object LogContext {
         self.process = process;
     }
 
+    // The logger name.
     name() is LogName {
         origin;
     }
 
+    // Its fields.
     fields() is LogFields {
         fields;
     }
 
+    // The process id.
     process() is int {
         process;
     }
 }
 
+// One log record.
 object LogRecord {
     has occurred is Instant;
     has level is LogLevel;
@@ -39,6 +48,7 @@ object LogRecord {
     has context is LogContext;
     has causes is @Error;
 
+    // As given, without a cause.
     LogRecord(occurred is Instant, level is LogLevel, message is string, context is LogContext) {
         self.occurred = occurred;
         self.level = level;
@@ -47,6 +57,7 @@ object LogRecord {
         causes = [];
     }
 
+    // As given, with the error that caused it.
     LogRecord(
         occurred is Instant,
         level is LogLevel,
@@ -61,23 +72,28 @@ object LogRecord {
         causes = [cause];
     }
 
+    // When it happened.
     time() is Instant {
         occurred;
     }
 
+    // Its logger's context.
     context() is LogContext {
         context;
     }
 
+    // Whether it has a cause.
     has_cause() is bool {
         causes.size() == 1;
     }
 
+    // The cause; MissingLogCause without one.
     cause() is Error {
         confirm self.has_cause() else throw MissingLogCause.missing;
         causes[0];
     }
 
+    // The level and the message.
     cap Entry {
         level is LogLevel {
             level;
@@ -89,8 +105,10 @@ object LogRecord {
     }
 }
 
+// The record has no cause.
 enum MissingLogCause is Error = (missing);
 
+// A negative process id.
 enum InvalidLogProcess is Error = (invalid);
 
 test "a record keeps its moment, level, message, context and optional cause" {

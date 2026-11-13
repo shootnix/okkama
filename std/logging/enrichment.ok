@@ -1,5 +1,10 @@
 module logging/enrichment v1.0.0;
 
+// Loggers that add fields to every record, or log under a child name.
+//
+//     let request_log = FieldLogging(origin: log, fields: LogFields(JsonField("request", id)));
+//     let db = ChildLogging(origin: shop, segment: "db").logging();      // "shop.db"
+
 import "logging/named" take Logging, NamedLogging;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields, CombinedLogFields;
@@ -10,23 +15,28 @@ import "testing/time" take ManualClock;
 import "time/clock" take Instant;
 import "time/duration" take Duration, DurationUnit;
 
+// A logger that adds fields to every record.
 object FieldLogging does Logging {
     has origin is Logging;
     has fields is LogFields;
 
+    // Logs through origin, adding fields.
     FieldLogging(origin is Logging, fields is LogFields) {
         self.origin = origin;
         self.fields = fields;
     }
 
+    // Logs message at level.
     log(level is LogLevel, message is string) is void {
         origin.log(level, message, fields);
     }
 
+    // Logs message at level with fields.
     log(level is LogLevel, message is string, fields is LogFields) is void {
         origin.log(level, message, CombinedLogFields(base: self.fields, added: fields).fields());
     }
 
+    // Logs message at level with fields and the error that caused it.
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
         origin.log(
             level,
@@ -37,15 +47,18 @@ object FieldLogging does Logging {
     }
 }
 
+// A logger one name segment below another.
 object ChildLogging {
     has origin is NamedLogging;
     has segment is string;
 
+    // origin's name and segment.
     ChildLogging(origin is NamedLogging, segment is string) {
         self.origin = origin;
         self.segment = segment;
     }
 
+    // The child logger.
     logging() is NamedLogging {
         origin.child(segment);
     }

@@ -1,5 +1,10 @@
 module logging/redact v1.0.0;
 
+// Hiding secrets in log records before they are written.
+//
+//     RedactedLogs(origin: destination, names: ["password", "card"]);     // those fields become "[redacted]"
+//     RedactedCauseLogs(origin: destination, replacement: "error");        // causes' text hidden
+
 import "logging/write" take LogWriting, CollectedLogs;
 import "logging/record" take LogRecord, LogContext;
 import "logging/field" take LogFields, EmptyLogFields, InvalidLogField;
@@ -10,6 +15,7 @@ import "time/duration" take Duration, DurationUnit;
 import "json" take Json, JsonField;
 import "collections/sequence" take Sequencing;
 
+// Records with some fields replaced.
 object RedactedLogs does LogWriting {
     has origin is LogWriting;
     has names is @string;
@@ -35,6 +41,7 @@ object RedactedLogs does LogWriting {
         self.replacement = LogFields(JsonField("replacement", replacement)).value("replacement");
     }
 
+    // Writes record with the named fields replaced.
     write(record is LogRecord) is void {
         let values = record.context().fields().values();
         let fields = Json(values.names().map() -> name {
@@ -59,20 +66,24 @@ object RedactedLogs does LogWriting {
         );
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         origin.enabled(name, level);
     }
 }
 
+// Records with their cause's text replaced.
 object RedactedCauseLogs does LogWriting {
     has origin is LogWriting;
     has replacement is string;
 
+    // Writes to origin, replacing causes' text with replacement.
     RedactedCauseLogs(origin is LogWriting, replacement is string) {
         self.origin = origin;
         self.replacement = replacement;
     }
 
+    // Writes record with its cause replaced.
     write(record is LogRecord) is void {
         let causes is @Error = if record.has_cause() {
             [RedactedLogCause.origin(replacement)];
@@ -85,11 +96,13 @@ object RedactedCauseLogs does LogWriting {
         );
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         origin.enabled(name, level);
     }
 }
 
+// A cause whose text was replaced.
 enum RedactedLogCause is Error = (origin(origin is string));
 
 hidden object ChangedLogRecord {

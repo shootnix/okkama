@@ -1,12 +1,19 @@
 module logging/name v1.0.0;
 
+// Logger names: dotted segments, `shop.db.pool`.
+//
+//     LogName("shop", "db").string();
+//     ChildLogName(origin: name, segment: "pool").name();
+
 import "collections/sequence" take Sequencing;
 import "config/key" take SettingKey, InvalidSettingKey;
 import "compare" take Comparing, Order;
 
+// A logger name: dotted segments.
 object LogName does Comparing<LogName> {
     has key is SettingKey;
 
+    // The segments; InvalidLogName for an empty one or a dot.
     LogName(segments is Sequencing<string>) {
         key = try {
             SettingKey(segments);
@@ -27,6 +34,7 @@ object LogName does Comparing<LogName> {
         };
     }
 
+    // The segments.
     segments() is Sequencing<string> {
         key.segments();
     }
@@ -37,20 +45,24 @@ object LogName does Comparing<LogName> {
         text;
     }
 
+    // Orders segment by segment.
     order(other is LogName) is Order {
         key.order(SettingKey(other.segments()));
     }
 }
 
+// A name one segment below another.
 object ChildLogName {
     has origin is LogName;
     has segment is string;
 
+    // origin and segment.
     ChildLogName(origin is LogName, segment is string) {
         self.origin = origin;
         self.segment = segment;
     }
 
+    // The name.
     name() is LogName {
         let base = origin.segments();
         let parts is @string = (0..base.size() + 1).map() -> index {
@@ -65,6 +77,7 @@ object ChildLogName {
     }
 }
 
+// A name that is not valid; reason says why.
 enum InvalidLogName is Error = (because(reason is string));
 
 test "a name is dotted segments; a child adds one" {

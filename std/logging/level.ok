@@ -1,16 +1,26 @@
 module logging/level v1.0.0;
 
+// Log levels, from debug to critical.
+//
+//     LogLevelFromName("warning").level();             // LogLevel.warning
+//     LogLevelName(LogLevel.error).string();           // "ERROR"
+//     LogLevelOrder(left: LogLevel.info, right: LogLevel.error).order();   // less
+
 import "compare" take Order;
 
+// How much a record matters.
 enum LogLevel = (debug, info, warning, error, critical);
 
+// The name of a level.
 object LogLevelName {
     has origin is LogLevel;
 
+    // The level.
     LogLevelName(origin is LogLevel) {
         self.origin = origin;
     }
 
+    // `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`.
     string() is string {
         match origin {
             case LogLevel.debug {
@@ -32,13 +42,16 @@ object LogLevelName {
     }
 }
 
+// A level read from its name.
 object LogLevelFromName {
     has origin is string;
 
+    // The name.
     LogLevelFromName(origin is string) {
         self.origin = origin;
     }
 
+    // The level; InvalidLogLevel for another name.
     level() is LogLevel {
         confirm origin.length() > 0 && origin.length() <= 8
             else throw InvalidLogLevel.origin(origin);
@@ -77,14 +90,17 @@ object LogLevelFromName {
     }
 }
 
+// Levels compared.
 object LogLevelOrder {
     has left, right is LogLevel;
 
+    // left and right.
     LogLevelOrder(left is LogLevel, right is LogLevel) {
         self.left = left;
         self.right = right;
     }
 
+    // less when left matters less than right.
     order() is Order {
         LogLevelRank(left).rank().order(LogLevelRank(right).rank());
     }
@@ -118,6 +134,7 @@ hidden object LogLevelRank {
     }
 }
 
+// A name that is not a level.
 enum InvalidLogLevel is Error = (origin(origin is string));
 
 test "logging levels have canonical names and a portable severity order" {

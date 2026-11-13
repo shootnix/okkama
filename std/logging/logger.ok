@@ -24,6 +24,7 @@ import "logging/stream" take TextStreamLogs;
 import "io/stdout" take Stderr;
 import "json" take JsonField;
 
+// A logger: a name, a destination and a level.
 object Logger does Logging {
     has name is LogName;
     has level is LogLevel;
@@ -31,6 +32,7 @@ object Logger does Logging {
     has destination is LogWriting;
     has origin is NamedLogging;
 
+    // A logger called name, writing to destination at level and above.
     Logger(
         name is string,
         destination is LogWriting = TextStreamLogs(Stderr()),
@@ -43,16 +45,19 @@ object Logger does Logging {
         origin = NamedLogging(name: self.name, destination: self.destination);
     }
 
+    // Logs message at debug with fields; nothing is built below the level.
     debug(message is string, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.emit(LogLevel.debug, message, listed);
     }
 
+    // Logs message at info with fields.
     info(message is string, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.emit(LogLevel.info, message, listed);
     }
 
+    // Logs message at warning with fields.
     warning(message is string, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.emit(LogLevel.warning, message, listed);
@@ -64,34 +69,41 @@ object Logger does Logging {
         self.failed(LogLevel.warning, message, cause, listed);
     }
 
+    // Logs message at error with fields.
     error(message is string, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.emit(LogLevel.error, message, listed);
     }
 
+    // Logs message at error with the error that caused it.
     error(message is string, cause is Error, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.failed(LogLevel.error, message, cause, listed);
     }
 
+    // Logs message at critical with fields.
     critical(message is string, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.emit(LogLevel.critical, message, listed);
     }
 
+    // Logs message at critical with the error that caused it.
     critical(message is string, cause is Error, fields is ...JsonField) is void {
         let listed is @JsonField = fields...;
         self.failed(LogLevel.critical, message, cause, listed);
     }
 
+    // Logs message at level.
     log(level is LogLevel, message is string) is void {
         origin.log(level, message);
     }
 
+    // Logs message at level with fields.
     log(level is LogLevel, message is string, fields is LogFields) is void {
         origin.log(level, message, fields);
     }
 
+    // Logs message at level with fields and the error that caused it.
     log(level is LogLevel, message is string, fields is LogFields, cause is Error) is void {
         origin.log(level, message, fields, cause);
     }
@@ -109,6 +121,7 @@ object Logger does Logging {
         Logger(name: named.string(), destination: target, level: level);
     }
 
+    // Its name.
     name() is LogName {
         name;
     }

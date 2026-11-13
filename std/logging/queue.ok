@@ -1,5 +1,14 @@
 module logging/queue v1.0.0;
 
+// Writing records in the background through a bounded queue.
+//
+//     let queued = QueuedLogs(origin: TextStreamLogs(file), capacity: 1024, overflow: LogOverflow.drop_oldest, scope: scope);
+//     …
+//     await queued.drain();
+//
+// When the queue is full a record is refused, dropped or pushes out the oldest,
+// as overflow says; dropped_records() counts them.
+
 import "logging/write" take LogWriting, LogDeliveryFailure, CollectedLogs, LogCollectionLimit;
 import "logging/record" take LogRecord, LogContext;
 import "logging/name" take LogName;
@@ -15,26 +24,34 @@ import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "io/stream" take Closing;
 
+// What a full queue does: refuse the record, drop it, or drop the oldest.
 enum LogOverflow = (reject, drop_newest, drop_oldest);
 
+// Something that delivers records asynchronously.
 role LogDelivering {
+    // Delivers record.
     async deliver(record is LogRecord) is int;
 }
 
+// Something that can be waited on until empty.
 role LogDraining {
+    // Waits until everything queued is written.
     async drain() is void;
 }
 
+// How large a queue is and what it does when full.
 object LogQueueOptions {
     has capacity is int;
     has overflow is LogOverflow;
 
+    // capacity records (1 to 65536) with overflow; InvalidLogQueue otherwise.
     LogQueueOptions(capacity is int, overflow is LogOverflow) {
         confirm capacity > 0 && capacity <= 65536 else throw InvalidLogQueue.invalid;
         self.capacity = capacity;
         self.overflow = overflow;
     }
 
+    // The capacity and the overflow rule.
     cap Limits {
         capacity is int {
             capacity;
@@ -46,13 +63,16 @@ object LogQueueOptions {
     }
 }
 
+// Delivers by writing at once.
 object SynchronousLogDelivery does LogDelivering {
     has origin is LogWriting;
 
+    // Writes to origin.
     SynchronousLogDelivery(origin is LogWriting) {
         self.origin = origin;
     }
 
+    // Writes record.
     async deliver(record is LogRecord) is int {
         origin.write(record);
         0;
@@ -253,10 +273,12 @@ hidden object LogQueueState {
     }
 }
 
+// Records written in the background.
 object QueuedLogs does LogWriting, LogDraining, Closing {
     has state is LogQueueState;
     has scope is Supervising<int>;
 
+    // Writes to origin from a queue of capacity, in scope.
     QueuedLogs(
         origin is LogWriting,
         capacity is int,
@@ -270,11 +292,13 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         self.scope = scope;
     }
 
+    // Delivers through origin from a queue, in scope.
     QueuedLogs(origin is LogDelivering, options is LogQueueOptions, scope is Supervising<int>) {
         state = LogQueueState(origin: origin, options: options);
         self.scope = scope;
     }
 
+    // Queues record; LogQueueFull when full and overflow is reject.
     write(record is LogRecord) is void {
         if state.write(record) {
             state.start(scope);
@@ -286,18 +310,22 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
         true;
     }
 
+    // Waits until the queue is empty.
     async drain() is void {
         await state.drain();
     }
 
+    // How many records were dropped.
     dropped_records() is BigInt {
         state.dropped_records();
     }
 
+    // Whether it was closed.
     closed() is bool {
         state.closed();
     }
 
+    // Stops taking records.
     close() is void {
         state.close();
     }
@@ -307,12 +335,16 @@ object QueuedLogs does LogWriting, LogDraining, Closing {
     }
 }
 
+// Queue options that cannot be used.
 enum InvalidLogQueue is Error = (invalid);
 
+// A record came after close().
 enum ClosedLogQueue is Error = (closed);
 
+// The queue is full.
 enum LogQueueFull is Error = (full);
 
+// Writing stopped before the record was written.
 enum LogQueueCancelled is Error = (cancelled);
 
 hidden object GatedLogDelivery does LogDelivering {

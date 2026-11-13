@@ -1,5 +1,10 @@
 module logging/line v1.0.0;
 
+// Log records as lines: text for people, JSON for machines.
+//
+//     TextLogLine(origin: record, zone: utc).string();
+//     JsonLogLine(record).string();          // {"time": …, "level": …, "logger": …, "message": …}
+
 import "logging/record" take LogRecord, LogContext, InvalidLogProcess;
 import "logging/level" take LogLevelName, LogLevel;
 import "json" take Json, JsonField, ParsedJson;
@@ -12,15 +17,18 @@ import "logging/field" take LogFields;
 import "logging/name" take LogName;
 import "time/clock" take Instant;
 
+// A record as a text line.
 object TextLogLine {
     has origin is LogRecord;
     has zone is TimeZone;
 
+    // origin, its time in zone.
     TextLogLine(origin is LogRecord, zone is TimeZone) {
         self.origin = origin;
         self.zone = zone;
     }
 
+    // `time level=INFO name="shop" process=8 message="…" fields={…}`.
     string() is string {
         let time = origin.time();
         let context = origin.context();
@@ -41,13 +49,16 @@ object TextLogLine {
     }
 }
 
+// A record as a JSON line.
 object JsonLogLine {
     has origin is LogRecord;
 
+    // origin.
     JsonLogLine(origin is LogRecord) {
         self.origin = origin;
     }
 
+    // The JSON object, with the cause's text when there is one.
     string() is string {
         let context = origin.context();
         let members is @JsonField = [
@@ -127,6 +138,7 @@ hidden object PhysicalLogLine {
     }
 }
 
+// A line over the size limit.
 enum LogLineLimit is Error = (exceeded);
 
 test "a record is one physical line of text or JSON, quotes escaped" {

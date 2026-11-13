@@ -1,5 +1,9 @@
 module logging/filter v1.0.0;
 
+// Which records pass: a level per logger name, the longest name winning.
+//
+//     AllowedLogs(origin: destination, level: LogLevel.info, overrides: ["shop.db": LogLevel.debug]);
+
 import "logging/name" take LogName;
 import "logging/level" take LogLevel, LogLevelOrder;
 import "logging/record" take LogRecord, LogContext;
@@ -11,34 +15,42 @@ import "time/clock" take Instant;
 import "time/duration" take Duration;
 import "async/atomic" take Atomic;
 
+// What decides whether a record passes.
 role LogAllowing {
+    // Whether a record of name at level passes.
     allowed(name is LogName, level is LogLevel) is bool;
 }
 
+// A level for one logger name and those below it.
 object LevelOverride {
     has name is LogName;
     has level is LogLevel;
 
+    // level for name.
     LevelOverride(name is LogName, level is LogLevel) {
         self.name = name;
         self.level = level;
     }
 
+    // The name.
     name() is LogName {
         name;
     }
 
+    // The level.
     level() is LogLevel {
         level;
     }
 }
 
+// A level per logger name, the longest matching name winning.
 object LevelThresholds does LogAllowing {
     has fallback is LogLevel;
     has overrides is @LevelOverride;
     // The threshold of each logger name asked about, resolved once (#182).
     has resolved is Atomic<%string:LogLevel>;
 
+    // fallback, with overrides by name.
     LevelThresholds(fallback is LogLevel, overrides is Sequencing<LevelOverride>) {
         let size = overrides.size();
         confirm size >= 0 && size <= 1024 else throw InvalidLogThreshold.invalid;
@@ -136,10 +148,12 @@ hidden object LogThresholdChoice {
     }
 }
 
+// Records that pass a filter.
 object AllowedLogs does LogWriting {
     has origin is LogWriting;
     has allowing is LogAllowing;
 
+    // Writes to origin what allowing lets through.
     AllowedLogs(origin is LogWriting, allowing is LogAllowing) {
         self.origin = origin;
         self.allowing = allowing;
@@ -152,12 +166,14 @@ object AllowedLogs does LogWriting {
         allowing = LevelThresholds(fallback: level, overrides: overrides);
     }
 
+    // Writes record when it passes.
     write(record is LogRecord) is void {
         if allowing.allowed(record.context().name(), record::Entry::level) {
             origin.write(record);
         }
     }
 
+    // Whether a record of name at level would be written.
     enabled(name is LogName, level is LogLevel) is bool {
         allowing.allowed(name, level) && origin.enabled(name, level);
     }
@@ -179,6 +195,7 @@ hidden object EnabledLog {
     }
 }
 
+// Thresholds that cannot be built.
 enum InvalidLogThreshold is Error = (invalid);
 
 test "thresholds: the most specific override wins; allowed logs drop the rest" {
