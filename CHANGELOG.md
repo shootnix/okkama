@@ -26,6 +26,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     as Sparrow, numbered the same way, so one program can be compared across
     engines (#561).
 
+### Changed
+
+- **Sparrow ready static calls (#542).** A caller can embed the stable
+  ordinary entry of an already compiled static callee, retaining the same
+  call ABI, GC roots and failure checks. Unresolved, self-recursive and
+  dynamic calls retain lazy dispatch. `SPARROW_CORE_OLD_DISPATCH=*` keeps
+  the reference path for A/B; performance acceptance is pending measurement.
+
 ### Fixed
 
 - **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size

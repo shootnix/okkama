@@ -2,7 +2,9 @@
 //!
 //! Every function takes the context and its parameters as words and returns
 //! one word (floats travel as bits). Calls go through the code table: a zero
-//! entry compiles the callee first. Integer and reference registers are
+//! entry compiles the callee first. Known ordinary entries already published
+//! in this runtime can embed their stable address (see docs/ready-callees.md).
+//! Integer and reference registers are
 //! declared for stack maps, so every call is a precise safepoint; the
 //! collector walks frame records (frame pointers are preserved) and reads the
 //! spilled slots of each frame from the map of its return address.
@@ -148,6 +150,10 @@ pub struct Jit {
     /// instruction that has one runs through the shared slow path instead
     /// (`SPARROW_CORE_PLAIN`).
     plain: Chosen,
+    /// Keep lazy dispatch for selected callers (`SPARROW_CORE_OLD_DISPATCH`).
+    old_dispatch: Chosen,
+    #[cfg(test)]
+    emitted: BTreeMap<usize, cranelift_codegen::ir::Function>,
     /// Async bodies whose stack maps Cranelift's frontend keeps, as before
     /// #354 (`SPARROW_CORE_FRONTEND_MAPS`); synchronous functions always do
     /// (#362).
@@ -269,6 +275,9 @@ impl Jit {
             unoptimized,
             unoptimized_isa,
             plain: Chosen::from_env("SPARROW_CORE_PLAIN"),
+            old_dispatch: Chosen::from_env("SPARROW_CORE_OLD_DISPATCH"),
+            #[cfg(test)]
+            emitted: BTreeMap::new(),
             frontend_maps: Chosen::from_env("SPARROW_CORE_FRONTEND_MAPS"),
             alloc_sites: Vec::new(),
             profile: std::env::var("SPARROW_CORE_PROFILE_COMPILE")
@@ -465,6 +474,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     };
     mark!();
     let plain = jit.plain.has(symbol);
+    let late_bound = plain || jit.old_dispatch.has(symbol) || jit.unoptimized.has(symbol);
     // Explicit roots for async bodies (#354), unless the analysis is too
     // large: there Cranelift's reloads after every call made more than half
     // of the code. A synchronous function keeps Cranelift's stack maps, which
@@ -475,6 +485,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     let mut context = jit.module.make_context();
     context.func.signature = jit.signature(params);
     let mut frontend = FunctionBuilderContext::new();
+    let call_sites;
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut frontend);
         let mut emit = Emitter {
@@ -482,7 +493,8 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             heap,
             loaded,
             jit,
-            code_table: code.as_ptr() as i64,
+            code,
+            late_bound,
             constants,
             resources,
             function,
@@ -503,14 +515,18 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             plain,
             root_live,
             roots: None,
+            call_sites: [0; 3],
         };
         emit.body()?;
+        call_sites = emit.call_sites;
         mark!();
         builder.seal_all_blocks();
         builder.finalize(config);
     }
     mark!();
     let clif = (context.func.layout.blocks().count(), context.func.dfg.num_insts());
+    #[cfg(test)]
+    jit.emitted.insert(function, context.func.clone());
     let dump = jit.dump.has(symbol);
     if dump {
         // Callees by their CLIF names: the runtime's helpers and the program's functions.
@@ -600,6 +616,10 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         eprintln!("; machine code of {symbol} at {address:#x}, {size} bytes, frame {fp_to_sp} bytes\n{listing}");
     }
     if let (Some(stats), Some(started)) = (stats, started) {
+        // Emitted sites, not executed calls; no machine-code instrumentation.
+        for (kind, count) in ["ready static", "lazy static", "dynamic"].into_iter().zip(call_sites) {
+            *stats.entry(format!("call dispatch {kind}, sites")).or_default() += count;
+        }
         let micros = started.elapsed().as_micros() as u64;
         for (key, value) in [
             (format!("compile {symbol}, microseconds"), micros),
@@ -618,7 +638,11 @@ struct Emitter<'a, 'b> {
     heap: &'a mut Heap,
     loaded: &'a crate::program::Loaded,
     jit: &'a mut Jit,
-    code_table: i64,
+    code: &'a [u64],
+    /// Reference dispatch for forced-old/plain/unoptimized callers.
+    late_bound: bool,
+    /// Emitted ready-static, lazy-static and dynamic sites (`--stats`).
+    call_sites: [u64; 3],
     constants: &'a mut Vec<(Word, Repr)>,
     resources: &'a crate::failures::Resources,
     function: usize,
@@ -684,6 +708,13 @@ struct Roots {
 
 
 const MEMORY: MemFlagsData = MemFlagsData::trusted();
+
+/// A constant table index is not enough: only the bytecode's static call
+/// instructions establish the ordinary entry ABI. Role targets stay dynamic.
+enum CallTarget {
+    Static(usize),
+    Dynamic(Value),
+}
 
 impl Emitter<'_, '_> {
     fn ctx(&self) -> Value {
@@ -969,23 +1000,54 @@ impl Emitter<'_, '_> {
         self.iconst(word as i64)
     }
 
-    /// Call `function` through the code table, compiling it first if needed.
-    fn call(&mut self, pc: usize, function: Value, args: &[Value]) -> Value {
+    /// Use a published ordinary entry only for a proven static target.
+    /// Addresses are immutable until this runtime's JIT is dropped; publication
+    /// follows finalization and stack-map installation in `compile`.
+    fn ready_static(&self, function: usize, params: usize) -> Option<u64> {
+        if self.late_bound || function == self.function {
+            return None;
+        }
+        let source = self.loaded.program.functions.get(function)?;
+        if source.is_async || source.native.is_some() || source.intrinsic.is_some() || source.params.len() != params {
+            return None;
+        }
+        self.code.get(function).copied().filter(|&address| address != 0)
+    }
+
+    /// Resolve the code address; both paths use the same call, roots and check.
+    fn call(&mut self, pc: usize, target: CallTarget, args: &[Value]) -> Value {
         let ctx = self.ctx();
-        let base = self.iconst(self.code_table);
-        let offset = self.builder.ins().ishl_imm_u(function, 3);
-        let entry = self.builder.ins().iadd(base, offset);
-        let code = self.builder.ins().load(types::I64, MEMORY, entry, 0);
-        let ready = self.builder.create_block();
-        let compile = self.builder.create_block();
-        self.builder.append_block_param(ready, types::I64);
-        self.builder.ins().brif(code, ready, &[code.into()], compile, &[]);
-        self.builder.switch_to_block(compile);
-        let compiled = self.helper(|h| h.compile, &[ctx, function]).expect("result");
-        self.check(pc);
-        self.builder.ins().jump(ready, &[compiled.into()]);
-        self.builder.switch_to_block(ready);
-        let code = self.builder.block_params(ready)[0];
+        let address = match target {
+            CallTarget::Static(function) => self.ready_static(function, args.len()),
+            CallTarget::Dynamic(_) => None,
+        };
+        let kind = match target {
+            CallTarget::Static(_) => usize::from(address.is_none()),
+            CallTarget::Dynamic(_) => 2,
+        };
+        self.call_sites[kind] += 1;
+        let code = if let Some(address) = address {
+            self.iconst(address as i64)
+        } else {
+            let function = match target {
+                CallTarget::Static(function) => self.iconst(function as i64),
+                CallTarget::Dynamic(function) => function,
+            };
+            let base = self.iconst(self.code.as_ptr() as i64);
+            let offset = self.builder.ins().ishl_imm_u(function, 3);
+            let entry = self.builder.ins().iadd(base, offset);
+            let code = self.builder.ins().load(types::I64, MEMORY, entry, 0);
+            let ready = self.builder.create_block();
+            let compile = self.builder.create_block();
+            self.builder.append_block_param(ready, types::I64);
+            self.builder.ins().brif(code, ready, &[code.into()], compile, &[]);
+            self.builder.switch_to_block(compile);
+            let compiled = self.helper(|h| h.compile, &[ctx, function]).expect("result");
+            self.check(pc);
+            self.builder.ins().jump(ready, &[compiled.into()]);
+            self.builder.switch_to_block(ready);
+            self.builder.block_params(ready)[0]
+        };
         let signature = self.jit.signature(args.len());
         let signature = self.builder.import_signature(signature);
         let mut values = vec![ctx];
@@ -1648,7 +1710,7 @@ impl Emitter<'_, '_> {
                         let value = self.word(arg);
                         values.push(value);
                     }
-                    self.call(pc, function, &values)
+                    self.call(pc, CallTarget::Dynamic(function), &values)
                 };
                 if let Some(dst) = dst {
                     self.set_word(&dst.0, result);
@@ -1686,8 +1748,7 @@ impl Emitter<'_, '_> {
                         let value = self.word(arg);
                         values.push(value);
                     }
-                    let index = self.iconst(i64::from(function.0));
-                    self.call(pc, index, &values)
+                    self.call(pc, CallTarget::Static(function.0 as usize), &values)
                 };
                 if let Some(dst) = dst {
                     self.set_word(&dst.0, result);
@@ -1700,8 +1761,8 @@ impl Emitter<'_, '_> {
                     .ok_or_else(unsupported)?
                     .1
                     .0;
-                let index = self.iconst(i64::from(function));
                 let result = if program.functions[function as usize].is_async {
+                    let index = self.iconst(i64::from(function));
                     let address = self.spill(std::slice::from_ref(cap));
                     let count = self.iconst(1);
                     let future = self.helper(|h| h.future_new, &[ctx, index, address, count]).expect("result");
@@ -1709,7 +1770,7 @@ impl Emitter<'_, '_> {
                     future
                 } else {
                     let receiver = self.word(cap);
-                    self.call(pc, index, &[receiver])
+                    self.call(pc, CallTarget::Static(function as usize), &[receiver])
                 };
                 self.set_word(&dst.0, result);
             }
@@ -2457,3 +2518,6 @@ fn int_condition(op: Cmp) -> IntCC {
         Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
     }
 }
+
+#[cfg(test)]
+mod ready_callees_tests;
