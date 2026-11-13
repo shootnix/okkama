@@ -60,7 +60,8 @@ object ParsedHttp1ChunkLine {
                 grown;
             }
         };
-        confirm value <= limits::Limits::body_bytes else throw Http1LimitExceeded.kind("body_bytes");
+        confirm value <= limits::Limits::body_bytes
+            else throw Http1LimitExceeded.kind("body_bytes");
         BigInt(value);
     }
 
@@ -146,9 +147,14 @@ object ParsedHttp1ChunkLine {
             if code == 92 {
                 return 9;
             }
-            if code == 9 || code == 32 || code == 33 || (code >= 35 && code <= 91) || (code >= 93 && code <= 126) || code >= 128 {
-                return 8;
-            }
+            if code == 9
+                || code == 32
+                || code == 33
+                || (code >= 35 && code <= 91)
+                || (code >= 93 && code <= 126)
+                || code >= 128 {
+                    return 8;
+                }
             return -1;
         }
         if state == 9 {
@@ -214,14 +220,23 @@ object ParsedHttp1Trailers {
         confirm latin1_representable_prefix(origin) == origin.length()
             else throw InvalidHttpMessage.because("trailer section requires octets");
         if origin == "\r\n" {
-            return Headers(entries: [], limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
+            return Headers(
+                entries: [],
+                limits: HeaderLimits(
+                    limits::Limits::fields,
+                    limits::Limits::head_bytes + limits::Limits::fields
+                )
+            );
         }
         let ending = origin.split("\r\n\r\n");
         confirm ending.size() == 2 && ending[1] == ""
             else throw InvalidHttpMessage.because("exact trailer CRLF framing required");
         let lines = origin.split("\r\n");
-        confirm lines.size() - 2 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
-        let names = Http1FramingFields(origin: head, version: HttpVersion.http_1_1, limits: limits).list("Connection");
+        confirm lines.size() - 2 <= limits::Limits::fields
+            else throw Http1LimitExceeded.kind("fields");
+        let names = Http1FramingFields(origin: head, version: HttpVersion.http_1_1, limits: limits).list(
+            "Connection"
+        );
         let nominated is @string = names.map() -> value {
             try {
                 HeaderName(value).lowercase();
@@ -239,7 +254,10 @@ object ParsedHttp1Trailers {
             confirm pieces.size() >= 2 && pieces[0] != ""
                 else throw InvalidHttpMessage.because("trailer field colon required");
             let entry = try {
-                Header(name: HeaderName(pieces[0]), value: line.slice(pieces[0].length() + 1, line.length()));
+                Header(
+                    name: HeaderName(pieces[0]),
+                    value: line.slice(pieces[0].length() + 1, line.length())
+                );
             }
             catch e is InvalidHeader {
                 throw InvalidHttpMessage.because("invalid trailer field syntax");
@@ -247,7 +265,13 @@ object ParsedHttp1Trailers {
             rules.check(entry);
             entry;
         };
-        Headers(entries: entries, limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
+        Headers(
+            entries: entries,
+            limits: HeaderLimits(
+                limits::Limits::fields,
+                limits::Limits::head_bytes + limits::Limits::fields
+            )
+        );
     }
 }
 
@@ -277,4 +301,3 @@ test "chunk lines are read without a regex" {
         ParsedHttp1ChunkLine(origin: "100", limits: small).size();
     };
 }
-

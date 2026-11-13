@@ -66,7 +66,11 @@ object Http1RequestFraming {
     }
 
     plan() is Http1BodyPlan {
-        let fields = Http1FramingFields(origin: head.headers(), version: head::Head::version, limits: limits);
+        let fields = Http1FramingFields(
+            origin: head.headers(),
+            version: head::Head::version,
+            limits: limits
+        );
         let reuse = fields.reusable();
         let length = fields.length();
         let codings = fields.codings();
@@ -106,7 +110,11 @@ object Http1ResponseFraming {
         if method == Method.connect && class == StatusClass.successful {
             return Http1BodyPlan(kind: Http1BodyKind.tunnel, count: BigInt(0), reusable: false);
         }
-        let fields = Http1FramingFields(origin: head.headers(), version: head::Head::version, limits: limits);
+        let fields = Http1FramingFields(
+            origin: head.headers(),
+            version: head::Head::version,
+            limits: limits
+        );
         let length = fields.length();
         let codings = fields.codings();
         confirm length.size() == 0 || codings.size() == 0
@@ -117,14 +125,26 @@ object Http1ResponseFraming {
             if status == Status.switching_protocols {
                 return Http1BodyPlan(kind: Http1BodyKind.upgrade, count: BigInt(0), reusable: false);
             }
-            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt(0), reusable: fields.reusable());
+            return Http1BodyPlan(
+                kind: Http1BodyKind.empty,
+                count: BigInt(0),
+                reusable: fields.reusable()
+            );
         }
         if method == Method.head || status == Status.not_modified {
-            return Http1BodyPlan(kind: Http1BodyKind.empty, count: BigInt(0), reusable: fields.reusable());
+            return Http1BodyPlan(
+                kind: Http1BodyKind.empty,
+                count: BigInt(0),
+                reusable: fields.reusable()
+            );
         }
         if codings.size() > 0 {
             fields.supported(codings);
-            return Http1BodyPlan(kind: Http1BodyKind.chunked, count: BigInt(0), reusable: fields.reusable());
+            return Http1BodyPlan(
+                kind: Http1BodyKind.chunked,
+                count: BigInt(0),
+                reusable: fields.reusable()
+            );
         }
         if length.size() > 0 {
             return fields.fixed(length[0], fields.reusable());
@@ -142,7 +162,8 @@ object Http1FramingFields {
         confirm version != HttpVersion.http_2
             else throw InvalidHttpMessage.because("HTTP1 body plan requires HTTP1 version");
         let entries = origin.entries();
-        confirm entries.size() <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
+        confirm entries.size() <= limits::Limits::fields
+            else throw Http1LimitExceeded.kind("fields");
         let size = (0..entries.size()).reduce(0) -> used, index {
             let entry = entries.item(index);
             let width = entry.name().string().length() + entry.value().length() + 3;

@@ -92,7 +92,12 @@ object Http2Connecting {
         let empty is @Future<TcpConnection> = [];
         let pending = Atomic(empty);
         let taken = Event();
-        let cleanup = HttpAcquisitionCleanup(group: group, pending: pending, taken: taken, dispose: HttpTcpDisposal().release);
+        let cleanup = HttpAcquisitionCleanup(
+            group: group,
+            pending: pending,
+            taken: taken,
+            dispose: HttpTcpDisposal().release
+        );
         defer await cleanup.close();
         let waiting = TcpRacing(
             origins: endpoints,
@@ -127,7 +132,12 @@ object Http2Connecting {
                 dispose: HttpTlsDisposal().release
             );
             defer await tls_cleanup.close();
-            let upgrading = TlsClientHandshake(origin: tcp, server: identity, policy: policy, clock: clock).connection();
+            let upgrading = TlsClientHandshake(
+                origin: tcp,
+                server: identity,
+                policy: policy,
+                clock: clock
+            ).connection();
             tls_pending.replace([upgrading]);
             tls_group.start(upgrading);
             let tls = await upgrading;
@@ -135,17 +145,43 @@ object Http2Connecting {
             let tls_anchor = HttpUnpublishedTls(origin: tls, published: published);
             defer tls_anchor.close();
             Http2TlsProtocol(tls.details()::Session::protocol).version();
-            let peer = await Http2ClientPreface(input: tls.input(), output: tls.output(), settings: local).settings();
-            let session = Http2Session(input: tls.input(), output: tls.output(), owner: tls, local: local, peer: peer, limits: limits);
+            let peer = await Http2ClientPreface(
+                input: tls.input(),
+                output: tls.output(),
+                settings: local
+            ).settings();
+            let session = Http2Session(
+                input: tls.input(),
+                output: tls.output(),
+                owner: tls,
+                local: local,
+                peer: peer,
+                limits: limits
+            );
             let acquired = Http2Acquisition(
                 session: session,
-                details: ExchangeDetails(tls.details().endpoints(), HttpVersion.http_2, tls.details())
+                details: ExchangeDetails(
+                    tls.details().endpoints(),
+                    HttpVersion.http_2,
+                    tls.details()
+                )
             );
             published.set();
             return acquired;
         }
-        let peer = await Http2ClientPreface(input: tcp.input(), output: tcp.output(), settings: local).settings();
-        let session = Http2Session(input: tcp.input(), output: tcp.output(), owner: tcp, local: local, peer: peer, limits: limits);
+        let peer = await Http2ClientPreface(
+            input: tcp.input(),
+            output: tcp.output(),
+            settings: local
+        ).settings();
+        let session = Http2Session(
+            input: tcp.input(),
+            output: tcp.output(),
+            owner: tcp,
+            local: local,
+            peer: peer,
+            limits: limits
+        );
         let acquired = Http2Acquisition(
             session: session,
             details: ExchangeDetails(tcp.endpoints(), HttpVersion.http_2)

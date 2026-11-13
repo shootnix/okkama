@@ -168,7 +168,12 @@ hidden object Http1HeadInput<T> {
         if found >= 0 {
             confirm found + 4 <= limits::Limits::head_bytes
                 else throw Http1LimitExceeded.kind("head_bytes");
-            return decode(text.slice(0, found + 4), prefix.slice(found + 4, prefix.size()), found + 4, limits);
+            return decode(
+                text.slice(0, found + 4),
+                prefix.slice(found + 4, prefix.size()),
+                found + 4,
+                limits
+            );
         }
         confirm prefix.size() <= limits::Limits::head_bytes
             else throw Http1LimitExceeded.kind("head_bytes");
@@ -208,7 +213,12 @@ hidden object Http1HeadInput<T> {
                         all + part;
                     };
                 };
-                return decode(Latin1Decoded(whole).string(), chunk.slice(after, chunk.size()), used.value() + after, limits);
+                return decode(
+                    Latin1Decoded(whole).string(),
+                    chunk.slice(after, chunk.size()),
+                    used.value() + after,
+                    limits
+                );
             }
             pieces.replace(pieces.value() + [chunk]);
             used.replace(used.value() + chunk.size());

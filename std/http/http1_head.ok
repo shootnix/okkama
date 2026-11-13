@@ -162,7 +162,8 @@ hidden object Http1HeadLines {
             else throw InvalidHttpMessage.because("exact CRLF head framing required");
         let values = origin.split("\r\n");
         confirm values.size() >= 3 else throw InvalidHttpMessage.because("missing start line");
-        confirm values.size() - 3 <= limits::Limits::fields else throw Http1LimitExceeded.kind("fields");
+        confirm values.size() - 3 <= limits::Limits::fields
+            else throw Http1LimitExceeded.kind("fields");
         // Every CR and LF belongs to a CRLF when there are as many of each as
         // there are lines; only then the lines need no look of their own (#113).
         let stripped = origin.replace("\r\n", "");
@@ -198,7 +199,13 @@ hidden object Http1HeadLines {
         };
         // Logical fields budget canonical ': ' even if the peer omitted that
         // optional space. Wire head bytes were already checked independently.
-        Headers(entries: entries, limits: HeaderLimits(limits::Limits::fields, limits::Limits::head_bytes + limits::Limits::fields));
+        Headers(
+            entries: entries,
+            limits: HeaderLimits(
+                limits::Limits::fields,
+                limits::Limits::head_bytes + limits::Limits::fields
+            )
+        );
     }
 
     start_line() is string {
@@ -333,9 +340,11 @@ hidden object Http1HostAuthority {
         else {
             origin.find(":") else origin.length();
         };
-        confirm end <= origin.length() else throw InvalidUrl.located(0, "IP literal closing bracket required");
+        confirm end <= origin.length()
+            else throw InvalidUrl.located(0, "IP literal closing bracket required");
         let rest = origin.slice(end, origin.length());
-        confirm rest == "" || rest.starts_with(":") else throw InvalidUrl.located(end, "invalid authority suffix");
+        confirm rest == "" || rest.starts_with(":")
+            else throw InvalidUrl.located(end, "invalid authority suffix");
         let digits = if rest == "" {
             "";
         }
@@ -348,7 +357,8 @@ hidden object Http1HostAuthority {
         else {
             let number = digits.characters().reduce(0) -> value, character {
                 let code = character.code();
-                confirm code >= 48 && code <= 57 else throw InvalidUrl.located(end + 1, "ASCII decimal port required");
+                confirm code >= 48 && code <= 57
+                    else throw InvalidUrl.located(end + 1, "ASCII decimal port required");
                 let grown = value * 10 + code - 48;
                 confirm grown <= 65535 else throw InvalidUrl.located(end + 1, "port exceeds 65535");
                 grown;
@@ -370,7 +380,8 @@ hidden object Http1HostAuthority {
 test "strict HTTP1 head preserves extension status and duplicate fields" {
     let head = ParsedHttp1ResponseHead("HTTP/1.1 299 phrase\r\nX: 1\r\nX: 2\r\n\r\n").head();
     test.ok(
-        head::Head::status == Status.other(299) && head.headers().values(HeaderName("X")).size() == 2
+        head::Head::status == Status.other(299)
+            && head.headers().values(HeaderName("X")).size() == 2
     );
     test.ok(try {
         ParsedHttp1RequestHead("GET / HTTP/1.1\r\n\r\n").head();
@@ -388,11 +399,24 @@ test "a Host field is one authority: a host and an optional port" {
     let literal = ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: [::1]:81\r\n\r\n").head().host();
     test.is(literal::Parts::host else "", "[::1]");
     test.is(literal::Parts::port else 0, 81);
-    test.is(ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").head().host()::Parts::port, Maybe<int>.none);
-    for ["a:b:c", "user@host", "host/x", "host?x", "[::1", "[::1]x", "host:99999", "host:x", ":80", ""] -> bad {
+    test.is(
+        ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").head().host()::Parts::port,
+        Maybe<int>.none
+    );
+    for [
+        "a:b:c",
+        "user@host",
+        "host/x",
+        "host?x",
+        "[::1",
+        "[::1]x",
+        "host:99999",
+        "host:x",
+        ":80",
+        ""
+    ] -> bad {
         test.throws(InvalidHttpMessage) {
             ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: " + bad + "\r\n\r\n").head();
         };
     }
 }
-
