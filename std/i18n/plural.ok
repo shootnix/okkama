@@ -30,6 +30,7 @@ object PluralNumber does PluralOperands {
     has integer, fraction, trimmed_fraction is BigInt;
     has visible, trimmed is int;
 
+    // A plain decimal such as `21` or `1.50`; InvalidPluralNumber otherwise.
     PluralNumber(origin is string) {
         confirm origin.length() > 0 && origin.length() <= 1024
             else throw InvalidPluralNumber.because("number length");
@@ -81,14 +82,17 @@ object PluralNumber does PluralOperands {
         });
     }
 
+    // The number as written.
     string() is string {
         origin;
     }
 
+    // Its value.
     number() is Decimal {
         Decimal(origin);
     }
 
+    // A CLDR operand: n, i, v, w, f, t, c or e.
     operand(name is string) is BigInt {
         match name {
             case "i" {
@@ -118,6 +122,8 @@ object PluralNumber does PluralOperands {
         }
     }
 
+    // Whether operand name, modulo modulus when not 0, lies in
+    // minimum..maximum.
     relation(name is string, modulus is int, minimum is int, maximum is int) is bool {
         // CLDR '=' / '!=' relations range over integers. A nonintegral n is not
         // a member even of 0..1; its negated relation is compiled by the table.
@@ -193,12 +199,14 @@ object PluralCategoryOf {
     has locale is Locale;
     has kind is PluralKind;
 
+    // origin in locale, counted as kind.
     PluralCategoryOf(origin is PluralNumber, locale is Locale, kind is PluralKind) {
         self.origin = origin;
         self.locale = locale;
         self.kind = kind;
     }
 
+    // The category.
     category() is PluralCategory {
         let index = CldrPlurals().category(origin, locale.string(), kind == PluralKind.ordinal);
         match index {

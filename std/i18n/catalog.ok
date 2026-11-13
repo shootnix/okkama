@@ -30,6 +30,7 @@ object MessageKey does Comparing<MessageKey> {
     has context, identity is string;
     has present is bool;
 
+    // identity in context; an empty context means none.
     MessageKey(context is string, identity is string) {
         confirm identity.length() > 0 && identity.length() <= 1024 && context.length() <= 1024
             else throw InvalidMessageKey.invalid;
@@ -38,6 +39,8 @@ object MessageKey does Comparing<MessageKey> {
         present = context != "";
     }
 
+    // The same, saying whether an empty context was given (gettext tells them
+    // apart).
     MessageKey(context is string, identity is string, has_context is bool) {
         confirm identity.length() > 0
             && identity.length() <= 1024
@@ -49,6 +52,7 @@ object MessageKey does Comparing<MessageKey> {
         present = has_context;
     }
 
+    // Orders by context, then identity.
     order(other is MessageKey) is Order {
         let order = context.order(other::Key::context);
         if order != Order.equal {
@@ -65,6 +69,7 @@ object MessageKey does Comparing<MessageKey> {
         identity.order(other::Key::identity);
     }
 
+    // The context, the identity and whether a context was given.
     cap Key {
         context is string {
             context;
@@ -85,10 +90,15 @@ enum InvalidMessageKey is Error = (invalid);
 
 // One message of a catalog.
 role MessageEntry {
+    // Its key.
     key() is MessageKey;
+    // Whether it is plural.
     plural() is bool;
+    // The text of a singular message; WrongMessageEntry for a plural one.
     text() is string;
+    // The forms of a plural message; WrongMessageEntry for a singular one.
     forms() is Sequencing<PluralForm>;
+    // Cardinal or ordinal.
     kind() is PluralKind;
 }
 
@@ -97,6 +107,7 @@ object PluralForm {
     has category is PluralCategory;
     has text is string;
 
+    // text for category.
     PluralForm(category is PluralCategory, text is string) {
         confirm text.length() <= 65536
             else throw InvalidMessageCatalog.because("translation length");
@@ -104,6 +115,7 @@ object PluralForm {
         self.text = text;
     }
 
+    // The category and the text.
     cap Form {
         category is PluralCategory {
             category;
@@ -120,6 +132,7 @@ object SingularMessage does MessageEntry {
     has key is MessageKey;
     has text is string;
 
+    // key with text.
     SingularMessage(key is MessageKey, text is string) {
         confirm text.length() <= 65536
             else throw InvalidMessageCatalog.because("translation length");
@@ -127,22 +140,27 @@ object SingularMessage does MessageEntry {
         self.text = text;
     }
 
+    // The key.
     key() is MessageKey {
         key;
     }
 
+    // false.
     plural() is bool {
         false;
     }
 
+    // The text.
     text() is string {
         text;
     }
 
+    // WrongMessageEntry.
     forms() is Sequencing<PluralForm> {
         throw WrongMessageEntry.detailed(true, false);
     }
 
+    // PluralKind.cardinal.
     kind() is PluralKind {
         throw WrongMessageEntry.detailed(true, false);
     }
@@ -154,34 +172,41 @@ object PluralMessage does MessageEntry {
     has forms is @PluralForm;
     has kind is PluralKind;
 
+    // A cardinal message of forms.
     PluralMessage(key is MessageKey, forms is Sequencing<PluralForm>) {
         self.key = key;
         self.forms = PluralFormSnapshot(forms).values();
         kind = PluralKind.cardinal;
     }
 
+    // A message of forms of kind.
     PluralMessage(key is MessageKey, forms is Sequencing<PluralForm>, kind is PluralKind) {
         self.key = key;
         self.forms = PluralFormSnapshot(forms).values();
         self.kind = kind;
     }
 
+    // The key.
     key() is MessageKey {
         key;
     }
 
+    // true.
     plural() is bool {
         true;
     }
 
+    // WrongMessageEntry.
     text() is string {
         throw WrongMessageEntry.detailed(false, true);
     }
 
+    // The forms.
     forms() is Sequencing<PluralForm> {
         forms;
     }
 
+    // Its kind.
     kind() is PluralKind {
         kind;
     }
@@ -218,8 +243,11 @@ hidden object PluralFormSnapshot {
 
 // Something messages are looked up in.
 role Translating {
+    // Whether a message has the key.
     membership(key is MessageKey) is bool;
+    // The text of a singular message.
     text(key is MessageKey) is string;
+    // The form of a plural message for count.
     plural(key is MessageKey, count is PluralNumber) is string;
 }
 
@@ -228,6 +256,8 @@ object MessageCatalog does Translating {
     has locale is Locale;
     has entries is SortedBy<MessageEntry, MessageKey>;
 
+    // The entries for locale, at most 4096; InvalidMessageCatalog for a
+    // repeated key or a plural without other.
     MessageCatalog(locale is Locale, entries is Sequencing<MessageEntry>) {
         let size = entries.size();
         confirm size >= 0 && size <= 4096 else throw InvalidMessageCatalog.because("entry count");
@@ -275,18 +305,24 @@ object MessageCatalog does Translating {
         self.entries = sorted;
     }
 
+    // The locale.
     locale() is Locale {
         locale;
     }
 
+    // Whether a message has the key.
     membership(key is MessageKey) is bool {
         self.index(key, 0, entries.size()) >= 0;
     }
 
+    // The text of a singular message; MissingMessage or WrongMessageEntry
+    // otherwise.
     text(key is MessageKey) is string {
         self.entry(key).text();
     }
 
+    // The form of a plural message for count in the locale; MissingMessage or
+    // WrongMessageEntry otherwise.
     plural(key is MessageKey, count is PluralNumber) is string {
         let entry = self.entry(key);
         let forms = entry.forms();
@@ -334,15 +370,19 @@ object MessageCatalog does Translating {
 object FallbackTranslation does Translating {
     has primary, fallback is Translating;
 
+    // primary, then fallback where primary has nothing.
     FallbackTranslation(primary is Translating, fallback is Translating) {
         self.primary = primary;
         self.fallback = fallback;
     }
 
+    // Whether a message has the key.
     membership(key is MessageKey) is bool {
         primary.membership(key) || fallback.membership(key);
     }
 
+    // The text of a singular message; MissingMessage or WrongMessageEntry
+    // otherwise.
     text(key is MessageKey) is string {
         if primary.membership(key) {
             primary.text(key);
@@ -352,6 +392,8 @@ object FallbackTranslation does Translating {
         }
     }
 
+    // The form of a plural message for count in the locale; MissingMessage or
+    // WrongMessageEntry otherwise.
     plural(key is MessageKey, count is PluralNumber) is string {
         if primary.membership(key) {
             primary.plural(key, count);

@@ -142,6 +142,8 @@ hidden object GettextContains {
 object GettextCharset {
     has name is string;
 
+    // The charset name; InvalidCatalog for one std does not read (UTF-8,
+    // ISO-8859-1 and US-ASCII are).
     GettextCharset(origin is string) {
         confirm origin.length() >= 1 && origin.length() <= 64
             else throw InvalidCatalog.located(0, "charset name length must be 1..64");
@@ -167,10 +169,12 @@ object GettextCharset {
         };
     }
 
+    // Its canonical name.
     name() is string {
         name;
     }
 
+    // bytes decoded; offset is where they were, for errors.
     decoded(bytes is @byte, offset is int) is string {
         try {
             match name {
@@ -190,6 +194,7 @@ object GettextCharset {
         }
     }
 
+    // text encoded; offset is where it was, for errors.
     encoded(text is string, offset is int) is @byte {
         try {
             match name {
@@ -214,7 +219,9 @@ object GettextCharset {
 // their width at 64 bits instead of inheriting the host's unsigned long width.
 // Values are ints in 0..2^64-1 (#205): no BigInt, no text, on every lookup.
 role GettextExpression {
+    // Its value for count.
     value(count is int) is int;
+    // How deep it goes.
     depth() is int;
 }
 
@@ -744,6 +751,7 @@ object GettextPluralRule {
     has amount is int;
     has expression is GettextExpression;
 
+    // Reads `nplurals=…; plural=…;`; InvalidCatalog for a bad formula.
     GettextPluralRule(origin is string) {
         confirm origin.length() <= 4096
             && RegexMatches(
@@ -766,10 +774,12 @@ object GettextPluralRule {
         expression = GettextExpressionParsing(GettextAscii(fields.capture(2).text()).trim()).expression();
     }
 
+    // nplurals.
     size() is int {
         amount;
     }
 
+    // The form index for count.
     index(count is Decimal) is int {
         let exponent = count.exponent();
         let digits = decimal_coefficient(count.string());
@@ -799,6 +809,7 @@ object PoComment {
     has kind is PoCommentKind;
     has origin is string;
 
+    // A comment of kind with text.
     PoComment(kind is PoCommentKind, text is string) {
         confirm text.length() <= 4096
             && !GettextContains(origin: text, part: "\n").found()
@@ -809,6 +820,7 @@ object PoComment {
         origin = text;
     }
 
+    // The kind and the text.
     cap Comment {
         kind is PoCommentKind {
             kind;
@@ -824,6 +836,7 @@ object PoComment {
 object PoComments {
     has records is @PoComment;
 
+    // The comments.
     PoComments(origin is Sequencing<PoComment>) {
         let size = origin.size();
         confirm size >= 0 && size <= 4096 else throw InvalidCatalog.located(0, "comment count");
@@ -834,6 +847,7 @@ object PoComments {
         self.records = records;
     }
 
+    // The comments by kind.
     PoComments(
         translator is Sequencing<string>,
         extracted is Sequencing<string>,
@@ -866,26 +880,32 @@ object PoComments {
         records = GettextListArray(items.value()).values();
     }
 
+    // Every comment, in order.
     records() is Sequencing<PoComment> {
         records;
     }
 
+    // `# ` translator comments.
     translator() is Sequencing<string> {
         self.selected(PoCommentKind.translator);
     }
 
+    // `#.` extracted comments.
     extraction() is Sequencing<string> {
         self.selected(PoCommentKind.extracted);
     }
 
+    // `#:` source references.
     references() is Sequencing<string> {
         self.selected(PoCommentKind.reference);
     }
 
+    // `#,` flags.
     flags() is Sequencing<string> {
         self.selected(PoCommentKind.flag);
     }
 
+    // `#|` previous strings.
     previous_comments() is Sequencing<string> {
         self.selected(PoCommentKind.previous);
     }
@@ -911,6 +931,7 @@ object PoEntry {
     has comments is PoComments;
     has present is bool;
 
+    // An entry; an empty context means none, an empty plural a singular entry.
     PoEntry(
         context is string,
         identity is string,
@@ -935,6 +956,7 @@ object PoEntry {
         sorted_key = value.sorting_key();
     }
 
+    // The same, saying whether an empty context was given.
     PoEntry(
         context is string,
         identity is string,
@@ -980,14 +1002,18 @@ object PoEntry {
         }) + context + separator + identity;
     }
 
+    // Its comments.
     comments() is PoComments {
         comments;
     }
 
+    // The key entries sort by.
     sorting_key() is string {
         sorted_key;
     }
 
+    // The context, identity, plural identity, whether a context was given, and
+    // the translations.
     cap Entry {
         context is string {
             context;
@@ -1015,15 +1041,18 @@ object PoEntry {
 object GettextHeader {
     has name, value is string;
 
+    // name: value.
     GettextHeader(name is string, value is string) {
         self.name = name;
         self.value = value;
     }
 
+    // The name.
     name() is string {
         name;
     }
 
+    // The value.
     value() is string {
         value;
     }
@@ -1033,6 +1062,7 @@ object GettextHeader {
 object GettextMetadata {
     has values is @GettextHeader;
 
+    // Reads the header text.
     GettextMetadata(origin is string) {
         let empty is List<GettextHeader> = EmptyList();
         let cell is Atomic<List<GettextHeader>> = Atomic(empty);
@@ -1060,10 +1090,12 @@ object GettextMetadata {
         values = GettextListArray(cell.value()).values();
     }
 
+    // The fields, in order.
     values() is Sequencing<GettextHeader> {
         values;
     }
 
+    // Whether a field has the name, ignoring case.
     membership(name is string) is bool {
         let key = GettextAscii(name).lower();
         values.reduce(false) -> found, item {
@@ -1071,6 +1103,7 @@ object GettextMetadata {
         };
     }
 
+    // The field's value; InvalidCatalog when absent.
     text(name is string) is string {
         let key = GettextAscii(name).lower();
         for values -> item {
@@ -1081,6 +1114,7 @@ object GettextMetadata {
         throw InvalidCatalog.located(0, "missing metadata field: " + name);
     }
 
+    // The charset of Content-Type; InvalidCatalog without one.
     charset() is GettextCharset {
         confirm self.membership("content-type")
             else throw InvalidCatalog.located(0, "MO metadata requires Content-Type charset");
@@ -1106,6 +1140,7 @@ object PoDocument {
     has trailing is PoComments;
     has amount is int;
 
+    // The entries.
     PoDocument(origin is Sequencing<PoEntry>) {
         let size = origin.size();
         confirm size >= 0 && size <= 4097 else throw InvalidCatalog.located(0, "PO entry count");
@@ -1154,6 +1189,7 @@ object PoDocument {
         trailing = PoComments(empty_comments);
     }
 
+    // The entries and the comments after the last.
     PoDocument(origin is Sequencing<PoEntry>, trailing is PoComments) {
         let document = PoDocument(origin);
         let records = trailing.records();
@@ -1171,22 +1207,27 @@ object PoDocument {
         amount = document.scalars() + extra;
     }
 
+    // The entries.
     entries() is Sequencing<PoEntry> {
         entries;
     }
 
+    // The entries as an array.
     entries_array() is @PoEntry {
         entries;
     }
 
+    // The header entry's fields.
     metadata() is GettextMetadata {
         metadata;
     }
 
+    // The comments after the last entry.
     trailing_comments() is PoComments {
         trailing;
     }
 
+    // How many characters it holds.
     scalars() is int {
         amount;
     }
@@ -1397,10 +1438,12 @@ hidden object PoEscaped {
 object PoString {
     has result is string;
 
+    // The document.
     PoString(origin is PoDocument) {
         result = PoPrinting(origin).string();
     }
 
+    // The PO text.
     string() is string {
         result;
     }
@@ -1672,14 +1715,17 @@ hidden object PoEntryFields {
 object ParsedPo {
     has result is PoDocument;
 
+    // PO text.
     ParsedPo(origin is string) {
         result = PoParsing(origin: origin, charset: GettextCharset("UTF-8")).document();
     }
 
+    // PO text expected in charset.
     ParsedPo(origin is string, charset is string) {
         result = PoParsing(origin: origin, charset: GettextCharset(charset)).document();
     }
 
+    // The document; InvalidCatalog says where the text is wrong.
     document() is PoDocument {
         result;
     }
@@ -2045,6 +2091,7 @@ hidden object MoWords {
 object ParsedMo {
     has result is PoDocument;
 
+    // MO bytes.
     ParsedMo(origin is @byte) {
         let pairs = MoWords(origin).pairs();
         let headers = pairs.reduce(0) -> sum, pair {
@@ -2121,6 +2168,7 @@ object ParsedMo {
         result = PoDocument(entries);
     }
 
+    // The document; InvalidCatalog says where the bytes are wrong.
     document() is PoDocument {
         result;
     }
@@ -2133,6 +2181,7 @@ object GettextCatalog does Translating {
     has entries is SortedBy<PoEntry, string>;
     has rule is GettextPluralRule;
 
+    // MO bytes for locale.
     GettextCatalog(origin is @byte, locale is Locale) {
         let document = ParsedMo(origin).document();
         let source = document.entries();
@@ -2174,28 +2223,36 @@ object GettextCatalog does Translating {
         });
     }
 
+    // The locale.
     locale() is Locale {
         locale;
     }
 
+    // The header.
     metadata() is GettextMetadata {
         document.metadata();
     }
 
+    // Whether a message has the key.
     membership(key is MessageKey) is bool {
         self.index(self.key(key), 0, entries.size()) >= 0;
     }
 
+    // The text of a singular message; MissingMessage or WrongMessageEntry
+    // otherwise.
     text(key is MessageKey) is string {
         let entry = self.entry(key);
         confirm entry::Entry::plural == "" else throw WrongMessageEntry.detailed(false, true);
         entry::Entry::translations[0];
     }
 
+    // The form of a plural message for count in the locale; MissingMessage or
+    // WrongMessageEntry otherwise.
     plural(key is MessageKey, count is PluralNumber) is string {
         self.plural(key, count.number());
     }
 
+    // The same for a Decimal count, by the file's Plural-Forms.
     plural(key is MessageKey, count is Decimal) is string {
         let entry = self.entry(key);
         confirm entry::Entry::plural != "" else throw WrongMessageEntry.detailed(true, false);
