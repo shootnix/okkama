@@ -1,5 +1,15 @@
 module http/cache_freshness v1.0.0;
 
+// How old a cached response is and how long it stays fresh (RFC 9111 §4.2).
+//
+//     let freshness = CacheFreshness(headers: response::Head::headers, timing: timing);
+//     freshness.fresh(clock.monotonic_instant());
+//
+// The lifetime is max-age, else Expires minus Date, else 0. The age is the
+// larger of the apparent age and Age plus the request's delay, then grows with
+// the monotonic clock. no-cache and no-store make a response unusable without
+// revalidation.
+
 import "http/header" take Headers, HeaderName;
 import "http/cache_control" take CacheControl, CacheDeltaSeconds;
 import "http/date" take ParsedHttpDate;
@@ -11,6 +21,8 @@ object CacheResponseTiming {
     has received is Instant;
     has started, finished is MonotonicInstant;
 
+    // received is the wall-clock time; started and finished bound the request;
+    // InvalidCacheTiming when finished is first.
     CacheResponseTiming(
         received is Instant,
         started is MonotonicInstant,
@@ -23,24 +35,30 @@ object CacheResponseTiming {
         self.finished = finished;
     }
 
+    // The wall-clock instant.
     received() is Instant {
         received;
     }
 
+    // When the response came.
     finished() is MonotonicInstant {
         finished;
     }
 
+    // How long the request took.
     delay() is Duration {
         finished.minus(started);
     }
 }
 
+// The age and lifetime of a response.
 object CacheFreshness {
     has timing is CacheResponseTiming;
     has initial, lifetime is Duration;
     has reusable is bool;
 
+    // From the response's headers and timing; InvalidCacheMetadata for repeated
+    // Date, Age or Expires.
     CacheFreshness(headers is Headers, timing is CacheResponseTiming) {
         self.timing = timing;
         let metadata = CacheFreshnessMetadata(headers: headers, received: timing.received());
@@ -65,20 +83,25 @@ object CacheFreshness {
         reusable = metadata.reusable();
     }
 
+    // Its age at now.
     age(now is MonotonicInstant) is Duration {
         let resident = now.minus(timing.finished());
         confirm resident::Span::seconds >= 0.rat() else throw InvalidCacheTiming.invalid;
         initial.plus(resident);
     }
 
+    // How long it stays fresh.
     lifetime() is Duration {
         lifetime;
     }
 
+    // Whether it may be reused without revalidation at all: no no-cache or
+    // no-store.
     reusable() is bool {
         reusable;
     }
 
+    // Reusable and younger than its lifetime at now.
     fresh(now is MonotonicInstant) is bool {
         let current = self.age(now);
         reusable && current::Span::seconds < lifetime::Span::seconds;
@@ -198,8 +221,10 @@ hidden object CacheFreshnessObservations {
     }
 }
 
+// Date, Age or Expires that cannot be used.
 enum InvalidCacheMetadata is Error = (invalid);
 
+// A timing that ends before it starts.
 enum InvalidCacheTiming is Error = (invalid);
 
 test "cache age includes monotonic response delay" {

@@ -1,5 +1,8 @@
 module http/cache_validation v1.0.0;
 
+// Revalidating a stale cached response (RFC 9111 §4.3): the conditional
+// request, and the entry a 304 refreshes. Caching uses it.
+
 import "http/status" take StatusCode, Status;
 import "http/cache_memory" take CachedHttpEntry, CacheStoredHeaders;
 import "http/cache_freshness" take CacheResponseTiming;
@@ -21,6 +24,7 @@ object CacheValidation {
     has tags is @EntityTag;
     has modified is @string;
 
+    // Revalidates entry for original.
     CacheValidation(original is Request, entry is CachedHttpEntry) {
         self.original = original;
         self.entry = entry;
@@ -75,14 +79,19 @@ object CacheValidation {
         );
     }
 
+    // The request to send: original with If-None-Match or If-Modified-Since
+    // when the entry has a validator.
     request() is Request {
         request;
     }
 
+    // Whether the request is conditional.
     conditional() is bool {
         tags.size() == 1 || modified.size() == 1;
     }
 
+    // The entry updated by a 304 result; InvalidCacheRevalidation for another
+    // status.
     refreshed(result is ClientResponse, timing is CacheResponseTiming) is CachedHttpEntry {
         confirm self.conditional()
             && result::Head::status == Status.not_modified
@@ -218,15 +227,19 @@ hidden object CacheMergedFields {
     }
 }
 
+// Whether a cached entry may answer a request as it is.
 object CacheRequestFreshness {
     has request is Request;
     has entry is CachedHttpEntry;
 
+    // entry for request.
     CacheRequestFreshness(request is Request, entry is CachedHttpEntry) {
         self.request = request;
         self.entry = entry;
     }
 
+    // Whether the entry may answer at now: fresh, or stale within the request's
+    // max-stale, and within its no-cache, max-age and min-fresh.
     usable(now is MonotonicInstant) is bool {
         let observed = entry.freshness();
         if !observed.reusable() {
@@ -269,4 +282,5 @@ object CacheRequestFreshness {
     }
 }
 
+// A revalidation result that cannot refresh the entry.
 enum InvalidCacheRevalidation is Error = (invalid);

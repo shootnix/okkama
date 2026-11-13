@@ -1,5 +1,17 @@
 module http/cache v1.0.0;
 
+// A private HTTP cache around a client (RFC 9111).
+//
+//     let cache = MemoryHttpCache(clock: SystemClock(), maximum: BigInt(67108864));
+//     let client = Caching(origin: HttpClient(), cache: cache, clock: SystemClock());
+//     await client.response(Request(url: "https://example.com/logo.png"));
+//
+// Only GET is answered from the cache. A fresh entry is served; a stale one is
+// revalidated with If-None-Match or If-Modified-Since, and a 304 refreshes it.
+// Freshness comes from max-age or Expires; there is no heuristic freshness.
+// Other methods that succeed invalidate the entry for their URL. A body is kept
+// only after it was read to the end.
+
 import "http/status" take StatusCode, Status, StatusClass;
 import "http/method" take Method;
 import "http/cache_admission" take CacheAdmissions, CacheAdmissionLease, CacheAdmissionAnchor;
@@ -40,6 +52,7 @@ object Caching does Exchanging {
     has clock is Timing;
     has admissions is CacheAdmissions;
 
+    // Sends through origin, keeping responses in cache; clock measures age.
     Caching(origin is Exchanging, cache is ResponseCaching, clock is Timing) {
         self.origin = origin;
         self.cache = cache;
@@ -47,6 +60,7 @@ object Caching does Exchanging {
         admissions = CacheAdmissions();
     }
 
+    // A fresh cached response, a revalidated one, or origin's.
     async response(request is Request) is ClientResponse {
         let eligible = request::Head::method == Method.get
             && request::Head::target.kind() == RequestTargetKind.absolute
