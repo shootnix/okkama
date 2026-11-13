@@ -183,7 +183,7 @@ fn elide(function: &mut Function) -> usize {
 /// Plain-ность всего модуля: объект plain, если у него нет `destroy` и все
 /// поля plain; роль — если её делают только plain объекты; функция — если ни
 /// одно замыкание не захватывает не plain значение.
-struct Plain {
+pub(crate) struct Plain {
     objects: Vec<bool>,
     roles: Vec<bool>,
     functions: bool,
@@ -192,7 +192,7 @@ struct Plain {
 }
 
 impl Plain {
-    fn of(module: &Module) -> Self {
+    pub(crate) fn of(module: &Module) -> Self {
         let captured: Vec<&Type> = module
             .functions
             .iter()
@@ -251,7 +251,7 @@ impl Plain {
 
     /// Значение типа не достигает идентичностей с `destroy` (как
     /// `Ctx::is_plain`, но по всему модулю).
-    fn ty(&self, ty: &Type) -> bool {
+    pub(crate) fn ty(&self, ty: &Type) -> bool {
         match ty {
             Type::Object(object) | Type::Successor(object) => self.objects[object.0],
             Type::Role(role) => self.roles[role.0],

@@ -12,6 +12,8 @@
 pub mod cfg;
 pub mod fold;
 pub mod hoist;
+pub mod ownership;
+pub mod param_adopts;
 pub mod regions;
 mod print;
 pub mod recursion;

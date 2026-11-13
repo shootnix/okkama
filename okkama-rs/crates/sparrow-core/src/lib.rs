@@ -195,6 +195,10 @@ pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<
                     host.test_failures = Some(Vec::new());
                 }
                 let outcome = runtime.run_function(function.0 as usize, STACK_BYTES);
+                // `SPARROW_CORE_STATS` counts each test's runtime as well (#555).
+                if let Some(report) = runtime.stats_report() {
+                    eprint!("{report}");
+                }
                 let host = runtime.host.as_mut();
                 let (mut failures, skipped) =
                     host.map(|h| (h.test_failures.take().unwrap_or_default(), h.test_skipped.take())).unwrap_or_default();
