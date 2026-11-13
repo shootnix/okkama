@@ -111,6 +111,7 @@ and compares the output.
 |---|---|
 | `digest/hash.ok` | SHA-2, SHA-3 and BLAKE2 of text; streaming and branching states |
 | `crypto/secrets.ok` | sign with HMAC and verify, store and check a password, encrypt a record and detect a change |
+| `crypto/jwt.ok` | issue a session token and check expiry and leeway, sign with Ed25519 and verify with only the public key, refuse a swapped algorithm or another audience |
 | `net/addresses.ok` | parse and classify IP addresses, networks, endpoints; resolve through a fixed DNS table |
 | `net/echo.ok` | a TCP echo over loopback (run it in a container, like the async tests) |
 

@@ -1,0 +1,142 @@
+module examples/crypto/jwt v1.0.0;
+
+import "crypto/ed25519" take Ed25519PrivateKey;
+import "crypto/jwt" take JwtAlgorithm, JwtHmacKey, JwtEd25519Key, JwtKeys, JwtToken, JwtVerified,
+    JwtExpired, JwtAlgorithmMismatch, JwtSignatureMismatch, JwtAudienceMismatch;
+import "crypto/secret" take SecretBytes;
+import "io/stdout" take Stdout;
+import "json" take Json, JsonField;
+import "time/clock" take Timing, Instant, MonotonicInstant;
+import "time/duration" take Duration;
+
+// JSON Web Tokens: a session token signed with a shared HMAC secret, then
+// tokens an auth service signs with Ed25519 and an API checks with only the
+// public key. The clock is fixed, so the output is the same on every run.
+
+object FixedClock does Timing {
+    has seconds is int;
+
+    FixedClock(seconds is int) {
+        self.seconds = seconds;
+    }
+
+    instant() is Instant {
+        Instant(Duration(seconds: seconds));
+    }
+
+    monotonic_instant() is MonotonicInstant {
+        MonotonicInstant(Duration(seconds: 0));
+    }
+
+    async wait(duration is Duration) is void {}
+}
+
+object Check {
+    has out is Stdout;
+
+    Check(out is Stdout) {
+        self.out = out;
+    }
+
+    // Verifies and prints what happened.
+    report(label is string, verify is JwtVerified) is void {
+        let outcome = try {
+            "accepted, sub " + verify.claims().text("sub");
+        }
+        catch failure is JwtExpired {
+            "expired";
+        }
+        catch failure is JwtAlgorithmMismatch {
+            "wrong algorithm";
+        }
+        catch failure is JwtSignatureMismatch {
+            "bad signature";
+        }
+        catch failure is JwtAudienceMismatch {
+            "not for this audience";
+        };
+        out.writeln(label, ": ", outcome);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let check = Check(out);
+    let now = FixedClock(1700000000);
+
+    // 1. A session token: HS256 with a secret of at least 32 bytes.
+    let session = JwtHmacKey(
+        algorithm: JwtAlgorithm.hs256,
+        secret: SecretBytes("a-32-byte-session-secret-0123456")
+    );
+    let token = JwtToken(
+        claims: Json(JsonField("sub", "user-7"), JsonField("role", "admin")),
+        key: session,
+        expires: Duration(minutes: 15),
+        clock: now
+    ).string();
+    out.writeln("token: ", token.slice(0, 36), "… (", token.length(), " chars)");
+    let verified = JwtVerified(token: token, key: session, clock: now);
+    out.writeln(
+        "alg ",
+        verified.header().text("alg"),
+        ", role ",
+        verified.claims().text("role"),
+        ", exp ",
+        verified.claims().int("exp")
+    );
+    check.report(
+        "in 10 minutes",
+        JwtVerified(token: token, key: session, clock: FixedClock(1700000600))
+    );
+    check.report(
+        "in 20 minutes",
+        JwtVerified(token: token, key: session, clock: FixedClock(1700001200))
+    );
+    check.report(
+        "in 15:20 with 30 s leeway",
+        JwtVerified(
+            token: token,
+            key: session,
+            clock: FixedClock(1700000920),
+            leeway: Duration(seconds: 30)
+        )
+    );
+    let parts = token.split(".");
+    let other = JwtToken(claims: Json(JsonField("sub", "admin")), key: session).string();
+    let forged = other.split(".")[0] + "." + other.split(".")[1] + "." + parts[2];
+    check.report(
+        "claims swapped under the old signature",
+        JwtVerified(token: forged, key: session, clock: now)
+    );
+
+    // 2. An auth service signs with Ed25519; the API holds only the public key.
+    let private = Ed25519PrivateKey(seed: SecretBytes((0..32).map() -> index {
+        byte(index * 7);
+    }));
+    let signer = JwtEd25519Key(signing: private, id: "2026-11");
+    let api = JwtKeys(JwtEd25519Key(verifying: private.public_key(), id: "2026-11"));
+    let access = JwtToken(
+        claims: Json(
+            JsonField("sub", "user-7"),
+            JsonField("aud", "orders"),
+            JsonField("iss", "auth")
+        ),
+        key: signer,
+        expires: Duration(hours: 1),
+        clock: now
+    ).string();
+    check.report(
+        "orders API",
+        JwtVerified(token: access, keys: api, clock: now, audience: "orders", issuer: "auth")
+    );
+    check.report(
+        "billing API",
+        JwtVerified(token: access, keys: api, clock: now, audience: "billing")
+    );
+    check.report(
+        "HS256 token at the orders API",
+        JwtVerified(token: token, key: signer, clock: now)
+    );
+    0;
+}
