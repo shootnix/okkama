@@ -18,6 +18,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 - **`Directory.create(parents: true)` makes the missing parents (#125).**
 
+- **An XML-RPC server can answer with the standard results (#516).**
+  `XmlRpcSuccess` and `XmlRpcFailure` are public, so an `XmlRpcCalling`
+  written outside std returns them:
+
+      XmlRpcSuccess(XmlRpcText("Hello"))
+      XmlRpcFailure(XmlRpcFault(code: -32601, message: "Unknown method"))
+
+  `examples/http/xmlrpc/greet.ok` serves one through `XmlRpcHandling` and
+  calls it with `XmlRpcClient`.
+
 - **`FileEntry.copy(destination)` copies a file with its permission bits
   (#126).** `copy` and `move` take `overwrite`; see Changed for `move`.
 
