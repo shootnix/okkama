@@ -16,7 +16,8 @@ object CacheResponseTiming {
         started is MonotonicInstant,
         finished is MonotonicInstant
     ) {
-        confirm finished.minus(started)::Span::seconds >= 0.rat() else throw InvalidCacheTiming.invalid;
+        confirm finished.minus(started)::Span::seconds >= 0.rat()
+            else throw InvalidCacheTiming.invalid;
         self.received = received;
         self.started = started;
         self.finished = finished;
@@ -162,7 +163,9 @@ hidden object CacheFreshnessObservations {
             let expires = headers.values(HeaderName("Expires"));
             confirm expires.size() <= 1 else throw InvalidCacheMetadata.invalid;
             if expires.size() == 1 {
-                let difference = ParsedHttpDate(origin: expires.item(0), reference: received).instant().minus(observed)::Span::seconds;
+                let difference = ParsedHttpDate(origin: expires.item(0), reference: received).instant().minus(
+                    observed
+                )::Span::seconds;
                 if difference > 0.rat() {
                     difference;
                 }
@@ -203,6 +206,9 @@ test "cache age includes monotonic response delay" {
     let received = Instant(Duration(seconds: 100));
     let began = MonotonicInstant(Duration(seconds: 0));
     let ended = began.plus(Duration(seconds: 2));
-    let value = CacheFreshness(headers: Headers(), timing: CacheResponseTiming(received, began, ended));
+    let value = CacheFreshness(
+        headers: Headers(),
+        timing: CacheResponseTiming(received, began, ended)
+    );
     test.is(value.age(ended)::Span::seconds, 2.rat());
 }

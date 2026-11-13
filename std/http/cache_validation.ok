@@ -118,7 +118,10 @@ object CacheValidation {
                 catch e is Error {
                     throw InvalidCacheRevalidation.invalid;
                 };
-                let stored = ParsedHttpDate(origin: modified[0], reference: entry.timing().received()).instant();
+                let stored = ParsedHttpDate(
+                    origin: modified[0],
+                    reference: entry.timing().received()
+                ).instant();
                 confirm changed.order(stored) == Order.equal
                     else throw InvalidCacheRevalidation.invalid;
             }
@@ -174,7 +177,10 @@ hidden object Cache304Fields {
             fields;
         }
         else {
-            ReplacedHeader(origin: fields, entry: Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())).headers();
+            ReplacedHeader(
+                origin: fields,
+                entry: Header(name: HeaderName("Date"), value: HttpDate(timing.received()).string())
+            ).headers();
         };
         result = if updated.membership(HeaderName("Age")) {
             dated;
@@ -250,7 +256,9 @@ object CacheRequestFreshness {
                         && !incoming.present("no-cache")
                         && !incoming.present("no-store")
                         && (arguments.size() == 0
-                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(arguments[0]).seconds().rat());
+                        || age - observed.lifetime()::Span::seconds <= CacheDeltaSeconds(
+                            arguments[0]
+                        ).seconds().rat());
                 }
             }
         }

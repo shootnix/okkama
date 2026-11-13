@@ -233,7 +233,8 @@ object AcceptedContentCodings {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative coding choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @ContentCoding = (0..count).map() -> index {
             available.item(index);
         };
@@ -359,7 +360,8 @@ hidden object CodingField {
     }
 
     values() is @CodingPreference {
-        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(name: HeaderName("Accept-Encoding"), value: origin).value();
         }
@@ -536,7 +538,8 @@ object AcceptedCharsets {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative charset choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @CharsetName = (0..count).map() -> index {
             available.item(index);
         };
@@ -661,7 +664,10 @@ object AcceptedLanguages {
 
     values() is Sequencing<WeightedLanguageRange> {
         let values is @WeightedLanguageRange = origin.map() -> entry {
-            WeightedLanguageRange(range: BasicLanguageRange(entry.token()), quality: entry.quality());
+            WeightedLanguageRange(
+                range: BasicLanguageRange(entry.token()),
+                quality: entry.quality()
+            );
         };
         values;
     }
@@ -682,7 +688,8 @@ object AcceptedLanguages {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative language choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @Locale = (0..count).map() -> index {
             available.item(index);
         };
@@ -695,7 +702,10 @@ object AcceptedLanguages {
 
     hidden lookup_match(locale is Locale) is LanguageMatch {
         if !present {
-            return LanguageMatch(origin: WeightedLanguageRange(BasicLanguageRange("*")), position: 0);
+            return LanguageMatch(
+                origin: WeightedLanguageRange(BasicLanguageRange("*")),
+                position: 0
+            );
         }
         for LanguagePrefixes(locale).values() -> prefix {
             let exact = WeightedTokenLookup(origin: indexed, token: prefix.string()).preferences();
@@ -1104,7 +1114,8 @@ object AcceptedMediaTypes {
         let count = available.size();
         confirm count >= 0
             else throw InvalidArgument.because("negative media choice sequence size");
-        confirm count <= limits::Limits::available else throw NegotiationLimitExceeded.kind("available");
+        confirm count <= limits::Limits::available
+            else throw NegotiationLimitExceeded.kind("available");
         let choices is @HttpMediaType = (0..count).map() -> index {
             available.item(index);
         };
@@ -1216,7 +1227,8 @@ hidden object MediaField {
     }
 
     values() is @MediaRange {
-        confirm origin.length() <= limits::Limits::bytes else throw NegotiationLimitExceeded.kind("bytes");
+        confirm origin.length() <= limits::Limits::bytes
+            else throw NegotiationLimitExceeded.kind("bytes");
         let field = try {
             Header(name: HeaderName("Accept"), value: origin).value();
         }
@@ -1235,7 +1247,10 @@ hidden object MediaField {
             part != "";
         };
         let values is @MediaRange = nonempty.map() -> part {
-            MediaRange(origin: part, limits: HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters));
+            MediaRange(
+                origin: part,
+                limits: HttpMediaLimits(limits::Limits::bytes, limits::Limits::parameters)
+            );
         };
         values;
     }
@@ -1380,5 +1395,8 @@ test "charset exact refusal overrides wildcard without an implicit legacy defaul
 test "language matching uses most-specific basic range before wildcard quality" {
     let accepted = AcceptedLanguages("en;q=0,*;q=0.5");
     test.is(accepted.quality(Locale(language: "en", region: "US")).string(), "0");
-    test.is(accepted.preference([Locale(language: "en", region: "US"), Locale("fr")]).string(), "fr");
+    test.is(
+        accepted.preference([Locale(language: "en", region: "US"), Locale("fr")]).string(),
+        "fr"
+    );
 }
