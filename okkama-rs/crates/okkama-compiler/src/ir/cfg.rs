@@ -343,6 +343,53 @@ fn body(block: BlockId) -> usize {
     block.0 * 2 + 1
 }
 
+// Keep the same order and multiplicity as TermKind::targets(): the DFS
+// consumes this iterator once, retaining its position in the frame.
+fn node_successors(function: &Function, node: usize) -> impl Iterator<Item = usize> {
+    use super::TermKind;
+    let block = BlockId(node / 2);
+    let mut targets = if node.is_multiple_of(2) {
+        [Some(body(block)), function.blocks[block.0].unwind.as_ref().map(|target| start(target.block))]
+    } else {
+        let (first, second) = match &function.blocks[block.0].term.kind {
+            TermKind::Br(target) => (Some(target), None),
+            TermKind::Cond { then_target, else_target, .. } => (Some(then_target), Some(else_target)),
+            TermKind::Catch { handler, next, .. } => (Some(handler), Some(next)),
+            TermKind::ArrayLookup { found, missing, .. }
+            | TermKind::MapLookup { found, missing, .. } => (Some(found), Some(missing)),
+            TermKind::Ret(_) | TermKind::Panic(_) | TermKind::Trap { .. }
+            | TermKind::Unreachable | TermKind::Throw(_) | TermKind::Raise(_) => (None, None),
+        };
+        [first.map(|target| start(target.block)), second.map(|target| start(target.block))]
+    };
+    std::iter::from_fn(move || targets[0].take().or_else(|| targets[1].take()))
+}
+
+fn reverse_postorder(function: &Function) -> Result<Vec<usize>, String> {
+    let count = function.blocks.len() * 2;
+    let mut order = Vec::with_capacity(count);
+    let mut visited = vec![false; count];
+    // Итеративный DFS с явным стеком: глубина CFG не ограничена стеком потока.
+    let mut stack = vec![(0usize, node_successors(function, 0))];
+    visited[0] = true;
+    while let Some((node, targets)) = stack.last_mut() {
+        if let Some(target) = targets.next() {
+            if !visited[target] {
+                visited[target] = true;
+                stack.push((target, node_successors(function, target)));
+            }
+        } else {
+            order.push(*node);
+            stack.pop();
+        }
+    }
+    if let Some(node) = visited.iter().position(|seen| !seen) {
+        return Err(format!("block ^b{} is unreachable", node / 2));
+    }
+    order.reverse(); // reverse postorder
+    Ok(order)
+}
+
 /// Дерево доминаторов узлов «начало»/«тело» (Cooper–Harvey–Kennedy).
 /// Требует, чтобы все цели существовали и все блоки были достижимы.
 #[derive(Clone, Debug)]
@@ -357,46 +404,14 @@ pub struct Dominators {
 impl Dominators {
     pub fn compute(function: &Function) -> Result<Self, String> {
         let count = function.blocks.len() * 2;
-        let node_successors = |node: usize| -> Vec<usize> {
-            let block = BlockId(node / 2);
-            if node.is_multiple_of(2) {
-                let mut next = vec![body(block)];
-                if let Some(unwind) = &function.blocks[block.0].unwind {
-                    next.push(start(unwind.block));
-                }
-                next
-            } else {
-                successors(function, block).into_iter().map(start).collect()
-            }
-        };
-        let mut order = Vec::with_capacity(count);
-        let mut visited = vec![false; count];
-        // Итеративный DFS с явным стеком: глубина CFG не ограничена стеком потока.
-        let mut stack = vec![(0usize, 0usize)];
-        visited[0] = true;
-        while let Some((node, next)) = stack.pop() {
-            let targets = node_successors(node);
-            if let Some(target) = targets.get(next) {
-                stack.push((node, next + 1));
-                if !visited[*target] {
-                    visited[*target] = true;
-                    stack.push((*target, 0));
-                }
-            } else {
-                order.push(node);
-            }
-        }
-        if let Some(node) = visited.iter().position(|seen| !seen) {
-            return Err(format!("block ^b{} is unreachable", node / 2));
-        }
-        order.reverse(); // reverse postorder
+        let order = reverse_postorder(function)?;
         let mut rpo_index = vec![0; count];
         for (position, node) in order.iter().enumerate() {
             rpo_index[*node] = position;
         }
         let mut predecessors = vec![Vec::new(); count];
         for node in 0..count {
-            for target in node_successors(node) {
+            for target in node_successors(function, node) {
                 predecessors[target].push(node);
             }
         }
@@ -645,3 +660,7 @@ mod cycle_tests {
         assert!(looping[n..].iter().all(|&on| !on));
     }
 }
+
+#[cfg(test)]
+#[path = "cfg_successors_tests.rs"]
+mod successor_tests;

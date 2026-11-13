@@ -28,6 +28,10 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size
+  successor iterator in each frame instead of rebuilding temporary vectors
+  on every edge. Unwind order, RPO and dominator intervals are unchanged.
+
 - **Sparrow keeps AllFutures results until the awaiting scope ends (#580).**
   The results sequence had no identity, so the awaiting scope did not adopt
   the resources in it and later calls destroyed them early, in creation
