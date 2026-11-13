@@ -73,6 +73,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   same. A `join` loop under statistics: 87 → 65 ns per join (32 ns
   without statistics, unchanged).
 
+- **Natives no longer widen byte arrays to check their length (#446).**
+  `SecretBytes` and database byte values checked a payload's length by
+  turning every byte into a word and every word into a slot — about
+  24 bytes of temporaries per byte. The length is now read from the array,
+  and natives that take an array walk it in place instead of flattening a
+  trie or widening bytes first. 1 MiB: a database byte value 943 → 125 µs,
+  a `SecretBytes` 1 128 → 335 µs (the rest is the copy and the zeroing).
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request

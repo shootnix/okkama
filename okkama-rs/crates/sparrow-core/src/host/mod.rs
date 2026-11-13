@@ -424,7 +424,19 @@ impl Heap {
             return Err(Error("expected array slot".into()));
         }
         let shape = self.shapes.get((value.tag >> 8) as usize).cloned().unwrap_or(Shape::Unknown);
-        Ok(self.core().elements(value.bits).iter().map(|&w| self.slot(w, &shape)).collect())
+        // One copy, into the slots (#446): a byte array or a trie is not
+        // first widened or flattened into a vector of words.
+        let core = self.core();
+        let mut slots = Vec::with_capacity(core.array_length(value.bits));
+        core.each_element(value.bits, &mut |word| slots.push(self.slot(word, &shape)));
+        Ok(slots)
+    }
+    /// The number of elements of an array slot, with no copy (#446).
+    pub fn array_length(&self, value: Slot) -> Result<usize, Error> {
+        if value.kind() != ARRAY {
+            return Err(Error("expected array slot".into()));
+        }
+        Ok(self.core().array_length(value.bits))
     }
     /// The bytes of a `@byte` slot, borrowed from the core heap.
     pub fn byte_slice(&self, value: Slot) -> Result<std::borrow::Cow<'_, [u8]>, Error> {

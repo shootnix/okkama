@@ -218,7 +218,7 @@ impl Heap {
                 }
             }
             DbBytes => {
-                if self.elements(a[0])?.len() > 8388608 {
+                if self.array_length(a[0])? > 8388608 {
                     return Err(invalid(n));
                 }
                 Some(Cell::Bytes(self.native_bytes(a[0])?.into()))

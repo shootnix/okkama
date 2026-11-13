@@ -43,7 +43,7 @@ impl Heap {
     ) -> Result<Outcome, Error> {
         use Native::*;
         if native == SecretCreate {
-            if self.elements(args[0])?.len() > 1_048_576 {
+            if self.array_length(args[0])? > 1_048_576 {
                 return self.secret_failure(
                     native,
                     "invalid_input",
