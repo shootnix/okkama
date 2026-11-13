@@ -1,5 +1,21 @@
 module http/sse v1.0.0;
 
+// Server-sent events (HTML Living Standard §9.2): `text/event-stream`.
+//
+//     let channel is Channel<ServerEvent> = Channel(16);
+//     Response(status: Status.ok, headers: EventStreamHeaders().headers(), body: EventBody(channel.receiving()));
+//     let sending = channel.sending();
+//     await sending.send(ServerEvent(data: "tick"));
+//     await sending.send(ServerEvent(data: "{}", event: "update", identifier: "42", retry: Duration(seconds: 3)));
+//
+//     let events = ServerEvents(response.reading());
+//     let event = await events.event();                  // EventStreamEnded at the end
+//     event::Event::data;
+//
+// The writer sends what the channel receives until it closes. The reader splits
+// on any line ending, joins data lines, and remembers the last id for
+// reconnection.
+
 import "http/body" take ByteBody, BodyOpening, BodyReading, BodyClosed, BodyAlreadyOpened,
     UnknownBodyLength, TrailersUnavailable;
 import "http/header" take Headers, Header, HeaderName;
@@ -17,21 +33,29 @@ import "async/scope" take FutureGroup;
 import "io/stream" take InvalidReadLimit;
 import "io/decorators" take InvalidReading;
 
+// An event that cannot be written or read; reason says why.
 enum InvalidServerEvent is Error = (because(reason is string));
 
+// The stream has no more events.
 enum EventStreamEnded is Error = (ended);
 
+// The event has no retry.
 enum MissingEventRetry is Error = (missing);
 
+// Another read of the stream is running.
 enum EventStreamBusy is Error = (busy);
 
+// A line or an event over a limit; kind says which.
 enum EventStreamLimit is Error = (kind(kind is string));
 
+// One event: data, a type, an id and an optional retry, or a keep-alive
+// comment.
 object ServerEvent {
     has data, event, identifier is string;
     has identifier_supplied, keep_alive is bool;
     has milliseconds is @int;
 
+    // A `message` event with data.
     ServerEvent(data is string) {
         ServerEventData(data);
         self.data = data;
@@ -42,6 +66,8 @@ object ServerEvent {
         milliseconds = [];
     }
 
+    // A comment line, sent to keep the connection open; keep_alive must be
+    // true.
     ServerEvent(comment is string, keep_alive is bool) {
         confirm keep_alive else throw InvalidServerEvent.because("comment marker must be true");
         ServerEventMetadata(comment);
@@ -53,6 +79,7 @@ object ServerEvent {
         milliseconds = [];
     }
 
+    // An event with every field.
     ServerEvent(data is string, event is string, identifier is string, retry is Duration) {
         ServerEventData(data);
         ServerEventMetadata(event);
@@ -99,11 +126,14 @@ object ServerEvent {
         keep_alive = false;
     }
 
+    // The retry; MissingEventRetry when there is none.
     retry() is Duration {
         confirm milliseconds.size() == 1 else throw MissingEventRetry.missing;
         Duration(milliseconds: milliseconds[0]);
     }
 
+    // Its data, type, id and whether one was given, and whether it is a
+    // comment.
     cap Event {
         data is string {
             data;
@@ -213,8 +243,10 @@ hidden object ServerEventWire {
 // Deliberate response metadata; applications select this rather than receiving
 // hidden cache/proxy defaults from the server or transport.
 object EventStreamHeaders {
+    // The fields.
     EventStreamHeaders();
 
+    // `text/event-stream`, no-cache and no proxy buffering.
     headers() is Headers {
         Headers(
             Header(name: HeaderName("Content-Type"), value: "text/event-stream; charset=utf-8"),
@@ -224,8 +256,12 @@ object EventStreamHeaders {
     }
 }
 
+// A running read of a stream that can be cancelled and waited for; used inside
+// http/sse.
 role EventDraining {
+    // Stops it.
     cancel() is void;
+    // Waits for it to finish.
     async settled() is bool;
 }
 
@@ -308,6 +344,7 @@ hidden object EventOperation {
     }
 }
 
+// Events read from a body.
 object ServerEvents {
     has input is BodyReading;
     has operations is EventOperation;
@@ -317,6 +354,7 @@ object ServerEvents {
     has eof, started is Event;
     has skip_lf is Atomic<bool>;
 
+    // Reads origin.
     ServerEvents(origin is BodyReading) {
         confirm !origin.closed() else throw BodyClosed.closed;
         input = origin;
@@ -334,10 +372,12 @@ object ServerEvents {
         skip_lf = Atomic(false);
     }
 
+    // Whether it was closed.
     closed() is bool {
         operations.closed() || eof.ready();
     }
 
+    // Stops reading.
     close() is void {
         operations.close();
         input.close();
@@ -345,14 +385,18 @@ object ServerEvents {
         data.replace("");
     }
 
+    // Waits for the reads still running.
     async settled() is bool {
         await operations.settled();
     }
 
+    // The last id received, for Last-Event-ID.
     last_identifier() is string {
         published_identifier.value();
     }
 
+    // The next event; EventStreamEnded at the end, EventStreamBusy while
+    // another read runs.
     async event() is ServerEvent {
         if eof.ready() {
             throw EventStreamEnded.ended;
@@ -367,6 +411,7 @@ object ServerEvents {
         await pending;
     }
 
+    // Reads the next event; event() is the usual call.
     async read() is ServerEvent {
         let complete = Event();
         let cleanup = EventReadCleanup(owner: self, complete: complete);
@@ -446,6 +491,7 @@ object ServerEvents {
         }
     }
 
+    // The next line, without its ending.
     async line() is string {
         loop {
             let text = tail.value();
@@ -600,19 +646,23 @@ hidden object EventUtf8 {
     }
 }
 
+// A body that writes the events a channel receives.
 object EventBody does BodyOpening {
     has input is Receiving<ServerEvent>;
     has opened is Atomic<bool>;
 
+    // Writes what origin receives until it closes.
     EventBody(origin is Receiving<ServerEvent>) {
         input = origin;
         opened = Atomic(false);
     }
 
+    // UnknownBodyLength.
     length() is BigInt {
         throw UnknownBodyLength.unknown;
     }
 
+    // false.
     replayable() is bool {
         false;
     }
@@ -622,6 +672,7 @@ object EventBody does BodyOpening {
         Maybe<@byte>.none;
     }
 
+    // Starts writing; a second call is BodyAlreadyOpened.
     reading() is BodyReading {
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
         EventBodyInput(input);

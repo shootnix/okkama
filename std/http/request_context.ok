@@ -1,8 +1,14 @@
 module http/request_context v1.0.0;
 
-// Infrastructure creates one context per request; handlers observe transport
-// facts and cancellation, but receive no socket mutation or cancellation owner.
-// Routing changes only the immutable parameter snapshot in a successor.
+// What a handler knows about a request besides the request itself.
+//
+//     context.secure();                                  // came over TLS
+//     context.endpoints();                               // local and remote addresses
+//     context.parameters()["id"];                        // from the route pattern
+//     context.cancelling().check();                      // Cancelled once the client left
+//
+// One context per request. Routing adds the parameters of the matched pattern;
+// the connection gives the rest.
 
 import "http/exchange" take ExchangeDetails;
 import "net/stream" take ConnectionEndpoints;
@@ -11,17 +17,20 @@ import "net/tls" take TlsDetails;
 import "async/cancellation" take Cancelling;
 import "error" take InvalidArgument;
 
+// The transport facts and route parameters of a request.
 object HttpRequestContext {
     has details is ExchangeDetails;
     has cancellation is Cancelling;
     has parameters is %string:string;
 
+    // A context without parameters.
     HttpRequestContext(details is ExchangeDetails, cancellation is Cancelling) {
         self.details = details;
         self.cancellation = cancellation;
         parameters = [:];
     }
 
+    // A context with parameters.
     HttpRequestContext(
         details is ExchangeDetails,
         cancellation is Cancelling,
@@ -32,26 +41,32 @@ object HttpRequestContext {
         self.parameters = HttpContextParameters(parameters).parameters();
     }
 
+    // The local and remote addresses.
     endpoints() is ConnectionEndpoints<IpEndpoint> {
         details.endpoints();
     }
 
+    // Whether the request came over TLS.
     secure() is bool {
         details.secure();
     }
 
+    // The TLS details; PlainHttpHasNoTls without TLS.
     tls() is TlsDetails {
         details.tls();
     }
 
+    // Cancelled when the client goes away or the server drains.
     cancelling() is Cancelling {
         cancellation;
     }
 
+    // The route parameters.
     parameters() is %string:string {
         parameters;
     }
 
+    // This context with origin as its parameters.
     parameters(origin is %string:string) is ^HttpRequestContext {
         ^parameters = HttpContextParameters(origin).parameters();
     }

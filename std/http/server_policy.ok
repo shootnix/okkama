@@ -1,13 +1,31 @@
 module http/server_policy v1.0.0;
 
+// What a server allows itself: protocols, limits, timeouts, connections and
+// ranges per request.
+//
+//     HttpServer(listener: listener, handling: app, policy: ServerPolicy(
+//         protocols: OrderedSet([HttpVersion.http_1_1, HttpVersion.http_2]),
+//         limits: HttpLimits(),
+//         timeouts: ServerTimeouts(),
+//         connections: 256,
+//         ranges: 16,
+//     ));
+//
+// By default: HTTP/1.1, the default HttpLimits, 64 connections, 16 ranges per
+// request, 30 seconds for the head, each pause in a body and a handler, and 5
+// seconds of keep-alive.
+
 import "http/client_policy" take HttpLimits;
 import "http/version" take HttpVersion;
 import "collections/set" take Set, OrderedSet;
 import "time/duration" take Duration, DurationUnit;
 
+// How long a server waits.
 object ServerTimeouts {
     has headers, body_idle, keep_alive, handling is Duration;
 
+    // 30 seconds for the head, a body pause and a handler; 5 seconds of
+    // keep-alive.
     ServerTimeouts() {
         headers = Duration(seconds: 30);
         body_idle = Duration(seconds: 30);
@@ -15,6 +33,7 @@ object ServerTimeouts {
         handling = Duration(seconds: 30);
     }
 
+    // The timeouts as given.
     ServerTimeouts(
         headers is Duration,
         body_idle is Duration,
@@ -32,29 +51,35 @@ object ServerTimeouts {
         self.handling = handling;
     }
 
+    // For a request head to arrive.
     headers_timeout() is Duration {
         headers;
     }
 
+    // For each pause while a body is read.
     body_idle_timeout() is Duration {
         body_idle;
     }
 
+    // For the next request on an idle connection.
     keep_alive_timeout() is Duration {
         keep_alive;
     }
 
+    // For a handler to answer.
     handling_timeout() is Duration {
         handling;
     }
 }
 
+// Everything a server needs besides a listener and a handler.
 object ServerPolicy {
     has protocols is Set<HttpVersion>;
     has limits is HttpLimits;
     has timeouts is ServerTimeouts;
     has connections, ranges is int;
 
+    // HTTP/1.1, the default limits and timeouts, 64 connections, 16 ranges.
     ServerPolicy() {
         let enabled is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]);
         protocols = enabled;
@@ -64,6 +89,8 @@ object ServerPolicy {
         ranges = 16;
     }
 
+    // The policy as given; InvalidServerPolicy unless it has 1 or 2 protocols,
+    // 1..1024 connections and 1..128 ranges.
     ServerPolicy(
         protocols is Set<HttpVersion>,
         limits is HttpLimits,
@@ -92,27 +119,33 @@ object ServerPolicy {
         self.ranges = ranges;
     }
 
+    // The versions it speaks.
     protocols() is Set<HttpVersion> {
         protocols;
     }
 
+    // The limits of a request.
     limits() is HttpLimits {
         limits;
     }
 
+    // The timeouts.
     timeouts() is ServerTimeouts {
         timeouts;
     }
 
+    // How many connections it serves at once.
     connections() is int {
         connections;
     }
 
+    // How many ranges one request may ask for.
     ranges() is int {
         ranges;
     }
 }
 
+// A policy that cannot be used; reason says why.
 enum InvalidServerPolicy is Error = (because(reason is string));
 
 test "server policy has bounded defaults and refuses unsupported budgets" {

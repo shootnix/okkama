@@ -1,5 +1,15 @@
 module http/robots v1.0.0;
 
+// robots.txt (RFC 9309): what a crawler may fetch.
+//
+//     let policy = await FetchedRobots(origin: HttpClient(), site: ParsedUrl("https://example.com/").parts(), agent: "okkabot").policy();
+//     policy.allowed("okkabot", ParsedUrl("https://example.com/private/x").parts());
+//     RobotsPolicy(text).sitemaps();
+//
+// The longest matching rule wins, Allow on a tie. A missing robots.txt (4xx)
+// allows everything; a server error (5xx) allows nothing. Files are bounded to
+// 512 KiB.
+
 import "http/status" take StatusCode, StatusClass;
 import "url/value" take UrlParts, ParsedUrl, UrlComponentText;
 import "url/percent" take UrlComponent;
@@ -20,12 +30,16 @@ import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 import "io/decorators" take InvalidReading;
 
+// A robots.txt that cannot be read; reason says why.
 enum InvalidRobots is Error = (because(reason is string));
 
+// A file over a limit; kind says which.
 enum RobotsLimitExceeded is Error = (kind(kind is string));
 
+// No Crawl-delay applies.
 enum MissingCrawlDelay is Error = (missing);
 
+// robots.txt answered with an unexpected status.
 enum RobotsFetchFailed is Error = (status(status is int));
 
 hidden object RobotsTrim {
@@ -124,12 +138,15 @@ hidden object RobotsRecord {
     }
 }
 
+// The rules of a robots.txt.
 object RobotsPolicy {
     has agents, delays is @RobotsRecord;
     has rules is @RobotsRule;
     has rule_groups, delay_groups is @int;
     has maps is @UrlParts;
 
+    // Reads origin; InvalidRobots or RobotsLimitExceeded for a file that cannot
+    // be read.
     RobotsPolicy(origin is string) {
         confirm Utf8Encoded(origin).bytes().size() <= 524288
             else throw RobotsLimitExceeded.kind("bytes");
@@ -296,6 +313,7 @@ object RobotsPolicy {
         maps = ordered_maps;
     }
 
+    // The indexes of the groups that apply to agent.
     selected(agent is string) is @int {
         confirm agent != "" && agent.length() <= 256
             else throw InvalidRobots.because("agent identification");
@@ -325,6 +343,7 @@ object RobotsPolicy {
         ids;
     }
 
+    // Whether agent may fetch url.
     allowed(agent is string, url is UrlParts) is bool {
         let parts = url;
         confirm parts::Parts::scheme == "http" || parts::Parts::scheme == "https"
@@ -374,6 +393,7 @@ object RobotsPolicy {
         permitted.value();
     }
 
+    // The Crawl-delay for agent; MissingCrawlDelay when there is none.
     delay(agent is string) is Duration {
         let ids = self.selected(agent).ordering();
         let found = Atomic(false);
@@ -399,6 +419,7 @@ object RobotsPolicy {
         Duration(value: seconds.value(), unit: DurationUnit.second);
     }
 
+    // The Sitemap URLs.
     sitemaps() is Sequencing<UrlParts> {
         maps;
     }
@@ -571,12 +592,14 @@ hidden object RobotsDelay {
     }
 }
 
+// The robots.txt of a site, fetched.
 object FetchedRobots {
     has origin is Exchanging;
     has destination is UrlParts;
     has agent is string;
     has pending is Atomic<@Future<RobotsPolicy>>;
 
+    // Fetches the robots.txt of site through origin as agent.
     FetchedRobots(origin is Exchanging, site is UrlParts, agent is string) {
         let parts = site;
         confirm (parts::Parts::scheme == "http" || parts::Parts::scheme == "https")
@@ -598,6 +621,7 @@ object FetchedRobots {
         pending = Atomic(empty);
     }
 
+    // The policy; RobotsFetchFailed for a status other than 2xx, 4xx or 5xx.
     async policy() is RobotsPolicy {
         let group is FutureGroup<RobotsPolicy> = FutureGroup();
         let cleanup = RobotsSettlement(group);
@@ -607,6 +631,7 @@ object FetchedRobots {
         await task;
     }
 
+    // Fetches it now; policy() is the usual call.
     async fetch() is RobotsPolicy {
         let request = Request(
             method: Method.get,

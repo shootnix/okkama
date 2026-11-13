@@ -1,5 +1,23 @@
 module http/routing v1.0.0;
 
+// Routing: patterns, routes and a table that picks the handler.
+//
+//     let app = Routes(
+//         routes: [
+//             Route(method: Method.get, pattern: RoutePattern("/users/:id"), handling: ShowUser()),
+//             Route(method: Method.get, pattern: RoutePattern("/files/*path"), handling: Files()),
+//             Route(pattern: RoutePattern("/health"), handling: Health()),          // every method
+//         ],
+//         fallback: NotFound(),
+//     );
+//     // in ShowUser: context.parameters()["id"]
+//
+// `:name` takes one path segment and `*name` the rest of the path (last only);
+// segments are matched decoded. The most specific pattern wins, and on one
+// pattern the route of the request's own method wins over an any-method one. A
+// path no pattern matches goes to the fallback; a matching path with the wrong
+// method is answered 405 with Allow. web/routing builds on this.
+
 import "http/handler" take Handling, HandlingResult, ResponseHandling;
 import "http/request_context" take HttpRequestContext;
 import "http/message" take Request, Response;
@@ -19,8 +37,10 @@ import "net/endpoint" take IpEndpoint;
 import "net/ip" take IpAddress;
 import "async/cancellation" take Cancellation;
 
+// A literal segment, `:name` or `*name`.
 enum RouteSegmentKind = (literal, parameter, wildcard);
 
+// A pattern or a table that is not valid; reason says why.
 enum InvalidRoute is Error = (because(reason is string));
 
 // What a table does with a path no route matches when the same path with or
@@ -98,10 +118,13 @@ hidden object RouteParameterName {
     }
 }
 
+// One segment of a pattern.
 object RouteSegment {
     has kind is RouteSegmentKind;
     has value is string;
 
+    // Reads origin; final says whether it is the last, where only `*name` may
+    // stand.
     RouteSegment(origin is string, final is bool) {
         let first = if origin == "" {
             "";
@@ -127,6 +150,7 @@ object RouteSegment {
         }
     }
 
+    // Its kind and its text or parameter name.
     cap Segment {
         kind is RouteSegmentKind {
             kind;
@@ -138,10 +162,12 @@ object RouteSegment {
     }
 }
 
+// A path pattern such as `/users/:id` or `/files/*path`.
 object RoutePattern {
     has origin is string;
     has parts is @RouteSegment;
 
+    // Reads origin; InvalidRoute for a bad pattern or a repeated name.
     RoutePattern(origin is string) {
         confirm origin != ""
             && Utf8Encoded(origin).bytes().size() <= 8192
@@ -178,18 +204,22 @@ object RoutePattern {
         parts = segments;
     }
 
+    // The pattern.
     string() is string {
         origin;
     }
 
+    // Its segments.
     parts() is @RouteSegment {
         parts;
     }
 
+    // Matches path, decoding its segments.
     match(path is string) is RouteMatch {
         self.matching(RoutedPath(path).segments());
     }
 
+    // Whether the decoded segments match.
     matches(path is @string) is bool {
         confirm path.size() <= 128 else throw InvalidRoute.because("decoded path segment budget");
         let wildcard = parts.size() > 0
@@ -215,6 +245,7 @@ object RoutePattern {
         true;
     }
 
+    // Matches decoded segments.
     matching(path is @string) is RouteMatch {
         if !self.matches(path) {
             return RouteMatch();
@@ -272,24 +303,29 @@ object RoutePattern {
     }
 }
 
+// The result of matching: whether it matched and the parameters.
 object RouteMatch {
     has matched is bool;
     has parameters is %string:string;
 
+    // No match.
     RouteMatch() {
         matched = false;
         parameters = [:];
     }
 
+    // A match with parameters.
     RouteMatch(parameters is %string:string) {
         matched = true;
         self.parameters = parameters;
     }
 
+    // Whether it matched.
     matched() is bool {
         matched;
     }
 
+    // The parameters by name.
     parameters() is %string:string {
         confirm matched else throw InvalidRoute.because("no route match");
         parameters;
@@ -350,10 +386,12 @@ object Route {
         };
     }
 
+    // The pattern.
     pattern() is RoutePattern {
         pattern;
     }
 
+    // The handler.
     handling() is Handling {
         handling;
     }
@@ -363,7 +401,10 @@ object Route {
 // answer must carry the Allow field built from `allowed`; EmptyRouteRejection
 // is the default and sends empty 400/405 responses.
 role RouteRejecting {
+    // The answer to a request whose path cannot be routed.
     malformed(request is Request, reason is string) is HandlingResult;
+    // The answer to a method no route of the path serves; allowed lists those
+    // that do.
     disallowed(request is Request, allowed is @string) is HandlingResult;
 }
 
@@ -409,6 +450,8 @@ object Routes does Handling {
     has rejection is RouteRejecting;
     has slashes is SlashPolicy;
 
+    // The table, with empty 400 and 405 answers; InvalidRoute for two routes of
+    // one method and shape.
     Routes(routes is Sequencing<Route>, fallback is Handling) {
         let snapshot is @Route = (0..routes.size()).map() -> index {
             routes.item(index);
@@ -443,11 +486,13 @@ object Routes does Handling {
         self.slashes = slashes;
     }
 
+    // Runs handler with request and context.
     async invoke(handler is Handling, request is Request, context is HttpRequestContext) is HandlingResult {
         let pending = handler.handling(request, context);
         await pending;
     }
 
+    // Answers request with the route that matches it best.
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         context.cancelling().check();
         let target = request::Head::target;
