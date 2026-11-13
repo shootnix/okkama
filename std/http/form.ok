@@ -1,5 +1,21 @@
 module http/form v1.0.0;
 
+// Form bodies: `application/x-www-form-urlencoded` and `multipart/form-data`
+// (RFC 7578).
+//
+//     let fields = await ParsedUrlEncodedForm(origin: request.body().reading(), limits: FormLimits()).parameters();
+//     fields.first("name");
+//
+//     let parts = ParsedMultipartForm(origin: request.body().reading(), boundary: boundary, limits: FormLimits()).parts();
+//     let part = await parts.part();                    // MultipartFormEnded after the last
+//     if part.file() { save(part.filename(), part.body()); }
+//     else { await FormText(part).text(); }
+//
+// Parts come one at a time: read or close the current part before asking for
+// the next. Everything is bounded by FormLimits; by default 1000 fields, 100
+// files, 1 MiB per field, 64 MiB per file and 128 MiB in all. web/form reads
+// forms of a request more simply.
+
 import "http/body" take BodyReading, BodyClosed, ByteBody;
 import "http/header" take Headers, Header, HeaderName, HeaderLimits, HttpAsciiLowercase;
 import "mime/media_type" take MediaType, MediaTypeLimits, MimeToken, MimeCharacter;
@@ -18,10 +34,13 @@ import "url/query" take QueryParameters, QueryLimitExceeded;
 import "fs/temp" take TemporaryFile;
 import "fs/directory" take DirectoryLocating;
 
+// How much a form may hold.
 object FormLimits {
     has fields, files is int;
     has field_bytes, file_bytes, total_bytes is BigInt;
 
+    // 1000 fields, 100 files, 1 MiB per field, 64 MiB per file and 128 MiB in
+    // all.
     FormLimits() {
         fields = 1000;
         files = 100;
@@ -30,6 +49,7 @@ object FormLimits {
         total_bytes = BigInt(134217728);
     }
 
+    // The limits as given; InvalidFormLimits for a negative one.
     FormLimits(
         fields is int,
         files is int,
@@ -50,18 +70,22 @@ object FormLimits {
         self.total_bytes = total_bytes;
     }
 
+    // Bytes per text field.
     field_bytes() is BigInt {
         field_bytes;
     }
 
+    // Bytes per file.
     file_bytes() is BigInt {
         file_bytes;
     }
 
+    // Bytes in all.
     total_bytes() is BigInt {
         total_bytes;
     }
 
+    // The number of fields and of files.
     cap Limits {
         fields is int {
             fields;
@@ -73,39 +97,62 @@ object FormLimits {
     }
 }
 
+// A negative limit.
 enum InvalidFormLimits is Error = (invalid);
 
+// A body that is not multipart/form-data; reason says why.
 enum InvalidMultipartForm is Error = (because(reason is string));
 
+// The form went over a limit; kind says which.
 enum FormLimitExceeded is Error = (kind(kind is string));
 
+// There are no more parts.
 enum MultipartFormEnded is Error = (ended);
 
+// The form was used after it was closed.
 enum MultipartFormClosed is Error = (closed);
 
+// The next part was asked for before the current one was read or closed.
 enum MultipartPartUnread is Error = (unread);
 
+// A file part without a file name.
 enum MissingFormFilename is Error = (missing);
 
+// A text field in a charset std does not decode.
 enum UnsupportedFormCharset is Error = (unsupported);
 
+// One part of a multipart form.
 role FormPart {
+    // The field name.
     name() is string;
+    // Whether it is a file.
     file() is bool;
+    // The file name; MissingFormFilename for a text field.
     filename() is string;
+    // The part's own fields.
     headers() is Headers;
+    // Its content.
     body() is BodyReading;
 }
 
+// The parts of a form, one at a time.
 role MultipartParts {
+    // The next part; MultipartFormEnded after the last.
     async part() is FormPart;
+    // Whether it was closed.
     closed() is bool;
+    // Stops reading; the rest of the body is dropped.
     close() is void;
+    // Waits for the reads still running to finish; then true.
     async settled() is bool;
 }
 
+// A running read of a form that can be cancelled and waited for; used inside
+// http/form.
 role FormDraining {
+    // Stops it.
     cancel() is void;
+    // Waits for it to finish.
     async settled() is bool;
 }
 
@@ -114,6 +161,7 @@ role FormDraining {
 object ParsedMultipartForm {
     has session is MultipartSession;
 
+    // Reads origin as parts between boundary lines, within limits.
     ParsedMultipartForm(origin is BodyReading, boundary is string, limits is FormLimits) {
         let checked = FormBoundary(boundary);
         confirm !origin.closed() else throw MultipartFormClosed.closed;
@@ -122,6 +170,7 @@ object ParsedMultipartForm {
         );
     }
 
+    // The parts.
     parts() is MultipartParts {
         session;
     }
@@ -995,11 +1044,14 @@ hidden object FormMetadataText {
     }
 }
 
+// A text field of a multipart form.
 object FormText {
     has part is FormPart;
     has charset is string;
     has maximum is int;
 
+    // part in the charset its Content-Type names (US-ASCII otherwise), at most
+    // 1 MiB.
     FormText(part is FormPart) {
         self.part = part;
         charset = FormTextCharset(part.headers()).string();
@@ -1007,6 +1059,7 @@ object FormText {
         confirm !part.file() else throw InvalidMultipartForm.because("file is not a text field");
     }
 
+    // part in charset, at most maximum bytes (1 MiB at most).
     FormText(part is FormPart, charset is string, maximum is int) {
         confirm !part.file() && maximum >= 0 && maximum <= 1048576
             else throw InvalidMultipartForm.because("text field projection limit");
@@ -1021,6 +1074,7 @@ object FormText {
         FormCharset(charset);
     }
 
+    // The text.
     async text() is string {
         let input = part.body();
         defer input.close();
@@ -1118,6 +1172,7 @@ object ParsedUrlEncodedForm {
     has limits is FormLimits;
     has pending is Atomic<@Future<QueryParameters>>;
 
+    // Reads origin as a URL-encoded form, within limits.
     ParsedUrlEncodedForm(origin is BodyReading, limits is FormLimits) {
         confirm !origin.closed() else throw MultipartFormClosed.closed;
         self.origin = origin;
@@ -1126,15 +1181,18 @@ object ParsedUrlEncodedForm {
         pending = Atomic(empty);
     }
 
+    // The fields, in order.
     async parameters() is QueryParameters {
         let task = self.operation();
         await task;
     }
 
+    // Whether it was closed.
     closed() is bool {
         origin.closed();
     }
 
+    // Stops reading.
     close() is void {
         for pending.value() -> task {
             task.cancel();
@@ -1146,6 +1204,7 @@ object ParsedUrlEncodedForm {
         self.close();
     }
 
+    // Reads the fields now; parameters() is the usual call.
     async read() is QueryParameters {
         defer origin.close();
         let maximum = limits.total_bytes().int();

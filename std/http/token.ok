@@ -1,10 +1,17 @@
 module http/token v1.0.0;
 
+// Tokens (RFC 9110 §5.6.2): the words of HTTP. Methods, field names, codings,
+// media types and cookie names are tokens.
+//
+//     HttpToken("X-Trace").string();
+//     HttpToken("two words");                 // InvalidToken
+
 // A token of RFC 9110 §5.6.2: one or more `tchar`. Methods, field names,
 // codings, media types and cookie names are tokens. Checked at construction.
 object HttpToken {
     has origin is string;
 
+    // Checks origin: one or more tchar; InvalidToken otherwise.
     HttpToken(origin is string) {
         confirm origin.length() > 0 else throw InvalidToken.origin(origin);
         // Characters, not encoded bytes (#503): a character past ASCII is no
@@ -34,11 +41,13 @@ object HttpToken {
         self.origin = origin;
     }
 
+    // The token.
     string() is string {
         origin;
     }
 }
 
+// Text that is not a token.
 enum InvalidToken is Error = (origin(origin is string));
 
 test "tokens are tchar runs" {

@@ -1,11 +1,18 @@
 module http/method v1.0.0;
 
-// An HTTP method: the methods of RFC 9110 and PATCH (RFC 5789), and
-// `other(name)` for an extension token. Methods are case-sensitive: "get" is
-// an extension, not GET.
+// HTTP methods: those of RFC 9110 and PATCH (RFC 5789), and `other(name)` for
+// an extension token.
+//
+//     MethodName(Method.put).string();                       // "PUT"
+//     MethodName("GET").method();                            // Method.get
+//     MethodName("get").method();                            // Method.other("get")
+//     MethodSemantics(Method.put).idempotent();              // true
+//
+// Methods are case-sensitive: "get" is an extension, not GET.
 
 import "http/token" take HttpToken, InvalidToken;
 
+// An HTTP method; other(name) is an extension token.
 enum Method = (get, head, post, put, patch, delete, options, trace, connect, other(name is string));
 
 // The token of a method on the wire, and the method of a token. Validation
@@ -15,6 +22,7 @@ enum Method = (get, head, post, put, patch, delete, options, trace, connect, oth
 object MethodName {
     has origin is string;
 
+    // The method of token; InvalidMethod when it is not a token.
     MethodName(token is string) {
         origin = try {
             HttpToken(token).string();
@@ -24,6 +32,7 @@ object MethodName {
         };
     }
 
+    // The token of method; `Method.other("GET")` is refused.
     MethodName(method is Method) {
         let token = match method {
             case Method.get {
@@ -61,10 +70,12 @@ object MethodName {
         origin = token;
     }
 
+    // The token.
     string() is string {
         origin;
     }
 
+    // The method.
     method() is Method {
         match origin {
             case "GET" {
@@ -106,10 +117,12 @@ object MethodName {
 object MethodSemantics {
     has origin is Method;
 
+    // The semantics of origin.
     MethodSemantics(origin is Method) {
         self.origin = origin;
     }
 
+    // Whether it is safe: GET, HEAD, OPTIONS and TRACE.
     safe() is bool {
         origin == Method.get
             || origin == Method.head
@@ -117,6 +130,7 @@ object MethodSemantics {
             || origin == Method.trace;
     }
 
+    // Whether it is idempotent: the safe methods, PUT and DELETE.
     idempotent() is bool {
         self.safe() || origin == Method.put || origin == Method.delete;
     }

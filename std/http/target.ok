@@ -1,18 +1,42 @@
 module http/target v1.0.0;
 
+// Request targets (RFC 9112 §3.2): the four forms of the second word of a
+// request line.
+//
+//     let target = ParsedRequestTarget(origin: "/search?q=okkama", method: Method.get).target();
+//     target.kind();                       // RequestTargetKind.origin
+//     target.path();                       // "/search"
+//     target.query() else "";              // "q=okkama"
+//
+//     OriginTarget(path: "/", query: Maybe<string>.none);
+//     AbsoluteTarget(ParsedUrl("http://example.com/").parts());   // to a proxy
+//     AuthorityTarget(ParsedUrl("//example.com:443").parts());   // CONNECT
+//     AsteriskTarget();                                           // OPTIONS *
+//
+// Only CONNECT takes the authority form and only OPTIONS the asterisk form.
+// Asking a target for a part its form does not have is WrongRequestTargetKind.
+
 import "http/method" take Method;
 import "url/value" take UrlParts, UrlComponentText, ParsedUrl, InvalidUrl;
 import "url/percent" take UrlComponent;
 import "encoding/single_byte" take AsciiEncoded, UnrepresentableAsciiCharacter;
 
+// Which form a target has.
 enum RequestTargetKind = (origin, absolute, authority, asterisk);
 
+// A request target.
 role RequestTarget {
+    // Its form.
     kind() is RequestTargetKind;
+    // The path.
     path() is string;
+    // The query, without `?`, or none.
     query() is Maybe<string>;
+    // The absolute URL.
     url() is UrlParts;
+    // The host and port.
     authority() is UrlParts;
+    // The target as a request line writes it.
     string() is string;
 }
 
@@ -60,6 +84,7 @@ object OriginTarget does RequestTarget {
         self.query = canonical_query;
     }
 
+    // The path and query of origin, which has no scheme, host or fragment.
     OriginTarget(origin is UrlParts) {
         confirm origin::Parts::scheme == ""
             && origin::Parts::host == Maybe<string>.none
@@ -72,26 +97,32 @@ object OriginTarget does RequestTarget {
         query = checked.query();
     }
 
+    // RequestTargetKind.origin.
     kind() is RequestTargetKind {
         RequestTargetKind.origin;
     }
 
+    // The path.
     path() is string {
         path;
     }
 
+    // The query, or none.
     query() is Maybe<string> {
         query;
     }
 
+    // WrongRequestTargetKind: this form has none.
     url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 
+    // The path, and `?` and the query.
     string() is string {
         path + match query {
             case Maybe.some(text) {
@@ -104,9 +135,11 @@ object OriginTarget does RequestTarget {
     }
 }
 
+// The absolute form: a whole URL, as sent to a proxy.
 object AbsoluteTarget does RequestTarget {
     has origin is UrlParts;
 
+    // The URL origin; it must be http or https.
     AbsoluteTarget(origin is UrlParts) {
         confirm origin::Parts::scheme == "http" || origin::Parts::scheme == "https"
             else throw InvalidRequestTarget.because("HTTP absolute URL required");
@@ -120,10 +153,12 @@ object AbsoluteTarget does RequestTarget {
         self.origin = origin;
     }
 
+    // RequestTargetKind.absolute.
     kind() is RequestTargetKind {
         RequestTargetKind.absolute;
     }
 
+    // The URL.
     url() is UrlParts {
         origin;
     }
@@ -133,14 +168,17 @@ object AbsoluteTarget does RequestTarget {
         origin::Parts::path;
     }
 
+    // The URL's query, or none.
     query() is Maybe<string> {
         origin::Parts::query;
     }
 
+    // WrongRequestTargetKind: this form has none.
     authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 
+    // The URL.
     string() is string {
         origin.string();
     }
@@ -151,6 +189,7 @@ object AbsoluteTarget does RequestTarget {
 object AuthorityTarget does RequestTarget {
     has origin is UrlParts;
 
+    // Host and port only, with the port given; InvalidRequestTarget otherwise.
     AuthorityTarget(origin is UrlParts) {
         confirm origin::Parts::scheme == ""
             && origin::Parts::path == ""
@@ -168,68 +207,85 @@ object AuthorityTarget does RequestTarget {
         self.origin = origin;
     }
 
+    // RequestTargetKind.authority.
     kind() is RequestTargetKind {
         RequestTargetKind.authority;
     }
 
+    // The host and port.
     authority() is UrlParts {
         origin;
     }
 
+    // WrongRequestTargetKind: this form has none.
     path() is string {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     query() is Maybe<string> {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
+    // `host:port`.
     string() is string {
         origin.authority();
     }
 }
 
+// The asterisk form `*`, for OPTIONS to a whole server.
 object AsteriskTarget does RequestTarget {
+    // `*`.
     AsteriskTarget();
 
+    // RequestTargetKind.asterisk.
     kind() is RequestTargetKind {
         RequestTargetKind.asterisk;
     }
 
+    // `*`.
     string() is string {
         "*";
     }
 
+    // WrongRequestTargetKind: this form has none.
     path() is string {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     query() is Maybe<string> {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.origin, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     url() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.absolute, self.kind());
     }
 
+    // WrongRequestTargetKind: this form has none.
     authority() is UrlParts {
         throw WrongRequestTargetKind.detailed(RequestTargetKind.authority, self.kind());
     }
 }
 
+// Whether a method takes a target form.
 object RequestTargetMethod {
     has method is Method;
     has kind is RequestTargetKind;
 
+    // method with a target of kind.
     RequestTargetMethod(method is Method, kind is RequestTargetKind) {
         self.method = method;
         self.kind = kind;
     }
 
+    // CONNECT takes only the authority form; only OPTIONS takes `*`.
     valid() is bool {
         if method == Method.connect {
             return kind == RequestTargetKind.authority;
@@ -239,15 +295,19 @@ object RequestTargetMethod {
     }
 }
 
+// A target read from a request line.
 object ParsedRequestTarget {
     has origin is string;
     has method is Method;
 
+    // origin as the target of method.
     ParsedRequestTarget(origin is string, method is Method) {
         self.origin = origin;
         self.method = method;
     }
 
+    // The target; InvalidRequestTarget for text that is not one, or longer than
+    // 8192.
     target() is RequestTarget {
         confirm origin != "" && origin.length() <= 8192
             else throw InvalidRequestTarget.because("target source length");
@@ -304,10 +364,12 @@ object ParsedRequestTarget {
 object RequestTargetSnapshot {
     has origin is RequestTarget;
 
+    // A checked copy of origin, built from its parts.
     RequestTargetSnapshot(origin is RequestTarget) {
         self.origin = origin;
     }
 
+    // The copy.
     target() is RequestTarget {
         let wire = origin.string();
         confirm wire != "" && wire.length() <= 8192
@@ -335,11 +397,13 @@ object RequestTargetSnapshot {
     }
 }
 
+// A part asked of a target form that does not have it.
 enum WrongRequestTargetKind is Error = (detailed(
     expected is RequestTargetKind,
     actual is RequestTargetKind
 ));
 
+// A target that is not valid; reason says why.
 enum InvalidRequestTarget is Error = (because(reason is string));
 
 test "origin-form keeps double slash path and explicit query" {

@@ -1,5 +1,24 @@
 module http/body v1.0.0;
 
+// Message bodies: what a request or response carries, read once or many times.
+//
+//     Response(status: Status.ok, content: TextBody(text: "hello"));
+//     Response(status: Status.ok, content: JsonBody(Json(JsonField("id", 7))));
+//     Response(status: Status.ok, content: BytesBody(bytes: image, media_type: "image/png"));
+//
+//     let reading = request.body().reading();
+//     let chunk = await reading.bytes(8192);      // [] at the end
+//     reading.close();
+//
+// A BodyOpening describes a body; reading() starts one pass over it and gives a
+// BodyReading. A replayable opening (bytes in memory) can be read again; a
+// one-shot one (a socket) cannot, and a second reading() is BodyAlreadyOpened.
+// An unknown length is UnknownBodyLength, never a negative number. Trailers are
+// known only after the last byte.
+//
+// Most code reads a whole body through Request.text(limit) or a client
+// response's text() and json(), and writes one through a Content.
+
 import "http/header" take Headers;
 import "json" take Json;
 import "encoding/utf" take Utf8Encoded;
@@ -14,32 +33,44 @@ import "async/scope" take FutureGroup;
 // Body openings describe a source; each reader owns one consumption lifetime.
 // Unknown length is explicit and never represented by a negative sentinel.
 role BodyOpening {
+    // Its length in bytes; UnknownBodyLength when it is not known.
     length() is BigInt;
+    // Whether reading() may be called more than once.
     replayable() is bool;
+    // Starts reading the body.
     reading() is BodyReading;
     // The whole body when it is already in memory, for writing it with its
     // head in one write (#115); a stream answers none.
     contained() is Maybe<@byte>;
 }
 
+// One pass over a body.
 role BodyReading {
+    // At most limit bytes of the body; [] at its end. BodyClosed after close().
     async bytes(limit is int) is @byte;
+    // The trailer fields; TrailersUnavailable before the end.
     trailers() is Headers;
+    // Whether it was closed.
     closed() is bool;
+    // Stops reading; the rest of the body is dropped.
     close() is void;
 }
 
+// Bytes in memory as a body; it can be read any number of times.
 object ByteBody does BodyOpening {
     has origin is @byte;
 
+    // The bytes.
     ByteBody(origin is @byte) {
         self.origin = origin;
     }
 
+    // The number of bytes.
     length() is BigInt {
         BigInt(origin.size().string());
     }
 
+    // true.
     replayable() is bool {
         true;
     }
@@ -49,6 +80,7 @@ object ByteBody does BodyOpening {
         Maybe.some(origin);
     }
 
+    // A new reading from the start.
     reading() is BodyReading {
         MemoryBodyReading(origin);
     }
@@ -102,7 +134,9 @@ hidden object MemoryBodyReading does BodyReading, AsyncReading, Closing {
 // A body together with its media type: what a client's post, put and patch
 // send, with the type as their Content-Type.
 role Content {
+    // The Content-Type the body is sent with.
     media_type() is string;
+    // The body to send.
     opening() is BodyOpening;
 }
 
@@ -110,14 +144,17 @@ role Content {
 object JsonBody does Content {
     has value is Json;
 
+    // value written as JSON.
     JsonBody(value is Json) {
         self.value = value;
     }
 
+    // `application/json`.
     media_type() is string {
         "application/json";
     }
 
+    // The body to send.
     opening() is BodyOpening {
         ByteBody(Utf8Encoded(value.string()).bytes());
     }
@@ -128,15 +165,18 @@ object TextBody does Content {
     has text is string;
     has media is string;
 
+    // text as UTF-8, sent as media_type.
     TextBody(text is string, media_type is string = "text/plain; charset=utf-8") {
         self.text = text;
         media = media_type;
     }
 
+    // The media type it was given.
     media_type() is string {
         media;
     }
 
+    // The body to send.
     opening() is BodyOpening {
         ByteBody(Utf8Encoded(text).bytes());
     }
@@ -147,27 +187,34 @@ object BytesBody does Content {
     has bytes is @byte;
     has media is string;
 
+    // bytes, sent as media_type.
     BytesBody(bytes is @byte, media_type is string = "application/octet-stream") {
         self.bytes = bytes;
         media = media_type;
     }
 
+    // The media type it was given.
     media_type() is string {
         media;
     }
 
+    // The body to send.
     opening() is BodyOpening {
         ByteBody(bytes);
     }
 }
 
+// A body with no bytes.
 object EmptyBody does BodyOpening {
+    // The empty body.
     EmptyBody();
 
+    // 0.
     length() is BigInt {
         BigInt(0);
     }
 
+    // true.
     replayable() is bool {
         true;
     }
@@ -178,26 +225,31 @@ object EmptyBody does BodyOpening {
         Maybe.some(empty);
     }
 
+    // A reading that is already at its end.
     reading() is BodyReading {
         let empty is @byte = [];
         MemoryBodyReading(empty);
     }
 }
 
+// A body that is read once, such as one arriving on a socket.
 object OneShotBody does BodyOpening {
     has origin is BodyReading;
     has opened is Atomic<bool>;
 
+    // The body origin reads.
     OneShotBody(origin is BodyReading) {
         confirm !origin.closed() else throw BodyClosed.closed;
         self.origin = origin;
         opened = Atomic(false);
     }
 
+    // UnknownBodyLength.
     length() is BigInt {
         throw UnknownBodyLength.unknown;
     }
 
+    // false.
     replayable() is bool {
         false;
     }
@@ -207,6 +259,7 @@ object OneShotBody does BodyOpening {
         Maybe<@byte>.none;
     }
 
+    // origin the first time; BodyAlreadyOpened after.
     reading() is BodyReading {
         confirm opened.compare_and_replace(false, true) else throw BodyAlreadyOpened.opened;
         origin;
@@ -234,6 +287,7 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
     has lock is Lock;
     has pending is Atomic<@Future<@byte>>;
 
+    // Reads input, closing owner when done; trailers are published at its end.
     StreamBodyReading(input is AsyncReading, owner is Closing, trailers is Headers) {
         confirm !owner.closed() else throw BodyClosed.closed;
         self.input = input;
@@ -246,15 +300,18 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
         pending = Atomic(empty);
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // The trailer fields; TrailersUnavailable before the end.
     trailers() is Headers {
         confirm finished.ready() else throw TrailersUnavailable.unavailable;
         end;
     }
 
+    // Stops reading and closes the owner.
     close() is void {
         if !stopped.ready() {
             stopped.set();
@@ -267,6 +324,7 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
         }
     }
 
+    // Stops reading at once, cancelling a pending read.
     abort() is void {
         try {
             self.close();
@@ -275,6 +333,7 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
         catch failure is NativeFailure {}
     }
 
+    // At most limit bytes; [] at the end.
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !self.closed() else throw BodyClosed.closed;
@@ -322,12 +381,14 @@ object ByteBodyInput does AsyncReading, Closing {
     has offset is Atomic<int>;
     has stopped is Event;
 
+    // Reads origin.
     ByteBodyInput(origin is @byte) {
         self.origin = origin;
         offset = Atomic(0);
         stopped = Event();
     }
 
+    // At most limit bytes; [] at the end.
     async bytes(limit is int) is @byte {
         confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         confirm !self.closed() else throw BodyClosed.closed;
@@ -343,10 +404,12 @@ object ByteBodyInput does AsyncReading, Closing {
         origin.slice(start, start + amount);
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.ready();
     }
 
+    // Closes it.
     close() is void {
         stopped.set();
     }
@@ -386,12 +449,16 @@ hidden object BodyReadCleanup {
     }
 }
 
+// The body was read after it was closed.
 enum BodyClosed is Error = (closed);
 
+// A one-shot body was opened twice.
 enum BodyAlreadyOpened is Error = (opened);
 
+// The length of the body is not known in advance.
 enum UnknownBodyLength is Error = (unknown);
 
+// Trailers were asked for before the end of the body.
 enum TrailersUnavailable is Error = (unavailable);
 
 async test "byte body reads are independent and trailers require EOF" {

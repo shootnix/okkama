@@ -1,5 +1,13 @@
 module http/content_coding v1.0.0;
 
+// Content codings (RFC 9110 §8.4): the names in Content-Encoding and
+// Accept-Encoding.
+//
+//     ContentCoding("GZip").string();          // "gzip"
+//
+// Names are case-insensitive and kept lowercase. This is only the name; the
+// codecs are in http/body_coding.
+
 import "http/token" take HttpToken, InvalidToken;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 
@@ -8,6 +16,7 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 object ContentCoding {
     has origin is string;
 
+    // Checks origin as a token; `*` and anything else are InvalidContentCoding.
     ContentCoding(origin is string) {
         confirm origin != "*" else throw InvalidContentCoding.origin(origin);
         let checked = try {
@@ -28,11 +37,13 @@ object ContentCoding {
         self.origin = Utf8Decoded(folded).string();
     }
 
+    // The name, lowercase.
     string() is string {
         origin;
     }
 }
 
+// A name that is not a coding.
 enum InvalidContentCoding is Error = (origin(origin is string));
 
 test "coding identity is canonical without claiming codec support" {

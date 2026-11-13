@@ -1,16 +1,27 @@
 module http/version v1.0.0;
 
+// HTTP versions, and the `HTTP/1.x` text of HTTP/1 message lines.
+//
+//     Http1VersionText(HttpVersion.http_1_1).string();         // "HTTP/1.1"
+//     ParsedHttp1Version("HTTP/1.0").version();                // HttpVersion.http_1_0
+//
+// HTTP/2 has no such text; which protocol a connection speaks is chosen by ALPN
+// or by configuration.
+
 // Message identities and the exact HTTP/1 textual token grammar. ALPN selection
 // and consuming connection policy belong to a later verified transport slice.
 enum HttpVersion = (http_1_0, http_1_1, http_2);
 
+// The text of an HTTP/1 version.
 object Http1VersionText {
     has origin is HttpVersion;
 
+    // The version.
     Http1VersionText(origin is HttpVersion) {
         self.origin = origin;
     }
 
+    // `HTTP/1.0` or `HTTP/1.1`; UnsupportedHttpVersion for HTTP/2.
     string() is string {
         match origin {
             case HttpVersion.http_1_0 {
@@ -26,13 +37,17 @@ object Http1VersionText {
     }
 }
 
+// An HTTP/1 version read from text.
 object ParsedHttp1Version {
     has origin is string;
 
+    // The text.
     ParsedHttp1Version(origin is string) {
         self.origin = origin;
     }
 
+    // The version; UnsupportedHttpVersion for anything but `HTTP/1.0` and
+    // `HTTP/1.1`.
     version() is HttpVersion {
         match origin {
             case "HTTP/1.0" {
@@ -48,6 +63,7 @@ object ParsedHttp1Version {
     }
 }
 
+// A version this side does not speak.
 enum UnsupportedHttpVersion is Error = (unsupported);
 
 test "HTTP2 identity cannot be serialized as an HTTP1 version" {

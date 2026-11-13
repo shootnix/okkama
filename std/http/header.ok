@@ -1,8 +1,21 @@
 module http/header v1.0.0;
 
-// HTTP names share the HTTP token grammar, not mail's broader field-name
-// grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
-// because language structural equality also observes the preserved spelling.
+// Header fields: names, values and the set of fields of a message.
+//
+//     let headers = Headers(
+//         Header(name: "Content-Type", value: "text/plain"),
+//         Header(name: "Cache-Control", value: "no-store"),
+//     );
+//     headers.text("content-type");                       // "text/plain"
+//     headers.maybe("Retry-After").int() else 0;
+//     headers.list("Accept");                             // members of a list field
+//     let more = headers.addition(Header(name: "Vary", value: "Accept"));
+//
+// Names are tokens and match without regard to case, but keep their spelling.
+// Values are octet strings (one character per byte, Latin-1) without controls;
+// leading and trailing spaces and tabs are removed. Nothing is folded or
+// joined: two fields of one name stay two fields. Headers are bounded by
+// HeaderLimits (1024 fields and 1 MiB by default).
 
 import "http/token" take HttpToken, InvalidToken;
 import "encoding/single_byte" take Latin1Encoded, Latin1Decoded;
@@ -11,9 +24,11 @@ import "compare" take Comparing, Order;
 import "error" take InvalidArgument;
 import "strings/parse" take Number, InvalidInteger;
 
+// A field name: a token, matched without regard to case.
 object HeaderName does Comparing<HeaderName> {
     has spelling, canonical is string;
 
+    // Checks origin; InvalidHeader when it is not a token.
     HeaderName(origin is string) {
         let checked = try {
             HttpToken(origin).string();
@@ -26,14 +41,17 @@ object HeaderName does Comparing<HeaderName> {
         canonical = checked.lower();
     }
 
+    // The name as it was spelled.
     string() is string {
         spelling;
     }
 
+    // The name in lowercase, as it is matched.
     lowercase() is string {
         canonical;
     }
 
+    // Orders by the lowercase name.
     order(other is HeaderName) is Order {
         self.lowercase().order(other.lowercase());
     }
@@ -44,13 +62,17 @@ object HeaderName does Comparing<HeaderName> {
 // A field of a message head, what Headers are made of: a Header is one, and
 // so is anything that knows its header form, such as a SetCookie.
 role HeaderField {
+    // The field as a Header.
     header() is Header;
 }
 
+// One field: a name and a value.
 object Header does HeaderField {
     has name is HeaderName;
     has value is string;
 
+    // name with value; InvalidHeader for a control or a character above one
+    // byte.
     Header(name is HeaderName, value is string) {
         self.name = name;
         self.value = HttpFieldValue(name: name, origin: value).string();
@@ -64,14 +86,17 @@ object Header does HeaderField {
         self.value = HttpFieldValue(name: field, origin: value).string();
     }
 
+    // This field.
     header() is Header {
         self;
     }
 
+    // The name.
     name() is HeaderName {
         name;
     }
 
+    // The value, without leading and trailing spaces and tabs.
     value() is string {
         value;
     }
@@ -143,14 +168,17 @@ hidden object HttpFieldValue {
     }
 }
 
+// How many fields and bytes Headers may hold.
 object HeaderLimits {
     has count, budget is int;
 
+    // 1024 fields and 1 MiB.
     HeaderLimits() {
         count = 1024;
         budget = 1048576;
     }
 
+    // The limits as given.
     HeaderLimits(entries is int, bytes is int) {
         confirm entries >= 0 && bytes >= 0
             else throw InvalidArgument.because("HTTP header limits must be nonnegative");
@@ -158,6 +186,7 @@ object HeaderLimits {
         budget = bytes;
     }
 
+    // The number of fields and of bytes.
     cap Limits {
         entries is int {
             count;
@@ -176,6 +205,7 @@ object Headers {
     has limits is HeaderLimits;
     has used is int;
 
+    // The fields, in order, within the default limits.
     Headers(entries is Sequencing<Header>) {
         let bounds = HeaderLimits();
         let snapshot = HeaderSnapshot(entries: entries, limits: bounds);
@@ -198,6 +228,7 @@ object Headers {
         limits = bounds;
     }
 
+    // The fields within limits; HeaderLimitExceeded beyond.
     Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
         let snapshot = HeaderSnapshot(entries: entries, limits: limits);
         origin = snapshot.entries();
@@ -205,20 +236,25 @@ object Headers {
         self.limits = limits;
     }
 
+    // The limits.
     limits() is HeaderLimits {
         limits;
     }
 
+    // Every field, in order.
     entries() is Sequencing<Header> {
         origin;
     }
 
+    // Whether a field has the name.
     membership(name is HeaderName) is bool {
         origin.reduce(false) -> found, entry {
             found || entry.name().order(name) == Order.equal;
         };
     }
 
+    // The value of the first field of the name; MissingHeader when there is
+    // none.
     first(name is HeaderName) is string {
         for origin -> entry {
             if entry.name().order(name) == Order.equal {
@@ -228,6 +264,7 @@ object Headers {
         throw MissingHeader.name(name.string());
     }
 
+    // The values of every field of the name, in order.
     values(name is HeaderName) is Sequencing<string> {
         let matching is @Header = origin.filter() -> entry {
             entry.name().order(name) == Order.equal;
@@ -292,10 +329,12 @@ object Headers {
     }
 }
 
+// Headers without the fields of some names.
 object HeadersWithout {
     has origin is Headers;
     has selected is @string;
 
+    // origin without the fields named in names.
     HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
         let count = names.size();
         confirm count >= 0 else throw InvalidArgument.because("negative header name sequence size");
@@ -308,6 +347,7 @@ object HeadersWithout {
         self.origin = origin;
     }
 
+    // The remaining fields.
     headers() is Headers {
         let source = origin.entries();
         let empty is @Header = [];
@@ -327,15 +367,18 @@ object HeadersWithout {
     }
 }
 
+// Headers with every field of one name replaced by one field.
 object ReplacedHeader {
     has origin is Headers;
     has entry is Header;
 
+    // origin with entry in place of the fields of its name.
     ReplacedHeader(origin is Headers, entry is Header) {
         self.origin = origin;
         self.entry = entry;
     }
 
+    // The fields.
     headers() is Headers {
         HeadersWithout(origin: origin, names: [entry.name()]).headers().addition(entry);
     }
@@ -347,11 +390,14 @@ object Http2Headers {
     has origin is Headers;
     has request is bool;
 
+    // origin checked for HTTP/2, as request or response fields.
     Http2Headers(origin is Headers, request is bool) {
         self.origin = origin;
         self.request = request;
     }
 
+    // The fields with lowercase names; InvalidHeader for a connection-specific
+    // field, or TE other than `trailers`.
     headers() is Headers {
         let source = origin.entries();
         let entries is @Header = (0..source.size()).map() -> index {
@@ -386,15 +432,18 @@ object HeaderMaybeReader {
     has name is string;
     has value is Maybe<string>;
 
+    // Made by Headers.maybe(name); not constructed directly.
     HeaderMaybeReader(name is string, value is Maybe<string>) {
         self.name = name;
         self.value = value;
     }
 
+    // The value, or none.
     text() is Maybe<string> {
         value;
     }
 
+    // The value as a decimal integer, or none; InvalidHeader for another form.
     int() is Maybe<int> {
         match value {
             case Maybe.some(text) {
@@ -471,20 +520,26 @@ hidden object HeaderListMembers {
     }
 }
 
+// A name that is not a token, or a value with a control; name and reason say
+// which.
 enum InvalidHeader is Error = (detailed(name is string, reason is string));
 
+// No field has that name.
 enum MissingHeader is Error = (name(name is string));
 
+// More fields or bytes than the limits; kind says which.
 enum HeaderLimitExceeded is Error = (kind(kind is string));
 
 // Internal representation collaborators; modules do not have private exports.
 object HttpAsciiLowercase {
     has origin is string;
 
+    // Text to lowercase in ASCII only.
     HttpAsciiLowercase(origin is string) {
         self.origin = origin;
     }
 
+    // origin with A-Z lowered.
     string() is string {
         // ASCII text, as every field name is: the builtin lower() is exact
         // there, and text without capitals stays as it is (#503).

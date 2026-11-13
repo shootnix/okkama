@@ -1,10 +1,25 @@
 module http/message v1.0.0;
 
-// Immutable message metadata retains the body opening's declared capability.
-// It never opens, measures, closes or queries replayability during construction.
-// Connection/framing consumers own body consumption and transport validation.
-// A request shows its head through the cap `Head`; `body()` is the opening to
-// read. Unless told, it is a GET with no fields, an empty body and HTTP/1.1.
+// Requests and responses: a head (method, target, status, fields, version) and
+// a body.
+//
+//     let request = Request(url: "https://example.com/", headers: Headers(Header(name: "Accept", value: "text/html")));
+//     request::Head::method;                                   // Method.get
+//     request::Head::target.path();                            // "/"
+//     let body = await request.text(limit: 65536);
+//
+//     Response(status: Status.ok, content: TextBody(text: "hi"));
+//     Response(status: Status.no_content);
+//
+// Unless told, a request is a GET with no fields, an empty body and HTTP/1.1; a
+// response has no fields, an empty body and HTTP/1.1. A message never reads its
+// body itself: the connection or the handler does. A Responding is anything
+// that builds a Response, such as the replies in web/reply.
+//
+// # Errors
+//
+// - BodyLimitExceeded: a body read whole was longer than the limit.
+// - InvalidHttpMessage: a head that does not fit together.
 
 import "http/method" take Method, MethodName;
 import "http/status" take Status, StatusCode, StatusClass;
@@ -19,6 +34,7 @@ import "io/transfer" take ReadUntilEnd, ReadLimitExceeded;
 import "numbers/bigint" take BigInt;
 import "compare" take Order;
 
+// An HTTP request: its head through the cap `Head`, and its body.
 object Request {
     has method is Method;
     has target is RequestTarget;
@@ -26,6 +42,8 @@ object Request {
     has body is BodyOpening;
     has version is HttpVersion;
 
+    // A request for target; WrongRequestTargetKind or InvalidRequestTarget when
+    // the target does not suit the method.
     Request(
         target is RequestTarget,
         method is Method = Method.get,
@@ -58,6 +76,7 @@ object Request {
         self.version = version;
     }
 
+    // The method, target, fields and version.
     cap Head {
         method is Method {
             method;
@@ -76,6 +95,7 @@ object Request {
         }
     }
 
+    // The body opening.
     body() is BodyOpening {
         body;
     }
@@ -138,6 +158,7 @@ hidden object MessageBodyBytes does AsyncReading {
 // What an endpoint answers: a Response, or a reply that builds one with its
 // defaults (TextReply, JsonReply and the others in web/reply).
 role Responding {
+    // The response.
     response() is Response;
 }
 
@@ -149,6 +170,7 @@ object Response does Responding {
     has body is BodyOpening;
     has version is HttpVersion;
 
+    // A response with status and the body as given.
     Response(
         status is Status,
         headers is Headers = Headers(),
@@ -180,6 +202,7 @@ object Response does Responding {
         self.version = version;
     }
 
+    // The status, its code and class, the fields and the version.
     cap Head {
         status is Status {
             status;
@@ -203,18 +226,22 @@ object Response does Responding {
         }
     }
 
+    // The body opening.
     body() is BodyOpening {
         body;
     }
 
+    // This response.
     response() is Response {
         self;
     }
 }
 
+// A method and a target checked to fit together.
 object RequestCoordinates {
     has target is RequestTarget;
 
+    // method with target.
     RequestCoordinates(method is Method, target is RequestTarget) {
         confirm MethodName(method).string().length() <= 8192
             else throw InvalidHttpMessage.because("method source limit exceeded");
@@ -224,13 +251,16 @@ object RequestCoordinates {
         self.target = checked;
     }
 
+    // The target; InvalidRequestTarget when the method does not allow its form.
     target() is RequestTarget {
         target;
     }
 }
 
+// A head that does not fit together; reason says why.
 enum InvalidHttpMessage is Error = (because(reason is string));
 
+// A body was longer than limit.
 enum BodyLimitExceeded is Error = (limit(limit is int));
 
 test "message metadata does not open its empty body" {
