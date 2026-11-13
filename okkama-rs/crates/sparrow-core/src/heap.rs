@@ -178,6 +178,14 @@ pub struct Heap {
     pages: Vec<Page>,
     /// Free list heads per class; a free cell's second word links the next.
     free: [Word; CLASSES.len()],
+    /// The free cells of the last sweep, per class: one chain per page and
+    /// its bytes (#522). A sweep leaves the free lists empty; when one runs
+    /// dry, the next chain becomes the list and its bytes count as
+    /// allocated, as a new page does. Machine code pops cells inline,
+    /// uncounted, so without this a program that recycles its garbage
+    /// reused every swept cell before a collection could come, then grew
+    /// by new pages every cycle.
+    reserve: [Vec<(Word, usize)>; CLASSES.len()],
     large: Vec<Box<[u64]>>,
     /// Bytes of the large objects, live or not yet swept.
     large_bytes: usize,
@@ -313,6 +321,7 @@ impl Heap {
             layouts,
             pages: Vec::new(),
             free: [0; CLASSES.len()],
+            reserve: std::array::from_fn(|_| Vec::new()),
             large: Vec::new(),
             large_bytes: 0,
             allocated: 0,
@@ -426,10 +435,17 @@ impl Heap {
         &mut self.free[class]
     }
 
-    /// Pop a cell of `class` from its free list, adding a page when empty.
+    /// Pop a cell of `class` from its free list, refilling it from the swept
+    /// cells or, when there are none, with a new page.
     pub fn allocate_class(&mut self, class: usize) -> Word {
         if self.free[class] == 0 {
-            self.add_page(class);
+            match self.reserve[class].pop() {
+                Some((chain, bytes)) => {
+                    self.free[class] = chain;
+                    self.allocated += bytes;
+                }
+                None => self.add_page(class),
+            }
         }
         let cell = self.free[class];
         // SAFETY: free cells are at least two words inside a live page.
@@ -437,8 +453,9 @@ impl Heap {
         cell
     }
 
-    /// Growth is counted in pages and large objects, not cells: machine code
-    /// pops free cells inline, and only an empty list reaches the heap.
+    /// Growth is counted in pages, swept chains and large objects, not
+    /// cells: machine code pops free cells inline, and only an empty list
+    /// reaches the heap.
     fn add_page(&mut self, class: usize) {
         self.allocated += PAGE_WORDS * 8;
         let held = self.held_bytes() + PAGE_BYTES;
@@ -1319,19 +1336,24 @@ impl Heap {
     /// Overwrite every free cell past its link (collector stress).
     fn poison(&mut self) {
         for (class, &size) in CLASSES.iter().enumerate() {
-            let mut cell = self.free[class];
-            while cell != 0 {
-                for word in 2..size {
-                    // SAFETY: a free cell of `size` words inside a live page.
-                    unsafe { *((cell + word as Word * 8) as *mut u64) = POISON };
+            let chains = self.reserve[class].iter().map(|&(chain, _)| chain);
+            for mut cell in std::iter::once(self.free[class]).chain(chains) {
+                while cell != 0 {
+                    for word in 2..size {
+                        // SAFETY: a free cell of `size` words inside a live page.
+                        unsafe { *((cell + word as Word * 8) as *mut u64) = POISON };
+                    }
+                    cell = unsafe { *((cell + 8) as *const u64) };
                 }
-                cell = unsafe { *((cell + 8) as *const u64) };
             }
         }
     }
 
     fn sweep(&mut self) {
         self.free = [0; CLASSES.len()];
+        for chains in &mut self.reserve {
+            chains.clear();
+        }
         if let Some(allocations) = &mut self.allocations {
             allocations.live.clear();
         }
@@ -1340,13 +1362,17 @@ impl Heap {
         for page in &mut self.pages {
             let size = CLASSES[page.class];
             let base = page.memory.as_mut_ptr() as Word;
-            for cell in (0..page.memory.len() / size).rev() {
+            let cells = page.memory.len() / size;
+            let mut kept = 0;
+            let mut chain = 0;
+            for cell in (0..cells).rev() {
                 let address = base + (cell * size * 8) as Word;
                 // SAFETY: every cell of a page starts with a header.
                 let header = unsafe { *(address as *const u64) };
                 if header & MARK != 0 {
                     unsafe { *(address as *mut u64) = header & !MARK };
                     live += size * 8;
+                    kept += 1;
                     external_live += unsafe { owned_bytes(address, header) };
                     if let Some(allocations) = &mut self.allocations {
                         census(&mut allocations.live, header, size * 8);
@@ -1357,8 +1383,11 @@ impl Heap {
                     unsafe { release(address, header) };
                     unsafe { *(address as *mut u64) = 0 };
                 }
-                unsafe { *((address + 8) as *mut u64) = self.free[page.class] };
-                self.free[page.class] = address;
+                unsafe { *((address + 8) as *mut u64) = chain };
+                chain = address;
+            }
+            if chain != 0 {
+                self.reserve[page.class].push((chain, (cells - kept) * size * 8));
             }
         }
         let mut large_bytes = 0;
@@ -1568,6 +1597,29 @@ mod tests {
         assert!(heap.stats().collections >= 10);
         // Bounded by the collection threshold, not by the 2M allocations.
         assert!(heap.stats().pages < 200, "{:?}", heap.stats());
+    }
+
+    #[test]
+    fn reused_cells_bring_a_collection_and_the_heap_stops_growing() {
+        // #522: garbage of heap cells alone, nothing charged as Rust memory.
+        // Before, only new pages counted, so every cycle first reused all
+        // the swept cells and then grew by a whole threshold of pages.
+        let mut heap = Heap::new(layouts());
+        let mut warmed = 0;
+        for round in 0..60 {
+            for _ in 0..20_000 {
+                let value = heap.int(7);
+                let _garbage = heap.object_new(0, &[value, value]);
+                if heap.needs_collection() {
+                    heap.collect(|_| {});
+                }
+            }
+            if round == 9 {
+                warmed = heap.stats().pages;
+            }
+        }
+        assert!(heap.stats().collections >= 10, "{:?}", heap.stats());
+        assert!(heap.stats().pages <= warmed + 1, "{warmed} pages after warm-up: {:?}", heap.stats());
     }
 
     #[test]
