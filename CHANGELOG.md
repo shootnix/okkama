@@ -58,6 +58,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   few operands keep the search, which costs them nothing. A 64-entry
   literal: 6.25 → 2.98 µs; `map-literal-12` −12%, `map-literal-8` −8%.
 
+- **Ranges in array literals and accumulators skip the staging copies
+  (#448).** A range part such as `[i..i + 1000]` built a vector of
+  `BigInt`s, one per element, and copied it into the builder; appending an
+  array copied it to a temporary first. Ranges between inline integers now
+  push the words directly, a bounded chunk at a time, and an append extends
+  from the source. `[i..i + 1000]`: 11.7 → 0.91 µs; `[i..i + 8]`: 166 →
+  53 ns; a reduce from a 1 000-element initial array: 1 145 → 938 ns.
+
 ### Fixed
 
 - **A `FutureCompletions` request no longer hangs when another request

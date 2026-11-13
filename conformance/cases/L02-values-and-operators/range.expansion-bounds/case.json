@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.range.expansion-bounds",
+  "title": "Ranges expand at their edges: empty, long, at the largest inline integer and across it",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.RANGES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[]\n[5]\n[-3,-2,-1,0,1]\n70000 from 0 to 69999\n65540 from 1 to 7\n[4611686018427387900,4611686018427387901,4611686018427387902,4611686018427387903]\n[4611686018427387902,4611686018427387903,4611686018427387904,4611686018427387905]\n[-4611686018427387905,-4611686018427387904,-4611686018427387903]\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.6",
+    "docs/okkama-spec-11072026.md#8.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #448 (0.5.7)",
+    "expected_basis": "a range part start..end expands to the integers from start up to end (exclusive) or end (inclusive, ..=), the same whether they are inline or big integers."
+  },
+  "status": "mandatory"
+}

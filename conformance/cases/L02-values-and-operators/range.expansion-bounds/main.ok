@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Ranges expanded into arrays at their edges: empty, past 65 536 elements,
+// next to the largest inline integer and across it into big integers.
+object Show {
+    has items is @int;
+    Show(:items);
+    string() is string {
+        if items.size() <= 6 {
+            return "[" + items.map() -> n { n.string(); }.join(",") + "]";
+        }
+        items.size().string() + " from " + items[0].string() + " to " + items[items.size() - 1].string();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Show(items: [5..5]).string());
+    out.writeln(Show(items: [5..=5]).string());
+    out.writeln(Show(items: [-3..2]).string());
+    out.writeln(Show(items: [0..70000]).string());
+    out.writeln(Show(items: [1, 3..=65540, 7]).string());
+    out.writeln(Show(items: [4611686018427387900..=4611686018427387903]).string());
+    out.writeln(Show(items: [4611686018427387902..4611686018427387906]).string());
+    out.writeln(Show(items: [-4611686018427387905..=-4611686018427387903]).string());
+    let crossed is @int = [4611686018427387902..4611686018427387906];
+    out.writeln((crossed[3] - crossed[0]).string());
+    0;
+}

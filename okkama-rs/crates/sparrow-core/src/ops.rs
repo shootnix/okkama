@@ -825,6 +825,9 @@ pub extern "C" fn rt_trie_get(ctx: *mut Ctx, array: Word, position: u64) -> Word
 
 /// Grow a builder's items and charge the capacity its vector took on
 /// (#331): O(1), and nothing at all while the capacity holds.
+/// The most integers a range adds to a builder at once (#448).
+const RANGE_CHUNK: i64 = 1 << 16;
+
 fn grow_builder(heap: &mut crate::heap::Heap, builder: Word, grow: impl FnOnce(&mut Vec<Word>)) {
     let grown = {
         let items = &mut heap.payload_mut::<Builder>(builder).expect("builder").items;
@@ -1337,13 +1340,48 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &O
         }
         I::BuilderAppend { builder, array, .. } => {
             let builder = value(builder);
-            let items = runtime.heap.elements(value(array)).to_vec();
-            grow_builder(&mut runtime.heap, builder, |all| all.extend(items));
+            // Straight from the source, with no staging copy (#448): a trie's
+            // elements come as an owned vector, a flat or shared array's are
+            // its slots, which growing the builder's own vector leaves alone.
+            let (owned, first, count) = match runtime.heap.elements(value(array)) {
+                std::borrow::Cow::Owned(items) => (Some(items), std::ptr::null(), 0),
+                std::borrow::Cow::Borrowed(slots) => (None, slots.as_ptr(), slots.len()),
+            };
+            match owned {
+                Some(items) => grow_builder(&mut runtime.heap, builder, |all| all.extend(items)),
+                None => {
+                    // SAFETY: see above; heap objects are neither moved nor freed here.
+                    let slots = unsafe { std::slice::from_raw_parts(first, count) };
+                    grow_builder(&mut runtime.heap, builder, |all| all.extend_from_slice(slots));
+                }
+            }
             Ok(builder)
         }
         I::BuilderRange { builder, start, end, inclusive, .. } => {
             let builder = value(builder);
-            let (start, end) = (runtime.big_value(value(start)), runtime.big_value(value(end)));
+            let (start, end) = (value(start), value(end));
+            // Inline endpoints, the usual case: every integer between them is
+            // inline too, pushed as a word with no BigInt (#448), and the
+            // builder grows a bounded chunk at a time.
+            if let (Some(first), Some(last)) = (crate::word::small_value(start), crate::word::small_value(end)) {
+                if first > last {
+                    return Err("Range start must be less than or equal to range end".into());
+                }
+                let stop = if *inclusive { last } else { last - 1 };
+                let mut from = first;
+                while from <= stop {
+                    let to = stop.min(from.saturating_add(RANGE_CHUNK - 1));
+                    grow_builder(&mut runtime.heap, builder, |all| {
+                        all.extend((from..=to).map(|n| crate::word::small(n).expect("between inline endpoints")));
+                    });
+                    if to == stop {
+                        break;
+                    }
+                    from = to + 1;
+                }
+                return Ok(builder);
+            }
+            let (start, end) = (runtime.big_value(start), runtime.big_value(end));
             if start > end {
                 return Err("Range start must be less than or equal to range end".into());
             }
