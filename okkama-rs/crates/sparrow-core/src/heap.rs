@@ -1055,6 +1055,35 @@ impl Heap {
         out
     }
 
+    /// Every element of `array` in order, with nothing materialised (#446):
+    /// a byte array's bytes widened one at a time, a trie walked in place.
+    pub fn each_element(&self, array: Word, visit: &mut impl FnMut(Word)) {
+        fn walk(heap: &Heap, node: Word, shift: u32, visit: &mut impl FnMut(Word)) {
+            for &word in heap.elements(node).iter() {
+                if shift == 0 {
+                    visit(word);
+                } else {
+                    walk(heap, word, shift - TRIE_BITS, visit);
+                }
+            }
+        }
+        let header = self.header_of(array);
+        if header & PACKED != 0 {
+            self.bytes(array).iter().for_each(|&byte| visit(Word::from(byte)));
+        } else if header & TRIE != 0 {
+            let (root, tail, shift) = self.trie_parts(array);
+            walk(self, root, shift, visit);
+            self.elements(tail).iter().for_each(|&word| visit(word));
+        } else {
+            self.elements(array).iter().for_each(|&word| visit(word));
+        }
+    }
+
+    /// The number of elements of an array, whatever its representation.
+    pub fn array_length(&self, array: Word) -> usize {
+        payload(self.header_of(array)) as usize
+    }
+
     /// A byte array (`@byte`): one byte per element after the header.
     pub fn allocate_bytes(&mut self, bytes: &[u8]) -> Word {
         self.counted("bytes", 0, 1 + bytes.len().div_ceil(8));
@@ -1642,6 +1671,24 @@ mod tests {
         }
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
             self
+        }
+    }
+
+    #[test]
+    fn every_representation_walks_its_elements_in_order() {
+        let mut heap = Heap::new(layouts());
+        let words: Vec<Word> = (0..300).map(|i| heap.int(i)).collect();
+        let flat = heap.allocate_array(Repr::Ref, &words[..5]);
+        let packed = heap.allocate_bytes(&[1, 2, 255]);
+        let trie = heap.trie_from(Repr::Ref, &words);
+        let buffer = heap.allocate_buffer(Repr::Ref, &[&words[..10]], 16, 3);
+        let shared = heap.allocate_view(Repr::Ref, buffer, 3, 10);
+        let empty = heap.allocate_array(Repr::Ref, &[]);
+        for array in [flat, packed, trie, shared, empty] {
+            let mut walked = Vec::new();
+            heap.each_element(array, &mut |word| walked.push(word));
+            assert_eq!(walked, heap.elements(array).into_owned());
+            assert_eq!(heap.array_length(array), walked.len());
         }
     }
 
