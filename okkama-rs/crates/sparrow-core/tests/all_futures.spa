@@ -1,0 +1,219 @@
+; Lowered equivalent of tests/ownership-corpus/pending/580-all-futures.ok.
+; Atomic<string> records destroys; [first, second, first] contains aliases.
+; The Event also exercises collection/awaiter suspension without timers or I/O.
+sparrow 15
+module "all-futures-ownership" "1.0.0"
+type t0 int
+type t1 str
+type t2 bool
+type t3 region
+type t4 object obj0
+type t5 object obj1
+type t6 object obj2
+type t7 future t6
+type t8 array t7
+type t9 object obj3
+type t10 role role0
+type t11 object obj4
+type t12 array t6
+type t13 object obj5
+type t14 role role1
+type t15 future t14
+type t16 object obj6
+type t17 future t16
+
+object obj0 "Atomic<string>" {}
+object obj1 "Closed" {}
+object obj2 "Res" {
+    field "name" t1
+    field "log" t4
+    destroy f3
+}
+object obj3 "Origins" {
+    field "items" t8
+    does role0 [f6, f7]
+}
+object obj4 "AllFutures<Res>" { field "origins" t10 }
+object obj5 "Results" {
+    field "items" t12
+    does role1 [f9, f10]
+}
+object obj6 "Event" {}
+role role0 "Sequencing<Future<Res>>" {
+    method "size" [] -> t0
+    method "item" [t0] -> t7
+}
+role role1 "Sequencing<Res>" {
+    method "size" [] -> t0
+    method "item" [t0] -> t6
+}
+
+function f0 "Atomic.new" intrinsic "okkama.atomic.Atomic.new_value" [obj0] [] {
+    registers [t1]
+    params [r0]
+    result t4
+}
+function f1 "Atomic.value" intrinsic "okkama.atomic.Atomic.value" [obj1] [] {
+    registers [t4]
+    params [r0]
+    result t1
+}
+function f2 "Atomic.replace" intrinsic "okkama.atomic.Atomic.replace" [obj1] [] {
+    registers [t4, t1]
+    params [r0, r1]
+    result void
+}
+function f3 "Res.destroy" {
+    registers [t6, t1, t4, t1]
+    params [r0]
+    result void
+    0: obj.get r1, r0, 0
+    1: obj.get r2, r0, 1
+    2: call r3, f1, [r2]
+    3: str.concat r3, r3, r1
+    4: call _, f2, [r2, r3]
+    5: ret _
+}
+function f4 "Work.make" async {
+    registers [t1, t4, t16, t3, t6, t17, t16]
+    params [r0, r1, r2]
+    result t6
+    0: region.enter r3
+    1: obj.new r4, obj2, [r0, r1]
+    2: region.adopt r3, r4
+    3: call r5, f14, [r2]
+    4: await r6, r5
+    5: region.leave r3, r4
+    6: ret r4
+}
+; A method adopts fresh inputs, but borrows caller-owned receivers. Without
+; result-graph ownership this destroys A, then B, before the caller exits.
+function f5 "Res.label" {
+    registers [t6, t3, t1]
+    params [r0]
+    result t1
+    0: region.enter r1
+    1: region.adopt r1, r0
+    2: obj.get r2, r0, 0
+    3: region.leave r1, _
+    4: ret r2
+}
+function f6 "Origins.size" {
+    registers [t9, t8, t0]
+    params [r0]
+    result t0
+    0: obj.get r1, r0, 0
+    1: arr.len r2, r1
+    2: ret r2
+}
+function f7 "Origins.item" {
+    registers [t9, t0, t8, t7]
+    params [r0, r1]
+    result t7
+    0: obj.get r2, r0, 0
+    1: arr.get r3, r2, r1
+    2: ret r3
+}
+function f8 "AllFutures.results" async intrinsic "okkama.collect.AllFutures.results" [obj5] [] {
+    registers [t11]
+    params [r0]
+    result t14
+}
+function f9 "Results.size" {
+    registers [t13, t12, t0]
+    params [r0]
+    result t0
+    0: obj.get r1, r0, 0
+    1: arr.len r2, r1
+    2: ret r2
+}
+function f10 "Results.item" {
+    registers [t13, t0, t12, t6]
+    params [r0, r1]
+    result t6
+    0: obj.get r2, r0, 0
+    1: arr.get r3, r2, r1
+    2: ret r3
+}
+function f11 "test.is_string" intrinsic "okkama.test.is" [] [] {
+    registers [t1, t1]
+    params [r0, r1]
+    result void
+}
+function f12 "Event.new" intrinsic "okkama.event.Event.new_ready" [obj6] [] {
+    registers [t2]
+    params [r0]
+    result t16
+}
+function f13 "Event.set" intrinsic "okkama.event.Event.set" [] [] {
+    registers [t16]
+    params [r0]
+    result void
+}
+function f14 "Event.wait" async intrinsic "okkama.event.Event.wait" [] [] {
+    registers [t16]
+    params [r0]
+    result t16
+}
+function f15 "test.is_bool" intrinsic "okkama.test.is" [] [] {
+    registers [t2, t2]
+    params [r0, r1]
+    result void
+}
+function f16 "all futures ownership" async {
+    registers [t1, t4, t2, t16, t3, t1, t7, t7, t8, t9, t10, t11, t15, t14, t6, t1, t0, t2, t15, t14, t3]
+    params []
+    result void
+    0: const r0, str ""
+    1: call r1, f0, [r0]
+    2: const r2, bool true
+    3: call r3, f12, [r2]
+    4: region.enter r20
+    5: region.enter r4
+    6: const r5, str "A"
+    7: call r6, f4, [r5, r1, r3]
+    8: const r5, str "B"
+    9: call r7, f4, [r5, r1, r3]
+    10: arr.new r8, [r6, r7, r6]
+    11: obj.new r9, obj3, [r8]
+    12: role.wrap r10, r9, role0
+    13: obj.new r11, obj4, [r10]
+    14: region.adopt r4, r11
+    15: call r12, f8, [r11]
+    16: fut.spawn r12, r12
+    17: fut done, r17, r12
+    18: call _, f15, [r17, r2]
+    19: call _, f13, [r3]
+    20: await r13, r12
+    21: region.adopt r4, r13
+    22: const r16, int 0
+    23: call.role r14, r13, role1, 1, [r16]
+    24: call r15, f5, [r14]
+    25: const r5, str "A"
+    26: call _, f11, [r15, r5]
+    27: const r16, int 2
+    28: call.role r14, r13, role1, 1, [r16]
+    29: call r15, f5, [r14]
+    30: call _, f11, [r15, r5]
+    31: call r15, f1, [r1]
+    32: call _, f11, [r15, r0]
+    33: call r18, f8, [r11]
+    34: await r19, r18
+    35: region.adopt r4, r19
+    36: const r16, int 1
+    37: call.role r14, r19, role1, 1, [r16]
+    38: call r15, f5, [r14]
+    39: const r5, str "B"
+    40: call _, f11, [r15, r5]
+    41: call r15, f1, [r1]
+    42: call _, f11, [r15, r0]
+    43: region.leave r4, _
+    44: call r15, f1, [r1]
+    45: const r5, str "BA"
+    46: call _, f11, [r15, r5]
+    47: region.leave r20, _
+    48: call r15, f1, [r1]
+    49: call _, f11, [r15, r5]
+    50: ret _
+}
+tests { test "all futures retain their result graph until the owning scope ends" f16 }
