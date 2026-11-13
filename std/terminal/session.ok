@@ -1,5 +1,17 @@
 module terminal/session v1.0.0;
 
+// A terminal session: input, output, modes, screen and capabilities.
+//
+//     let session = await OpenedStandardTerminal(output: TerminalOutputKind.standard_output, policy: ColorPolicy.automatic).session();
+//     defer session.close();
+//     let out = session.output();
+//     out.writeln(StyledText(origin: "done", style: TextStyle(foreground: NamedColor(BasicColor.green), background: DefaultColor(), attributes: [])));
+//     let answer = await session.input().line(256);
+//
+// OpenedControllingTerminal opens /dev/tty (the console on Windows) even when
+// standard streams are redirected. Closing the session restores the terminal
+// and ends everything borrowed from it.
+
 import "runtime/application" take TerminalState, TerminalResizeState, terminal_resize_open,
     terminal_standard, terminal_controlling, terminal_metadata, terminal_write, terminal_read,
     terminal_closed, terminal_close, terminal_cleanup;
@@ -19,19 +31,24 @@ import "runtime/system" take system_platform;
 import "io/stream" take Closing, Writing, WritingText, ByteSource, IncompleteWrite;
 import "io/buffer" take ByteBuffer;
 
+// Standard output or standard error.
 enum TerminalOutputKind = (standard_output, standard_error);
 
+// A session on standard input and output (or error).
 object OpenedStandardTerminal {
     has output is TerminalOutputKind;
     has policy is ColorPolicy;
     has environment is Environment;
 
+    // On standard input and output, deciding colors by policy and this
+    // process's environment.
     OpenedStandardTerminal(output is TerminalOutputKind, policy is ColorPolicy) {
         self.output = output;
         self.policy = policy;
         environment = Environment();
     }
 
+    // The same with environment.
     OpenedStandardTerminal(
         output is TerminalOutputKind,
         policy is ColorPolicy,
@@ -42,6 +59,7 @@ object OpenedStandardTerminal {
         self.environment = environment;
     }
 
+    // Opens it; TerminalUnavailable when it cannot.
     async session() is TerminalSession {
         let kind = if output == TerminalOutputKind.standard_output {
             0;
@@ -65,20 +83,24 @@ object OpenedStandardTerminal {
     }
 }
 
+// A session on the controlling terminal.
 object OpenedControllingTerminal {
     has policy is ColorPolicy;
     has environment is Environment;
 
+    // On the controlling terminal, deciding colors by policy.
     OpenedControllingTerminal(policy is ColorPolicy) {
         self.policy = policy;
         environment = Environment();
     }
 
+    // The same with environment.
     OpenedControllingTerminal(policy is ColorPolicy, environment is Environment) {
         self.policy = policy;
         self.environment = environment;
     }
 
+    // Opens it; TerminalUnavailable when there is none.
     async session() is TerminalSession {
         let state = try {
             await terminal_controlling();
@@ -104,6 +126,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
     has reading is TerminalInput;
     has writing is TerminalOutput;
 
+    // Over state.
     TerminalSession(state is TerminalState, policy is ColorPolicy, environment is Environment) {
         self.state = state;
         observation = TerminalObservation(state: state, policy: policy, environment: environment);
@@ -111,26 +134,32 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         writing = TerminalOutput(state: state, observation: self.observation);
     }
 
+    // Its input.
     input() is TerminalInput {
         reading;
     }
 
+    // Its output.
     output() is TerminalOutput {
         writing;
     }
 
+    // What it can do.
     capabilities() is TerminalCapabilities {
         observation.capabilities();
     }
 
+    // Whether it is the controlling terminal.
     controlling() is bool {
         observation.controlling();
     }
 
+    // Applies mode until the lease closes.
     apply(mode is TerminalMode) is TerminalModeLease {
         TerminalModeLease(origin: state, mode: mode);
     }
 
+    // Clears region.
     clear(region is ClearRegion) is void {
         self.interactive_screen();
         let code = match region {
@@ -150,6 +179,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         self.control(code);
     }
 
+    // Moves the cursor to row and column, from 1.
     move(row is int, column is int) is void {
         self.interactive_screen();
         confirm row >= 0 && column >= 0 && row < 65535 && column < 65535
@@ -157,6 +187,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         self.control((row + 1).string() + ";" + (column + 1).string() + "H");
     }
 
+    // Shows or hides the cursor.
     display_cursor(visible is bool) is void {
         self.interactive_screen();
         self.restoration();
@@ -168,6 +199,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         });
     }
 
+    // Switches to the alternate screen, or back.
     use_alternate_screen(enabled is bool) is void {
         self.interactive_screen();
         self.restoration();
@@ -179,6 +211,7 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         });
     }
 
+    // Starts listening for size changes.
     async resizes() is TerminalResizeReading {
         let opened = try {
             await terminal_resize_open(state);
@@ -189,10 +222,12 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
         TerminalResizeReader(opened);
     }
 
+    // Whether it was closed.
     closed() is bool {
         terminal_closed(state);
     }
 
+    // Restores the terminal and ends what was borrowed from it.
     close() is void {
         try {
             terminal_close(state);
@@ -229,12 +264,14 @@ object TerminalSession does Closing, TerminalModeApplying, TerminalScreenApplyin
     }
 }
 
+// What a session knows about its terminal.
 object TerminalObservation {
     has state is TerminalState;
     has initial is TerminalCapabilities;
     has environment is Environment;
     has policy is ColorPolicy;
 
+    // From state, policy and environment.
     TerminalObservation(state is TerminalState, policy is ColorPolicy, environment is Environment) {
         let fields = try {
             terminal_metadata(state);
@@ -270,6 +307,7 @@ object TerminalObservation {
         self.policy = policy;
     }
 
+    // The capabilities.
     capabilities() is TerminalCapabilities {
         let fields = try {
             terminal_metadata(state);
@@ -294,6 +332,7 @@ object TerminalObservation {
         );
     }
 
+    // Whether it is the controlling terminal.
     controlling() is bool {
         try {
             terminal_metadata(state)["controlling"] == 1;
@@ -303,6 +342,7 @@ object TerminalObservation {
         }
     }
 
+    // Whether screen operations work.
     screen_capable() is bool {
         try {
             terminal_metadata(state)["colors"] > 0;
@@ -313,12 +353,14 @@ object TerminalObservation {
     }
 }
 
+// The input of a session.
 object TerminalInput {
     has state is TerminalState;
     has observation is TerminalObservation;
     has lock is Lock;
     has buffer is Atomic<@byte>;
 
+    // Over state.
     TerminalInput(state is TerminalState, observation is TerminalObservation) {
         self.state = state;
         self.observation = observation;
@@ -327,10 +369,12 @@ object TerminalInput {
         buffer = Atomic(empty);
     }
 
+    // The capabilities.
     capabilities() is TerminalCapabilities {
         observation.capabilities();
     }
 
+    // At most limit bytes; [] at the end.
     async bytes(limit is int) is @byte {
         confirm limit > 0 && limit <= 65536 else throw TerminalInputLimit.exceeded;
         let guard = await lock.guard();
@@ -358,6 +402,8 @@ object TerminalInput {
         }
     }
 
+    // The next line without its newline, at most limit bytes;
+    // TerminalInputLimit beyond.
     async line(limit is int) is string {
         confirm limit > 0 && limit <= 1048576 else throw TerminalInputLimit.exceeded;
         let guard = await lock.guard();
@@ -439,11 +485,13 @@ object TerminalInput {
     }
 }
 
+// The output of a session.
 object TerminalOutput does Writing, WritingText {
     has unicode_console is bool;
     has state is TerminalState;
     has observation is TerminalObservation;
 
+    // Over state.
     TerminalOutput(state is TerminalState, observation is TerminalObservation) {
         self.state = state;
         self.observation = observation;
@@ -451,18 +499,22 @@ object TerminalOutput does Writing, WritingText {
             && observation.capabilities()::Support::output_interactive;
     }
 
+    // The capabilities.
     capabilities() is TerminalCapabilities {
         observation.capabilities();
     }
 
+    // Writes source's bytes.
     write(source is ByteSource) is void {
         self.write_bytes(source.bytes());
     }
 
+    // Writes bytes.
     write(bytes is @byte) is void {
         self.write_bytes(bytes);
     }
 
+    // Writes the strings.
     write(values is ...string) is void {
         let items is @string = values...;
         for items -> value {
@@ -470,12 +522,14 @@ object TerminalOutput does Writing, WritingText {
         }
     }
 
+    // Writes styled text for the terminal's color depth.
     write(value is StyledText) is void {
         self.write_bytes(
             Utf8Encoded(value.rendered(observation.capabilities()::Support::colors)).bytes()
         );
     }
 
+    // Writes the strings and a newline.
     writeln(values is ...string) is void {
         let items is @string = values...;
         for items -> value {
@@ -484,11 +538,13 @@ object TerminalOutput does Writing, WritingText {
         self.write_bytes([10.byte()]);
     }
 
+    // Writes styled text and a newline.
     writeln(value is StyledText) is void {
         self.write(value);
         self.write_bytes([10.byte()]);
     }
 
+    // Sends what is buffered.
     flush() is void {
         confirm !terminal_closed(state) else throw TerminalClosed.closed;
     }

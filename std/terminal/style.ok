@@ -1,20 +1,37 @@
 module terminal/style v1.0.0;
 
+// Colors and text attributes, rendered for the terminal's color depth.
+//
+//     let warning = TextStyle(foreground: NamedColor(BasicColor.yellow), background: DefaultColor(), attributes: [TextAttribute.bold]);
+//     session.output().writeln(StyledText(origin: "careful", style: warning));
+//     StyledText(origin: "x", style: warning).rendered(TerminalColorDepth.basic);   // escape codes and text
+//
+// A color is lowered to what the terminal shows: true color to 256 colors to 8,
+// and nothing when colors are off.
+
 import "terminal/capability" take TerminalColorDepth;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Decoded;
 
+// The 8 basic colors.
 enum BasicColor = (black, red, green, yellow, blue, magenta, cyan, white);
 
+// Bold, dim, italic, underline, reverse and strike.
 enum TextAttribute = (bold, dim, italic, underline, reverse, strike);
 
+// A color.
 role TerminalColor {
+    // The escape code for depth, as background or foreground.
     code(depth is TerminalColorDepth, background is bool) is string;
 }
 
+// The terminal's own color.
 object DefaultColor does TerminalColor {
+    // The default.
     DefaultColor();
 
+    // The escape code for depth, as background or foreground; "" when colors
+    // are off.
     code(depth is TerminalColorDepth, background is bool) is string {
         if background {
             "49";
@@ -25,17 +42,22 @@ object DefaultColor does TerminalColor {
     }
 }
 
+// One of the 8 basic colors.
 object NamedColor does TerminalColor {
     has value is BasicColor;
 
+    // value.
     NamedColor(value is BasicColor) {
         self.value = value;
     }
 
+    // The color.
     color() is BasicColor {
         value;
     }
 
+    // The escape code for depth, as background or foreground; "" when colors
+    // are off.
     code(depth is TerminalColorDepth, background is bool) is string {
         let index = match value {
             case BasicColor.black {
@@ -72,18 +94,23 @@ object NamedColor does TerminalColor {
     }
 }
 
+// One of 256 indexed colors.
 object IndexedColor does TerminalColor {
     has value is int;
 
+    // value, 0 to 255; InvalidTerminalStyle otherwise.
     IndexedColor(value is int) {
         confirm value >= 0 && value <= 255 else throw InvalidTerminalStyle.invalid;
         self.value = value;
     }
 
+    // The index.
     index() is int {
         value;
     }
 
+    // The escape code for depth, as background or foreground; "" when colors
+    // are off.
     code(depth is TerminalColorDepth, background is bool) is string {
         if depth == TerminalColorDepth.basic {
             let rgb = IndexedRgb(value);
@@ -106,15 +133,19 @@ object IndexedColor does TerminalColor {
     }
 }
 
+// A true color.
 object RgbColor does TerminalColor {
     has red, green, blue is byte;
 
+    // red, green and blue.
     RgbColor(red is byte, green is byte, blue is byte) {
         self.red = red;
         self.green = green;
         self.blue = blue;
     }
 
+    // The escape code for depth, as background or foreground; "" when colors
+    // are off.
     code(depth is TerminalColorDepth, background is bool) is string {
         let color = ColorRgb(red: red.int(), green: green.int(), blue: blue.int());
         if depth == TerminalColorDepth.true_color {
@@ -141,6 +172,7 @@ object RgbColor does TerminalColor {
         }
     }
 
+    // The red, green and blue bytes.
     cap Channels {
         red is byte {
             red;
@@ -330,10 +362,12 @@ hidden object ColorDistance {
     }
 }
 
+// A foreground, a background and attributes.
 object TextStyle {
     has foreground, background is TerminalColor;
     has attributes is @TextAttribute;
 
+    // As given.
     TextStyle(
         foreground is TerminalColor,
         background is TerminalColor,
@@ -355,18 +389,22 @@ object TextStyle {
         self.attributes = snapshot;
     }
 
+    // The foreground.
     foreground() is TerminalColor {
         foreground;
     }
 
+    // The background.
     background() is TerminalColor {
         background;
     }
 
+    // The attributes.
     attributes() is Sequencing<TextAttribute> {
         attributes;
     }
 
+    // The escape codes for depth.
     code(depth is TerminalColorDepth) is string {
         let values is @string = attributes.map() -> attribute {
             match attribute {
@@ -400,23 +438,29 @@ object TextStyle {
     }
 }
 
+// Text with a style.
 object StyledText {
     has origin is string;
     has style is TextStyle;
 
+    // origin in style.
     StyledText(origin is string, style is TextStyle) {
         self.origin = origin;
         self.style = style;
     }
 
+    // The text.
     text() is string {
         origin;
     }
 
+    // The style.
     style() is TextStyle {
         style;
     }
 
+    // The text with escape codes for depth and a reset after it; plain text
+    // when colors are off.
     rendered(depth is TerminalColorDepth) is string {
         if depth == TerminalColorDepth.disabled {
             origin;
@@ -428,6 +472,7 @@ object StyledText {
     }
 }
 
+// A color out of range.
 enum InvalidTerminalStyle is Error = (invalid);
 
 test "colors answer SGR codes for each depth" {

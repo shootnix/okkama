@@ -1,20 +1,29 @@
 module terminal/error v1.0.0;
 
+// Terminal errors.
+
+// There is no terminal to use; reason says why.
 enum TerminalUnavailable is Error = (because(reason is string));
 
+// The terminal failed; code and message say how.
 enum TerminalFailure is Error = (detailed(code is string, message is string));
 
+// The terminal was used after close().
 enum TerminalClosed is Error = (closed);
 
+// Input over the limit.
 enum TerminalInputLimit is Error = (exceeded);
 
+// A native failure turned into a terminal error.
 object TerminalProblem {
     has failure is NativeFailure;
 
+    // The failure.
     TerminalProblem(failure is NativeFailure) {
         self.failure = failure;
     }
 
+    // The matching error.
     error() is Error {
         if failure.code() == "already_closed" {
             TerminalClosed.closed;

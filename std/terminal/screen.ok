@@ -1,5 +1,13 @@
 module terminal/screen v1.0.0;
 
+// Moving the cursor, clearing and the alternate screen; following resizes.
+//
+//     session.use_alternate_screen(true);
+//     session.clear(ClearRegion.screen);
+//     session.move(row: 1, column: 1);
+//     let sizes = TerminalResizes(session);
+//     let size = await sizes.size();               // the next size change
+
 import "terminal/capability" take TerminalSize;
 import "terminal/error" take TerminalUnavailable, TerminalProblem, TerminalClosed;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -9,41 +17,56 @@ import "async/atomic" take Atomic;
 import "async/lock" take Lock;
 import "io/stream" take Closing;
 
+// What to clear: the screen, the line, to its end or to its start.
 enum ClearRegion = (screen, line, to_end, to_start);
 
+// Screen operations on a terminal.
 object TerminalScreen {
     has origin is TerminalScreenApplying;
 
+    // On origin.
     TerminalScreen(origin is TerminalScreenApplying) {
         self.origin = origin;
     }
 
+    // Clears region.
     clear(region is ClearRegion) is void {
         origin.clear(region);
     }
 
+    // Moves the cursor to row and column, from 1.
     move(row is int, column is int) is void {
         origin.move(row, column);
     }
 
+    // Shows or hides the cursor.
     display_cursor(visible is bool) is void {
         origin.display_cursor(visible);
     }
 
+    // Switches to the alternate screen, or back.
     use_alternate_screen(enabled is bool) is void {
         origin.use_alternate_screen(enabled);
     }
 }
 
+// Something that carries out screen operations.
 role TerminalScreenApplying {
+    // Clears region.
     clear(region is ClearRegion) is void;
+    // Moves the cursor to row and column, from 1.
     move(row is int, column is int) is void;
+    // Shows or hides the cursor.
     display_cursor(visible is bool) is void;
+    // Switches to the alternate screen, or back.
     use_alternate_screen(enabled is bool) is void;
 }
 
+// Something that reports size changes.
 role TerminalResizeOpening {
+    // Starts listening.
     async resizes() is TerminalResizeReading;
+    // Whether it was closed.
     closed() is bool;
 }
 
@@ -51,8 +74,11 @@ role TerminalResizeOpening {
 // the source opened, and each later call waits for the next change (SIGWINCH)
 // and reports the new geometry.
 role TerminalResizeReading {
+    // Waits for the next size change and gives the new size.
     async size() is TerminalSize;
+    // Whether it was closed.
     closed() is bool;
+    // Stops listening.
     close() is void;
 }
 
@@ -61,10 +87,12 @@ role TerminalResizeReading {
 object TerminalResizeReader does TerminalResizeReading {
     has state is TerminalResizeState;
 
+    // Reads changes from state.
     TerminalResizeReader(state is TerminalResizeState) {
         self.state = state;
     }
 
+    // Waits for the next size change and gives the new size.
     async size() is TerminalSize {
         let pending = terminal_resize_next(state);
         defer pending.cancel();
@@ -77,21 +105,25 @@ object TerminalResizeReader does TerminalResizeReading {
         TerminalSize(columns: size[0], rows: size[1]);
     }
 
+    // Whether it was closed.
     closed() is bool {
         terminal_resize_closed(state);
     }
 
+    // Stops listening.
     close() is void {
         terminal_resize_close(state);
     }
 }
 
+// The size changes of a terminal.
 object TerminalResizes does Closing {
     has origin is TerminalResizeOpening;
     has source is Atomic<@TerminalResizeReading>;
     has stopped is Atomic<bool>;
     has lock is Lock;
 
+    // Listens on origin.
     TerminalResizes(origin is TerminalResizeOpening) {
         self.origin = origin;
         let empty is @TerminalResizeReading = [];
@@ -100,6 +132,7 @@ object TerminalResizes does Closing {
         lock = Lock();
     }
 
+    // Waits for the next size change and gives the new size.
     async size() is TerminalSize {
         confirm !self.closed() else throw TerminalClosed.closed;
         let guard = await lock.guard();
@@ -116,12 +149,14 @@ object TerminalResizes does Closing {
         await source.value()[0].size();
     }
 
+    // Whether it was closed.
     closed() is bool {
         stopped.value()
             || origin.closed()
             || (source.value().size() > 0 && source.value()[0].closed());
     }
 
+    // Stops listening.
     close() is void {
         if !stopped.value() {
             stopped.replace(true);
