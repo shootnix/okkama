@@ -6,6 +6,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Quoted-printable encodes in one pass (#460).** The encoder made a
+  `String` per input byte and folded lines by removing tokens from the
+  front of a vector, so a long line cost quadratic moves. Both engines now
+  write each token straight into the output and fold by column; the output
+  is byte-for-byte the same. One 64 KiB line: 1.18 s → 0.30 ms; 60 bytes:
+  1.96 → 0.36 µs. Implemented by Codex, reviewed and verified by Claude.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in
