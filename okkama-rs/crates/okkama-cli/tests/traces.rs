@@ -29,7 +29,7 @@ fn place_and_stack(text: &str) -> &str {
 }
 
 /// Programs whose uncaught failure every engine reports the same way (#270).
-const REPORTED: [&str; 8] = ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep"];
+const REPORTED: [&str; 9] = ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep", "collect"];
 
 #[test]
 fn the_core_and_the_ir_engine_print_the_same_report() {
@@ -56,9 +56,9 @@ fn the_core_and_the_ir_engine_print_the_same_report() {
         ),
         "{cleanup}"
     );
-    // AllFutures on the core: the first failure observed stays primary, the
-    // rest follow in input order, a failure given twice once (#443, #445).
-    // The IR engine cancels these siblings before they fail (#546).
+    // AllFutures: the first failure observed stays primary, the rest follow
+    // in input order, a failure given twice once (#443, #445); siblings
+    // woken before the cancellation fail on their own (#546).
     let collect = stderr(&okkama(&["run", "--engine", "sparrow"], &program("collect"), true));
     assert!(
         collect.starts_with(

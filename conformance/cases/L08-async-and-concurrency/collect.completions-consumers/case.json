@@ -28,7 +28,7 @@
     "outcome": "success",
     "exit_status": 0,
     "stdout": {
-      "text": "a:l2 b:l1 c:l0, remaining 0\np:x q:x\nw cancelled\n"
+      "text": "a:l2 b:l1 c:l0, remaining 0\np:x q:x\nw cancelled\nstream cancelled\n"
     }
   },
   "spec_refs": [
@@ -40,7 +40,7 @@
   },
   "provenance": {
     "origin": "authored for #444 (0.5.7) from the cited contract text",
-    "expected_basis": "async/collect: every input position is returned once, including duplicate future identities; concurrent completion requests and simultaneous settlements are paired FIFO; cancelling a pending completion request cancels the stream's unfinished inputs."
+    "expected_basis": "async/collect: every input position is returned once, including duplicate future identities; concurrent completion requests and simultaneous settlements are paired FIFO; cancelling a pending completion request cancels the stream's unfinished inputs. A request after the cancellation fails with the cancellation (#548)."
   },
   "status": "mandatory"
 }

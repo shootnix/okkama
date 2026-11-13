@@ -21,8 +21,11 @@ import "async/event" take Event;
 // empty input completes immediately with an empty sequence.
 //
 // If one future fails, unfinished siblings are cancelled and their cleanup is
-// awaited. The observed failure remains primary; failures raised by sibling
-// cleanup remain ordered secondary diagnostics. Cancelling `results()` applies
+// awaited. The observed failure remains primary; the other failures follow as
+// secondary diagnostics in input order, each failure once. A sibling whose
+// own `await` had already completed when the cancellation came runs on to its
+// next `await`, where the cancellation reaches it; if it fails before that,
+// its failure is one of the secondaries. Cancelling `results()` applies
 // the same structured cleanup rule. Repeated calls return the same future and
 // never restart the inputs.
 //
@@ -70,7 +73,8 @@ import "async/event" take Event;
 // already-settled inputs are ordered by their input positions. Calling
 // `completion()` after exhaustion throws `NoFutures`. Cancelling a pending
 // completion request cancels the stream's unfinished inputs and waits for their
-// cleanup.
+// cleanup; that request, and every request after it, fails with the
+// cancellation (cleanup failures attached), not `NoFutures`.
 
 // Every future's result, in input order, once all succeed; the first failure
 // cancels the rest.

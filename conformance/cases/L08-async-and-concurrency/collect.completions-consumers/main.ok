@@ -67,7 +67,8 @@ async main() is int {
     two.start();
     out.writeln(await p, " ", await q);
 
-    // Cancelling a waiting request cancels the stream's unfinished inputs.
+    // Cancelling a waiting request cancels the stream's unfinished inputs;
+    // a later request fails the same way (#548).
     let three = Chain();
     let never is @Future<string> = [three.link(0, "never")];
     let stuck is FutureCompletions<string> = FutureCompletions(origins: never);
@@ -78,6 +79,12 @@ async main() is int {
     }
     catch error is Cancelled {
         "w cancelled";
+    });
+    out.writeln(try {
+        await (await stuck.completion());
+    }
+    catch error is Cancelled {
+        "stream cancelled";
     });
     0;
 }

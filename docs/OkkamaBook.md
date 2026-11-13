@@ -4855,8 +4855,11 @@ awaiting — a lazy future its `await` started, a task it spawned, a native
 request — and the task resumes only once that future has settled, deferred
 cleanup included; then its own `await` throws `Cancelled`. A future that
 another task still awaits is left running: the cancelled awaiter only stops
-waiting for it. One awaited child therefore needs no group; `FutureGroup` and
-`FutureScope` are for real fan-out.
+waiting for it. A task whose `await` has already completed — its future
+settled and it is ready to run on — is not interrupted: it runs on with that
+result, and the cancellation reaches it at its next `await`, which throws
+`Cancelled` before it starts anything (#546). One awaited child therefore
+needs no group; `FutureGroup` and `FutureScope` are for real fan-out.
 
 Scheduling is cooperative (#340). One task runs at a time, until it suspends
 at an `await` of a future that has not settled, or until it ends. Waking a
