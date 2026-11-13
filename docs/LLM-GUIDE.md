@@ -187,6 +187,8 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 
 ## 5. Tests
 
+For every 0.6.0 ownership rebuild step, use the [ownership oracle](../tools/ownership/README.md): `tools/ownership/oracle-docker.sh engines|ab|stats|tap` (bounded Docker runs, A/B census and traces, TAP, JSON reports).
+
 | What | How | Notes |
 |---|---|---|
 | Rust | `cargo test --release -p <crate>`; compiler: `--test analysis`, `corpus`, `printer`, `lowering*` | `tests/analysis.rs` has `messages("…")` for diagnostics |
