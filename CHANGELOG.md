@@ -43,6 +43,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   rule are unchanged. Implemented by Codex, reviewed and verified by
   Claude.
 
+### Fixed
+
+- **The quoted-printable docs say what the encoder does with tabs (#549).**
+  They promised that a tab stays literal inside a line; the encoder always
+  writes `=09`, which is valid RFC 2045. The docs now say so and a test
+  pins it; the output is unchanged.
+
 ## [0.5.7] — 2026-11-13
 
 0.5.7 removes the quadratic paths that the hardening audit found in

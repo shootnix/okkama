@@ -12,8 +12,9 @@ import "runtime/quoted_printable" take quoted_printable_encode, quoted_printable
 //
 // Encoding uses uppercase `=HH`, preserves CRLF hard line breaks, and inserts
 // `=\r\n` soft breaks so every physical line is at most 76 bytes. Bare CR and
-// LF are encoded rather than normalized. Space and tab remain literal inside
-// a line, but are encoded at end of input or immediately before CRLF.
+// LF are encoded rather than normalized. A space remains literal inside a
+// line but is encoded at end of input or immediately before CRLF; a tab is
+// always encoded, as `=09`.
 //
 // Decoding accepts uppercase or lowercase ASCII hex. It rejects malformed
 // escapes, bare CR/LF, non-ASCII literals, trailing literal whitespace and
@@ -65,6 +66,9 @@ test "quoted-printable escapes what is not plain text" {
         [byte(97), byte(32), byte(98), byte(61), byte(50), byte(48)]);
     // Lowercase hex is read too.
     test.is(QuotedPrintableDecoded(origin: [byte(61), byte(51), byte(100)]).bytes(), [byte(61)]);
+    // A tab is always escaped, inside a line too (#549).
+    test.is(QuotedPrintableEncoded(origin: [byte(97), byte(9), byte(98)]).bytes(),
+        [byte(97), byte(61), byte(48), byte(57), byte(98)]);
 }
 
 test "quoted-printable keeps lines within 76 bytes" {
