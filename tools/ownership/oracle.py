@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -109,21 +110,80 @@ def discover(args):
         base = args.bench if item['corpus'] == 'bench' else args.root
         item['name'] = str(path.relative_to(base)) if base.is_dir() else path.name
         item['id'] = item['corpus'] + '/' + item['name']
+        if item['corpus'] == 'conformance':
+            item['case_dir'] = str(path.parent.resolve())
     return programs
+
+
+class CaseSetupError(Exception):
+    """The oracle cannot faithfully reproduce this conformance case setup."""
+
+
+def prepare_case(item, root, destination):
+    """Materialize the filesystem and process inputs used by the OCS runner."""
+    case_dir = Path(item['case_dir'])
+    try:
+        data = json.loads((case_dir / 'case.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise CaseSetupError(f'cannot read case.json: {exc}')
+    # OCS fixture services and the shared harness are intentionally not faked.
+    if data.get('harness'):
+        raise CaseSetupError('harness setup is not supported by the oracle')
+    fixture_root = root / 'conformance' / 'fixtures'
+    fixture_data = []
+    for name in data.get('requires', {}).get('fixtures', []):
+        meta_path = fixture_root / name / 'fixture.json'
+        try:
+            meta = json.loads(meta_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError) as exc:
+            raise CaseSetupError(f'fixture {name}: cannot read metadata ({exc})')
+        if not str(meta.get('schema', '')).startswith('ocs-fixture/') or meta.get('kind') != 'files':
+            raise CaseSetupError(f'fixture {name}: only ocs-fixture/1 files fixtures are supported')
+        src = fixture_root / name / meta.get('path', '')
+        if not src.is_dir():
+            raise CaseSetupError(f'fixture {name}: files directory missing')
+        fixture_data.append((name, src, meta.get('target', '.')))
+    try:
+        shutil.copytree(case_dir, destination, symlinks=True,
+                        ignore=shutil.ignore_patterns('case.json', 'expected'))
+        for name, src, target in fixture_data:
+            dest = destination / target
+            for current, dirs, files in os.walk(src):
+                rel = Path(current).relative_to(src)
+                (dest / rel).mkdir(parents=True, exist_ok=True)
+                for fname in files:
+                    out = dest / rel / fname
+                    if out.exists():
+                        raise CaseSetupError(f'fixture {name} would overwrite {out.relative_to(destination)}')
+                    shutil.copy2(Path(current) / fname, out)
+        args = data.get('args', [])
+        if any('{fixture.' in value for value in args) or any(
+                '{fixture.' in value for value in data.get('env', {}).values()):
+            raise CaseSetupError('fixture placeholders require a running service fixture')
+        stdin = case_dir / data['stdin'] if data.get('stdin') else None
+        if stdin and not stdin.is_file():
+            raise CaseSetupError(f'stdin file is missing: {data["stdin"]}')
+        timeout = float(data.get('budget', {}).get('timeout_s', 60))
+        return dict(source=str(destination / 'main.ok'), cwd=str(destination),
+                    args=args, env=data.get('env', {}), stdin=str(stdin) if stdin else None,
+                    timeout=timeout)
+    except OSError as exc:
+        raise CaseSetupError(f'cannot prepare case files: {exc}')
 
 
 def read(path):
     return Path(path).read_text(encoding='utf-8', errors='replace')
 
 
-def execute(command, env, cwd, prefix, timeout):
+def execute(command, env, cwd, prefix, timeout, stdin_path=None):
     """Use files, closed stdin and a new process group; kill descendants on exit/timeout."""
     result = dict(command=[str(x) for x in command], cwd=str(cwd), stdout=str(prefix) + '.out',
                   stderr=str(prefix) + '.err', timeout=False, error=None, code=None)
     start = time.monotonic()
     with open(result['stdout'], 'wb') as out, open(result['stderr'], 'wb') as err:
         try:
-            child = subprocess.Popen(result['command'], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+            stdin = open(stdin_path, 'rb') if stdin_path else subprocess.DEVNULL
+            child = subprocess.Popen(result['command'], cwd=cwd, env=env, stdin=stdin,
                                      stdout=out, stderr=err, start_new_session=True)
             try:
                 result['code'] = child.wait(timeout=timeout)
@@ -135,6 +195,8 @@ def execute(command, env, cwd, prefix, timeout):
                 except ProcessLookupError:
                     pass
                 child.wait()
+            if stdin_path:
+                stdin.close()
         except OSError as exc:
             result['error'] = str(exc)
     result['seconds'] = round(time.monotonic() - start, 3)
@@ -254,16 +316,25 @@ def process(item, args, output, environments):
     folder = output / hashlib.sha256(item['id'].encode()).hexdigest()[:20]
     folder.mkdir()
     result = dict(item, artifacts=str(folder), builds={}, runs={}, differences={}, problems=[], stats={})
+    case_setup = None
+    if item['corpus'] == 'conformance':
+        try:
+            case_setup = prepare_case(item, args.root, folder / 'case')
+        except CaseSetupError as exc:
+            result['status'] = 'skipped'
+            result['skip_reason'] = str(exc)
+            return result
     ok = args.toolchain / 'bin/okkama'
     sp = args.toolchain / 'bin/sparrow'
-    source = Path(item['path'])
+    source = Path(case_setup['source']) if case_setup else Path(item['path'])
+    cwd = Path(case_setup['cwd']) if case_setup else source.parent
     flags = ['-t'] if item['tests'] else []
     variants = ('A', 'B') if args.mode in ('ab', 'stats') else ('A',)
     for variant in variants:
         census = folder / (variant + '.census.json')
         env = dict(environments[variant], OKKAMA_OWNERSHIP_REPORT=str(census))
         command = [ok, 'build', *flags, source, '--target', 'sparrow', '-o', folder / (variant + '.spb')]
-        result['builds'][variant] = execute(command, env, source.parent, folder / (variant + '.build'), args.build_timeout)
+        result['builds'][variant] = execute(command, env, cwd, folder / (variant + '.build'), args.build_timeout)
     builds = list(result['builds'].values())
     if item['rejected']:
         # Compiler documents exit 1 for source/lowering/codegen errors; crashes,
@@ -280,10 +351,13 @@ def process(item, args, output, environments):
         env = dict(environments[variant], SPARROW_TRACE_DESTROY=str(trace))
         if args.mode == 'stats':
             env['SPARROW_CORE_STATS'] = '1'
-        program_args = args.program_arg if item['corpus'] == 'bench' else []
+        program_args = args.program_arg if item['corpus'] == 'bench' else (case_setup['args'] if case_setup else [])
+        run_env = dict(env, **(case_setup['env'] if case_setup else {}))
         command = ([ok, 'run', '--engine', 'sparrow', *flags, source, *program_args] if label == 'source' else
                    [sp, *(['test'] if item['tests'] else []), folder / (variant + '.spb'), *program_args])
-        run = execute(command, env, source.parent, folder / label, args.timeout)
+        run = execute(command, run_env, cwd, folder / label,
+                      min(args.timeout, case_setup['timeout']) if case_setup else args.timeout,
+                      case_setup['stdin'] if case_setup else None)
         run['trace'] = str(trace)
         run['tap'] = tap_report(run, item['corpus'] in ('ownership', 'pending', 't'))
         result['runs'][label] = run
@@ -333,11 +407,14 @@ def summarize(results):
     counts = defaultdict(Counter)
     taps = defaultdict(Counter)
     stats = defaultdict(lambda: {'helpers': Counter(), 'census': Counter(), 'programs': 0})
+    skipped = {}
     for result in results:
         corpus = result['corpus']
         for status in ('same', 'DIFF', 'nondeterministic', 'build-fail'):
             counts[corpus].setdefault(status, 0)
         counts[corpus][result['status']] += 1
+        if result['status'] == 'skipped':
+            skipped[result['id']] = result.get('skip_reason', 'unsupported case setup')
         for label, run in result['runs'].items():
             if run['tap']['active']:
                 key = corpus + '/' + label
@@ -351,7 +428,7 @@ def summarize(results):
                     stats[key]['programs'] += 1
                     for field in ('helpers', 'census'):
                         stats[key][field].update(entry[field])
-    return dict(counts=counts, tap=taps, stats=stats)
+    return dict(counts=counts, tap=taps, stats=stats, skipped=skipped)
 
 
 def main():
@@ -411,6 +488,8 @@ def main():
         if result['status'] in ('same', 'rejected') and not result['problems']:
             continue
         print('\n' + result['id'] + ': ' + result['status'])
+        if result.get('skip_reason'):
+            print('  skipped: ' + result['skip_reason'])
         for problem in result['problems']:
             print('  ' + problem)
         for key in ('determinism_diff', 'differences'):
@@ -426,7 +505,7 @@ def main():
                 print('\n'.join(read(run['stderr']).splitlines()[-20:]))
     print(f'Report: {output / "report.json"}')
     # Positive build failures are coverage gaps, never a fatal suite result.
-    return int(any(r['status'] not in ('same', 'rejected', 'build-fail') or r['problems'] for r in results))
+    return int(any(r['status'] not in ('same', 'rejected', 'build-fail', 'skipped') or r['problems'] for r in results))
 
 
 if __name__ == '__main__':

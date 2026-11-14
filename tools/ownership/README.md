@@ -50,7 +50,8 @@ patterns documented in the corpus README; TAP mode also checks their cleanup
 assertions. Other matching nonzero exits in comparison modes remain `same`:
 comparison is not an assertion that every source is a successful program.
 
-Conformance selects `cases/**/main.ok`. Std selects modules with a test
+Conformance selects `cases/**/main.ok` and reads adjacent `case.json` (the repository's current `ocs-case/1` schema). The oracle copies the case tree to an isolated work directory, omitting `case.json` and `expected` as the runner does; declared `support` files are included through that copy. It applies `requires.fixtures` of kind `files` using fixture `path` and `target`, and passes `args`, `stdin`, `env`, `budget.timeout_s`, and the copied directory as cwd. Runtime timeout is capped by `--timeout`. Cases requesting `harness`, service fixtures, or fixture placeholders needing service-provided values are skipped with a reason in `summary.skipped` and per-program `skip_reason`; they are not comparison mismatches.
+Std selects modules with a test
 declaration using the gate's detection convention and builds/runs with `-t`.
 The t/ suite selects all existing `**/*.ok` except `support/`, as ordinary
 programs; it does not generate additional sources. Benchmarks select
