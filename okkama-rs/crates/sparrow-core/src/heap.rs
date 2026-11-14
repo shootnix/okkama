@@ -156,6 +156,43 @@ pub struct Layouts {
     pub frames: Vec<Vec<Repr>>,
 }
 
+/// A slot that can contain a pointer. Keep `Int`: its word can be a BigInt.
+/// Indices are in words after the header, just like the full layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TraceSlot {
+    index: usize,
+    repr: Repr,
+}
+
+/// Built once from the final layouts, including runtime-specific overrides.
+/// Boxed slices have no spare capacity and are never changed during collection.
+#[derive(Debug)]
+struct TraceLayouts {
+    objects: Box<[Box<[TraceSlot]>]>,
+    closures: Box<[Box<[TraceSlot]>]>,
+    frames: Box<[Box<[TraceSlot]>]>,
+}
+
+impl TraceLayouts {
+    fn new(layouts: &Layouts) -> Self {
+        fn descriptors(layouts: &[Vec<Repr>]) -> Box<[Box<[TraceSlot]>]> {
+            layouts.iter().map(|layout| {
+                // Count first to allocate exactly once per nonempty descriptor.
+                let mut slots = Vec::with_capacity(layout.iter().filter(|&&repr| repr != Repr::Raw).count());
+                slots.extend(layout.iter().enumerate().filter_map(|(index, &repr)| {
+                    (repr != Repr::Raw).then_some(TraceSlot { index, repr })
+                }));
+                slots.into_boxed_slice()
+            }).collect()
+        }
+        Self {
+            objects: descriptors(&layouts.objects),
+            closures: descriptors(&layouts.closures),
+            frames: descriptors(&layouts.frames),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Page {
     class: usize,
@@ -190,7 +227,9 @@ pub struct HeapStats {
 
 #[derive(Debug)]
 pub struct Heap {
-    pub layouts: Layouts,
+    // Neither table may be replaced independently: stale indices could lose roots.
+    layouts: Layouts,
+    trace_layouts: TraceLayouts,
     pages: Vec<Page>,
     /// Free list heads per class; a free cell's second word links the next.
     free: [Word; CLASSES.len()],
@@ -333,6 +372,7 @@ impl Heap {
 
     pub fn new(layouts: Layouts) -> Self {
         Self {
+            trace_layouts: TraceLayouts::new(&layouts),
             layouts,
             pages: Vec::new(),
             free: [0; CLASSES.len()],
@@ -359,6 +399,12 @@ impl Heap {
             allocations: None,
             stress: false,
         }
+    }
+
+    /// Full layouts for allocation and resource walks. Read-only so the
+    /// collector's precomputed descriptors cannot become stale.
+    pub fn layouts(&self) -> &Layouts {
+        &self.layouts
     }
 
     /// Allocation-triggered collection is proportional to the live heap.
@@ -1386,18 +1432,19 @@ impl Heap {
                     unsafe { mark_and_queue(pointer, worklist) };
                 }
             };
-            let fields = |layout: &[Repr], push: &mut dyn FnMut(Word, Repr)| {
-                for (index, &repr) in layout.iter().enumerate() {
+            let fields = |layout: &[TraceSlot], push: &mut dyn FnMut(Word, Repr)| {
+                for &TraceSlot { index, repr } in layout {
                     push(
+                        // SAFETY: the index comes from this object's full layout.
                         unsafe { *((object + 8 + index as Word * 8) as *const u64) },
                         repr,
                     );
                 }
             };
             match kind(header) {
-                OBJECT => fields(&self.layouts.objects[payload(header) as usize], &mut push),
-                CLOSURE => fields(&self.layouts.closures[payload(header) as usize], &mut push),
-                FRAME => fields(&self.layouts.frames[payload(header) as usize], &mut push),
+                OBJECT => fields(&self.trace_layouts.objects[payload(header) as usize], &mut push),
+                CLOSURE => fields(&self.trace_layouts.closures[payload(header) as usize], &mut push),
+                FRAME => fields(&self.trace_layouts.frames[payload(header) as usize], &mut push),
                 // A shared version keeps its buffer alive; the buffer traces
                 // the slots below its frontier like any array.
                 ARRAY if header & SHARED != 0 => push(unsafe { *((object + 16) as *const u64) }, Repr::Ref),
@@ -1665,6 +1712,68 @@ mod tests {
             objects: vec![vec![Repr::Ref, Repr::Int], vec![Repr::Ref, Repr::Ref]],
             closures: vec![vec![Repr::Ref, Repr::Int]],
             frames: vec![],
+        }
+    }
+
+    #[test]
+    fn gc_layout_descriptors_preserve_every_non_raw_index_and_repr() {
+        // Exhaust every short layout, including empty, all-Raw and dense ones.
+        for length in 0..=6 {
+            for mut pattern in 0..3usize.pow(length) {
+                let layout: Vec<_> = (0..length).map(|_| {
+                    let repr = [Repr::Raw, Repr::Int, Repr::Ref][pattern % 3];
+                    pattern /= 3;
+                    repr
+                }).collect();
+                let full = Layouts {
+                    objects: vec![layout.clone()],
+                    closures: vec![layout.clone()],
+                    frames: vec![layout.clone()],
+                };
+                let traced = TraceLayouts::new(&full);
+                for slots in [&traced.objects[0], &traced.closures[0], &traced.frames[0]] {
+                    let mut next = slots.iter();
+                    for (index, &repr) in layout.iter().enumerate() {
+                        match repr {
+                            Repr::Raw => {},
+                            Repr::Int | Repr::Ref => assert_eq!(next.next(), Some(&TraceSlot { index, repr })),
+                        }
+                    }
+                    assert_eq!(next.next(), None);
+                    // Differential oracle: the original full-layout loop.
+                    for word in [word::UNBOUND, word::UNBOUND_RAW, 1, 3, 0x1000, u64::MAX] {
+                        let before: Vec<_> = layout.iter().enumerate()
+                            .filter_map(|(index, repr)| repr.pointer(word).map(|pointer| (index, pointer))).collect();
+                        let after: Vec<_> = slots.iter()
+                            .filter_map(|slot| slot.repr.pointer(word).map(|pointer| (slot.index, pointer))).collect();
+                        assert_eq!(before, after);
+                    }
+                }
+            }
+        }
+        // Word indices use usize, with no compact-index truncation.
+        let mut layout = vec![Repr::Raw; 65_537];
+        layout[65_536] = Repr::Int;
+        let traced = TraceLayouts::new(&Layouts { objects: vec![layout], ..Layouts::default() });
+        assert_eq!(&*traced.objects[0], &[TraceSlot { index: 65_536, repr: Repr::Int }]);
+    }
+
+    #[test]
+    fn gc_layout_descriptor_storage_and_slot_counts() {
+        for width in [0, 8, 256] {
+            for repr in [Repr::Raw, Repr::Ref] {
+                let mut layout = vec![repr; width];
+                if width != 0 {
+                    layout[0] = Repr::Ref;
+                }
+                let traced = TraceLayouts::new(&Layouts { objects: vec![layout], ..Layouts::default() });
+                let slots = traced.objects[0].len();
+                assert_eq!(slots, if width == 0 { 0 } else if repr == Repr::Raw { 1 } else { width });
+                let bytes = std::mem::size_of_val(&*traced.objects)
+                    + std::mem::size_of_val(&*traced.objects[0]);
+                eprintln!("gc-layout width={width} repr={repr:?} slots={slots} descriptor_bytes={bytes} inline_bytes={}",
+                    std::mem::size_of::<TraceLayouts>());
+            }
         }
     }
 
