@@ -171,9 +171,14 @@ pub fn run_executable(
         let mut runtime = configured_runtime(program, arguments, stats, worker_command, limits)?;
         let result = execute(&mut runtime).map_err(|failure| {
             let (error, uncaught) = *failure;
-            let Some(uncaught) = uncaught.filter(|_| trace) else {
+            let Some(mut uncaught) = uncaught.filter(|_| trace) else {
                 return (error, String::new());
             };
+            // Stops that are not failures (budgets, interrupts) carry no
+            // report offsets: their stack, if any, follows the whole message.
+            if uncaught.trace_offset == 0 {
+                uncaught.trace_offset = error.0.len();
+            }
             // Loaded appends worker functions; the launcher only sees SPB functions.
             let report = uncaught.render_report(&error.0, |sites| {
                 render_trace_functions(&runtime.loaded.program.functions[..original_functions], sites)
