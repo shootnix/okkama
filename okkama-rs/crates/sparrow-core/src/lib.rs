@@ -40,6 +40,7 @@ pub mod primitives;
 pub mod program;
 pub mod runtime;
 mod scalar;
+mod pointer_free;
 pub mod tasks;
 pub mod word;
 pub mod worker;

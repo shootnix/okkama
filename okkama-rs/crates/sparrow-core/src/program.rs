@@ -46,6 +46,8 @@ impl Kind {
 #[derive(Debug)]
 pub struct FunctionInfo {
     pub kinds: Vec<Kind>,
+    /// Proven pointer-free for every definition of this SPB register (#535).
+    pub(crate) pointer_free: Vec<bool>,
     pub result: Option<Kind>,
     /// See [`is_driver`].
     pub driver: bool,
@@ -106,13 +108,27 @@ pub fn is_driver(function: &okkama_sparrow::Function) -> bool {
 impl Loaded {
     pub fn new(mut program: Program) -> Self {
         let workers = add_workers(&mut program);
+        // One switch for both JIT roots and suspended-frame layouts. Read it
+        // once at load time; never change a live runtime's tracing contract.
+        let pointer_free = std::env::var_os("SPARROW_CORE_POINTER_FREE").is_none_or(|value| value != "0");
+        let profile = std::env::var("SPARROW_CORE_PROFILE_COMPILE").is_ok_and(|value| !value.is_empty() && value != "0");
         let functions = program
             .functions
             .iter()
-            .map(|f| FunctionInfo {
-                kinds: f.registers.iter().map(|t| Kind::of(&program, *t)).collect(),
-                result: f.result.map(|t| Kind::of(&program, t)),
-                driver: is_driver(f),
+            .map(|f| {
+                let kinds: Vec<Kind> = f.registers.iter().map(|t| Kind::of(&program, *t)).collect();
+                // This work happens at load time, outside jit::compile's timer.
+                let started = profile.then(std::time::Instant::now);
+                let pointer_free = if pointer_free { crate::pointer_free::analyze(f, &kinds) } else { vec![false; kinds.len()] };
+                if let Some(started) = started {
+                    eprintln!("; pointer-free analysis\t{}\t{} microseconds", f.symbol, started.elapsed().as_micros());
+                }
+                FunctionInfo {
+                    kinds,
+                    pointer_free,
+                    result: f.result.map(|t| Kind::of(&program, t)),
+                    driver: is_driver(f),
+                }
             })
             .collect();
         // A cell is what its constructor intrinsic makes, whatever its name.
@@ -195,7 +211,7 @@ impl Loaded {
                         Repr::Raw,
                         Repr::Raw,
                     ];
-                    layout.extend(f.kinds.iter().map(|k| k.repr()));
+                    layout.extend(f.kinds.iter().zip(&f.pointer_free).map(|(k, free)| if *free { Repr::Raw } else { k.repr() }));
                     if f.driver {
                         layout.push(Repr::Ref);
                     }

@@ -132,6 +132,13 @@ IR verifier in a release build; debug builds always run it),
 roots in Cranelift's frontend stack maps, as before #354; by default async
 bodies use the core's own root slots and synchronous functions Cranelift's
 maps, #362),
+`SPARROW_CORE_POINTER_FREE=0` (disable #535's whole-register proof in both
+JIT roots and async frame tracing, default enabled; load-time setting).
+Under `SPARROW_CORE_PROFILE_COMPILE`, `pointer-free analysis` lines separately
+report its load-time cost; `roots` lines under profiling or `SPARROW_CORE_DUMP`
+report traced/omitted registers and the sum of root words across stack maps.
+The same root counts appear under `--stats`. See
+[the #535 validation handoff](pointer-free-roots-535.md).
 `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
 once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,

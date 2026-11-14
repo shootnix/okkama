@@ -1,0 +1,26 @@
+; Appended to all_futures.spa by the #535 in-process test.
+type t18 failure
+function f17 "cleanup failure entry" $ASYNC {
+    registers [t1, t4, t3, t6, t18, t0, t0, t2, t1]
+    params []
+    result void
+    handler 7 8 @9 r4
+    0: const r0, str ""
+    1: call r1, f0, [r0]
+    2: region.enter r2
+    3: const r0, str "A"
+    4: obj.new r3, obj2, [r0, r1]
+    5: region.adopt r2, r3
+    6: const r5, int 7
+    7: trap confirm, "cleanup failure"
+    8: ret _
+    9: $UNWIND r4, r2, r4
+    10: call r0, f1, [r1]
+    11: const r6, int 7
+    12: int.cmp eq, r7, r5, r6
+    13: br r7, @15, @14
+    14: trap confirm, "lost constant through cleanup"
+    15: const r8, str "A"
+    16: call _, f11, [r0, r8]
+    17: raise r4
+}
