@@ -8,6 +8,7 @@
 //!   AST printers (`tree` and `json`);
 //! * [`ir`] — OIR-1: typed SSA modules, objects, functions and blocks, the
 //!   canonical text form and the verifier (`docs/compiler/OIR-1.md`);
+//! * [`oir2`] — independent OIR-2 data model, alongside the OIR-1 pipeline;
 //! * [`lowering`] — typed AST-to-OIR lowering of the supported subset:
 //!   scalars, control flow, loops, objects, constructors, actions, successors;
 //! * [`codegen`] — Sparrow bytecode generation.
@@ -28,6 +29,7 @@ pub mod ide;
 pub mod ir;
 pub mod jit;
 pub mod lowering;
+pub mod oir2;
 pub mod source;
 pub mod syntax;
 

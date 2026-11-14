@@ -1,0 +1,38 @@
+oir 2 high
+// spec: 6.1;6.2; status: v2; expected-rule: -
+module 06-retention-signatures
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+native object Store
+native object Record
+native object File
+native object FileText
+summary Mstore call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)), destination=result), parameter_effect(convention=take, retention=some(parameter(1)), deps=[0, 1], destination=result)] results [result_relation(aliases=[parameter(0), parameter(1)], external_deps=[0, 1], provenance=unbound_result)] contract call_contract(results=[Store], failures=[thrown], publication=atomic)
+summary Mfile call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)), deps=[0], destination=result)] results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)] contract call_contract(results=[FileText], failures=[thrown], publication=atomic)
+func @Store.add(%self: Store, %record: Record) -> Store summary(Mstore);
+func @File.text(%self: File) -> FileText summary(Mfile);
+func @main(%store: Store, %record: Record, %file: File) -> void {
+^entry in S unwind ^failed:
+    %updated: Store = call @Store.add(consume %store, consume %record)
+    %text: FileText = call @File.text(consume %file)
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

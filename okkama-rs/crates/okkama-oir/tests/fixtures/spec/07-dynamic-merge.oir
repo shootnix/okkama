@@ -1,0 +1,35 @@
+oir 2 own
+// spec: 7.1; status: v2; expected-rule: -
+module 07-dynamic-merge
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+protocol opaque holders [scope, packet] rules [protocol_rule(transition=dynamic, from=packet, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=packet, state=unaccepted)))] roots [operands]
+func @main(%q: scope<S>, %p: own) -> scope<S> {
+^entry in S:
+    invoke.own own.dynamic %q, %p, target S, reason merge, protocol opaque
+        normal ^ok($state)
+        unwind ^bad($state, $packet, $failure)
+^ok(%q1: scope<S>) in S:
+    ret %q1
+^bad(%original: scope<S>, %packet: own, %failure: failure) in S:
+    %q2: scope<S> = own.admit %original, %packet
+    %final: failure = scope.unwind %q2, %failure
+    raise %final
+}

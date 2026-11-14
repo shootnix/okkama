@@ -1,0 +1,60 @@
+oir 2 own
+// spec: 6.1;6.3;6.4; status: v2; expected-rule: -
+module 06-entry-role-adapter
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+role Read {
+    read(Res) -> str
+}
+summary Mslot call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+scope Sadapter action in @adapter
+func @adapter(%self: Read, %r: Res; %input: own) -> (str, own, deps) summary(Mslot) {
+^entry in Sadapter:
+    %q: scope<Sadapter> = scope.begin Sadapter
+    %accepted: scope<Sadapter> = own.accept %q, %input
+    br ^read(%accepted)
+^read(%state: scope<Sadapter>) in Sadapter:
+    invoke.own call @label(%r)
+        normal ^close($value, %state)
+        unwind ^bad($failure, %state)
+^bad(%failure: failure, %failed_state: scope<Sadapter>) in Sadapter:
+    %final: failure = scope.unwind %failed_state, %failure
+    raise %final
+^close(%text: str, %rest: scope<Sadapter>) in Sadapter:
+    invoke.own scope.end %rest
+        normal ^done($closed, %text)
+        unwind ^close_failed($closed, $failure)
+^close_failed(%closed: closed, %error: failure) in Sadapter:
+    raise %error
+^done(%closed2: closed, %answer: str) in Sadapter:
+    %empty: own = own.empty
+    %deps: deps = undef ty deps
+    ret %answer, %empty, %deps
+}
+func @main(%reader: Read, %r: Res; %input: own) -> (str, own, deps) {
+^entry in S:
+    invoke.own call.role %reader, Read slot 0(%r; %input) summary(Mslot)
+        normal ^ok($value, $packet, $deps)
+        unwind ^bad($failure)
+^ok(%result: str, %out: own, %deps: deps) in S:
+    ret %result, %out, %deps
+^bad(%failure: failure) in S:
+    raise %failure
+}

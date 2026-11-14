@@ -1,0 +1,31 @@
+oir 2 own
+// spec: 9.3;9.4; status: v2; expected-rule: -
+module 09-typed-cleanup
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+func @main(%failure: failure) -> void {
+^entry in S:
+    catch %failure is Cleanup, ^caught($value), ^uncaught
+^caught(%error: Cleanup) in S:
+    %same: bool = val.eq %error, %error
+    ret
+^uncaught in S:
+    raise %failure
+}

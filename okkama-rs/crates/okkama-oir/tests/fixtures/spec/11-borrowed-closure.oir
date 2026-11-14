@@ -1,0 +1,45 @@
+oir 2 high
+// spec: 11; status: v2; expected-rule: -
+module 11-borrowed-closure
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+summary Mclosure call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+object Stored {
+    field action: fn() -> str
+}
+scope Sstored block in @main parent S
+func @main() -> void {
+    binding b0 "a": Res in S
+^entry in S unwind ^failed:
+    %a: Res = call @new("A")
+    bind %a, binding b0
+    %f: fn() -> str = fn.closure @label, [%a], ty fn() -> str
+    br ^inner
+^inner in Sstored unwind ^failed:
+    %stored: Stored = obj.new Stored { action: %f }
+    %callback: fn() -> str = obj.get %stored, action
+    %result: str = fn.call %callback() summary(Mclosure)
+    br ^outer
+^outer in S unwind ^failed:
+    %alive: str = call @label(%a)
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}
