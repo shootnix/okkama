@@ -79,6 +79,7 @@ pub(super) fn check(module: &ir::Module) -> Result<()> {
         }
         if let Some(body) = &function.body {
             super::construction::check(module, body)?;
+            super::high::check(module, body)?;
             let live = reachable(module, body)?;
             for (block, data) in body.blocks.iter() {
                 if !live.contains(&block) && (!data.params.is_empty() || !data.insts.is_empty()

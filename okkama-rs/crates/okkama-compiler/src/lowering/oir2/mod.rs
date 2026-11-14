@@ -1,14 +1,16 @@
-//! Developer-only THIR -> OIR-2 high producer for #566 S1/S2.
+//! Developer-only THIR -> OIR-2 high producer for #566 and #567 S1/S2.
 //!
 //! This module is compiled only for library tests. It never enters the OIR-1
 //! pipeline. Every declared source function must have a lowered body.
-//! Unsupported operations and cleanup bodies belong to later slices/#567 and
+//! Unsupported operations and destroy bodies belong to later slices and
 //! produce source diagnostics. Result exits are centralized in `BodyLowerer`
 //! so D11 can replace the pre-D11 instruction-local encoding in one place.
 
 mod body;
 mod construction;
 mod declarations;
+mod defer;
+mod high;
 mod objects;
 mod walk;
 mod scalar;
@@ -32,6 +34,15 @@ impl LowerError {
         Self::Unsupported {
             span,
             message: format!("unsupported in OIR-2 lowering: {construct}"),
+        }
+    }
+
+    fn in_function(self, symbol: &str) -> Self {
+        match self {
+            Self::Unsupported { span, message } => Self::Unsupported {
+                span, message: format!("{message} in function {symbol}"),
+            },
+            error => error,
         }
     }
 
@@ -113,18 +124,31 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
                 constructors: &declarations.constructors,
                 given: declarations.ctor_fields.get(&function).cloned().unwrap_or_default(),
                 listed,
+                defers: &declarations.defers,
+                deferred: None,
             };
-            let lowered = body::BodyLowerer::lower(builder, body, root, &declarations.types, context).map_err(|error| {
-                match error {
-                    LowerError::Unsupported { span, message } => LowerError::Unsupported {
-                        span,
-                        message: format!("{message} in function {symbol}"),
-                    },
-                    error => error,
-                }
-            })?;
+            let lowered = body::BodyLowerer::lower(builder, body, root, &declarations.types, context)
+                .map_err(|error| error.in_function(&symbol))?;
             declarations.builder.define_function(function, lowered)?;
         }
+    }
+    for deferred in &declarations.defers {
+        let function = deferred.function;
+        let root = declarations.builder.declare_scope(ir::ScopeDecl {
+            function, parent: None, kind: ir::ScopeKind::Action, loc: None,
+        })?;
+        let symbol = declarations.builder.module().functions.get(function)?.symbol.clone();
+        let builder = declarations.builder.function_builder(function, root)?;
+        let context = body::BodyContext {
+            functions: &declarations.functions,
+            objects: &declarations.objects,
+            constructors: &declarations.constructors,
+            given: vec![], listed: None, defers: &declarations.defers,
+            deferred: Some(deferred.receiver),
+        };
+        let lowered = body::BodyLowerer::lower(builder, &deferred.source, root, &declarations.types, context)
+            .map_err(|error| error.in_function(&symbol))?;
+        declarations.builder.define_function(function, lowered)?;
     }
     let mut module = declarations.builder.finish()?;
     structure::finish(&mut module)?;

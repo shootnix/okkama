@@ -13,6 +13,7 @@ pub(super) struct Declarations {
     pub types: HashMap<ty::Ty, ir::TypeId>,
     pub objects: HashMap<ty::ObjectId, ir::DeclId>,
     pub constructors: HashMap<(ty::ObjectId, usize, Vec<usize>), ir::FuncId>,
+    pub defers: Vec<super::defer::Deferred>,
     pub ctor_fields: HashMap<ir::FuncId, Vec<usize>>,
 }
 
@@ -32,6 +33,7 @@ impl Declarations {
             objects: HashMap::new(),
             constructors: HashMap::new(),
             ctor_fields: HashMap::new(),
+            defers: vec![],
         };
         for (ty, lowered) in [
             (ty::Ty::Int, ir::Type::Int),
@@ -196,7 +198,11 @@ impl Declarations {
                     once: false,
                 });
             }
-            if thir::escapes_self(&analysis.bodies, object) {
+            let defer_receiver = analysis.bodies.iter().any(|body| {
+                matches!(body.owner, thir::BodyOwner::Ctor { object: owner, .. } if owner == object)
+                    && body.block.stmts.iter().any(super::defer::uses_receiver)
+            });
+            if thir::escapes_self(&analysis.bodies, object) || defer_receiver {
                 fields.push(ir::Field {
                     name: PENDING_FIELD.into(), ty: this.types[&ty::Ty::Bool], default: None, once: false,
                 });
@@ -233,6 +239,9 @@ impl Declarations {
             let id = this.builder.declare_function(function)?;
             this.constructors.insert(key, id);
             this.ctor_fields.insert(id, given);
+        }
+        for body in &analysis.bodies {
+            this.declare_defers(body)?;
         }
         Ok(this)
     }

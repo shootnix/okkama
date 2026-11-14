@@ -43,9 +43,11 @@ func @main() -> int [entry] {
     boundary B0 lexical in S1
     ^b0 in S1 unwind ^b1:
     %0: app.O = call @app.O.new#0.given_()
+    temp %0, S1
     discard %0
     %1: int = const 9
     %2: app.O = call @app.O.new#0(%1)
+    temp %2, S1
     discard %2
     %3: int = const 0
     want %3

@@ -89,6 +89,7 @@ func @main() -> int [entry] {
     %3: app.Holder = succ.take %2, ty app.Holder
     rebind %3, binding b0, target S3
     %4: app.Item = call @app.Holder.get#0(%3)
+    temp %4, S3
     discard %4
     %5: int = const 0
     want %5

@@ -106,7 +106,7 @@ fn oir2_scalar_builtins_golden() {
 fn oir2_unsupported_source_constructs_are_diagnostics() {
     for (body, expected) in [
         ("let a = [1]; 0;", "collection"),
-        ("defer 0; 0;", "statement"),
+        ("defer [1]; 0;", "collection"),
         ("try { 1; } catch e is Error { 2; }", "try"),
         ("panic \"stop\";", "panic"),
         ("1.5; 0;", "constant"),
@@ -208,7 +208,8 @@ fn oir2_boundary_edge_cases_roundtrip() {
 #[test]
 fn oir2_declared_unsupported_bodies_name_the_function() {
     for (source, name, construct) in [
-        ("module app; object O { O() { defer 0; } } main() is int { 0; }", "app.O.new#0", "statement"),
+        ("module app; object O { O() { try { 0; } catch e is Error { 0; } } } main() is int { 0; }",
+            "app.O.new#0", "try"),
         ("module app; object O { O(); destroy { panic \"stop\"; } } main() is int { 0; }",
             "app.O.destroy", "destroy"),
         ("module app; object O { has n is int = 1 & 2; O(); } main() is int { 0; }",
@@ -477,7 +478,7 @@ fn oir2_s2_unsupported_bodies_name_the_function() {
     for (source, name) in [
         ("module app; object O { O() { try { 1; } catch e is Error { 2; } } } main() is int { 0; }",
             "app.O.new#0"),
-        ("module app; object O { O(); f() is int { defer 0; 0; } } main() is int { 0; }", "app.O.f#0"),
+        ("module app; object O { O(); f() is int { panic \"stop\"; } } main() is int { 0; }", "app.O.f#0"),
         ("module app; object O { has n is int = 1 & 2; O(); } main() is int { 0; }",
             "app.O.default#0"),
         ("module app; object O { O(); destroy { 0; } } main() is int { 0; }", "app.O.destroy"),
@@ -567,4 +568,233 @@ fn oir2_pending_layout_and_creation_follow_constructor_self_escape() {
             assert_eq!(field.index, 1);
         }
     });
+}
+
+#[test]
+fn oir2_scopes_and_defer_goldens() {
+    let object = "module app; object Res { has name is string; Res(s is string) { name = s; } ";
+    let object = format!("{object}label() is string {{ name; }} renamed(s is string) is ^Res {{ ^name = s; }} }} ");
+    for (name, body, expected) in [
+        ("scope-temp", "{ { Res(\"inner\"); 1; } Res(\"outer\"); 2; } 0;",
+            include_str!("goldens/scope-temp.oir")),
+        ("discard-resource-branch", "if true { Res(\"A\"); } Res(\"checkpoint\"); 0;",
+            include_str!("goldens/discard-resource-branch.oir")),
+        ("discard-block-let", "{ let r = Res(\"bound\"); r; } 0;",
+            include_str!("goldens/discard-block-let.oir")),
+        ("defer-rebind-loop", "let r = Res(\"A\"); defer r.label(); for 1..=3 -> i { r = r.renamed(\"B\"); } 0;",
+            include_str!("goldens/defer-rebind-loop.oir")),
+        ("defer-lifo", "let r = Res(\"A\"); defer r.label(); defer Res(\"second\").label(); 0;",
+            include_str!("goldens/defer-lifo.oir")),
+        ("defer-failure-prefix", "let r = Res(\"A\"); r.label(); defer r.label(); r.label(); 0;",
+            include_str!("goldens/defer-failure-prefix.oir")),
+        ("defer-iteration", "for 0..3 -> i { let r = Res(\"iteration\"); defer r.label(); next if i == 1; } 0;",
+            include_str!("goldens/defer-iteration.oir")),
+    ] {
+        s2_golden(name, &format!("{object}main() is int {{ {body} }}"), expected);
+    }
+}
+
+#[test]
+fn oir2_defer_lexical_captures_roundtrip() {
+    for source in [
+        "module app; main() is int { defer 1 % 0; 0; }",
+        "module app; main() is int { defer 1; defer 2; 0; }",
+        "module app; main() is int { if true { defer 1; } else { defer 2; } defer 3; 0; }",
+        "module app; main() is int { let n = 1; { let n = 2; defer n; } defer n; 0; }",
+        "module app; main() is int { defer if true { let n = 1; defer n; n; } else { 0; }; 0; }",
+        "module app; main() is int { for 0..3 -> i { defer i; next; } 0; }",
+        "module app; main() is int { loop { defer 1; next if false; last; } 0; }",
+        "module app; object O { has n is int = 1; O(); f() is void { defer n; defer self; } } main() is int { 0; }",
+        "module app; object O { O() { defer self; } } main() is int { O(); 0; }",
+        "module app; object O { has n is int; O() { n = 1; defer self.n; } } main() is int { O(); 0; }",
+        "module app; main() is int { let n = 1; defer if true { for 0..2 -> i { i + n; } } else { 0; }; 0; }",
+    ] {
+        print_oir2(source).unwrap_or_else(|error| panic!("{source}\n{error}"));
+    }
+}
+
+#[test]
+fn oir2_s3_constructs_still_report_unsupported() {
+    for body in [
+        "throw Stop.now;",
+        "try { throw Stop.now; } catch e is Stop { throw; }",
+        "defer if true { throw Stop.now; } else { 0; }; 0;",
+        "defer if true { return 1; } else { 0; }; 0;",
+        "defer try { 0; } catch e is Stop { 0; }; 0;",
+    ] {
+        let source = format!("module app; enum Stop is Error = (now); main() is int {{ {body} }}");
+        let error = print_oir2(&source).expect_err("S3 must remain unsupported");
+        assert!(matches!(error, LowerError::Unsupported { .. }), "{error}");
+        assert!(error.to_string().contains("unsupported in OIR-2 lowering"), "{error}");
+    }
+}
+
+fn check_high_fixture(body: &str) -> Result<(), LowerError> {
+    let source = format!(r#"oir 2 high
+module prefixes
+requires core
+scope SD action in @d
+scope S action in @f
+scope SI iteration in @f parent S
+func @d() -> void {{
+^entry in SD:
+    ret
+}}
+func @f(%c: bool, %x: int) -> void {{
+{body}
+}}
+"#);
+    let module = ir::text::parse(&source).unwrap();
+    let function = module.functions.iter().find(|(_, function)| function.symbol == "f").unwrap().1;
+    let body = function.body.as_ref().unwrap();
+    super::high::check(&module, body)
+}
+
+#[test]
+fn oir2_self_check_defer_prefixes_at_merges_and_failure_points() {
+    for (body, expected) in [
+        (r#"^entry in S:
+    cond %c, ^left, ^right
+^left in S:
+    defer.register S, action defer_action(function=@d)
+    br ^done
+^right in S:
+    br ^done
+^done in S:
+    ret"#, "H3"),
+        (r#"^entry in S:
+    br ^again
+^again in S:
+    defer.register S, action defer_action(function=@d)
+    br ^again"#, "H3"),
+        (r#"^entry in S unwind ^failed:
+    %a: int = int.mod %x, %x
+    defer.register S, action defer_action(function=@d)
+    %b: int = int.mod %x, %x
+    ret
+^failed(%e: failure) in S:
+    raise %e"#, "H3"),
+        (r#"^entry in S:
+    defer.register SI, action defer_action(function=@d)
+    ret"#, "H3"),
+        (r#"^entry in S:
+    cond %c, ^left, ^right
+^left in SI:
+    ret
+^right in SI:
+    ret"#, "H1"),
+
+        (r#"^entry in S:
+    cond %c, ^left, ^right
+^left in S:
+    defer.register S, action defer_action(function=@d)
+    ret
+^right in S:
+    defer.register S, action defer_action(function=@d)
+    ret"#, "H3"),
+        (r#"^entry in S:
+    br ^nested
+^nested in SI:
+    %a: int = int.mod %x, %x
+    ret"#, "H5"),
+        (r#"^entry in S:
+    temp %x, SI
+    ret"#, "H8"),
+    ] {
+        let error = check_high_fixture(body).expect_err("invalid lexical high must fail self-check");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+    check_high_fixture(r#"^entry in S unwind ^before_failed:
+    %a: int = int.mod %x, %x
+    defer.register S, action defer_action(function=@d)
+    br ^after
+^after in S unwind ^after_failed:
+    %b: int = int.mod %x, %x
+    ret
+^before_failed(%e: failure) in S:
+    raise %e
+^after_failed(%f: failure) in S:
+    raise %f"#).unwrap();
+    check_high_fixture(r#"^entry in S:
+    br ^head
+^head in S:
+    br ^iteration
+^iteration in SI:
+    defer.register SI, action defer_action(function=@d)
+    br ^head"#).unwrap();
+}
+
+#[test]
+fn oir2_self_check_defer_bindings_need_initial_dominance() {
+    let module = ir::text::parse(include_str!("goldens/defer-failure-prefix.oir")).unwrap();
+    for mutation in 0..3 {
+        let mut broken = module.clone();
+        let body = broken.functions.get_mut(broken.entry.unwrap()).unwrap().body.as_mut().unwrap();
+        let entry = body.entry;
+        let data = body.blocks.get_mut(entry).unwrap();
+        let bind = data.insts.iter().position(|&id| {
+            matches!(body.insts.get(id).unwrap().op, ir::Operation::Lexical(ir::LexicalOp::Bind { .. }))
+        }).unwrap();
+        let instruction = data.insts.remove(bind);
+        match mutation {
+            0 => {}
+            1 => data.insts.push(instruction),
+            _ => {
+                data.insts.insert(bind, instruction);
+                data.insts.insert(bind, instruction);
+            }
+        }
+        let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("invalid initial binding");
+        assert!(error.to_string().contains("H7"), "{error}");
+    }
+}
+
+fn body_for_entry(module: &ir::Module) -> &ir::Body {
+    module.functions.get(module.entry.unwrap()).unwrap().body.as_ref().unwrap()
+}
+
+#[test]
+fn oir2_defer_receiver_snapshots_and_binding_arguments_are_lazy() {
+    let source = concat!("module app; object O { has n is int = 1; O(); ",
+        "f(p is int) is void { defer n + p; } } main() is int { 0; }");
+    with_analysis(source, |analysis| {
+        let module = lower_to_oir2(analysis).unwrap();
+        let function = module.functions.iter().find(|(_, f)| f.symbol == "app.O.f#0").unwrap().1;
+        let body = function.body.as_ref().unwrap();
+        let action = body.insts.iter().find_map(|(_, inst)| {
+            if let ir::Operation::Lexical(ir::LexicalOp::DeferRegister { action, .. }) = &inst.op {
+                Some(action)
+            } else {
+                None
+            }
+        }).unwrap();
+        assert_eq!(action.captures.len(), 1);
+        assert_eq!(action.captures[0], body.blocks.get(body.entry).unwrap().params[0]);
+        assert_eq!(action.bindings.len(), 1);
+        assert_eq!(body.bindings.get(action.bindings[0]).unwrap().name, "p");
+        assert!(!body.insts.iter().any(|(_, inst)| matches!(inst.op, ir::Operation::Core(_))));
+        let deferred = module.functions.get(action.function).unwrap();
+        assert_eq!(deferred.signature.params, function.signature.params);
+        let deferred = deferred.body.as_ref().unwrap();
+        assert!(deferred.insts.iter().any(|(_, inst)| {
+            matches!(inst.op, ir::Operation::Core(ir::CoreOp::ObjGet { .. }))
+        }));
+        assert!(deferred.insts.iter().any(|(_, inst)| {
+            matches!(inst.op, ir::Operation::Core(ir::CoreOp::IntAdd { .. }))
+        }));
+    });
+}
+
+#[test]
+fn oir2_defer_nonlocal_writes_remain_unsupported() {
+    for source in [
+        concat!("module app; object O { O(); bump() is ^O { } } main() is int { let o = O(); ",
+            "defer if true { o = o.bump(); } else { 0; }; 0; }"),
+        concat!("module app; object O { has n is int = 0; O(); bump() is ^O { ",
+            "defer if true { ^n = 1; } else { 0; }; } } main() is int { 0; }"),
+    ] {
+        let error = print_oir2(source).expect_err("nonlocal defer writes require later outcome plumbing");
+        assert!(matches!(error, LowerError::Unsupported { .. }), "{error}");
+        assert!(error.to_string().contains("unsupported in OIR-2 lowering"), "{error}");
+    }
 }

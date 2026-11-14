@@ -55,6 +55,7 @@ func @main() -> int [entry] {
     %3: app.O = call @app.O.new#0()
     %4: app.O = succ.take %2, ty app.O
     %5: app.O = call @app.O.accept#1(%0, %4, %3)
+    temp %5, S2
     discard %5
     %6: int = const 0
     want %6

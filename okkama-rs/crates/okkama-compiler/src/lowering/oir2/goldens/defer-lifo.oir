@@ -1,0 +1,108 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object app.Res {
+    field name: str
+}
+scope S0 action in @app.Res.label#0
+scope S1 action in @app.Res.renamed#1
+scope S2 action in @main
+scope S3 action in @app.Res.new#0
+scope S4 action in @main.defer#0
+scope S5 action in @main.defer#1
+
+func @app.Res.new#0(%0: str) -> app.Res [ctor app.Res] {
+    binding b0 "s": str in S3
+    boundary B0 lexical in S3
+    ^b0 in S3 unwind ^b1:
+    %1: str = undef ty str
+    bind %0, binding b0
+    stage %0, action S3, field field_ref(declaration=app.Res, index=0)
+    %2: app.Res = obj.new app.Res { name: %0 }
+    want %2
+    exit.prepare return %2 at B0
+    ret %2
+    ^b1(%3: failure) in S3:
+    raise %3
+}
+
+func @app.Res.label#0(%0: app.Res) -> str [method app.Res] {
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %1: str = obj.get %0, name
+    want %1
+    exit.prepare return %1 at B0
+    ret %1
+    ^b1(%2: failure) in S0:
+    raise %2
+}
+
+func @app.Res.renamed#1(%0: app.Res, %1: str) -> ^app.Res [successor app.Res] {
+    binding b0 "s": str in S1
+    boundary B0 lexical in S1
+    ^b0 in S1 unwind ^b1:
+    %2: str = obj.get %0, name
+    bind %1, binding b0
+    stage %1, action S1, field field_ref(declaration=app.Res, index=0)
+    %3: ^app.Res = obj.next %0 { name: %1 }
+    want %3
+    exit.prepare return %3 at B0
+    ret %3
+    ^b1(%4: failure) in S1:
+    raise %4
+}
+
+func @main() -> int [entry] {
+    binding b0 "r": app.Res in S2
+    boundary B0 lexical in S2
+    ^b0 in S2 unwind ^b1:
+    %0: str = const "A"
+    %1: app.Res = call @app.Res.new#0(%0)
+    bind %1, binding b0
+    defer.register S2, action defer_action(function=@main.defer#0, bindings=[b0])
+    br ^b2(%1)
+    ^b1(%2: failure) in S2:
+    raise %2
+    ^b2(%3: app.Res) in S2 unwind ^b3:
+    defer.register S2, action defer_action(function=@main.defer#1)
+    br ^b4(%3)
+    ^b3(%4: failure) in S2:
+    raise %4
+    ^b4(%5: app.Res) in S2 unwind ^b5:
+    %6: int = const 0
+    want %6
+    exit.prepare return %6 at B0
+    ret %6
+    ^b5(%7: failure) in S2:
+    raise %7
+}
+
+func @main.defer#0(%0: app.Res) -> void {
+    binding b0 "r": app.Res in S4
+    boundary B0 lexical in S4
+    selection s0: selection = union([])
+    ^b0 in S4 unwind ^b1:
+    bind %0, binding b0
+    %1: str = call @app.Res.label#0(%0)
+    discard %1
+    exit.prepare return select s0 at B0
+    ret
+    ^b1(%2: failure) in S4:
+    raise %2
+}
+
+func @main.defer#1() -> void {
+    boundary B0 lexical in S5
+    selection s0: selection = union([])
+    ^b0 in S5 unwind ^b1:
+    %0: str = const "second"
+    %1: app.Res = call @app.Res.new#0(%0)
+    %2: str = call @app.Res.label#0(%1)
+    discard %2
+    exit.prepare return select s0 at B0
+    ret
+    ^b1(%3: failure) in S5:
+    raise %3
+}

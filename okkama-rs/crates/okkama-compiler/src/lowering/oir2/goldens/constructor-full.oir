@@ -31,6 +31,7 @@ func @main() -> int [entry] {
     ^b0 in S0 unwind ^b1:
     %0: int = const 4
     %1: app.O = call @app.O.new#0(%0)
+    temp %1, S0
     discard %1
     %2: int = const 0
     want %2

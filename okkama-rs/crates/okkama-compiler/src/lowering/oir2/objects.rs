@@ -11,11 +11,12 @@ pub(super) fn pending_index(fields: &[ir::Field]) -> Option<usize> {
 
 impl BodyLowerer<'_, '_> {
     pub fn is_constructor(&self) -> bool {
-        matches!(self.source.owner, thir::BodyOwner::Ctor { .. })
+        self.context.deferred.is_none() && matches!(self.source.owner, thir::BodyOwner::Ctor { .. })
     }
 
     pub fn is_successor(&self) -> bool {
-        self.b.module().functions.get(self.b.module().scopes.get(self.root).expect("root").function)
+        let function = self.b.module().scopes.get(self.root).expect("root").function;
+        self.context.deferred.is_none() && self.b.module().functions.get(function)
             .expect("function").attrs.iter().any(|attr| matches!(attr, ir::FunctionAttr::Successor(_)))
     }
 
@@ -107,6 +108,9 @@ impl BodyLowerer<'_, '_> {
     }
 
     pub fn pending_field(&mut self, index: usize) -> Result<ir::ValueId> {
+        if self.context.deferred.is_some() {
+            return self.read_field(index);
+        }
         let value = self.env[self.field_base + index]
             .ok_or_else(|| LowerError::invalid(self.source.span, "read of an uninitialized field"))?;
         if super::construction::undefined_values(self.b.body())?.contains(&value) {
