@@ -115,7 +115,11 @@ fake fields; role fakes and their ordinary typed fields remain available.
   - objects, constructors with early self, calls and successors;
   - temporaries and discarded results (#308);
   - defer registration, throw, try/catch, rethrow and destroy bodies;
-  - resource returns.
+  - resource returns;
+  - the std the first P1 programs call: Stdout and writeln, Cell and
+    UTF-8 encoding as ordinary std code, Atomic and `Error.text` as
+    intrinsics, encoding and stdout writes as natives with compiler
+    summaries.
 
   Constructs outside the slice get an explicit "unsupported" diagnostic
   rather than a fallback. Every lowering golden passes `verify_high`.
