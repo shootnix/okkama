@@ -40,7 +40,7 @@ sample_expr!(CallArgument, CallArgument { value: sample(), convention: OperandCo
 sample_expr!(CallSite, CallSite { args: vec![CallArgument { value: sample(), convention: OperandConvention::Borrow }], packet: sample(), deps: sample(), descriptors: sample(), type_args: sample(), summary: sample() });
 sample_expr!(DescriptorContract, DescriptorContract { managed: DescriptorManaged::Runtime, retention: SummarySelection::Parameter(0), cleanup: sample(), async_destroy: false, summary: sample() });
 fn v(index: u32) -> ValueId { ValueId::from_u32(index) }
-fn module() -> Module {
+pub(crate) fn module() -> Module {
     let mut module = Module {
         name: "contracts".into(), version: None, profile: Profile::Own, requires: vec![Feature::Core], imports: vec![],
         declarations: Arena::new(), types: TypeTable::new(), scopes: Arena::new(), summaries: Arena::new(), protocols: Arena::new(), functions: Arena::new(), entry: None, tests: None, files: Arena::new(),
@@ -65,7 +65,7 @@ fn body() -> Body {
     body.selections.alloc(SelectionExpr::Value(v(0))).unwrap();
     body
 }
-fn representatives() -> Vec<Operation> {
+pub(crate) fn representatives() -> Vec<Operation> {
     let mut ops = vec![Operation::Const(Literal::Int("1".into()))];
     ops.extend(CoreOp::representatives().into_iter().map(|mut op| {
         if let CoreOp::Convert { to, .. } = &mut op { *to = NumericType::Rat; }

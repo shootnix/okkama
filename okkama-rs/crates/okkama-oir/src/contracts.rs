@@ -358,6 +358,13 @@ pub struct ContractRegistry<'a> { pub module: &'a Module }
 impl<'a> ContractRegistry<'a> {
     pub fn new(module: &'a Module) -> Self { Self { module } }
     pub fn lookup(&self, op: &Operation) -> Result<OpContract, ContractError> {
+        self.lookup_mode(op, true)
+    }
+    /// Outcome shapes for text edge slots, without semantic call/protocol checks.
+    pub(crate) fn text_schema(&self, op: &Operation) -> Result<OpContract, ContractError> {
+        self.lookup_mode(op, false)
+    }
+    fn lookup_mode(&self, op: &Operation, validate: bool) -> Result<OpContract, ContractError> {
         let spec = op.spec();
         let mut contract = OpContract {
             operands: spec.operands,
@@ -366,12 +373,13 @@ impl<'a> ContractRegistry<'a> {
             roots: RootContract { roots: vec![RootKind::Operands], through_suspend: false },
             entry_kind: EntryKind::Internal,
         };
-        self.apply(spec.rule, &mut contract)?;
+        self.apply(spec.rule, &mut contract, validate)?;
         contract.roots.through_suspend = contract.effects.suspends;
         Ok(contract)
     }
-    fn protocol(&self, id: ProtocolId, transition: ProtocolTransition, c: &mut OpContract) -> Result<(), ContractError> {
+    fn protocol(&self, id: ProtocolId, transition: ProtocolTransition, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
         let decl = self.module.protocols.get(id)?;
+        if !validate { return Ok(()); }
         let rules: Vec<_> = decl.rules.iter().filter(|rule| rule.transition == transition).collect();
         if rules.is_empty() { return Err(ContractError::MissingTransition { protocol: id, transition }); }
         c.roots.roots.extend(decl.roots.iter().copied());
@@ -397,7 +405,7 @@ impl<'a> ContractRegistry<'a> {
         }
         Ok(())
     }
-    fn apply(&self, rule: Rule, c: &mut OpContract) -> Result<(), ContractError> {
+    fn apply(&self, rule: Rule, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
         use SlotName as N;
         use ServiceType as S;
         match rule {
@@ -414,14 +422,14 @@ impl<'a> ContractRegistry<'a> {
                     (T::Int | T::Byte | T::Float | T::Rat | T::Bool, T::Str) => false,
                     _ => return Err(ContractError::InvalidConversion { from, to }),
                 };
-                self.apply(Rule::Data { ty: to.result_type(), trap }, c)?;
+                self.apply(Rule::Data { ty: to.result_type(), trap }, c, validate)?;
             }
             Rule::Retained { rule, selection } => {
-                self.apply(*rule, c)?;
+                self.apply(*rule, c, validate)?;
                 c.normal.retention.push(RetentionRule { result: SlotName::Value, selection });
             }
             Rule::Restricted { rule, requirement } => {
-                self.apply(*rule, c)?; c.normal.postconditions.push(requirement);
+                self.apply(*rule, c, validate)?; c.normal.postconditions.push(requirement);
             }
             Rule::Intent => { c.effects.mutates = true; }
             Rule::Check => { observation(c); fails(c, vec![], false); }
@@ -508,7 +516,7 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(state)));
                 c.normal.transfers.push(TransferRule::Admit { state, packet, output: N::State, provenance: ProvenanceTransition::Preserve });
                 fails(c, [preserve(Some(state), N::State), preserve(Some(packet), N::Packet)].concat(), false);
-                self.protocol(protocol, ProtocolTransition::Dynamic, c)?;
+                self.protocol(protocol, ProtocolTransition::Dynamic, c, validate)?;
             }
             Rule::Close { input, failure } => {
                 cleanup(c);
@@ -527,9 +535,9 @@ impl<'a> ContractRegistry<'a> {
                     c.cancellation = Some(CancellationContract { outcome: unwind, delivery: CancellationDelivery::AfterShieldedCleanup });
                 }
             }
-            Rule::Call(call) => { self.call(&call, c)?; }
+            Rule::Call(call) => { self.call(&call, c, validate)?; }
             Rule::Resume { frame, call } => {
-                self.call(&call, c)?;
+                self.call(&call, c, validate)?;
                 c.normal.transfers.push(TransferRule::Settle { inputs: vec![frame] });
                 if let Some(unwind) = &mut c.unwind { unwind.transfers.push(TransferRule::Settle { inputs: vec![frame] }); }
                 if let Some(cancel) = &mut c.cancellation { cancel.outcome.transfers.push(TransferRule::Settle { inputs: vec![frame] }); }
@@ -578,7 +586,7 @@ impl<'a> ContractRegistry<'a> {
                 restored.extend(preserve(owner, N::To)); restored.extend(preserve(packet, N::Packet));
                 fails(c, restored, false);
                 c.normal.postconditions.push(Postcondition::NoFreshAdmission);
-                self.protocol(protocol, transition, c)?;
+                self.protocol(protocol, transition, c, validate)?;
             }
             Rule::FutureNew { frame, packet, owner, result } => {
                 c.normal.results = vec![ResultSlot::new(N::Value, ResultType::FutureOf(result)), ResultSlot::service(N::State, S::CacheState), ResultSlot::new(N::To, ResultType::SameAs(owner))];
@@ -591,13 +599,13 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.transfers.push(TransferRule::Settle { inputs: vec![task, cache] });
                 c.normal.postconditions.push(Postcondition::Closed(task));
                 c.effects.publishes = true;
-                self.protocol(protocol, ProtocolTransition::Publish, c)?;
+                self.protocol(protocol, ProtocolTransition::Publish, c, validate)?;
             }
             Rule::TaskSettle { task, protocol } => {
                 cleanup(c);
                 c.normal.results = vec![ResultSlot::service(N::Task, S::TaskState), ResultSlot::service(N::Packet, S::Own), ResultSlot::service(N::Failure, S::FailureState)];
                 c.normal.transfers.push(TransferRule::Settle { inputs: vec![task] });
-                self.protocol(protocol, ProtocolTransition::Settle, c)?;
+                self.protocol(protocol, ProtocolTransition::Settle, c, validate)?;
             }
             Rule::FrameSave { frame, slots } => {
                 c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(frame)));
@@ -616,12 +624,12 @@ impl<'a> ContractRegistry<'a> {
                 cleanup(c);
                 c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(plan)));
                 c.normal.transfers.push(TransferRule::Settle { inputs: vec![frame, plan] });
-                self.protocol(protocol, ProtocolTransition::Cancel, c)?;
+                self.protocol(protocol, ProtocolTransition::Cancel, c, validate)?;
             }
             Rule::Pin { owner, protocol } => {
                 c.normal.results = vec![ResultSlot::service(N::Pin, S::Pin), ResultSlot::new(N::State, ResultType::SameAs(owner))];
                 fails(c, preserve(Some(owner), N::State), false);
-                self.protocol(protocol, ProtocolTransition::Pin, c)?;
+                self.protocol(protocol, ProtocolTransition::Pin, c, validate)?;
             }
             Rule::Worker(result) => {
                 c.normal.results.push(ResultSlot::new(N::Value, ResultType::FutureOf(result)));
@@ -633,7 +641,7 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.transfers.push(TransferRule::Publish { input: packet, holder: HolderKind::Carrier, provenance: AdmissionProvenance::StagedOrCarrierOwned });
                 c.normal.postconditions.extend([Postcondition::CarrierGraph(failure), Postcondition::FullCarrierGraphOwner]);
                 fails(c, [preserve(Some(packet), N::Packet), preserve(Some(owner), N::To)].concat(), false);
-                self.protocol(protocol, ProtocolTransition::Attach, c)?;
+                self.protocol(protocol, ProtocolTransition::Attach, c, validate)?;
             }
             Rule::CarrierTransfer { state, target, protocol } => {
                 c.normal.results.push(ResultSlot::service(N::State, S::CarrierState));
@@ -644,7 +652,7 @@ impl<'a> ContractRegistry<'a> {
                 }
                 fails(c, restored, false);
                 c.normal.postconditions.push(Postcondition::NoFreshAdmission);
-                self.protocol(protocol, ProtocolTransition::Transfer, c)?;
+                self.protocol(protocol, ProtocolTransition::Transfer, c, validate)?;
             }
             Rule::Prepare(exit) => {
                 c.normal.results.push(ResultSlot::service(N::State, S::Pending));
@@ -699,7 +707,7 @@ impl<'a> ContractRegistry<'a> {
                 cleanup(c);
                 c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(plan)));
                 c.normal.transfers.push(TransferRule::Settle { inputs: vec![holder, plan] });
-                self.protocol(protocol, ProtocolTransition::Settle, c)?;
+                self.protocol(protocol, ProtocolTransition::Settle, c, validate)?;
             }
             Rule::Destroy { cleanup: plan, identity } => {
                 cleanup(c);
@@ -711,19 +719,19 @@ impl<'a> ContractRegistry<'a> {
         Ok(())
     }
 
-    fn call(&self, call: &CallSite, c: &mut OpContract) -> Result<(), ContractError> {
+    fn call(&self, call: &CallSite, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
         use SlotName as N;
         let summary = self.module.summaries.get(call.summary)?;
-        if call.args.len() != summary.parameters.len() {
+        if validate && call.args.len() != summary.parameters.len() {
             return Err(ContractError::CallArity { expected: summary.parameters.len(), actual: call.args.len() });
         }
         for (index, (arg, param)) in call.args.iter().zip(&summary.parameters).enumerate() {
-            if !matches!((arg.convention, param.convention), (OperandConvention::Borrow, FreshConvention::Borrow) | (OperandConvention::Consume, FreshConvention::Take)) {
+            if validate && !matches!((arg.convention, param.convention), (OperandConvention::Borrow, FreshConvention::Borrow) | (OperandConvention::Consume, FreshConvention::Take)) {
                 return Err(ContractError::CallConvention { argument: index });
             }
         }
         c.entry_kind = summary.entry_kind;
-        if summary.entry_kind == EntryKind::ObservationAdmissionStaysCaller && call.packet.is_some() { return Err(ContractError::ObservationPacket); }
+        if validate && summary.entry_kind == EntryKind::ObservationAdmissionStaysCaller && call.packet.is_some() { return Err(ContractError::ObservationPacket); }
         for (index, &ty) in summary.contract.results.iter().enumerate() {
             c.normal.results.push(ResultSlot::new(if summary.contract.results.len() == 1 { N::Value } else { N::Slot(u16::try_from(index).map_err(|_| ContractError::TooManyResults)?) }, ResultType::Exact(ty)));
         }
@@ -751,8 +759,8 @@ impl<'a> ContractRegistry<'a> {
                 c.cancellation = Some(CancellationContract { outcome: unwind, delivery: CancellationDelivery::Unwind });
             }
         }
-        if summary.contract.publication != Publication::Atomic && summary.contract.protocol.is_none() { return Err(ContractError::PublicationNeedsProtocol); }
-        if let Some(protocol) = summary.contract.protocol { self.protocol(protocol, ProtocolTransition::Publish, c)?; }
+        if validate && summary.contract.publication != Publication::Atomic && summary.contract.protocol.is_none() { return Err(ContractError::PublicationNeedsProtocol); }
+        if let Some(protocol) = summary.contract.protocol { self.protocol(protocol, ProtocolTransition::Publish, c, validate)?; }
         for relation in &summary.results {
             c.normal.postconditions.push(Postcondition::ResultRelation(relation.clone()));
         }
