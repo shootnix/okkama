@@ -8,36 +8,44 @@ object R {
 protocol Services kind services
 scope SD action in @destroy
 scope S action in @f
-summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
-summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(publication=atomic)
+summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract
+    call_contract(results=[R], publication=atomic)
 summary Mf internal contract call_contract(publication=atomic)
 func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    low.metadata cleanup_metadata(closes=[], schedules=[], plans=[], roots=[], proofs=[])
     dependency dd: dependency = retention(value=%self, selection=selection(%self))
 ^entry in SD:
     ret
 }
 func @create(%packet: own) -> (R, own, deps) [extern "fixture.singleton"] summary(Mc);
 func @f(%schedule: type, %descriptor: type) -> void summary(Mf) {
-    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[], suspends=false, cancel=false))],
+        schedules=[cleanup_schedule(close=0, holders=[], dictionary=some(%schedule), protocol=some(Services))],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=some(0))],
+        roots=[root_requirement(boundary=before_instruction(i6), bindings=[root_binding(value=%c2,
+        trace=cleanup_activation)], through_suspend=false)], proofs=[order_proof(state=%admitted, slots=[], suffixes=[],
+        reserve_empty=true)])
     dependency dr: dependency = retention(value=%r, selection=selection(%r))
-    order O0: order = cleanup_order(creations=[])
-    roots R0: roots = cleanup_roots(values=[%c2], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph])
-    plan P0: plan = cleanup_plan(entries=[], merge=false, order=O0, roots=R0, effects=some(scope_effects(failures=[], suspends=false, cancel=false)))
 ^entry in S:
     %q: scope<S> = scope.begin S
     (%r: R facts(managed(deps=dr)), %packet: own, %deps: deps) = call @create(; own.empty)
     %admitted: scope<S> = own.admit %q, %packet
-    %c: cleanup-state = cleanup.begin %admitted, %schedule
+    %c: cleanup-state = cleanup.begin %admitted, close 0, effects scope_effects(failures=[], suspends=false,
+        cancel=false)
     %c1: cleanup-state = cleanup.shield %c
-    %c2: cleanup-state = cleanup.settle.empty %c1, %schedule
-    %c3: cleanup-state = cleanup.plan.checked %c2, plan P0
+    %c2: cleanup-state = cleanup.settle.empty %c1, schedule 0
+    [i6] %c3: cleanup-state = cleanup.plan %c2, plan 0
     (%c4: cleanup-state, %fs: failure-state) = destroy.direct %c3, %r, %descriptor, destroy @destroy
-    failure.dispatch %fs
-        none ^finished(%c4)
+    failure.dispatch %fs none ^finished(%c4) some ^no_failure_fs($failure)
 ^finished(%remaining: cleanup-state) in S:
     (%closed: closed, %failures: failure-state, %xs: exit-state) = cleanup.finish %remaining
-    exit.dispatch %closed, %failures, %xs
-        success ^done($closed)
+    exit.dispatch 0 %closed %failures %xs success ^done($closed)
 ^done(%done: closed) in S:
     ret
+
+^no_failure_fs(%unexpected_fs: failure) in S:
+    raise %unexpected_fs
 }

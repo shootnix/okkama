@@ -113,6 +113,14 @@ pub(super) fn check<'m>(module: &'m Module, selected: Option<FuncId>, state: &mu
 }
 
 impl Engine<'_, '_> {
+    fn empty_ctor_packet(&self, value: ValueId) -> bool {
+        self.declaration.attrs.iter().any(|attr| matches!(attr, FunctionAttr::Ctor(_)))
+            && super::later::value_type(self.module, self.body, value)
+                == Some(&Type::Service(ServiceType::Own))
+            && self.body.blocks.get(self.body.entry).is_ok_and(|entry| {
+                entry.params.iter().all(|value| !self.is_managed(*value))
+            })
+    }
     fn error(&mut self, rule: R, message: &str) {
         if self.emit && self.reported.insert((self.state.location.clone(), rule)) {
             self.state.error(rule, message);
@@ -200,7 +208,10 @@ impl Engine<'_, '_> {
                     }
                     piece.owner = token.scope;
                     piece.family = true;
-                    token.pieces.insert(piece);
+                    let empty_ctor_inputs = self.empty_ctor_packet(value);
+                    if !empty_ctor_inputs {
+                        token.pieces.insert(piece);
+                    }
                 }
                 if let Some(scope) = token.scope {
                     flow.scopes.insert(scope, 1);
@@ -484,32 +495,11 @@ impl Engine<'_, '_> {
                     }
                 }
             }
-            TermKind::Cond { condition, yes, no } if flow.tokens[condition.as_u32() as usize]
-                .cleanup_test.is_some() => {
-                let test = flow.tokens[condition.as_u32() as usize].cleanup_test;
-                for (present, target) in [(true, yes), (false, no)] {
-                    let mut branch = flow.clone();
-                    let mut possible = true;
-                    for (index, token) in branch.tokens.iter_mut().enumerate() {
-                        if branch.availability[index] != AVAILABLE { continue; }
-                        if let Some(fact) = &mut token.cleanup {
-                            if fact.test != test { continue; }
-                            if present { possible &= !token.pieces.is_empty(); }
-                            else {
-                                possible &= token.pieces.is_empty() || token.pieces.iter().any(|piece| piece.family);
-                                token.pieces.clear();
-                                fact.selected = None;
-                            }
-                        }
-                    }
-                    if possible {
-                        let args = target.args.iter().copied().map(EdgeArg::Value).collect::<Vec<_>>();
-                        outgoing.push(self.edge(&branch, target.block, &args, &[], R::B21));
-                    }
-                }
+            TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+                self.cleanup_dispatch(&mut flow, &block.term.kind, &mut outgoing);
             }
-            TermKind::StateDispatch { closed, failure, exit, arms } => {
-                self.dispatch(&mut flow, *closed, *failure, *exit, arms, &mut outgoing);
+            TermKind::CleanupNext { cleanup, selected, done } => {
+                self.cleanup_next(&mut flow, *cleanup, selected, done, &mut outgoing);
             }
             TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
                 self.defer_invoke(id, *function, call, continue_edge, replacements, unwind.as_ref(),

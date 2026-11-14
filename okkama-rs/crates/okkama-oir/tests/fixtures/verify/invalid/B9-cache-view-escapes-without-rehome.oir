@@ -6,20 +6,23 @@ object R {
     destroy @destroy
 }
 scope SD action in @destroy
-summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(publication=atomic)
 func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
     dependency dd: dependency = retention(value=%self, selection=selection(%self))
 ^entry in SD:
     ret
 }
-protocol Services kind services holders [scope, group, receipt] rules [protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)), protocol_rule(transition=settle, from=receipt, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled))]
+protocol Services kind services holders [scope, group, receipt] rules [protocol_rule(transition=settle, from=group,
+    to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)),
+    protocol_rule(transition=settle, from=receipt, to=scope, checks=[owner, live_dependencies],
+    normal=protocol_poststate(holder=scope, state=settled))]
 scope S action in @f
-summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+    [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[R],
+    failures=[thrown, program, panic, native, cancelled], publication=atomic)
 func @f(%schedule: type, %future: future<R> facts(managed(deps=d0)); %input: own) -> R [async] summary(M0) {
     service.schedule Schedule0 owner S, protocol Services, dictionary %schedule, duties [%t, %r]
-    order O0: order = cleanup_order(creations=[])
-    roots R0: roots = cleanup_roots(values=[%c3], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
-    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
     dependency dv: dependency = retention(value=%v, selection=selection(%v))
     key k0: key = service_of(value=%future, kind=cache)
     dependency d0: dependency = key(k0)
@@ -30,17 +33,11 @@ func @f(%schedule: type, %future: future<R> facts(managed(deps=d0)); %input: own
         normal ^ok($value, $deps)
         unwind ^failed($failure, $task, $receipt)
 ^ok(%v: R facts(managed(deps=dv)), %d: deps) in S:
-    %done: closed = scope.end %owner, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    %done: closed = scope.end %owner, effects scope_effects(failures=[thrown, program, panic, native], suspends=true,
+        cancel=false)
     ret %v
 ^failed(%e: failure, %t: task-state, %r: receipt) in S:
-    %c: cleanup-state = cleanup.begin %owner, %schedule, failure %e
-    %c1: cleanup-state = cleanup.shield %c
-    %c2: cleanup-state = cleanup.settle %c1, %t, protocol Services
-    %c3: cleanup-state = cleanup.settle %c2, %r, protocol Services
-    %c4: cleanup-state = cleanup.plan.checked %c3, plan P0
-    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %c4
-    exit.dispatch %closed, %fs, %xs
-        failure ^raise($closed, $failure)
-^raise(%closed2: closed, %final: failure) in S:
-    raise %final
+    %combined: failure = scope.unwind %owner, %e, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=true)
+    raise %combined
 }

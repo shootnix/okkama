@@ -55,9 +55,38 @@ impl Reader for References<'_, '_> {
     body_ref!(value: ValueId => values, instruction: InstId => insts,
         block: BlockId => blocks, binding: BindingId => bindings,
         boundary: BoundaryId => boundaries, dependency: DepExprId => deps,
-        key: KeyExprId => keys, selection: SelectionId => selections,
-        cleanup_plan: CleanupPlanId => cleanup_plans, cleanup_order: CleanupOrderId => cleanup_orders,
-        cleanup_roots: CleanupRootsId => cleanup_roots);
+        key: KeyExprId => keys, selection: SelectionId => selections);
+    fn cleanup_close(&mut self, id: &CleanupCloseId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.closes.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup close reference");
+        }
+    }
+    fn cleanup_order_proof(&mut self, id: &CleanupOrderProofId) {
+        if !self.state.step(1) {
+            return;
+        }
+        if self.body.is_none_or(|body| body.cleanup.proofs.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup order proof reference");
+        }
+    }
+    fn cleanup_plan(&mut self, id: &CleanupPlanId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.plans.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup plan reference");
+        }
+    }
+    fn root_map(&mut self, id: &RootMapId) {
+        if self.body.is_none_or(|body| body.cleanup.roots.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid root map reference");
+        }
+    }
+    fn cleanup_schedule(&mut self, id: &CleanupScheduleId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.schedules.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup schedule reference");
+        }
+    }
     fn scope(&mut self, id: &ScopeId) {
         if !self.state.step(1) { return; }
         match self.module.scopes.get(*id) {
@@ -121,13 +150,13 @@ pub(super) fn intact(module: &Module, body: &Body, item: &impl Read, state: &mut
         state: &'s mut State<'o>,
     }
     macro_rules! check {
-        ($($method:ident: $ty:ty => $owner:ident.$arena:ident),* $(,)?) => {$(
+        ($($method:ident: $ty:ty => $owner:ident$(.$arena:ident)+),* $(,)?) => {$(
             fn $method(&mut self, id: &$ty) {
                 if !self.state.step(1) {
                     self.valid = false;
                     return;
                 }
-                self.valid &= self.$owner.$arena.get(*id).is_ok();
+                self.valid &= self.$owner$(.$arena)+.get(*id).is_ok();
             }
         )*};
     }
@@ -138,9 +167,11 @@ pub(super) fn intact(module: &Module, body: &Body, item: &impl Read, state: &mut
             binding: BindingId => body.bindings, boundary: BoundaryId => body.boundaries,
             dependency: DepExprId => body.deps, key: KeyExprId => body.keys,
             selection: SelectionId => body.selections,
-            cleanup_plan: CleanupPlanId => body.cleanup_plans,
-            cleanup_order: CleanupOrderId => body.cleanup_orders,
-            cleanup_roots: CleanupRootsId => body.cleanup_roots, ty: TypeId => module.types,
+            cleanup_close: CleanupCloseId => body.cleanup.closes,
+            cleanup_plan: CleanupPlanId => body.cleanup.plans,
+            cleanup_order_proof: CleanupOrderProofId => body.cleanup.proofs,
+            cleanup_schedule: CleanupScheduleId => body.cleanup.schedules,
+            root_map: RootMapId => body.cleanup.roots, ty: TypeId => module.types,
             declaration: DeclId => module.declarations, function: FuncId => module.functions,
             scope: ScopeId => module.scopes, summary: SummaryId => module.summaries,
             protocol: ProtocolId => module.protocols, file: FileId => module.files);

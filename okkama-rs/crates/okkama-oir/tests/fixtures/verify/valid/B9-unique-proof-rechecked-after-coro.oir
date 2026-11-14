@@ -1,6 +1,10 @@
 oir 2 coro
 module unique_cache
-protocol Services kind services holders [scope, group, receipt, cache] rules [protocol_rule(transition=settle, from=cache, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)), protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)), protocol_rule(transition=settle, from=receipt, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled))]
+protocol Services kind services holders [scope, group, receipt, cache] rules [protocol_rule(transition=settle,
+    from=cache, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)),
+    protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies],
+    normal=protocol_poststate(holder=scope, state=settled)), protocol_rule(transition=settle, from=receipt, to=scope,
+    checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled))]
 scope ST action in @task
 scope S action in @f
 summary Mt internal contract call_contract(publication=atomic)
@@ -8,59 +12,36 @@ func @task() -> void summary(Mt) {
 ^entry in ST:
     ret
 }
-summary Mf internal contract call_contract(failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native, cancelled], suspends=true,
+    publication=atomic)
 func @f(%schedule: type, %success_schedule: type) -> void [async] summary(Mf) {
     key k0: key = service_of(value=%future, kind=cache)
     dependency d0: dependency = key(k0)
     service.schedule Schedule0 owner S, protocol Services, dictionary %schedule, duties [%task, %receipt, %cache]
     service.schedule Success owner S, protocol Services, dictionary %success_schedule, duties [%cache]
-    order O0: order = cleanup_order(creations=[])
-    roots R0: roots = cleanup_roots(values=[%c2], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
-    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
-    roots Rnormal: roots = cleanup_roots(values=[%normal_settled], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
-    plan Pnormal: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=Rnormal, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
 ^entry in S:
     %q: scope<S> = scope.begin S
     %empty: own = own.empty
     (%left: own, %right: own, %deps: deps) = own.split %empty, selection(0)
     %inputs: own = own.join [%left, %right]
     %frame: frame<@task> = frame.alloc @task
-    [imake] (%future: future<void> facts(managed(deps=d0)), %cache: cache-state, %owner: scope<S>) = fut.new %inputs, %deps, %q, environment frame(%frame), owner S
-    %unique: unique-cache = unique_cache.proof proof unique_cache_proof(future=%future, scope=S, region=[^entry], evidence=unique_cache_evidence(creation=instruction(imake), no_external_storage=true, no_other_waiters=true, no_live_views=true, no_collector_retention=true, scheduler_cannot_publish=true))
+    [imake] (%future: future<void> facts(managed(deps=d0)), %cache: cache-state, %owner: scope<S>) = fut.new %inputs,
+        %deps, %q, environment frame(%frame), owner S
+    %unique: unique-cache = unique_cache.proof proof unique_cache_proof(future=%future, scope=S, region=[^entry],
+        evidence=unique_cache_evidence(creation=instruction(imake), no_external_storage=true, no_other_waiters=true,
+        no_live_views=true, no_collector_retention=true, scheduler_cannot_publish=true))
     invoke.own await.take %future, %unique, boundary temporary(awaiting=S)
         normal ^ok($packet, $deps)
         unwind ^bad($failure, $task, $receipt)
 ^ok(%packet: own, %full: deps) in S:
     %accepted: scope<S> = own.accept %owner, %packet
-    %normal_cleanup: cleanup-state = cleanup.begin %accepted, %success_schedule
-    %normal_shield: cleanup-state = cleanup.shield %normal_cleanup
-    %normal_settled: cleanup-state = cleanup.settle %normal_shield, %cache, protocol Services
-    %normal_plan: cleanup-state = cleanup.plan.checked %normal_settled, plan Pnormal
-    br ^next(%normal_plan)
+    invoke.own scope.end %accepted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true)
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
 ^bad(%failure0: failure, %task: task-state, %receipt: receipt) in S:
-    %c: cleanup-state = cleanup.begin %owner, %schedule, failure %failure0
-    %c1: cleanup-state = cleanup.shield %c
-    %settled_task: cleanup-state = cleanup.settle %c1, %task, protocol Services
-    %settled_receipt: cleanup-state = cleanup.settle %settled_task, %receipt, protocol Services
-    %c2: cleanup-state = cleanup.settle %settled_receipt, %cache, protocol Services
-    %c3: cleanup-state = cleanup.plan.checked %c2, plan P0
-    br ^next(%c3)
-^next(%state: cleanup-state) in S:
-    (%selected_state: cleanup-state, %key: stable-key, %present: bool) = cleanup.next %state
-    cond %present, ^destroy(%selected_state), ^finish(%selected_state)
-^destroy(%claimed: cleanup-state) in S:
-    (%after: cleanup-state, %step_failure: failure-state) = cleanup.destroy %claimed, %key
-    failure.dispatch %step_failure
-        none ^next(%after)
-        some ^record(%after, $failure)
-^record(%failed: cleanup-state, %failure: failure) in S:
-    %recorded: cleanup-state = cleanup.failure %failed, %failure
-    br ^next(%recorded)
-^finish(%remaining: cleanup-state) in S:
-    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %remaining
-    exit.dispatch %closed, %fs, %xs
-        success ^done($closed)
-        failure ^failed($closed, $failure)
+    %combined: failure = scope.unwind %owner, %failure0, effects scope_effects(failures=[thrown, program, panic,
+        native], suspends=true)
+    raise %combined
 ^done(%done: closed) in S:
     ret
 ^failed(%closed2: closed, %final: failure) in S:

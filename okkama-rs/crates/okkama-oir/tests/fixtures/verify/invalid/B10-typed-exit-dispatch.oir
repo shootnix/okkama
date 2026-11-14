@@ -5,10 +5,12 @@ protocol Services kind services
 scope S action in @f
 summary Mf internal contract call_contract(publication=atomic)
 func @f(%schedule: type) -> own summary(Mf) {
-    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
-    order O0: order = cleanup_order(creations=[])
-    roots R0: roots = cleanup_roots(values=[%settled], kinds=[cleanup_remainder, active_self, service_schedule, pending_exit, carrier_graph])
-    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[], suspends=false, cancel=false)))
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=true,
+        active_failure=false, effects=scope_effects(failures=[], suspends=false, cancel=false))],
+        schedules=[cleanup_schedule(close=0, holders=[], dictionary=some(%schedule), protocol=some(Services))],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory, whole_reserve_on_failure], direct=none)],
+        roots=[root_requirement(boundary=before_instruction(i9), bindings=[root_binding(value=%settled,
+        trace=cleanup_activation)], through_suspend=false)], proofs=[])
     boundary B0 lexical in S
 ^entry in S:
     %q: scope<S> = scope.begin S
@@ -17,13 +19,13 @@ func @f(%schedule: type) -> own summary(Mf) {
     (%left: own, %right: own, %deps: deps) = own.split %empty, selection(%value)
     %packet: own = own.join [%left, %right]
     %pending: pending = exit.prepare return %value, %packet, deps(%deps) at B0
-    %c: cleanup-state = cleanup.begin %q, %schedule, pending %pending
+    %c: cleanup-state = cleanup.begin %q, pending %pending, close 0, effects scope_effects(failures=[], suspends=false,
+        cancel=false)
     %shield: cleanup-state = cleanup.shield %c
-    %settled: cleanup-state = cleanup.settle.empty %shield, %schedule
-    %planned: cleanup-state = cleanup.plan.checked %settled, plan P0
+    %settled: cleanup-state = cleanup.settle.empty %shield, schedule 0
+    [i9] %planned: cleanup-state = cleanup.plan %settled, plan 0
     (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
-    exit.dispatch %closed, %fs, %xs
-        success ^done($closed, %pending)
+    exit.dispatch 0 %closed %fs %xs success ^done($closed, %pending)
 ^done(%done: closed, %ready: pending) in S:
     (%v: int, %out: own, %full: deps) = exit.commit %ready, destination caller, result int
     ret %out

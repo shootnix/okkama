@@ -179,6 +179,31 @@ impl Engine<'_, '_> {
                 && super::super::high::inside(self.module, *child, scope, self.state)) {
                 self.error(R::B41, "outer scope closes while a nested lexical scope is open");
             }
+            let available: BTreeSet<_> = self.body.values.iter().filter_map(|(value, _)| {
+                (before.availability[value.as_u32() as usize] == AVAILABLE
+                    && before.tokens[value.as_u32() as usize].service.is_some()).then_some(value)
+            }).collect();
+            if !available.is_empty() {
+                let schedule = self.body.service_schedules.iter().find(|schedule| {
+                    schedule.owner == scope && schedule.duties.iter().copied().collect::<BTreeSet<_>>() == available
+                        && schedule.duties.len() == available.len()
+                        && self.module.protocols.get(schedule.protocol)
+                            .is_ok_and(|protocol| protocol.kind == ProtocolKind::Services)
+                });
+                if schedule.is_none() {
+                    self.error(R::B106, "abstract close needs complete, unique service schedule coverage");
+                }
+                for value in available {
+                    self.use_value(flow, value, OperandMode::Consume, R::B106);
+                    let pieces: Vec<_> = before.tokens[value.as_u32() as usize].pieces.iter().cloned().collect();
+                    self.invalidate(before, flow, &pieces);
+                    flow.dead.extend(pieces.iter().map(|piece| piece.origin));
+                    flow.closed_inputs.extend(pieces);
+                    if let Some(cache) = before.tokens[value.as_u32() as usize].cache {
+                        flow.dead.insert(cache);
+                    }
+                }
+            }
             flow.scopes.insert(scope, 2);
 
         }

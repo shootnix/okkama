@@ -217,8 +217,7 @@ fn operation(module: &Module, function: &Function, body: &Body, op: &Operation, 
         state.error(R::B105, "shielded await is restricted to cleanup execution");
     }
     if module.profile == Profile::Low && matches!(op,
-        Operation::Lexical(LexicalOp::Bind { .. } | LexicalOp::Rebind { .. } | LexicalOp::Stage { .. }
-            | LexicalOp::Temp { .. } | LexicalOp::DeferRegister { .. })
+        Operation::Lexical(_)
         | Operation::Ownership(OwnershipOp::ScopeEnd { .. }
             | OwnershipOp::ScopeUnwind { .. } | OwnershipOp::End { .. })
         | Operation::Async(AsyncOp::Await { .. } | AsyncOp::AwaitTake { .. }

@@ -5,8 +5,9 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseSite { Instruction(InstId), Terminator(BlockId), BlockUnwind(BlockId), ValueFacts(ValueId), InstructionFacts(InstId), Declaration(OperandRef) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind { Dispatch(u16), DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32),
-    Default,
+pub enum EdgeKind {
+    CleanupSelected, CleanupDone, ExitSuccess, ExitPending, ExitFailure, FailureNone, FailureSome,
+    DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
     BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CfgEvent {
@@ -145,6 +146,37 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
     let site = UseSite::Terminator(block);
     let mut operands = vec![];
     match &term.kind {
+        TermKind::CleanupNext { cleanup, selected, done } => {
+            operands.push(ssa(*cleanup, OperandMode::Consume));
+            for (kind, outcome, edge) in [
+                (EdgeKind::CleanupSelected, Outcome::CleanupSelected, selected),
+                (EdgeKind::CleanupDone, Outcome::CleanupDone, done),
+            ] {
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, edge, kind, site, visit);
+            }
+        }
+        TermKind::ExitDispatch { closed, failure, exit, .. } => {
+            operands.push(ssa(*closed, OperandMode::Observe));
+            operands.push(ssa(*failure, OperandMode::Observe));
+            operands.push(ssa(*exit, OperandMode::Consume));
+            for (outcome, target) in dispatch_edges(&term.kind) {
+                let kind = match outcome {
+                    Outcome::ExitSuccess => EdgeKind::ExitSuccess,
+                    Outcome::ExitPending => EdgeKind::ExitPending,
+                    _ => EdgeKind::ExitFailure,
+                };
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, target, kind, site, visit);
+            }
+        }
+        TermKind::FailureDispatch { failure, none, some } => {
+            operands.push(ssa(*failure, OperandMode::Observe));
+            edge(block, none, EdgeKind::FailureNone, site, visit);
+            edge_definitions(block, EdgeKind::FailureSome, Outcome::FailureSome,
+                &dispatch_slots(Outcome::FailureSome), visit)?;
+            invoke_edge(block, some, EdgeKind::FailureSome, site, visit);
+        }
         TermKind::Br(target) => edge(block, target, EdgeKind::Branch, site, visit),
         TermKind::Cond { condition, yes, no } => {
             operands.push(ssa(*condition, OperandMode::Observe));
@@ -178,16 +210,6 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
                 edge_definitions(block, EdgeKind::DeferUnwind, Outcome::Unwind,
                     &registry.defer_results(*function, Outcome::Unwind)?, visit)?;
                 invoke_edge(block, unwind, EdgeKind::DeferUnwind, site, visit);
-            }
-        }
-        TermKind::StateDispatch { closed, failure, exit, arms } => {
-            if let Some(closed) = closed { operands.push(ssa(*closed, OperandMode::Observe)); }
-            operands.push(ssa(*failure, OperandMode::Observe));
-            if let Some(exit) = exit { operands.push(ssa(*exit, OperandMode::Consume)); }
-            for arm in arms {
-                let kind = EdgeKind::Dispatch(arm.kind as u16);
-                edge_definitions(block, kind, arm.kind.outcome(), &arm.kind.results(), visit)?;
-                invoke_edge(block, &arm.edge, kind, site, visit);
             }
         }
         TermKind::RetDefer { values, .. } |
@@ -236,6 +258,11 @@ pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl Fn
         }
         for &inst_id in &block.insts {
             let inst = body.insts.get(inst_id)?;
+            if let Operation::Cleanup(CleanupOp::Begin { close, .. }) = inst.op {
+                let dictionaries = body.cleanup.schedules.iter().filter(|(_, schedule)| schedule.close == close)
+                    .filter_map(|(_, schedule)| schedule.dictionary).map(|value| ssa(value, OperandMode::Observe));
+                emit_refs(dictionaries, UseSite::Instruction(inst_id), body, &mut visit)?;
+            }
             emit_refs(inst.op.operand_refs(), UseSite::Instruction(inst_id), body, &mut visit)?;
             let facts = inst.facts.result_deps.iter().map(|(_, id)| ReferencedOperand { reference: OperandRef::Dependency(*id), mode: OperandMode::Observe })
                 .chain(inst.facts.retention.iter().chain(inst.facts.provenance.iter().map(|fact| &fact.obligations)).map(|id| ReferencedOperand { reference: OperandRef::Selection(*id), mode: OperandMode::Observe }));

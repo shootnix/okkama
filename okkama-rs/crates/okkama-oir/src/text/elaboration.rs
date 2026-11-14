@@ -44,27 +44,6 @@ impl Reader<'_> {
 
 impl Writer<'_> {
     pub(super) fn elaboration_declarations(&mut self, body: &Body) -> Result<(), PrintError> {
-        for (id, plan) in body.cleanup_plans.iter() {
-            self.push("    plan ");
-            id.write(self)?;
-            self.push(": plan = ");
-            plan.write(self)?;
-            self.push("\n");
-        }
-        for (id, order) in body.cleanup_orders.iter() {
-            self.push("    order ");
-            id.write(self)?;
-            self.push(": order = ");
-            order.write(self)?;
-            self.push("\n");
-        }
-        for (id, roots) in body.cleanup_roots.iter() {
-            self.push("    roots ");
-            id.write(self)?;
-            self.push(": roots = ");
-            roots.write(self)?;
-            self.push("\n");
-        }
         for binding in &body.descriptor_bindings {
             self.push("    descriptor.binding ");
             binding.dictionary.write(self)?;

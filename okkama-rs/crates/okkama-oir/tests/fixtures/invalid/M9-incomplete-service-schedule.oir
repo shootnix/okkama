@@ -12,18 +12,22 @@ object Holder {
 }
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+    [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown],
+    publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(results=[str], failures=[thrown], publication=atomic)
 summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
 func @new(%label: str) -> Res summary(Mnew);
 func @label(%r: Res) -> str summary(Mlabel);
 func @destroy(%self: Res) -> void;
 func @deferred() -> void summary(Mvoid);
 scope S action in @main
-protocol group holders [frame, scope] rules [protocol_rule(transition=settle, from=frame, to=scope, normal=protocol_poststate(holder=scope, state=closed))] roots [frame_slots]
+protocol group holders [frame, scope] rules [protocol_rule(transition=settle, from=frame, to=scope,
+    normal=protocol_poststate(holder=scope, state=closed))] roots [frame_slots]
 func @main(%cleanup: cleanup-state, %a: task-state, %b: task-state) -> (cleanup-state, task-state) {
 ^entry in S:
     %settled_a: cleanup-state = cleanup.settle %cleanup, %a, protocol group
-    %plan: cleanup-state = cleanup.plan %settled_a
+    %plan: cleanup-state = cleanup.plan %settled_a, plan 0
     ret %plan, %b
 }

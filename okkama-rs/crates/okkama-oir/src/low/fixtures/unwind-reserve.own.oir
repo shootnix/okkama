@@ -1,0 +1,39 @@
+oir 2 own
+// Concrete synchronous D3 inventory; no opaque scope or pending parameters.
+module unwind-reserve
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+summary Mn call-boundary results [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], publication=atomic)
+func @new() -> (Res, own, deps) [extern "fixture.new"] summary(Mn);
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @main(%seed: int, %active: failure) -> failure summary(M0) {
+    boundary B0 lexical in S
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    (%a: Res facts(managed(deps=da)), %pa: own, %dpa: deps) = call @new(; own.empty)
+    %q1: scope<S> = own.admit %q0, %pa
+    (%r: Res facts(managed(deps=dr)), %pr: own, %dpr: deps) = call @new(; own.empty)
+    %q2: scope<S> = own.admit %q1, %pr
+    // Optional third creation is inserted here by the executor test.
+    invoke.own scope.split %q2, selection(%r)
+        normal ^extracted($state, $selected)
+        unwind ^extract_failed($state, $failure)
+^extracted(%rest: scope<S>, %selected: own) in S:
+    %p: pending = exit.prepare return %r, %selected at B0
+    %combined: failure = scope.unwind %rest, %active, reserve %p, effects scope_effects(failures=[thrown, program,
+        panic, native], suspends=false, cancel=false)
+    ret %combined
+^extract_failed(%extract_open: scope<S>, %extract_error: failure) in S:
+    %extract_combined: failure = scope.unwind %extract_open, %extract_error, effects scope_effects(failures=[thrown,
+        program, panic, native])
+    raise %extract_combined
+}

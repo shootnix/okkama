@@ -5,9 +5,11 @@ pub trait Reader {
     fn active(&self) -> bool { true }
     fn sequence(&mut self, _: usize, _: usize) {}
     fn depth(&mut self, _: usize) {}
+    fn cleanup_close(&mut self, _: &CleanupCloseId) {}
+    fn cleanup_order_proof(&mut self, _: &CleanupOrderProofId) {}
     fn cleanup_plan(&mut self, _: &CleanupPlanId) {}
-    fn cleanup_order(&mut self, _: &CleanupOrderId) {}
-    fn cleanup_roots(&mut self, _: &CleanupRootsId) {}
+    fn cleanup_schedule(&mut self, _: &CleanupScheduleId) {}
+    fn root_map(&mut self, _: &RootMapId) {}
     fn value(&mut self, _: &ValueId) {}
     fn instruction(&mut self, _: &InstId) {}
     fn block(&mut self, _: &BlockId) {}
@@ -37,17 +39,18 @@ macro_rules! leaf {
         }
     )*};
 }
-leaf!(ValueId => value, InstId => instruction, BlockId => block, BindingId => binding,
+leaf!(CleanupOrderProofId => cleanup_order_proof, CleanupCloseId => cleanup_close, CleanupPlanId => cleanup_plan,
+    CleanupScheduleId => cleanup_schedule, RootMapId => root_map, ValueId => value, InstId => instruction,
+    BlockId => block, BindingId => binding,
     BoundaryId => boundary, DepExprId => dependency, KeyExprId => key,
     SelectionId => selection, CreationSiteId => creation_site, TypeId => ty,
     DeclId => declaration, FuncId => function, ScopeId => scope, SummaryId => summary,
-    ProtocolId => protocol, FileId => file, CleanupPlanId => cleanup_plan,
-    CleanupOrderId => cleanup_order, CleanupRootsId => cleanup_roots);
+    ProtocolId => protocol, FileId => file);
 macro_rules! inert {
     ($($ty:ty),* $(,)?) => {$(impl Read for $ty { fn read(&self, _: &mut impl Reader) {} })*};
 }
-inert!(u16, u32, bool, NumericType, ConstructionStatus, OperandMode,
-    OperandConvention, DynamicReason, ExitKind, AbortPhase, DescriptorManaged,
+inert!(MergeSource, u16, u32, bool, NumericType, ConstructionStatus, OperandMode,
+    OperandConvention, DynamicReason, ExitKind, DescriptorManaged,
     AdmissionProvenance, ServiceKeyKind, BoundaryKind, ScopeEffectEnvelope, CallCleanupMode,
     HighEffectEnvelope, HighEdgeSelector, DeferReturnTag);
 impl Read for String {
@@ -87,8 +90,6 @@ macro_rules! fields {
     )*};
 }
 fields!(
-    CleanupPlan { entries, order, roots }, CleanupOrder { creations }, CleanupRoots { values },
-    DispatchEdge { edge },
     DeferLabel { result }, DeferRegistration { boundary },
     DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol, dictionary, duties },
     HighResultExit { block, value, prepared }, HighEffectRecord { site },
@@ -109,9 +110,8 @@ fields!(
     Target { block, args }, InvokeEdge { block, args }, BlockUnwind { target },
     Block { lexical_scope, params, unwind, insts, term },
     Terminator { kind, loc }, SwitchCase { value, target },
-    Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
-        high_results, high_effects, descriptor_bindings, service_schedules,
-        cleanup_plans, cleanup_orders, cleanup_roots }
+    Body { cleanup, entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
+        high_results, high_effects, descriptor_bindings, service_schedules }
 );
 impl Read for DebugLoc {
     fn read(&self, visitor: &mut impl Reader) {
@@ -157,6 +157,26 @@ impl Read for EdgeArg {
 impl Read for TermKind {
     fn read(&self, visitor: &mut impl Reader) {
         match self {
+            Self::CleanupNext { cleanup, selected, done } => {
+                cleanup.read(visitor);
+                selected.read(visitor);
+                done.read(visitor);
+            }
+            Self::ExitDispatch { close, closed, failure, exit, success, pending, failed } => {
+                close.read(visitor);
+                closed.read(visitor);
+                failure.read(visitor);
+                exit.read(visitor);
+                success.read(visitor);
+                pending.read(visitor);
+                failed.read(visitor);
+            }
+            Self::FailureDispatch { failure, none, some } => {
+                failure.read(visitor);
+                none.read(visitor);
+                some.read(visitor);
+            }
+
             Self::Br(target) => target.read(visitor),
             Self::Cond { condition, yes, no } => {
                 condition.read(visitor);
@@ -179,12 +199,6 @@ impl Read for TermKind {
                 continue_edge.read(visitor);
                 replacements.read(visitor);
                 unwind.read(visitor);
-            }
-            Self::StateDispatch { closed, failure, exit, arms } => {
-                closed.read(visitor);
-                failure.read(visitor);
-                exit.read(visitor);
-                arms.read(visitor);
             }
             Self::RetDefer { values, .. } => values.read(visitor),
             Self::Ret { values } => values.read(visitor),
@@ -370,6 +384,58 @@ impl Read for HighOperationSite {
         match self {
             Self::Instruction(instruction) => instruction.read(visitor),
             Self::Terminator(block) => block.read(visitor),
+        }
+    }
+}
+
+fields!(
+    CleanupMetadata { closes, schedules, plans, roots, proofs },
+    CleanupClose { source, after_defers, effects }, CleanupSchedule { close, holders, dictionary, protocol },
+    CleanupPlan { close, sources, direct }, RootRequirement { boundary, bindings }, RootBinding { value, trace }
+);
+impl Read for CleanupSource {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Scope(value) => value.read(visitor),
+            Self::Packet(value) => value.read(visitor),
+        }
+    }
+}
+impl Read for RootBoundary {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::BeforeInstruction(value) => value.read(visitor),
+            Self::AfterInstruction(value) => value.read(visitor),
+            Self::Terminator(value) => value.read(visitor),
+            Self::Entry(value) => value.read(visitor),
+        }
+    }
+}
+impl Read for RootTrace {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Value(value) => value.read(visitor),
+            Self::Descriptor(value) => value.read(visitor),
+            _ => {},
+        }
+    }
+}
+
+fields!(
+    DirectSlot { identity, descriptor, destroy, origin, active_at },
+    PreserveWitness { from, to }, JoinWitness { state, predecessors }, CleanupSuffix { completed, remaining, roots },
+    CleanupOrderProof { state, slots, preserves, joins, suffixes, reserve_empty }
+);
+impl Read for CreationWitness {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Singleton => {},
+            Self::Create { site } => site.read(visitor),
+            Self::FreshResult { site, callee, summary } => {
+                site.read(visitor);
+                callee.read(visitor);
+                summary.read(visitor);
+            }
         }
     }
 }

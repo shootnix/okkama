@@ -412,6 +412,9 @@ impl Engine<'_, '_> {
             for &parameter in &entry.params {
                 if self.body.values.get(parameter).ok().and_then(|v| self.module.types.get(v.ty).ok())
                     != Some(&Type::Service(ServiceType::Own)) { continue; }
+                if self.empty_ctor_packet(parameter) {
+                    continue;
+                }
                 let origin = Origin::Input(parameter);
                 let exported = values.iter().any(|value| {
                     flow.tokens[value.as_u32() as usize].pieces.iter().any(|p| p.origin == origin)

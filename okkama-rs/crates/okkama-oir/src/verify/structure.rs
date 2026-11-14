@@ -332,13 +332,11 @@ fn body_structure<'a>(module: &'a Module, function: FuncId, data: &Function, bod
         if !state.step(1) { return; }
         references(module, Some(body), Some(function), selection, state);
     }
+    references(module, Some(body), Some(function), &body.cleanup, state);
     references(module, Some(body), Some(function), &body.high_results, state);
     references(module, Some(body), Some(function), &body.high_effects, state);
     references(module, Some(body), Some(function), &body.descriptor_bindings, state);
     references(module, Some(body), Some(function), &body.service_schedules, state);
-    references(module, Some(body), Some(function), &body.cleanup_plans, state);
-    references(module, Some(body), Some(function), &body.cleanup_orders, state);
-    references(module, Some(body), Some(function), &body.cleanup_roots, state);
     expressions::check(body, state);
     if !state.array(body.insts.len(), 8) || !state.array(body.values.len(), 8) { return; }
     let mut inst_count = vec![0_u8; body.insts.len()];
@@ -414,6 +412,10 @@ pub(super) fn targets(block: &Block) -> Vec<BlockId> {
     let mut targets = Vec::new();
     if let Some(unwind) = &block.unwind { targets.push(unwind.target.block); }
     match &block.term.kind {
+        TermKind::CleanupNext { .. } | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+            if let TermKind::FailureDispatch { none, .. } = &block.term.kind { targets.push(none.block); }
+            targets.extend(dispatch_edges(&block.term.kind).iter().map(|(_, edge)| edge.block));
+        }
         TermKind::Br(target) => targets.push(target.block),
         TermKind::Cond { yes, no, .. } => targets.extend([yes.block, no.block]),
         TermKind::Switch { cases, default, .. } => {
@@ -421,9 +423,6 @@ pub(super) fn targets(block: &Block) -> Vec<BlockId> {
             targets.push(default.block);
         }
         TermKind::InvokeOwn { normal, unwind, .. } => targets.extend([normal.block, unwind.block]),
-        TermKind::StateDispatch { arms, .. } => {
-            targets.extend(arms.iter().map(|arm| arm.edge.block));
-        }
         TermKind::InvokeDefer { continue_edge, replacements, unwind, .. } => {
             targets.push(continue_edge.block);
             targets.extend(replacements.iter().map(|replacement| replacement.edge.block));

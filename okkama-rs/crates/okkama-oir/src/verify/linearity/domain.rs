@@ -109,9 +109,8 @@ pub(super) struct CleanupFact {
     pub executed: BTreeSet<Origin>,
     pub services: BTreeSet<Origin>,
     pub had_services: bool,
-    pub schedule: ValueId,
+    pub close: CleanupCloseId,
     pub plan: Option<CleanupPlanId>,
-    pub test: Option<ValueId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,7 +134,6 @@ pub(super) struct Token {
     pub cache: Option<Origin>,
     pub unique_region: BTreeSet<BlockId>,
     pub saved_type: Option<TypeId>,
-    pub cleanup_test: Option<ValueId>,
     pub pin_deps: BTreeSet<Origin>,
     pub settled: bool,
     pub finish_origin: Option<Origin>,

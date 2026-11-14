@@ -1,5 +1,22 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DispatchKind { None, Some, Success, Pending, Failure }
+impl DispatchKind {
+    fn results(self) -> Vec<ResultSlot> {
+        let outcome = match self {
+            Self::None => return vec![],
+            Self::Some => Outcome::FailureSome,
+            Self::Success => Outcome::ExitSuccess,
+            Self::Pending => Outcome::ExitPending,
+            Self::Failure => Outcome::ExitFailure,
+        };
+        dispatch_slots(outcome)
+    }
+}
+struct DispatchEdge { kind: DispatchKind, edge: InvokeEdge }
+
+
 impl Engine<'_, '_> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn cleanup_operation(
@@ -13,11 +30,10 @@ impl Engine<'_, '_> {
         if outcome != Outcome::Normal {
             return;
         }
-        if let Operation::Exit(ExitOp::Abort { pending, cleanup, phase }) = op {
+        if let Operation::Exit(ExitOp::Abort { pending, cleanup }) = op {
             let mut token = before.tokens[cleanup.as_u32() as usize].clone();
             if let Some(fact) = &mut token.cleanup {
-                let after = !fact.executed.is_empty();
-                if fact.pending || after != (*phase == AbortPhase::AfterExecutedPrefix) {
+                if fact.pending {
                     self.error(R::B101,
                         "abort must preserve the executed prefix and cannot duplicate an owned reserve");
                 }
@@ -47,17 +63,8 @@ impl Engine<'_, '_> {
         let Operation::Cleanup(op) = op else {
             return;
         };
-        if let CleanupOp::Begin { state, pending, failure, schedule } = op {
+        if let CleanupOp::Begin { state, pending, failure, close, .. } = op {
             let mut token = before.tokens[state.as_u32() as usize].clone();
-            let scope = token.scope;
-            let matching = self.body.service_schedules.iter().find(|entry| {
-                Some(entry.owner) == scope && entry.dictionary == Some(*schedule)
-                    && self.module.protocols.get(entry.protocol)
-                        .is_ok_and(|protocol| protocol.kind == ProtocolKind::Services)
-            });
-            if matching.is_none() {
-                self.error(R::B106, "cleanup.begin needs a typed service schedule for its owner");
-            }
             let reserve = pending.map(|v| before.tokens[v.as_u32() as usize].pieces.clone()).unwrap_or_default();
             let failures = failure.map_or(0, |v| before.failures[v.as_u32() as usize]);
             let failure_origin = failure.and_then(|value| before.tokens[value.as_u32() as usize].failure_origin);
@@ -65,12 +72,17 @@ impl Engine<'_, '_> {
                 self.error(R::B104, "cleanup.begin dropped or substituted the active primary failure/Error");
             }
             let mut fact = CleanupFact {
-                phase: 0, shield: false, pending: pending.is_some(),
+                // G1 P1 carries D9 shielding in begin; general suspending/cancellation cleanup
+                // retains the explicit shield transition checked by the coroutine automaton.
+                phase: 0,
+                shield: self.module.profile == Profile::Low && self.body.cleanup.closes.get(*close)
+                    .is_ok_and(|close| !close.effects.suspends && !close.effects.cancel),
+                pending: pending.is_some(),
                 inventory: token.pieces.union(&reserve).cloned().collect(), reserve,
                 failures, failure_origin, cancel_delivered: false, may_fail: false,
                 awaiting_failure: false, awaiting_source: None, awaiting_origin: None, selected: None,
                 executed: BTreeSet::new(), services: BTreeSet::new(), had_services: false,
-                schedule: *schedule, plan: None, test: None,
+                close: *close, plan: None,
             };
             for (value, _) in self.body.values.iter() {
                 if before.availability[value.as_u32() as usize] == AVAILABLE
@@ -82,11 +94,32 @@ impl Engine<'_, '_> {
                 }
             }
             fact.had_services = !fact.services.is_empty();
-            if let Some(schedule) = matching {
-                let declared: BTreeSet<_> = schedule.duties.iter().filter_map(|value| {
+            let count = self.body.cleanup.schedules.iter().filter(|(_, schedule)| schedule.close == *close).count();
+            if count != 1 {
+                self.error(R::B106, "cleanup begin requires one typed D16 schedule for its close");
+            }
+            if let Some(schedule) = self.body.cleanup.schedules.iter()
+                .find_map(|(_, schedule)| (schedule.close == *close).then_some(schedule)) {
+                let declared: BTreeSet<_> = schedule.holders.iter().filter_map(|value| {
                     before.tokens[value.as_u32() as usize].service
                 }).collect();
-                if declared != fact.services || declared.len() != schedule.duties.len() {
+                let owner_matches = self.body.cleanup.closes.get(*close).is_ok_and(|close| {
+                    matches!(close.source, CleanupSource::Scope(owner) if token.scope == Some(owner))
+                });
+                let service_contract = (schedule.holders.is_empty() || owner_matches)
+                    && match (schedule.dictionary, schedule.protocol) {
+                    (None, None) => schedule.holders.is_empty(),
+                    (Some(dictionary), Some(protocol)) => {
+                        self.live_use(before, dictionary);
+                        self.module.protocols.get(protocol)
+                            .is_ok_and(|protocol| protocol.kind == ProtocolKind::Services)
+                    }
+                    _ => false,
+                };
+                if !service_contract {
+                    self.error(R::B106, "service duties need their owner's checked schedule dictionary/protocol");
+                }
+                if declared != fact.services || declared.len() != schedule.holders.len() {
                     self.error(R::B106, "service schedule must cover every assigned holder exactly once");
                 }
             }
@@ -117,9 +150,8 @@ impl Engine<'_, '_> {
         }
         let cleanup = match op {
             CleanupOp::Defer { cleanup, .. } | CleanupOp::Settle { cleanup, .. }
-            | CleanupOp::Plan { cleanup } | CleanupOp::PlanChecked { cleanup, .. }
-            | CleanupOp::SettleEmpty { cleanup, .. } | CleanupOp::DestroySelected { cleanup, .. }
-            | CleanupOp::Next { cleanup }
+            | CleanupOp::Plan { cleanup, .. }
+            | CleanupOp::SettleEmpty { cleanup, .. } | CleanupOp::Destroy { cleanup, .. }
             | CleanupOp::DestroyDirect { cleanup, .. } | CleanupOp::RecordFailure { cleanup, .. }
             | CleanupOp::Shield { cleanup } | CleanupOp::DeliverCancel { cleanup }
             | CleanupOp::Finish { cleanup } => *cleanup,
@@ -191,43 +223,26 @@ impl Engine<'_, '_> {
                 fact.phase = 1;
             }
             CleanupOp::SettleEmpty { schedule, .. } => {
-                if fact.phase > 1 || !fact.services.is_empty() || fact.schedule != *schedule {
+                let matches = self.body.cleanup.schedules.get(*schedule).is_ok_and(|entry| {
+                    entry.close == fact.close && entry.holders.is_empty()
+                });
+                if fact.phase > 1 || !fact.services.is_empty() || !matches {
                     self.error(R::B106, "empty settlement requires this owner's checked empty schedule");
                 }
                 fact.phase = 1;
             }
-            CleanupOp::Plan { .. } | CleanupOp::PlanChecked { .. } => {
+            CleanupOp::Plan { plan, .. } => {
                 if !fact.shield {
                     self.error(R::B105, "cleanup plan requires a shield");
                 }
                 if fact.phase != 1 || !fact.services.is_empty() {
                     self.error(R::B106, "every assigned service must settle before planning");
                 }
-                if let CleanupOp::PlanChecked { plan, .. } = op {
-                    self.check_plan(before, cleanup, &token, &fact, *plan);
-                    fact.plan = Some(*plan);
-                } else {
-                    self.error(R::B102, "cleanup.plan requires an explicit typed plan and roots");
-                }
+                self.check_plan(before, cleanup, &token, &fact, *plan);
+                fact.plan = Some(*plan);
                 fact.phase = 2;
             }
-            CleanupOp::Next { .. } => {
-                if fact.phase != 2 {
-                    self.error(R::B102, "cleanup.next requires the common serial plan");
-                }
-                fact.selected = token.pieces.iter().next().map(|piece| piece.origin);
-                fact.test = Some(cleanup);
-                if let Some(slot) = slots.get_mut(2) {
-                    slot.token.cleanup_test = Some(cleanup);
-                }
-                if let Some(slot) = slots.get_mut(1) {
-                    slot.token.sources.insert(cleanup);
-                    if let Some(selected) = fact.selected {
-                        slot.refs.insert(selected);
-                    }
-                }
-            }
-            CleanupOp::DestroySelected { selected, .. } => {
+            CleanupOp::Destroy { key: selected, .. } => {
                 if !fact.shield || fact.phase != 2 || fact.selected.is_none()
                     || !before.refs[selected.as_u32() as usize].iter().any(|key| Some(*key) == fact.selected) {
                     self.error(R::B102, "runtime destroy needs the checked serial selector's selected key");
@@ -235,7 +250,7 @@ impl Engine<'_, '_> {
                 if let Some(key) = fact.selected.take() {
                     let family = token.pieces.iter().any(|piece| piece.origin == key && piece.family);
                     if !family {
-                        token.pieces.retain(|piece| piece.origin != key);
+                token.pieces.retain(|piece| piece.origin != key);
                         flow.dead.insert(key);
                     }
                     fact.executed.insert(key);
@@ -254,17 +269,13 @@ impl Engine<'_, '_> {
                 if fact.executed.contains(&key) || before.dead.contains(&key) {
                     self.error(R::B103, "destroy cannot reenter or destroy an already dead identity");
                 }
-                // Without an explicit order witness only a proved complete singleton is direct.
-                let direct = fact.plan.and_then(|id| self.body.cleanup_plans.get(id).ok())
-                    .is_some_and(|plan| !plan.merge && plan.entries.iter().any(|value| {
-                        self.identity(before, *value) == key
-                    }));
-                if !direct || !token.pieces.iter().any(|piece| piece.origin == key)
-                    || fact.plan.and_then(|id| self.body.cleanup_plans.get(id).ok()).is_some_and(|plan| {
-                        plan.entries.iter().find(|value| !fact.executed.contains(&self.identity(before, **value)))
-                            .is_none_or(|value| self.identity(before, *value) != key)
-                    }) {
-                    self.error(R::B102, "direct destroy needs complete singleton or explicit serial order evidence");
+                let proof = fact.plan.and_then(|id| self.body.cleanup.plans.get(id).ok())
+                    .and_then(|plan| plan.direct).and_then(|id| self.body.cleanup.proofs.get(id).ok());
+                if proof.is_none_or(|proof| {
+                    proof.slots.iter().find(|slot| !fact.executed.contains(&self.identity(before, slot.identity)))
+                        .is_none_or(|slot| self.identity(before, slot.identity) != key)
+                }) || !token.pieces.iter().any(|piece| piece.origin == key) {
+                    self.error(R::B102, "direct destroy needs the next identity of its complete checked order");
                 }
                 token.pieces.retain(|piece| piece.origin != key);
                 fact.executed.insert(key);
@@ -295,7 +306,9 @@ impl Engine<'_, '_> {
                 fact.awaiting_failure = false;
                 fact.awaiting_source = None;
                 fact.awaiting_origin = None;
-                if !fact.reserve.is_empty() {
+                // The merge plan already includes WholeReserveOnFailure in its unexecuted suffix.
+                if !fact.reserve.is_empty() && fact.plan.and_then(|id| self.body.cleanup.plans.get(id).ok())
+                    .is_none_or(|plan| plan.direct.is_some()) {
                     fact.phase = 1;
                     fact.plan = None;
                 }
@@ -319,10 +332,8 @@ impl Engine<'_, '_> {
                 fact.cancel_delivered = true;
                 flow.active_failure = fact.failures;
                 flow.active_failure_origin = fact.failure_origin;
-                if !fact.reserve.is_empty() {
-                    fact.phase = 1;
-                    fact.plan = None;
-                }
+                fact.phase = 1;
+                fact.plan = None;
                 token.pieces.extend(fact.reserve.iter().cloned());
                 fact.reserve.clear();
                 fact.pending = false;
@@ -407,7 +418,9 @@ impl Engine<'_, '_> {
                     .map_or(15, |summary| summary.contract.failures.iter().filter(|kind| {
                         **kind != FailureKind::Cancelled
                     }).fold(0, |bits, kind| bits | failure_bit(*kind))),
-                _ => 15,
+                _ => self.required_effects(&fact.inventory, before).failures.iter()
+                    .filter(|kind| **kind != FailureKind::Cancelled)
+                    .fold(0, |bits, kind| bits | failure_bit(*kind)),
             };
         }
         let pending = fact.pending;
@@ -432,7 +445,16 @@ impl Engine<'_, '_> {
         let pieces = before.tokens[state.as_u32() as usize].pieces.iter()
             .chain(reserve.into_iter().flat_map(|value| &before.tokens[value.as_u32() as usize].pieces))
             .cloned().collect();
-        let required = self.required_effects(&pieces, before);
+        let mut required = self.required_effects(&pieces, before);
+        let has_services = before.tokens.iter().enumerate().any(|(index, token)| {
+            before.availability[index] == AVAILABLE && token.service.is_some()
+        });
+        if has_services {
+            required.suspends = true;
+            required.failures = vec![
+                FailureKind::Thrown, FailureKind::Program, FailureKind::Panic, FailureKind::Native,
+            ];
+        }
         if required.suspends && !envelope.suspends
             || required.failures.iter().any(|kind| !envelope.failures.contains(kind)) {
             self.error(R::B104, "scope effect envelope understates admitted or reserved cleanup effects");
@@ -531,17 +553,24 @@ impl Engine<'_, '_> {
 
 impl Engine<'_, '_> {
     fn check_plan(&mut self, flow: &Flow, cleanup: ValueId, token: &Token, fact: &CleanupFact, id: CleanupPlanId) {
-        let Ok(plan) = self.body.cleanup_plans.get(id) else {
+        let Ok(plan) = self.body.cleanup.plans.get(id) else {
             return;
         };
-        if plan.effects.as_ref().is_some_and(|effects| effects.cancel) {
+        let Ok(close) = self.body.cleanup.closes.get(plan.close) else {
+            return;
+        };
+        if plan.close != fact.close {
+            self.error(R::B102, "cleanup plan belongs to a different close");
+        }
+        let envelope = &close.effects;
+        if envelope.cancel {
             let root = token.scope.and_then(|scope| self.module.scopes.get(scope).ok());
             if !self.declaration.attrs.contains(&FunctionAttr::Async)
                 || root.is_none_or(|scope| scope.kind != ScopeKind::Action || scope.parent.is_some()) {
                 self.error(R::B105, "lowered cancellation envelope requires the final async action boundary");
             }
         }
-        if fact.cancel_delivered && plan.effects.as_ref().is_none_or(|effects| !effects.cancel) {
+        if fact.cancel_delivered && !envelope.cancel {
             self.error(R::B105, "lowered cancellation delivery is missing from its close envelope");
         }
         let mut effects = self.required_effects(&fact.inventory, flow);
@@ -553,78 +582,219 @@ impl Engine<'_, '_> {
                 }
             }
         }
-        if plan.effects.as_ref().is_none_or(|envelope| {
-            effects.suspends && !envelope.suspends
-                || effects.failures.iter().any(|kind| !envelope.failures.contains(kind))
-        }) {
+        if effects.suspends && !envelope.suspends
+            || effects.failures.iter().any(|kind| !envelope.failures.contains(kind)) {
             self.error(R::B104, "lowered plan needs a sound close effect envelope including reserve and services");
         }
         if effects.suspends && !self.declaration.attrs.contains(&FunctionAttr::Async) {
             self.error(R::B112, "lowered synchronous cleanup owns an asynchronous or opaque source");
         }
-        let keys: BTreeSet<_> = plan.entries.iter().map(|value| self.identity(flow, *value)).collect();
-        let actual: BTreeSet<_> = token.pieces.iter().map(|piece| piece.origin).collect();
-        if !keys.is_subset(&actual) || keys.len() != plan.entries.len()
-            || plan.entries.iter().any(|value| flow.availability[value.as_u32() as usize] != AVAILABLE) {
-            self.error(R::B102, "cleanup plan entries must be available distinct members of the live remainder");
-        }
-        if fact.may_fail && fact.pending && !plan.merge {
-            self.error(R::B102, "service failure requires whole-reserve runtime merge before serial selection");
-        }
-        if !plan.merge && (keys != actual || keys.len() != plan.entries.len()
-            || token.pieces.iter().any(|piece| piece.family || !piece.predicates.is_empty())) {
-            self.error(R::B102, "static plan does not cover the complete singleton identities exactly once");
-        }
-        if !plan.merge && plan.entries.len() > 1 {
-            let order = self.body.cleanup_orders.get(plan.order).ok();
-            let mut positions = Vec::new();
-            let mut matching = order.is_some_and(|order| order.creations.len() == plan.entries.len());
-            if let Some(order) = order {
-                for (creation, value) in order.creations.iter().zip(&plan.entries) {
-                    if let Some((key, block, position)) = self.completion(flow, *creation) {
-                        matching &= key == self.identity(flow, *value);
-                        positions.push((block, position));
-                    } else { matching = false; }
-                }
-            }
-            if let Some(graph) = super::super::graph::Dominators::new(self.body, self.state) {
-                for pair in positions.windows(2) {
-                    let later = pair[0];
-                    let earlier = pair[1];
-                    if later.0 == earlier.0 {
-                        matching &= later.1 > earlier.1;
-                    }
-                    else {
-                        matching &= graph.dominates(super::super::graph::Dominators::entry(earlier.0) + 1,
-                            super::super::graph::Dominators::entry(later.0), self.state);
-                    }
-                }
-            } else { matching = false; }
-            if !matching {
-                self.error(R::B102, "direct order needs actual completion witnesses in descending serial order");
-            }
-        }
-        let Ok(roots) = self.body.cleanup_roots.get(plan.roots) else {
+        self.cleanup_roots(flow, cleanup);
+        let Some(proof) = plan.direct.and_then(|id| self.body.cleanup.proofs.get(id).ok()) else {
             return;
         };
-        let required = [RootKind::CleanupRemainder, RootKind::ActiveSelf, RootKind::ServiceSchedule];
-        let suspends = plan.effects.as_ref().is_some_and(|effects| effects.suspends);
-        let failure = fact.failures != 0 || plan.effects.as_ref().is_some_and(|effects| !effects.failures.is_empty());
-        if suspends && !roots.through_suspend
-            || failure && !roots.kinds.contains(&RootKind::CarrierGraph)
-            || required.iter().any(|kind| !roots.kinds.contains(kind))
-            || fact.pending && !roots.kinds.contains(&RootKind::PendingExit)
-            || !roots.values.contains(&cleanup) {
-            self.error(R::B105,
-                "cleanup root map omits the active state, remainder, schedule, self or pending reserve");
+        let keys: BTreeSet<_> = proof.slots.iter().map(|slot| self.identity(flow, slot.identity)).collect();
+        let actual: BTreeSet<_> = token.pieces.iter().map(|piece| piece.origin).collect();
+        if keys != actual || keys.len() != proof.slots.len()
+            || token.pieces.iter().any(|piece| piece.family || !piece.predicates.is_empty())
+            || proof.slots.iter().any(|slot| flow.availability[slot.identity.as_u32() as usize] != AVAILABLE) {
+            self.error(R::B102, "static plan must cover every available singleton identity exactly once");
         }
-        for &value in &roots.values {
-            if flow.availability[value.as_u32() as usize] != AVAILABLE
-                || flow.lifetimes[value.as_u32() as usize] != 1
-                || flow.dead.contains(&self.identity(flow, value)) {
-                self.error(R::B105, "cleanup root map refers to an unavailable SSA holder");
+        if proof.reserve_empty && !fact.reserve.is_empty()
+            || (!envelope.failures.is_empty() || fact.failures != 0 || fact.may_fail)
+                && !fact.reserve.is_empty() {
+            self.error(R::B102, "direct cleanup violates B2 or forges an empty reserve witness");
+        }
+        let mut positions = Vec::new();
+        let mut matching = !proof.slots.is_empty() && proof.suffixes.len() == proof.slots.len()
+            && self.proof_links(proof);
+        for (index, slot) in proof.slots.iter().enumerate() {
+            matching &= slot.active_at == close.after_defers;
+            if matches!(slot.origin, CreationWitness::Singleton) {
+                matching &= proof.slots.len() == 1;
+            } else if let Some((key, block, position)) = self.witness_completion(flow, &slot.origin, slot.identity) {
+                matching &= key == self.identity(flow, slot.identity);
+                positions.push((block, position));
+            } else {
+                matching = false;
+            }
+            if let Some(suffix) = proof.suffixes.get(index) {
+                let remaining: Vec<_> = proof.slots[index + 1..].iter().map(|slot| slot.identity).collect();
+                let roots: Vec<_> = proof.slots[index + 1..].iter()
+                    .flat_map(|slot| [slot.identity, slot.descriptor]).collect();
+                matching &= suffix.completed as usize == index + 1 && suffix.remaining == remaining
+                    && suffix.roots == roots;
             }
         }
+        if let Some(graph) = super::super::graph::Dominators::new(self.body, self.state) {
+            for &(block, position) in &positions {
+                if block == close.after_defers {
+                    let at = self.body.blocks.get(block).ok().and_then(|block| block.insts.iter().position(|id| {
+                        self.body.insts.get(*id).is_ok_and(|inst| matches!(inst.op,
+                            Operation::Cleanup(CleanupOp::Begin { close, .. }) if close == plan.close))
+                    }));
+                    matching &= at.is_some_and(|at| position < at);
+                } else {
+                    matching &= graph.dominates(super::super::graph::Dominators::entry(block) + 1,
+                        super::super::graph::Dominators::entry(close.after_defers), self.state);
+                }
+            }
+            for pair in positions.windows(2) {
+                let later = pair[0];
+                let earlier = pair[1];
+                if later.0 == earlier.0 {
+                    matching &= later.1 > earlier.1;
+                } else {
+                    matching &= graph.dominates(super::super::graph::Dominators::entry(earlier.0) + 1,
+                        super::super::graph::Dominators::entry(later.0), self.state);
+                }
+            }
+        } else {
+            matching = false;
+        }
+        if !matching {
+            self.error(R::B102, "direct order needs active completion witnesses, descending order and exact suffixes");
+        }
+    }
+
+    fn proof_links(&mut self, proof: &CleanupOrderProof) -> bool {
+        let edges = super::super::graph::edges(self.body, self.state);
+        let mut valid = true;
+        for witness in &proof.preserves {
+            if !self.state.step(1) {
+                return false;
+            }
+            let Some(data) = self.body.values.get(witness.to).ok() else {
+                return false;
+            };
+            let consumes = |op: &Operation| {
+                op.operand_refs().iter().any(|operand| {
+                    operand.reference == OperandRef::Value(witness.from) && operand.mode == OperandMode::Consume
+                })
+            };
+            valid &= match data.def {
+                Definition::InstResult { inst, .. } => {
+                    self.body.insts.get(inst).is_ok_and(|inst| consumes(&inst.op))
+                }
+                Definition::BlockParam { block, index } => edges.iter().any(|edge| {
+                    if edge.target != block {
+                        return false;
+                    }
+                    match edge.args.get(index as usize) {
+                        Some(EdgeArg::Value(from)) => *from == witness.from,
+                        Some(EdgeArg::Produced(EdgeResult { outcome: Outcome::Normal, .. })) => {
+                            self.body.blocks.get(edge.source).is_ok_and(|source| {
+                                matches!(&source.term.kind, TermKind::InvokeOwn { op, .. } if consumes(op))
+                            })
+                        }
+                        _ => false,
+                    }
+                }),
+            };
+        }
+        for witness in &proof.joins {
+            if !self.state.step(edges.len() + 1) {
+                return false;
+            }
+            let Some(Definition::BlockParam { block, index }) = self.body.values.get(witness.state)
+                .ok().map(|data| data.def) else {
+                return false;
+            };
+            let predecessors: Vec<_> = edges.iter().filter(|edge| edge.target == block).filter_map(|edge| {
+                match edge.args.get(index as usize) {
+                    Some(EdgeArg::Value(value)) => Some(*value),
+                    _ => None,
+                }
+            }).collect();
+            valid &= predecessors.len() > 1 && witness.predecessors == predecessors;
+        }
+        valid
+    }
+
+    fn cleanup_roots(&mut self, flow: &Flow, cleanup: ValueId) {
+        let L::Instruction { instruction, .. } = self.state.location else {
+            return;
+        };
+        let maps: Vec<_> = self.body.cleanup.roots.iter().filter_map(|(_, map)| {
+            (map.boundary == RootBoundary::BeforeInstruction(instruction)).then_some(map)
+        }).collect();
+        if maps.len() != 1 || !maps[0].bindings.iter().any(|binding| {
+            binding.value == cleanup && binding.trace == RootTrace::CleanupActivation
+        }) {
+            self.error(R::B105, "cleanup root map omits its activation, self, remainder, schedule or reserve");
+        }
+        for map in maps {
+            let suspends = flow.tokens[cleanup.as_u32() as usize].cleanup.as_ref()
+                .and_then(|fact| self.body.cleanup.closes.get(fact.close).ok())
+                .is_some_and(|close| close.effects.suspends);
+            if suspends && !map.through_suspend {
+                self.error(R::B105, "cleanup root bindings must survive the declared suspension");
+            }
+            let mut seen = BTreeSet::new();
+            for binding in &map.bindings {
+                let value = binding.value;
+                if !seen.insert(value) || flow.availability[value.as_u32() as usize] != AVAILABLE
+                    || flow.lifetimes[value.as_u32() as usize] != 1
+                    || flow.dead.contains(&self.identity(flow, value)) {
+                    self.error(R::B105, "cleanup root map refers to an unavailable or duplicate SSA holder");
+                }
+            }
+        }
+    }
+
+    fn witness_completion(
+        &self, flow: &Flow, witness: &CreationWitness, identity: ValueId,
+    ) -> Option<(Origin, BlockId, usize)> {
+        if matches!(witness, CreationWitness::Singleton) {
+            return None;
+        }
+        let site = match witness {
+            CreationWitness::Singleton => return None,
+            CreationWitness::Create { site } | CreationWitness::FreshResult { site, .. } => site,
+        };
+        let origin_site = match site {
+            HighOperationSite::Instruction(inst) => CreationOrigin::Instruction(*inst),
+            HighOperationSite::Terminator(block) => {
+                CreationOrigin::Invoke { block: *block, outcome: Outcome::Normal, slot: 0 }
+            }
+        };
+        if matches!(witness, CreationWitness::Create { .. }) {
+            return self.completion(flow, origin_site);
+        }
+        let (op, block, position) = match site {
+            HighOperationSite::Instruction(inst) => {
+                let &(block, position) = self.state.positions.get(&(self.function, *inst))?;
+                (&self.body.insts.get(*inst).ok()?.op, block, position)
+            }
+            HighOperationSite::Terminator(block) => {
+                let TermKind::InvokeOwn { op, .. } = &self.body.blocks.get(*block).ok()?.term.kind else {
+                    return None;
+                };
+                (&**op, *block, usize::MAX)
+            }
+        };
+        let CreationWitness::FreshResult { callee, summary, .. } = witness else {
+            return None;
+        };
+        let Operation::Call(CallOp::Direct { function, call }) = op else {
+            return None;
+        };
+        let declaration = self.module.functions.get(*callee).ok()?;
+        let contract = self.module.summaries.get(*summary).ok()?;
+        let [relation] = contract.results.as_slice() else {
+            return None;
+        };
+        if *function != *callee || call.summary != Some(*summary) || declaration.summary != Some(*summary)
+            || relation.fresh.len() != 1 || !relation.aliases.is_empty()
+            || relation.provenance != AdmissionProvenance::UnboundResult || declaration.body.is_none() {
+            return None;
+        }
+        let origin = match site {
+            HighOperationSite::Instruction(inst) => Origin::Instruction(*inst, 0),
+            HighOperationSite::Terminator(block) => Origin::Invoke(*block, 0),
+        };
+        let expected = creation(origin, relation.fresh[0]);
+        (self.identity(flow, identity) == expected).then_some((expected, block, position))
     }
 
     fn completion(&self, flow: &Flow, creation: CreationOrigin) -> Option<(Origin, BlockId, usize)> {
@@ -653,7 +823,70 @@ impl Engine<'_, '_> {
         }
     }
 
-    pub(super) fn dispatch(
+    pub(super) fn cleanup_next(
+        &mut self, flow: &mut Flow, cleanup: ValueId, selected: &InvokeEdge, done: &InvokeEdge,
+        outgoing: &mut Vec<(BlockId, Flow)>,
+    ) {
+        let before = flow.clone();
+        self.use_value(flow, cleanup, OperandMode::Consume, R::B102);
+        let mut token = before.tokens[cleanup.as_u32() as usize].clone();
+        let Some(fact) = &mut token.cleanup else {
+            self.error(R::B102, "cleanup.next needs a live cleanup automaton");
+            return;
+        };
+        if !fact.shield || fact.phase != 2 || fact.awaiting_failure || fact.plan.is_none() {
+            self.error(R::B102, "cleanup.next requires a shielded settled plan and a dispatched failure");
+        }
+        if fact.plan.and_then(|id| self.body.cleanup.plans.get(id).ok()).is_some_and(|plan| plan.direct.is_some()) {
+            self.error(R::B102, "runtime selector cannot replace a direct plan's finite order");
+        }
+        let index = cleanup.as_u32() as usize;
+        let slot = Slot {
+            token: token.clone(), refs: before.refs[index].clone(), requirements: before.full_deps[index].clone(),
+            aliases: before.aliases[index].clone(), identity: before.identities[index], ..Slot::default()
+        };
+        if let Some(piece) = token.pieces.iter().next() {
+            let mut selected_slot = slot.clone();
+            selected_slot.token.cleanup.as_mut().unwrap().selected = Some(piece.origin);
+            let mut key = Slot::default();
+            key.refs.insert(piece.origin);
+            key.token.sources.insert(cleanup);
+            outgoing.push(self.edge(flow, selected.block, &selected.args, &[selected_slot, key], R::B102));
+        }
+        if token.pieces.is_empty() || token.pieces.iter().all(|piece| piece.family) {
+            let mut drained = slot;
+            drained.token.pieces.clear();
+            drained.token.cleanup.as_mut().unwrap().selected = None;
+            outgoing.push(self.edge(flow, done.block, &done.args, &[drained], R::B102));
+        }
+    }
+
+    pub(super) fn cleanup_dispatch(
+        &mut self, flow: &mut Flow, term: &TermKind, outgoing: &mut Vec<(BlockId, Flow)>,
+    ) {
+        let (closed, failure, exit, arms) = match term {
+            TermKind::ExitDispatch { closed, failure, exit, success, pending, failed, close } => {
+                if flow.tokens[exit.as_u32() as usize].cleanup.as_ref().is_none_or(|fact| fact.close != *close) {
+                    self.error(R::B101, "exit dispatch has the wrong close descriptor");
+                }
+                let arms = [(DispatchKind::Success, success), (DispatchKind::Pending, pending),
+                    (DispatchKind::Failure, failed)].into_iter().filter_map(|(kind, edge)| {
+                    edge.as_ref().map(|edge| DispatchEdge { kind, edge: edge.clone() })
+                }).collect::<Vec<_>>();
+                (Some(*closed), *failure, Some(*exit), arms)
+            }
+            TermKind::FailureDispatch { failure, none, some } => {
+                let none = InvokeEdge { block: none.block,
+                    args: none.args.iter().copied().map(EdgeArg::Value).collect() };
+                (None, *failure, None, vec![DispatchEdge { kind: DispatchKind::None, edge: none },
+                    DispatchEdge { kind: DispatchKind::Some, edge: some.clone() }])
+            }
+            _ => return,
+        };
+        self.dispatch(flow, closed, failure, exit, &arms, outgoing);
+    }
+
+    fn dispatch(
         &mut self, flow: &mut Flow, closed: Option<ValueId>, failure: ValueId, exit: Option<ValueId>,
         arms: &[DispatchEdge], outgoing: &mut Vec<(BlockId, Flow)>,
     ) {

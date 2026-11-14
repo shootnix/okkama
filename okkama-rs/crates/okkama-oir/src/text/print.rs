@@ -315,9 +315,6 @@ impl Writer<'_> {
             }
         };
         }
-        arena!(cleanup_plans, "plan", "P");
-        arena!(cleanup_orders, "order", "O");
-        arena!(cleanup_roots, "roots", "R");
         arena!(bindings, "binding", "b");
         arena!(boundaries, "boundary", "B");
         arena!(keys, "key", "k");
@@ -367,6 +364,11 @@ impl Writer<'_> {
     }
     fn body(&mut self, body: &Body) -> Result<(), PrintError> {
         self.elaboration_declarations(body)?;
+        if body.cleanup != CleanupMetadata::default() {
+            self.push("    low.metadata ");
+            body.cleanup.write(self)?;
+            self.push("\n");
+        }
         for (id, binding) in body.bindings.iter() {
             self.push("    binding ");
             id.write(self)?;
@@ -412,6 +414,22 @@ impl Writer<'_> {
             self.push("\n");
         }
         let mut referenced = HashSet::new();
+        for (_, map) in body.cleanup.roots.iter() {
+            if let RootBoundary::BeforeInstruction(inst) | RootBoundary::AfterInstruction(inst) = map.boundary {
+                referenced.insert(inst);
+            }
+        }
+        for (_, proof) in body.cleanup.proofs.iter() {
+            for slot in &proof.slots {
+                let site = match &slot.origin {
+                    CreationWitness::Singleton => continue,
+                    CreationWitness::Create { site } | CreationWitness::FreshResult { site, .. } => site,
+                };
+                if let HighOperationSite::Instruction(inst) = site {
+                    referenced.insert(*inst);
+                }
+            }
+        }
         for result in &body.high_results {
             referenced.extend(result.prepared);
         }
@@ -566,6 +584,42 @@ impl Writer<'_> {
     }
     fn terminator(&mut self, term: &Terminator) -> Result<(), PrintError> {
         match &term.kind {
+            TermKind::CleanupNext { cleanup, selected, done } => {
+                self.push("cleanup.next ");
+                cleanup.write(self)?;
+                self.push(" selected ");
+                self.edge(&term.kind, selected, Outcome::CleanupSelected)?;
+                self.push(" done ");
+                self.edge(&term.kind, done, Outcome::CleanupDone)?;
+            }
+            TermKind::ExitDispatch { close, closed, failure, exit, success, pending, failed } => {
+                self.push("exit.dispatch ");
+                close.write(self)?;
+                self.push(" ");
+                closed.write(self)?;
+                self.push(" ");
+                failure.write(self)?;
+                self.push(" ");
+                exit.write(self)?;
+                for (name, outcome, edge) in [
+                    (" success ", Outcome::ExitSuccess, success),
+                    (" pending ", Outcome::ExitPending, pending),
+                    (" failure ", Outcome::ExitFailure, failed),
+                ] {
+                    if let Some(edge) = edge {
+                        self.push(name);
+                        self.edge(&term.kind, edge, outcome)?;
+                    }
+                }
+            }
+            TermKind::FailureDispatch { failure, none, some } => {
+                self.push("failure.dispatch ");
+                failure.write(self)?;
+                self.push(" none ");
+                none.write(self)?;
+                self.push(" some ");
+                self.edge(&term.kind, some, Outcome::FailureSome)?;
+            }
             TermKind::Br(t) => {
                 self.push("br ");
                 t.write(self)?;
@@ -611,27 +665,6 @@ impl Writer<'_> {
                 if let Some(unwind) = unwind {
                     self.push("\n        unwind ");
                     self.edge(&term.kind, unwind, Outcome::Unwind)?;
-                }
-            }
-            TermKind::StateDispatch { closed, failure, exit, arms } => {
-                if let Some(closed) = closed {
-                    self.push("exit.dispatch ");
-                    closed.write(self)?;
-                    self.push(", ");
-                } else { self.push("failure.dispatch "); }
-                failure.write(self)?;
-                if let Some(exit) = exit {
-                    self.push(", ");
-                    exit.write(self)?;
-                }
-                for arm in arms {
-                    self.push("\n        ");
-                    self.push(match arm.kind {
-                        DispatchKind::None => "none ", DispatchKind::Some => "some ",
-                        DispatchKind::Success => "success ", DispatchKind::Pending => "pending ",
-                        DispatchKind::Failure => "failure ",
-                    });
-                    self.edge(&term.kind, &arm.edge, arm.kind.outcome())?;
                 }
             }
             TermKind::RetDefer { tag, values } => {

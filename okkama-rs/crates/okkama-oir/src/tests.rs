@@ -118,10 +118,9 @@ fn construct_minimal_module_by_hand() -> Result<(), ArenaError> {
     block.term.kind = TermKind::Ret { values: vec![result] };
     let mut bindings = Arena::new();
     let binding = bindings.alloc(BindingDecl { name: "answer".into(), scope, ty: int, loc })?;
-    module.functions.get_mut(main)?.body = Some(Body { high_results: vec![], high_effects: vec![],
-        descriptor_bindings: vec![], service_schedules: vec![],
-            cleanup_plans: Arena::new(), cleanup_orders: Arena::new(), cleanup_roots: Arena::new(),
-            entry, values, blocks, insts, bindings,
+    module.functions.get_mut(main)?.body = Some(Body {
+        cleanup: CleanupMetadata::default(), high_results: vec![], high_effects: vec![],
+        descriptor_bindings: vec![], service_schedules: vec![], entry, values, blocks, insts, bindings,
         boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(), selections: Arena::new() });
     module.entry = Some(main);
 

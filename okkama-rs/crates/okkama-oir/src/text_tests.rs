@@ -68,11 +68,7 @@ fn build_op_config(op: Operation, profile: Profile, configure: impl FnOnce(&mut 
         b.emit_schema(op).unwrap_or_else(|e| panic!("{name}: {e}"));
         b.terminate(TermKind::Ret { values: vec![] }).unwrap();
     }
-    let mut body = b.finish().unwrap();
-    body.cleanup_orders.alloc(CleanupOrder { creations: vec![] }).unwrap();
-    body.cleanup_roots.alloc(CleanupRoots { values: vec![], kinds: vec![], through_suspend: false }).unwrap();
-    body.cleanup_plans.alloc(CleanupPlan { effects: None, entries: vec![], merge: true,
-        order: CleanupOrderId::from_u32(0), roots: CleanupRootsId::from_u32(0) }).unwrap();
+    let body = b.finish().unwrap();
     m.define_function(f, body).unwrap();
     m.finish().unwrap()
 }
@@ -86,7 +82,7 @@ fn every_opcode_builder_roundtrips_and_every_invoke_slot_is_preserved() {
         roundtrip(&module);
     }
     assert_eq!(seen, Operation::opcode_inventory().into_iter().collect(), "opcode missing a builder round-trip case");
-    assert_eq!(seen.len(), 272);
+    assert_eq!(seen.len(), 270);
 }
 
 #[test]
@@ -323,7 +319,6 @@ codec_samples!(SavedSlot => SavedSlot { slot: cs::<u32>(), ty: cs::<TypeId>(), l
 codec_samples!(CarrierDestination => CarrierDestination::FailureContext(cs::<ScopeId>()));
 codec_samples!(ExitKind => ExitKind::Return);
 codec_samples!(ExitDestination => ExitDestination::Caller);
-codec_samples!(AbortPhase => AbortPhase::BeforeDestroy);
 codec_samples!(PreparedExit => PreparedExit { kind: cs::<ExitKind>(), value: cs::<Option<ValueId>>(), packet: cs::<Option<ValueId>>(), deps: cs::<Option<ValueId>>(), selection: cs::<SelectionId>(), boundary: cs::<BoundaryId>() });
 
 #[test]
@@ -447,9 +442,14 @@ fn every_typed_payload_enum_branch_roundtrips() {
         Outcome::Normal,
         Outcome::Unwind,
         Outcome::Cancel,
+        Outcome::CleanupSelected,
+        Outcome::CleanupDone,
+        Outcome::ExitSuccess,
+        Outcome::ExitPending,
+        Outcome::ExitFailure,
+        Outcome::FailureSome,
         Outcome::DeferContinue,
-        Outcome::DeferReplace(0),
-        Outcome::Dispatch(0)
+        Outcome::DeferReplace(0)
     ];
     assert_eq!(cases.len(), Outcome::TEXT_VARIANTS.len(), "Outcome branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }
@@ -680,7 +680,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
         TransferRule::Reserve { packet: cs::<ValueId>(), boundary: cs::<BoundaryId>() },
         TransferRule::ExtendReservation { pending: cs::<ValueId>(), packet: cs::<ValueId>() },
         TransferRule::ReplaceReservation { pending: cs::<ValueId>(), packet: cs::<Option<ValueId>>() },
-        TransferRule::AbortReservation { pending: cs::<ValueId>(), cleanup: cs::<ValueId>(), phase: cs::<AbortPhase>() },
+        TransferRule::AbortReservation { pending: cs::<ValueId>(), cleanup: cs::<ValueId>() },
         TransferRule::FrameSave { frame: cs::<ValueId>(), values: cs::<Vec<ValueId>>() },
         TransferRule::FrameResume { frame: cs::<ValueId>(), slots: cs::<Vec<u32>>() },
         TransferRule::CompleteIdentity { identity: cs::<ValueId>(), state: cs::<ValueId>(), output: cs::<SlotName>() }
@@ -705,6 +705,11 @@ fn every_typed_payload_enum_branch_roundtrips() {
         Postcondition::NoPublication,
         Postcondition::CalleeInputsSettled,
         Postcondition::UniqueCacheRecheckAfterCoro,
+        Postcondition::CleanupOwnsReserve,
+        Postcondition::FirstFailureAbortsWholeReserveIntoSuffix,
+        Postcondition::FailurePriorityPreserved,
+        Postcondition::CleanupDrained,
+        Postcondition::FailedExitHasNoPending,
         Postcondition::DestroyingBeforeCall,
         Postcondition::DeadAfterCall(cs::<ValueId>()),
         Postcondition::ContinueCleanup,
@@ -931,12 +936,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
     ];
     assert_eq!(cases.len(), ExitDestination::TEXT_VARIANTS.len(), "ExitDestination branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }
-    let cases = vec![
-        AbortPhase::BeforeDestroy,
-        AbortPhase::AfterExecutedPrefix
-    ];
-    assert_eq!(cases.len(), AbortPhase::TEXT_VARIANTS.len(), "AbortPhase branch missing");
-    for value in cases { crate::text::payload_roundtrip(value); }
+
 }
 codec_samples!(DebugLoc => DebugLoc { file: FileId::from_u32(0), line: 1, column: 2 },
     Target => Target { block: BlockId::from_u32(0), args: vec![] });
@@ -1467,6 +1467,7 @@ fn coverage_inventory_requires_opcode_fixtures_and_every_schema_slot_set() {
     let mut seen = BTreeSet::new(); let mut shapes = BTreeSet::new();
     let mut modules = coverage_modules();
     modules.push(text::parse(include_str!("../tests/fixtures/text/d12-deferred-future.oir")).unwrap());
+    modules.push(text::parse(include_str!("../tests/fixtures/spec/09-destroy-roots.oir")).unwrap());
     let frame_op = crate::contract_tests::representatives().into_iter().find(|op| {
         matches!(op, Operation::Async(AsyncOp::FutureNew { .. }))
     }).unwrap();
@@ -1477,6 +1478,10 @@ fn coverage_inventory_requires_opcode_fixtures_and_every_schema_slot_set() {
         for (_, function) in module.functions.iter() {
             let Some(body) = &function.body else { continue };
             for (_, block) in body.blocks.iter() {
+                for (outcome, _) in dispatch_edges(&block.term.kind) {
+                    shapes.insert(dispatch_slots(outcome).iter().map(|slot| crate::text::slot_name(slot.name))
+                        .collect::<Vec<_>>().join(","));
+                }
                 for &id in &block.insts { seen.insert(body.insts.get(id).unwrap().op.opcode()); }
                 if let TermKind::InvokeOwn { op, normal, unwind } = &block.term.kind {
                     seen.insert(op.opcode());

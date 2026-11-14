@@ -5,8 +5,10 @@ use std::collections::HashSet;
 pub(crate) trait Sample { fn sample() -> Self; }
 pub(crate) fn sample<T: Sample>() -> T { T::sample() }
 macro_rules! id_samples { ($($ty:ty),*) => { $( impl Sample for $ty { fn sample() -> Self { Self::from_u32(0) } } )* }; }
-id_samples!(ValueId, BlockId, InstId, TypeId, DeclId, FuncId, ScopeId, BindingId, BoundaryId, SummaryId,
-    ProtocolId, SelectionId, DepExprId, KeyExprId, CreationSiteId, CleanupPlanId);
+id_samples!(
+    CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId, ValueId, BlockId, InstId, TypeId, DeclId, FuncId,
+    ScopeId, BindingId, BoundaryId, SummaryId, ProtocolId, SelectionId, DepExprId, KeyExprId, CreationSiteId
+);
 impl Sample for u32 { fn sample() -> Self { 0 } }
 impl Sample for bool { fn sample() -> Self { true } }
 impl Sample for String { fn sample() -> Self { "diagnostic".into() } }
@@ -38,7 +40,6 @@ sample_expr!(SavedSlot, SavedSlot { slot: 0, ty: sample(), linear: true });
 sample_expr!(CarrierDestination, CarrierDestination::Cache(sample()));
 sample_expr!(PreparedExit, PreparedExit { kind: ExitKind::Return, value: sample(), packet: sample(), deps: sample(), selection: sample(), boundary: sample() });
 sample_expr!(ExitDestination, ExitDestination::Caller);
-sample_expr!(AbortPhase, AbortPhase::BeforeDestroy);
 sample_expr!(CallArgument, CallArgument { value: sample(), convention: OperandConvention::Borrow });
 sample_expr!(CallSite, CallSite { cleanup: CallCleanupMode::Ordinary,  args: vec![CallArgument { value: sample(),
     convention: OperandConvention::Borrow }], packet: sample(), deps: sample(), descriptors: sample(),
@@ -66,10 +67,9 @@ pub(crate) fn module() -> Module {
     module
 }
 fn body() -> Body {
-    let mut body = Body { high_results: vec![], high_effects: vec![], descriptor_bindings: vec![],
-        service_schedules: vec![],
-            cleanup_plans: Arena::new(), cleanup_orders: Arena::new(), cleanup_roots: Arena::new(),
-            entry: sample(), values: Arena::new(), blocks: Arena::new(), insts: Arena::new(),
+    let mut body = Body { cleanup: CleanupMetadata::default(), high_results: vec![], high_effects: vec![],
+        descriptor_bindings: vec![],
+        service_schedules: vec![], entry: sample(), values: Arena::new(), blocks: Arena::new(), insts: Arena::new(),
         bindings: Arena::new(), boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(),
         selections: Arena::new() };
     body.selections.alloc(SelectionExpr::Value(v(0))).unwrap();
@@ -328,9 +328,11 @@ fn every_terminator_and_expression_shape_is_traversed() {
 // payload field, so forgetting a ValueId in a new traversal fails completeness.
 pub(crate) trait DeclaredOperands { fn append_declared(&self, out: &mut Vec<OperandRef>); }
 macro_rules! metadata_fields { ($($ty:ty),*) => { $( impl DeclaredOperands for $ty { fn append_declared(&self, _: &mut Vec<OperandRef>) {} } )* }; }
-metadata_fields!(CleanupPlanId, u32, bool, String, TypeId, DeclId, FuncId, ScopeId, BindingId, BoundaryId,
-    SummaryId, ProtocolId, NumericType, FieldRef, DescriptorContract, ResultDemand, TakeBoundary, SavedSlot,
-    ExitDestination, AbortPhase, DynamicReason, ConstructionStatus);
+metadata_fields!(
+    CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId, u32, bool, String, TypeId, DeclId, FuncId,
+    ScopeId, BindingId, BoundaryId, SummaryId, ProtocolId, NumericType, FieldRef, DescriptorContract, ResultDemand,
+    TakeBoundary, SavedSlot, ExitDestination, DynamicReason, ConstructionStatus
+);
 macro_rules! ssa_fields { ($($ty:ty),*) => { $( impl DeclaredOperands for $ty {
     fn append_declared(&self, out: &mut Vec<OperandRef>) {
         let mut operands = vec![]; crate::ops::OperandSource::append(self, OperandMode::Borrow, &mut operands);

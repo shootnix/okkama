@@ -24,6 +24,10 @@ pub(super) fn edges(body: &Body, state: &mut State<'_>) -> Vec<Edge> {
             add(target.block, target.args.iter().copied().map(EdgeArg::Value).collect(), false);
         };
         match &block.term.kind {
+            TermKind::CleanupNext { .. } | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+                if let TermKind::FailureDispatch { none, .. } = &block.term.kind { target(none); }
+                for (_, edge) in dispatch_edges(&block.term.kind) { add(edge.block, edge.args.clone(), false); }
+            }
             TermKind::Br(t) => target(t),
             TermKind::Cond { yes, no, .. } => {
                 target(yes);
@@ -45,9 +49,6 @@ pub(super) fn edges(body: &Body, state: &mut State<'_>) -> Vec<Edge> {
                 if let Some(unwind) = unwind {
                     add(unwind.block, unwind.args.clone(), false);
                 }
-            }
-            TermKind::StateDispatch { arms, .. } => {
-                for arm in arms { add(arm.edge.block, arm.edge.args.clone(), false); }
             }
             TermKind::Catch { handler, next, .. } => {
                 target(next);

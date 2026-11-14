@@ -11,8 +11,6 @@ impl OperandSource for CarrierDestination {
 pub enum ExitKind { Return, Last, Next, Fallthrough }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExitDestination { Caller, Loop(BoundaryId), Scope(ScopeId) }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AbortPhase { BeforeDestroy, AfterExecutedPrefix }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedExit { pub kind: ExitKind, pub value: Option<ValueId>, pub packet: Option<ValueId>, pub deps: Option<ValueId>, pub selection: SelectionId, pub boundary: BoundaryId }
 impl OperandSource for PreparedExit {
@@ -41,32 +39,30 @@ operation_group! { ExitOp {
     Extend { pending: ValueId, packet: ValueId }
         => ("exit.extend", [pending: Consume, packet: Consume], Rule::ExtendReservation { pending: *pending,
             packet: *packet });
-    Abort { pending: ValueId, cleanup: ValueId, phase: AbortPhase }
-        => ("exit.abort", [pending: Consume, cleanup: Consume], Rule::Abort { pending: *pending, cleanup: *cleanup, phase: *phase });
+    Abort { pending: ValueId, cleanup: ValueId }
+        => ("exit.abort", [pending: Consume, cleanup: Consume], Rule::Abort { pending: *pending, cleanup: *cleanup });
 } }
 operation_group! { CleanupOp {
-    Begin { state: ValueId, pending: Option<ValueId>, failure: Option<ValueId>, schedule: ValueId }
-        => ("cleanup.begin", [state: Consume, pending: Consume, failure: Observe, schedule: Observe], Rule::CleanupBegin { state: *state, pending: *pending });
+    Begin { state: ValueId, pending: Option<ValueId>, failure: Option<ValueId>, close: CleanupCloseId,
+        effects: ScopeEffectEnvelope }
+        => ("cleanup.begin", [state: Consume, pending: Consume, failure: Observe],
+            Rule::CleanupBegin { state: *state, pending: *pending, failure: *failure });
+    SettleEmpty { cleanup: ValueId, schedule: CleanupScheduleId }
+        => ("cleanup.settle.empty", [cleanup: Consume],
+            Rule::CleanupStep { cleanup: *cleanup, finishing: false });
     Defer { cleanup: ValueId, action: ValueId }
         => ("cleanup.defer", [cleanup: Consume, action: Borrow], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
     Settle { cleanup: ValueId, holder: ValueId, protocol: ProtocolId }
         => ("cleanup.settle", [cleanup: Consume, holder: Consume], Rule::CleanupSettle { cleanup: *cleanup, holder: *holder, protocol: *protocol });
-    SettleEmpty { cleanup: ValueId, schedule: ValueId }
-        => ("cleanup.settle.empty", [cleanup: Consume, schedule: Observe],
-            Rule::CleanupStep { cleanup: *cleanup, finishing: false });
-    PlanChecked { cleanup: ValueId, plan: CleanupPlanId }
-        => ("cleanup.plan.checked", [cleanup: Consume], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
-    DestroySelected { cleanup: ValueId, selected: ValueId }
-        => ("cleanup.destroy", [cleanup: Consume, selected: Observe],
-            Rule::Destroy { cleanup: *cleanup, identity: *selected });
-    Plan { cleanup: ValueId }
+    Plan { cleanup: ValueId, plan: CleanupPlanId }
         => ("cleanup.plan", [cleanup: Consume], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
-    Next { cleanup: ValueId }
-        => ("cleanup.next", [cleanup: Consume], Rule::CleanupNext(*cleanup));
+    Destroy { cleanup: ValueId, key: ValueId }
+        => ("cleanup.destroy", [cleanup: Consume, key: Observe],
+            Rule::Destroy { cleanup: *cleanup, identity: *key });
     DestroyDirect { cleanup: ValueId, identity: ValueId, descriptor: ValueId, destroy: FuncId }
         => ("destroy.direct", [cleanup: Consume, identity: DestroyBorrow, descriptor: Observe], Rule::Destroy { cleanup: *cleanup, identity: *identity });
     RecordFailure { cleanup: ValueId, failure: ValueId }
-        => ("cleanup.failure", [cleanup: Consume, failure: Observe], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
+        => ("cleanup.failure", [cleanup: Consume, failure: Observe], Rule::CleanupFailure { cleanup: *cleanup });
     Shield { cleanup: ValueId }
         => ("cleanup.shield", [cleanup: Consume], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
     DeliverCancel { cleanup: ValueId }
