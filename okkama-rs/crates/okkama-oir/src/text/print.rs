@@ -526,7 +526,7 @@ impl Writer<'_> {
     fn edge(&mut self, term: &TermKind, edge: &InvokeEdge, outcome: Outcome) -> Result<(), PrintError> {
         edge.block.write(self)?;
         self.push("(");
-        let slots = parser::edge_slots(self.module, term, outcome)?;
+        let slots = parser::edge_slots(self.module, self.body.ok_or_else(|| PrintError::new("missing invoke body"))?, term, outcome)?;
         for (index, arg) in edge.args.iter().enumerate() {
             if index > 0 {
                 self.push(", ");
@@ -652,9 +652,7 @@ fn is_service(module: &Module, ty: TypeId) -> bool {
 }
 
 fn referenced_creation(op: &Operation, referenced: &mut HashSet<InstId>) {
-    if let Operation::Async(AsyncOp::UniqueCacheProof {
-        proof
-    }) = op {
-        referenced.insert(proof.evidence.creation);
-    }
+    if let Operation::Async(AsyncOp::UniqueCacheProof { proof }) = op
+        && let CreationOrigin::Instruction(inst) = proof.evidence.creation
+    { referenced.insert(inst); }
 }

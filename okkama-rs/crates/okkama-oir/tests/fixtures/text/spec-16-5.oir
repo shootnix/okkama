@@ -11,6 +11,6 @@ func @connection(%s: Session, %q: scope<S>) -> pending {
 ^entry in S:
     %c: Connection = obj.get %s, connection
     (%rest: scope<S>, %part: own, %external_deps: deps) = scope.split %q, selection(%c)
-    %pending: pending = exit.prepare return %c, %part, deps(%c)
+    %pending: pending = exit.prepare return %c, %part, deps(%c) at B0
     ret %pending
 }

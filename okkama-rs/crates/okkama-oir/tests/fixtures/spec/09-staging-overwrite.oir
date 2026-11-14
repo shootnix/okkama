@@ -1,0 +1,32 @@
+oir 2 high
+// spec: 9.1; status: v2; expected-rule: -
+module 09-staging-overwrite
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+func @main() -> void {
+^entry in S unwind ^failed:
+    %a: Res = call @new("A")
+    stage %a, action S, field field_ref(declaration=Holder, index=0)
+    %b: Res = call @new("B")
+    stage %b, action S, field field_ref(declaration=Holder, index=0)
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

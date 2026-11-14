@@ -1,0 +1,28 @@
+oir 2 high
+// spec: 12; status: v2; expected-rule: -
+module 12-residual-descriptor
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+func @main<T>(%value: T, %dictionary: type) -> type {
+    selection s0: selection = descriptor(descriptor=%dictionary, value=%value)
+^entry in S:
+    %descriptor: type = type.of ty T, descriptor descriptor_contract(managed=runtime, retention=descriptor(0), cleanup=@destroy, async_destroy=true, summary=Mlabel)
+    ret %descriptor
+}

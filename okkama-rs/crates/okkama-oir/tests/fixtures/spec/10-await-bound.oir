@@ -1,0 +1,42 @@
+oir 2 own
+// spec: 3.3;10.2;10.3; status: v2; expected-rule: -
+module 10-await-bound
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+summary Mfuture call-boundary results [result_relation(provenance=unbound_result)] contract call_contract(results=[future<Res>], failures=[thrown], publication=atomic)
+func @future() -> future<Res> summary(Mfuture);
+protocol cache holders [scope, cache, frame, receipt] rules [protocol_rule(transition=rehome, from=cache, to=cache, checks=[live_dependencies, owner], normal=protocol_poststate(holder=cache, state=open))] roots [cache]
+func @main() -> (Res, own, deps) {
+^entry in S:
+    invoke.own call @future()
+        normal ^wait($value)
+        unwind ^creation_failed($failure)
+^creation_failed(%creation_error: failure) in S:
+    raise %creation_error
+^wait(%fu: future<Res>) in S:
+    %unique: unique-cache = unique_cache.proof proof unique_cache_proof(future=%fu, scope=S, region=[^wait], evidence=unique_cache_evidence(creation=invoke(block=^entry, outcome=normal, slot=0), no_external_storage=true, no_other_waiters=true, no_live_views=true, no_collector_retention=true, scheduler_cannot_publish=true))
+    invoke.own await.take %fu, %unique, result Res, boundary existing(owner=S)
+        normal ^ok($value, $packet, $deps)
+        unwind ^bad($failure, $task, $receipt)
+^ok(%value: Res, %packet: own, %deps: deps) in S:
+    ret %value, %packet, %deps
+^bad(%failure: failure, %task: task-state, %receipt: receipt) in S:
+    raise %failure
+}

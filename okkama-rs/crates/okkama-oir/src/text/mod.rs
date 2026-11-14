@@ -669,6 +669,7 @@ variants!(DepExpr {
     Retention { value, selection } => "retention"
 });
 variants!(SelectionExpr {
+    Admissible(x0) => "admissible",
     Value(x0) => "value",
     Projection(x0) => "projection",
     OwnerGraph(x0) => "owner_graph",
@@ -737,6 +738,7 @@ variants!(SlotName {
     To => "to",
     Failure => "failure",
     Closed => "closed",
+    Pending => "pending",
     Buffer => "buffer",
     Unique => "unique",
     Receipt => "receipt",
@@ -778,6 +780,7 @@ variants!(ProvenanceTransition {
 });
 record!(OutcomeContract, "outcome_contract", { results, transfers, postconditions, retention });
 variants!(TransferRule {
+    CloseReserve { scope, reserve, output, merge_scope_part } => "close_reserve",
     Preserve { input, output } => "preserve",
     Move { inputs, outputs } => "move",
     Partition { input, selection, rest, selected } => "partition",
@@ -796,6 +799,7 @@ variants!(TransferRule {
     CompleteIdentity { identity, state, output } => "complete_identity"
 });
 variants!(Postcondition {
+    ReserveRemainder { scope, reserve, merged } => "reserve_remainder",
     Closed(x0) => "closed",
     CacheConsumed(x0) => "cache_consumed",
     AdmissionStaysCaller => "admission_stays_caller",
@@ -996,6 +1000,10 @@ variants!(TakeBoundary {
     Temporary { awaiting } => "temporary"
 });
 record!(UniqueCacheProof, "unique_cache_proof", { future, scope, region, evidence });
+variants!(CreationOrigin {
+    Instruction(x0) => "instruction",
+    Invoke { block, outcome, slot } => "invoke"
+});
 record!(UniqueCacheEvidence, "unique_cache_evidence", { creation, aliases, frame_slots, no_external_storage,
     no_other_waiters, no_live_views, no_collector_retention, scheduler_cannot_publish });
 record!(FrameSlot, "frame_slot", { slot, value, mode });
@@ -1237,6 +1245,7 @@ opcodes!(OwnershipOp {
     Move { packet } => "own.move",
     Join { packets } => "own.join",
     Admit { state, packet } => "own.admit",
+    Accept { state, packet } => "own.accept",
     Bind { binding } => "own.bind",
     Rebind { binding } => "own.rebind",
     Stage { stage } => "own.stage",
@@ -1248,8 +1257,8 @@ opcodes!(OwnershipOp {
     Dynamic { state, packet, target, reason, protocol } => "own.dynamic",
     DynamicCheck { key, snapshot } => "dynamic.check",
     DynamicRefresh { key, access } => "dynamic.refresh",
-    ScopeEnd { state } => "scope.end",
-    ScopeUnwind { state, failure } => "scope.unwind",
+    ScopeEnd { state, reserve } => "scope.end",
+    ScopeUnwind { state, failure, reserve } => "scope.unwind",
     End { packet, boundary } => "end",
 });
 opcodes!(AsyncOp {
@@ -1508,7 +1517,7 @@ pub(crate) fn slot_name(name: SlotName) -> String {
         SlotName::From => "from", SlotName::To => "to", SlotName::Failure => "failure", SlotName::Closed => "closed",
         SlotName::Buffer => "buffer", SlotName::Unique => "unique", SlotName::Receipt => "receipt",
         SlotName::Task => "task",
-        SlotName::Pin => "pin", SlotName::Snapshot => "snapshot", SlotName::Slot(i) => return format!("slot{i}"),
+        SlotName::Pending => "pending", SlotName::Pin => "pin", SlotName::Snapshot => "snapshot", SlotName::Slot(i) => return format!("slot{i}"),
     }
         .into()
 }

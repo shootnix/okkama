@@ -8,7 +8,7 @@ impl TransferStates {
 impl OperandSource for TransferStates {
     fn append(&self, mode: OperandMode, out: &mut Vec<ReferencedOperand>) { self.values().append(mode, out); }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DynamicReason { Atomic, Cell, Channel, Group, Any, Closure, Merge }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AccessContext { pub owner: ValueId, pub holder: ValueId, pub authority: ValueId }
@@ -37,6 +37,8 @@ operation_group! { OwnershipOp {
         => ("own.join", [packets: Consume], Rule::Move { packets: packets.clone() });
     Admit { state: ValueId, packet: ValueId }
         => ("own.admit", [state: Consume, packet: Consume], Rule::Admit { state: *state, packet: *packet, provenance: ProvenanceTransition::Preserve });
+    Accept { state: ValueId, packet: ValueId }
+        => ("own.accept", [state: Consume, packet: Consume], Rule::Admit { state: *state, packet: *packet, provenance: ProvenanceTransition::Set(AdmissionProvenance::Bound) });
     Bind { binding: ElaboratedBinding }
         => ("own.bind", [binding: Consume], Rule::Admit { state: binding.state, packet: binding.resource.packet, provenance: ProvenanceTransition::Set(AdmissionProvenance::Bound) });
     Rebind { binding: ElaboratedBinding }
@@ -59,10 +61,10 @@ operation_group! { OwnershipOp {
         => ("dynamic.check", [key: Observe, snapshot: Observe], Rule::Check);
     DynamicRefresh { key: ValueId, access: AccessContext }
         => ("dynamic.refresh", [key: Observe, access: Observe], Rule::Data { ty: ResultType::Service(ServiceType::OwnerSnapshot), trap: true });
-    ScopeEnd { state: ValueId }
-        => ("scope.end", [state: Consume], Rule::Close { input: *state, failure: None });
-    ScopeUnwind { state: ValueId, failure: ValueId }
-        => ("scope.unwind", [state: Consume, failure: Observe], Rule::Close { input: *state, failure: Some(*failure) });
+    ScopeEnd { state: ValueId, reserve: Option<ValueId> }
+        => ("scope.end", [state: Consume, reserve: Consume], Rule::Close { input: *state, failure: None, reserve: *reserve });
+    ScopeUnwind { state: ValueId, failure: ValueId, reserve: Option<ValueId> }
+        => ("scope.unwind", [state: Consume, failure: Observe, reserve: Consume], Rule::Close { input: *state, failure: Some(*failure), reserve: *reserve });
     End { packet: ValueId, boundary: BoundaryId }
-        => ("end", [packet: Consume], Rule::Close { input: *packet, failure: None });
+        => ("end", [packet: Consume], Rule::Close { input: *packet, failure: None, reserve: None });
 } }

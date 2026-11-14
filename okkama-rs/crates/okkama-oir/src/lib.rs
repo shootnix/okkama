@@ -14,6 +14,8 @@
 //! OIR-1 in `okkama-compiler/src/ir` coexists with OIR-2 until #576; the
 //! production lowering and backends still use OIR-1.
 
+mod census;
+pub use census::DynamicCensus;
 mod ids;
 mod module;
 pub mod ops;

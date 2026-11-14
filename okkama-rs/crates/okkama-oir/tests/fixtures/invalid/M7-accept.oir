@@ -1,0 +1,59 @@
+oir 2 own
+// spec: A.2.M7; status: accept; expected-rule: -
+module M7-accept
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+protocol carrier holders [carrier, scope, diagnostic, cache] rules [protocol_rule(transition=attach, from=packet, to=carrier, normal=protocol_poststate(holder=carrier, state=open)), protocol_rule(transition=transfer, from=carrier, to=carrier, normal=protocol_poststate(holder=carrier, state=open)), protocol_rule(transition=rehome, from=carrier, to=carrier, normal=protocol_poststate(holder=carrier, state=open)), protocol_rule(transition=release, from=carrier, to=scope, normal=protocol_poststate(holder=scope, state=open))] roots [carrier_graph]
+func @main(%primary: failure, %secondary: failure, %handled: failure, %packet: own, %q: scope<S>) -> void {
+^entry in S:
+    %joined: failure = fail.secondary %primary, %secondary
+    %cause: failure = fail.caused %joined, %handled
+    invoke.own carrier.attach %cause, %packet, %q, protocol carrier
+        normal ^attached($state, $to)
+        unwind ^attach_failed($packet, $to, $failure)
+^attached(%carrier: carrier-state, %owner: scope<S>) in S:
+    invoke.own carrier.rehome %carrier, %owner, protocol carrier
+        normal ^rehomed($state, $to)
+        unwind ^old_carrier($state, $to, $failure)
+^rehomed(%next: carrier-state, %owner2: scope<S>) in S:
+    invoke.own carrier.transfer %next, target failure_context(S), protocol carrier
+        normal ^transferred($state)
+        unwind ^transfer_failed($state, $failure)
+^transferred(%graph: carrier-state) in S:
+    invoke.own carrier.release %graph, %owner2, protocol carrier
+        normal ^released($closed, $to)
+        unwind ^old_carrier($state, $to, $failure)
+^released(%closed: closed, %owner3: scope<S>) in S:
+    invoke.own scope.end %owner3
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^attach_failed(%original: own, %owner4: scope<S>, %failure: failure) in S:
+    %admitted: scope<S> = own.admit %owner4, %original
+    %final: failure = scope.unwind %admitted, %failure
+    raise %final
+^old_carrier(%old: carrier-state, %owner5: scope<S>, %failure2: failure) in S:
+    raise %failure2
+^transfer_failed(%old2: carrier-state, %failure3: failure) in S:
+    raise %failure3
+^failed(%closed2: closed, %failure4: failure) in S:
+    raise %failure4
+^done(%closed3: closed) in S:
+    ret
+}

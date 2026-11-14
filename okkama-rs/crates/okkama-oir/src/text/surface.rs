@@ -82,8 +82,8 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
         "call" | "call.native" | "call.intrinsic" => {
             r.next()?;
             let function = FuncId::read(r)?;
-            let default = r.names.get(&(0, "function-summary", function.as_u32().to_string())).copied().unwrap_or(0);
-            let call = read_call(r, SummaryId::from_u32(default))?;
+            let default = r.names.get(&(0, "function-summary", function.as_u32().to_string())).copied().map(SummaryId::from_u32);
+            let call = read_call(r, default)?;
             Operation::Call(match tag.as_str() {
                 "call.native" => CallOp::Native {
                     function, call
@@ -103,13 +103,13 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
             let role = DeclId::read(r)?;
             r.expect("slot")?;
             let slot = u32::read(r)?;
-            let call = read_call(r, SummaryId::from_u32(0))?;
+            let call = read_call(r, None)?;
             Operation::Call(CallOp::Role { receiver, role, slot, call })
         }
         "fn.call" => {
             r.next()?;
             let callee = read_argument(r)?;
-            let call = read_call(r, SummaryId::from_u32(0))?;
+            let call = read_call(r, None)?;
             Operation::Call(CallOp::Closure { callee, call })
         }
         "call.cap" => {
@@ -117,7 +117,7 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
             let cap = read_argument(r)?;
             r.expect(",")?;
             let field = read_field(r, cap.value)?;
-            let call = read_call(r, SummaryId::from_u32(0))?;
+            let call = read_call(r, None)?;
             Operation::Call(CallOp::Cap { cap, field, call })
         }
         "call.resume" => {
@@ -125,8 +125,7 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
             let frame = ValueId::read(r)?;
             r.expect(",")?;
             let function = FuncId::read(r)?;
-            let default = r.names.get(&(0, "function-summary", function.as_u32().to_string())).copied().unwrap_or(0);
-            let call = read_call(r, SummaryId::from_u32(default))?;
+            let call = read_call(r, None)?;
             Operation::Call(CallOp::Resume { frame, function, call })
         }
         "obj.next" => {
@@ -219,7 +218,7 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
     Ok(Some(op))
 }
 
-fn read_call(r: &mut Reader<'_>, default_summary: SummaryId) -> Result<CallSite, Diagnostic> {
+fn read_call(r: &mut Reader<'_>, default_summary: Option<SummaryId>) -> Result<CallSite, Diagnostic> {
     let type_args = r.type_arguments()?;
     r.expect("(")?;
     let mut args = vec![];
@@ -252,7 +251,12 @@ fn read_call(r: &mut Reader<'_>, default_summary: SummaryId) -> Result<CallSite,
     } else {
         vec![]
     };
-    let summary = r.summary_reference("summary")?.unwrap_or(default_summary);
+    let summary = if r.eat("summary") {
+        r.expect("(")?;
+        let summary = if r.eat("none") { None } else { Some(SummaryId::read(r)?) };
+        r.expect(")")?;
+        summary
+    } else { default_summary };
     Ok(CallSite { args, packet, deps, descriptors, type_args, summary })
 }
 
@@ -270,7 +274,11 @@ fn read_field(r: &mut Reader<'_>, object: ValueId) -> Result<FieldRef, Diagnosti
         r.annotations.get(&(r.scope, object))
             .and_then(|name| r.names.get(&(0, "decl", name.clone())))
             .copied().map(DeclId::from_u32)
-    }.unwrap_or(DeclId::from_u32(0));
+    };
+    // The declaration pass records names before forward SSA types resolve.
+    // Its sentinel never escapes into the returned module (the second pass).
+    let declaration = declaration.or_else(|| r.first.then_some(DeclId::from_u32(u32::MAX)))
+        .ok_or_else(|| r.at(&name, DiagnosticKind::Syntax, "field declaration cannot be inferred; expected field_ref(declaration=..., index=...)"))?;
     let index = if r.first {
         0
     } else {
@@ -315,11 +323,8 @@ fn read_exit(r: &mut Reader<'_>) -> Result<PreparedExit, Diagnostic> {
     } else {
         return Err(r.error(DiagnosticKind::Syntax, "exit without a value needs select"));
     };
-    let boundary = if r.eat("at") {
-        BoundaryId::read(r)?
-    } else {
-        BoundaryId::from_u32(0)
-    };
+    r.expect("at").map_err(|_| r.error(DiagnosticKind::Syntax, "exit.prepare requires an explicit boundary: at Bx"))?;
+    let boundary = BoundaryId::read(r)?;
     Ok(PreparedExit { kind, value, packet, deps, selection, boundary })
 }
 
@@ -330,8 +335,7 @@ pub(super) fn write_operation(op: &Operation, w: &mut Writer<'_>) -> Result<bool
             w.push(op.opcode());
             w.push(" ");
             function.write(w)?;
-            let default = w.module.functions.get(*function).ok().and_then(|f| f.summary)
-                .unwrap_or(SummaryId::from_u32(0));
+            let default = w.module.functions.get(*function).map_err(|e| PrintError::new(e.to_string()))?.summary;
             write_call(call, default, w)?;
         }
         Operation::Call(CallOp::Role { receiver, role, slot, call }) => {
@@ -341,28 +345,26 @@ pub(super) fn write_operation(op: &Operation, w: &mut Writer<'_>) -> Result<bool
             role.write(w)?;
             w.push(" slot ");
             slot.write(w)?;
-            write_call(call, SummaryId::from_u32(0), w)?;
+            write_call(call, None, w)?;
         }
         Operation::Call(CallOp::Closure { callee, call }) => {
             w.push("fn.call ");
             write_argument(callee, w)?;
-            write_call(call, SummaryId::from_u32(0), w)?;
+            write_call(call, None, w)?;
         }
         Operation::Call(CallOp::Cap { cap, field, call }) => {
             w.push("call.cap ");
             write_argument(cap, w)?;
             w.push(", ");
             write_field(cap.value, field, w)?;
-            write_call(call, SummaryId::from_u32(0), w)?;
+            write_call(call, None, w)?;
         }
         Operation::Call(CallOp::Resume { frame, function, call }) => {
             w.push("call.resume ");
             frame.write(w)?;
             w.push(", ");
             function.write(w)?;
-            let default = w.module.functions.get(*function).ok().and_then(|f| f.summary)
-                .unwrap_or(SummaryId::from_u32(0));
-            write_call(call, default, w)?;
+            write_call(call, None, w)?;
         }
         Operation::Core(CoreOp::ObjNext { object, updates, packet }) => {
             w.push("obj.next ");
@@ -443,18 +445,16 @@ pub(super) fn write_operation(op: &Operation, w: &mut Writer<'_>) -> Result<bool
                 w.push(" select ");
                 exit.selection.write(w)?;
             }
-            if exit.boundary.as_u32() != 0 {
-                w.push(" at ");
-                exit.boundary.write(w)?;
-            }
+            w.push(" at ");
+            exit.boundary.write(w)?;
         }
         _ => return Ok(false),
     }
     Ok(true)
 }
 
-fn write_call(call: &CallSite, default_summary: SummaryId, w: &mut Writer<'_>) -> Result<(), PrintError> {
-    w.module.summaries.get(call.summary).map_err(|e| PrintError::new(e.to_string()))?;
+fn write_call(call: &CallSite, default_summary: Option<SummaryId>, w: &mut Writer<'_>) -> Result<(), PrintError> {
+    if let Some(summary) = call.summary { w.module.summaries.get(summary).map_err(|e| PrintError::new(e.to_string()))?; }
     types::write_type_arguments(&call.type_args, w)?;
     w.push("(");
     for (i, arg) in call.args.iter().enumerate() {
@@ -480,7 +480,9 @@ fn write_call(call: &CallSite, default_summary: SummaryId, w: &mut Writer<'_>) -
         call.descriptors.write(w)?;
     }
     if call.summary != default_summary {
-        w.summary_reference("summary", Some(call.summary))?;
+        w.push(" summary(");
+        if let Some(summary) = call.summary { summary.write(w)?; } else { w.push("none"); }
+        w.push(")");
     }
     Ok(())
 }

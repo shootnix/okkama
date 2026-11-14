@@ -11,9 +11,14 @@ pub struct UniqueCacheProof {
     pub region: Vec<BlockId>,
     pub evidence: UniqueCacheEvidence,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CreationOrigin {
+    Instruction(InstId),
+    Invoke { block: BlockId, outcome: Outcome, slot: u16 },
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UniqueCacheEvidence {
-    pub creation: InstId,
+    pub creation: CreationOrigin,
     pub aliases: Vec<ValueId>,
     pub frame_slots: Vec<u32>,
     pub no_external_storage: bool,

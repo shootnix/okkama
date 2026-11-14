@@ -1,0 +1,36 @@
+oir 2 own
+// spec: 7.1;10.2; status: v2; expected-rule: -
+module 10-cache-rehome
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+summary Mfuture call-boundary results [result_relation(provenance=unbound_result)] contract call_contract(results=[future<Res>], failures=[thrown], publication=atomic)
+func @future() -> future<Res> summary(Mfuture);
+protocol cache holders [scope, cache, frame, receipt] rules [protocol_rule(transition=rehome, from=cache, to=cache, checks=[live_dependencies, owner], normal=protocol_poststate(holder=cache, state=open))] roots [cache]
+scope Souter block in @main parent S
+func @main(%cache: cache-state, %view: Res) -> cache-state {
+^entry in S:
+    invoke.own cache.rehome %cache, target Souter, protocol cache
+        normal ^ok($state)
+        unwind ^bad($state, $failure)
+^ok(%next: cache-state) in S:
+    ret %next
+^bad(%original: cache-state, %failure: failure) in S:
+    raise %failure
+}

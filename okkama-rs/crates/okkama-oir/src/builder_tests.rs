@@ -97,10 +97,10 @@ fn invoke_successors_match_split_close_buffer_call_and_await_schemas() -> Result
         let selection = b.declare_selection(SelectionExpr::Value(value))?;
         let op = match case {
             0 => Operation::Ownership(OwnershipOp::SplitChecked { packet, selection }),
-            1 => { let state = LoweringBuilder::new(&mut b).scope_begin(scope)?; Operation::Ownership(OwnershipOp::ScopeEnd { state }) }
+            1 => { let state = LoweringBuilder::new(&mut b).scope_begin(scope)?; Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }) }
             2 => { let buffer = b.emit_schema(Operation::Collection(CollectionOp::BuilderNew { element: int_ty }))?[0];
                 Operation::Collection(CollectionOp::BuilderPush { buffer, value, packet: Some(packet) }) }
-            3 => Operation::Call(CallOp::Direct { function, call: CallSite { args: vec![], packet: Some(packet), deps: vec![], descriptors: vec![], type_args: vec![], summary } }),
+            3 => Operation::Call(CallOp::Direct { function, call: CallSite { args: vec![], packet: Some(packet), deps: vec![], descriptors: vec![], type_args: vec![], summary: Some(summary) } }),
             _ => Operation::Async(AsyncOp::Await { future: b.block_params(b.entry())?[0], result: Some(int_ty) }),
         };
         let contract = ContractRegistry::new(b.module()).lookup(&op)?;
@@ -174,7 +174,7 @@ fn high_wrappers_record_intent_and_own_wrappers_follow_registry() -> Result<(), 
     let next = b.create_block(scope, &[])?;
     b.terminate(TermKind::Br(Target { block: next, args: vec![] }))?;
     b.switch_to(next)?;
-    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state }), scope, scope)?;
+    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }), scope, scope)?;
     b.switch_to(edges.normal)?; b.terminate(TermKind::Ret { values: vec![] })?;
     b.switch_to(edges.unwind)?; b.terminate(TermKind::Raise(edges.unwind_params[1]))?;
     let body = b.finish()?;
@@ -205,7 +205,7 @@ fn checked_scope_split_wrapper_uses_entry_unwind_and_blocks_stale_state() -> Res
     let next = b.create_block(scope, &[])?;
     b.terminate(TermKind::Br(Target { block: next, args: vec![] }))?;
     b.switch_to(next)?;
-    assert_eq!(b.emit_schema(Operation::Ownership(OwnershipOp::ScopeEnd { state: split.state })), Err(BuildError::NeedsInvoke));
+    assert_eq!(b.emit_schema(Operation::Ownership(OwnershipOp::ScopeEnd { state: split.state, reserve: None })), Err(BuildError::NeedsInvoke));
     b.terminate(TermKind::Unreachable)?;
     b.switch_to(failed)?; b.terminate(TermKind::Raise(b.block_params(failed)?[1]))?;
     b.finish()?;
@@ -349,7 +349,7 @@ fn editor_preserves_unwind_and_checks_invoke_edge_results() -> Result<(), BuildE
     b.set_unwind(Some(BlockUnwind { target: Target { block: failed, args: vec![inputs[0]] } }))?;
     b.emit_schema(Operation::Core(CoreOp::IntDiv { left: inputs[0], right: inputs[1] }))?;
     let state = LoweringBuilder::new(&mut b).scope_begin(scope)?;
-    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state }), scope, scope)?;
+    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }), scope, scope)?;
     b.switch_to(failed)?; b.terminate(TermKind::Raise(b.block_params(failed)?[1]))?;
     b.switch_to(edges.normal)?; b.terminate(TermKind::Ret { values: vec![] })?;
     b.switch_to(edges.unwind)?; b.terminate(TermKind::Raise(edges.unwind_params[1]))?;
@@ -382,7 +382,7 @@ fn renumber_rewrites_proof_creation_aliases_and_frame_slot_payloads() -> Result<
     let creation = match b.body().values.get(future)?.def { Definition::InstResult { inst, .. } => inst, _ => unreachable!() };
     let frame = b.emit_schema(Operation::Async(AsyncOp::FrameAlloc { function }))?[0];
     let proof = UniqueCacheProof { future, scope, region: vec![entry], evidence: UniqueCacheEvidence {
-        creation, aliases: vec![future], frame_slots: vec![4], no_external_storage: true,
+        creation: CreationOrigin::Instruction(creation), aliases: vec![future], frame_slots: vec![4], no_external_storage: true,
         no_other_waiters: true, no_live_views: true, no_collector_retention: true, scheduler_cannot_publish: true } };
     let unique = b.emit_schema(Operation::Async(AsyncOp::UniqueCacheProof { proof }))?[0];
     b.emit_schema(Operation::Async(AsyncOp::FrameSave { frame, slots: vec![FrameSlot { slot: 4, value: unique, mode: OperandMode::Consume }], continuation: 3 }))?;
@@ -396,7 +396,7 @@ fn renumber_rewrites_proof_creation_aliases_and_frame_slot_payloads() -> Result<
     }).unwrap();
     assert_eq!(proof.future, map.values[&future]);
     assert_eq!(proof.evidence.aliases, [map.values[&future]]);
-    assert_eq!(proof.evidence.creation, map.instructions[&creation]);
+    assert_eq!(proof.evidence.creation, CreationOrigin::Instruction(map.instructions[&creation]));
     assert_eq!(proof.evidence.frame_slots, [4]);
     assert_eq!(proof.region, [entry]);
     let saved = editor.body().insts.iter().find_map(|(_, inst)| match &inst.op {
@@ -441,5 +441,70 @@ fn result_type_formulas_resolve_types_without_ownership_inference() -> Result<()
     }
     assert!(matches!(resolve_result_type(module.raw_mut(), &body, &ResultType::MapKey(p[0])), Err(BuildError::UnresolvableType(_))));
     assert_eq!(resolve_result_type(module.raw_mut(), &body, &ResultType::Field(FieldRef { declaration: object, index: 99 })), Err(BuildError::InvalidField(FieldRef { declaration: object, index: 99 })));
+    Ok(())
+}
+
+#[test]
+fn invoke_edges_forward_earlier_local_values_and_creation_origin_renumbers() -> Result<(), BuildError> {
+    let (mut m, f, s) = setup(Profile::Own)?;
+    let int_ty = m.intern_type(Type::Int)?;
+    let failure_ty = m.intern_type(Type::Service(ServiceType::Failure))?;
+    let mut b = m.function_builder(f, s)?;
+    let entry = b.entry();
+    let state = LoweringBuilder::new(&mut b).scope_begin(s)?;
+    let packet = LoweringBuilder::new(&mut b).own_empty()?;
+    let _accepted = LoweringBuilder::new(&mut b).own_accept(state, packet)?;
+    let local = b.emit_schema(int("17"))?[0];
+    let selected = b.declare_selection(SelectionExpr::Value(local))?;
+    let admissible = b.declare_selection(SelectionExpr::Admissible(selected))?;
+    let normal = b.create_block(s, &[ParamSpec::new(int_ty)])?;
+    let unwind = b.create_block(s, &[ParamSpec::new(int_ty), ParamSpec::new(failure_ty)])?;
+    // Unlike ordinary block-unwind, invoke runs after all instructions in entry.
+    b.terminate(TermKind::InvokeOwn { op: Box::new(Operation::Core(CoreOp::IntDiv { left: local, right: local })),
+        normal: InvokeEdge { block: normal, args: vec![EdgeArg::Value(local)] },
+        unwind: InvokeEdge { block: unwind, args: vec![EdgeArg::Value(local), EdgeArg::Produced(EdgeResult { outcome: Outcome::Unwind, slot: 0 })] } })?;
+    b.switch_to(normal)?;
+    let proof = UniqueCacheProof { future: local, scope: s, region: vec![entry, normal], evidence: UniqueCacheEvidence {
+        creation: CreationOrigin::Invoke { block: entry, outcome: Outcome::Normal, slot: 0 }, ..crate::contract_tests::sample::<UniqueCacheProof>().evidence } };
+    b.emit_schema(Operation::Async(AsyncOp::UniqueCacheProof { proof }))?;
+    b.terminate(TermKind::Ret { values: vec![] })?;
+    b.switch_to(unwind)?; b.terminate(TermKind::Raise(b.block_params(unwind)?[1]))?;
+    let mut body = b.finish()?;
+    let mut editor = FunctionEditor::new(m.raw_mut(), &mut body);
+    let map = editor.renumber()?;
+    let proof = editor.body().insts.iter().find_map(|(_, i)| match &i.op { Operation::Async(AsyncOp::UniqueCacheProof { proof }) => Some(proof), _ => None }).unwrap();
+    assert_eq!(proof.evidence.creation, CreationOrigin::Invoke { block: map.blocks[&entry], outcome: Outcome::Normal, slot: 0 });
+    let mut moved = proof.evidence.creation;
+    let mut remap = IdRemap::default(); remap.blocks.insert(entry, normal);
+    moved.rewrite(&mut remap);
+    assert_eq!(moved, CreationOrigin::Invoke { block: normal, outcome: Outcome::Normal, slot: 0 });
+    assert_eq!(editor.body().selections.get(admissible)?, &SelectionExpr::Admissible(selected));
+    Ok(())
+}
+
+#[test]
+fn high_calls_without_summaries_use_typed_shapes_without_inventing_contracts() -> Result<(), BuildError> {
+    for indirect in [false, true] {
+        let (mut m, f, scope) = setup(Profile::High)?;
+        let int_ty = m.intern_type(Type::Int)?;
+        let fn_ty = m.intern_type(Type::Fn(FnType { params: vec![], result: Some(int_ty), is_async: false }))?;
+        m.raw_mut().functions.get_mut(f)?.signature.params = vec![fn_ty];
+        let mut callee = declaration(vec![], vec![int_ty]); callee.symbol = "callee".into();
+        let callee = m.declare_function(callee)?;
+        let mut b = m.function_builder(f, scope)?;
+        let call = CallSite { args: vec![], packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: None };
+        let op = Operation::Call(if indirect { CallOp::Closure { callee: CallArgument { value: b.block_params(b.entry())?[0], convention: OperandConvention::Borrow }, call } } else { CallOp::Direct { function: callee, call } });
+        assert_eq!(ContractRegistry::new(b.module()).lookup(&op), Err(ContractError::MissingSummary));
+        let successors = b.invoke_own_successors(op, scope, scope)?;
+        assert_eq!(b.block_params(successors.normal)?.len(), 1);
+        b.switch_to(successors.normal)?; b.terminate(TermKind::Ret { values: vec![] })?;
+        b.switch_to(successors.unwind)?; b.terminate(TermKind::Raise(b.block_params(successors.unwind)?[0]))?;
+        let body = b.finish()?;
+        cfg::walk_body(&body, ContractRegistry::new(m.module()), |_| {})?;
+        m.define_function(f, body)?; let module = m.finish()?;
+        let printed = text::print(&module).unwrap();
+        assert!(!printed.contains("summary("));
+        assert!(text::normalized_eq(&module, &text::parse(&printed).unwrap()).unwrap());
+    }
     Ok(())
 }

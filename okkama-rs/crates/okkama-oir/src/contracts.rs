@@ -55,7 +55,9 @@ pub enum DepExpr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SelectionExpr {
     Value(ValueId), Projection(Projection), OwnerGraph(ValueId), ViewOwner(ValueId),
-    Union(Vec<SelectionId>), Descriptor { descriptor: ValueId, value: ValueId },
+    /// Restrict to obligations with UnboundResult or TemporaryAwaitResult
+    /// provenance; this never creates a new admission right.
+    Admissible(SelectionId), Union(Vec<SelectionId>), Descriptor { descriptor: ValueId, value: ValueId },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Projection {
@@ -88,7 +90,7 @@ pub enum ScalarType { Int, Bool, Byte, Float, Rat, Char, Str, Range, Any, Descri
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotName {
     Value, Packet, Deps, Rest, Selected, ExternalDeps, State, From, To,
-    Failure, Closed, Buffer, Unique, Receipt, Task, Pin, Snapshot, Slot(u16),
+    Failure, Closed, Pending, Buffer, Unique, Receipt, Task, Pin, Snapshot, Slot(u16),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResultSlot { pub name: SlotName, pub ty: ResultType }
@@ -141,6 +143,9 @@ pub enum TransferRule {
     Publish { input: ValueId, holder: HolderKind, provenance: AdmissionProvenance },
     Extract { future: ValueId, capability: ValueId, boundary: TakeBoundary },
     Reserve { packet: ValueId, boundary: BoundaryId },
+    /// Normal close forwards the reserve. On failure, only the closing scope's
+    /// part joins the unprocessed serial plan; the outer scopes' reserve returns.
+    CloseReserve { scope: ValueId, reserve: ValueId, output: SlotName, merge_scope_part: bool },
     ReplaceReservation { pending: ValueId, packet: Option<ValueId> },
     AbortReservation { pending: ValueId, cleanup: ValueId, phase: AbortPhase },
     FrameSave { frame: ValueId, values: Vec<ValueId> },
@@ -149,6 +154,7 @@ pub enum TransferRule {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Postcondition {
+    ReserveRemainder { scope: ValueId, reserve: ValueId, merged: bool },
     Closed(ValueId), CacheConsumed(ValueId), AdmissionStaysCaller,
     PreserveFullDependencies, TransferableScopeDomainOnly,
     FreshAdmission(AdmissionProvenance), EpochOnRealTransfer,
@@ -307,7 +313,7 @@ pub(crate) enum Rule {
     Split { input: ValueId, selection: SelectionId, scope: bool, checked: bool },
     ScopeBegin(ScopeId), ScopeTransfer { states: TransferStates, selection: SelectionId },
     Dynamic { state: ValueId, packet: ValueId, target: ScopeId, reason: DynamicReason, protocol: ProtocolId },
-    Close { input: ValueId, failure: Option<ValueId> },
+    Close { input: ValueId, failure: Option<ValueId>, reserve: Option<ValueId> },
     Call(CallSite), Resume { frame: ValueId, call: CallSite },
     Await { future: ValueId, result: Option<TypeId>, take: Option<(ValueId, TakeBoundary)>, shielded: bool },
     UniqueProof(UniqueCacheProof),
@@ -340,6 +346,7 @@ pub enum ContractError {
     MissingTransition { protocol: ProtocolId, transition: ProtocolTransition },
     CallArity { expected: usize, actual: usize },
     CallConvention { argument: usize },
+    MissingSummary,
     ObservationPacket,
     PublicationNeedsProtocol,
     TooManyResults,
@@ -358,13 +365,20 @@ pub struct ContractRegistry<'a> { pub module: &'a Module }
 impl<'a> ContractRegistry<'a> {
     pub fn new(module: &'a Module) -> Self { Self { module } }
     pub fn lookup(&self, op: &Operation) -> Result<OpContract, ContractError> {
-        self.lookup_mode(op, true)
+        self.lookup_mode(op, true, None)
     }
     /// Outcome shapes for text edge slots, without semantic call/protocol checks.
-    pub(crate) fn text_schema(&self, op: &Operation) -> Result<OpContract, ContractError> {
-        self.lookup_mode(op, false)
+    pub(crate) fn text_schema(&self, op: &Operation, body: &Body) -> Result<OpContract, ContractError> {
+        self.lookup_mode(op, false, Some(body))
     }
-    fn lookup_mode(&self, op: &Operation, validate: bool) -> Result<OpContract, ContractError> {
+    /// High construction has typed call results before summary inference. This
+    /// supplies only a conservative shape, never ownership postconditions.
+    pub(crate) fn construction_schema(&self, op: &Operation, body: &Body) -> Result<OpContract, ContractError> {
+        if self.module.profile == Profile::High {
+            self.lookup_mode(op, true, Some(body))
+        } else { self.lookup(op) }
+    }
+    fn lookup_mode(&self, op: &Operation, validate: bool, body: Option<&Body>) -> Result<OpContract, ContractError> {
         let spec = op.spec();
         let mut contract = OpContract {
             operands: spec.operands,
@@ -373,9 +387,51 @@ impl<'a> ContractRegistry<'a> {
             roots: RootContract { roots: vec![RootKind::Operands], through_suspend: false },
             entry_kind: EntryKind::Internal,
         };
+        if (!validate || self.module.profile == Profile::High && body.is_some()) && let Operation::Call(call_op) = op {
+            let call = match call_op {
+                CallOp::Direct { call, .. } | CallOp::Native { call, .. }
+                | CallOp::Intrinsic { call, .. } | CallOp::Resume { call, .. }
+                | CallOp::Role { call, .. } | CallOp::Closure { call, .. } | CallOp::Cap { call, .. } => call,
+            };
+            if call.summary.is_none() {
+                let results = self.unelaborated_results(call_op, body)?;
+                for (index, &ty) in results.iter().enumerate() {
+                    contract.normal.results.push(ResultSlot::new(if results.len() == 1 { SlotName::Value } else { SlotName::Slot(u16::try_from(index).map_err(|_| ContractError::TooManyResults)?) }, ResultType::Exact(ty)));
+                }
+                if call.packet.is_some() { contract.normal.results.extend([ResultSlot::service(SlotName::Packet, ServiceType::Own), ResultSlot::service(SlotName::Deps, ServiceType::Deps)]); }
+                contract.unwind = Some(outcome(vec![ResultSlot::service(SlotName::Failure, ServiceType::Failure)]));
+                contract.effects.failures = vec![FailureKind::Thrown, FailureKind::Program, FailureKind::Panic, FailureKind::Native, FailureKind::Cancelled];
+                contract.effects.suspends = true;
+                contract.roots.through_suspend = true;
+                contract.cancellation = Some(CancellationContract { outcome: contract.unwind.clone().unwrap(), delivery: CancellationDelivery::Unwind });
+                return Ok(contract);
+            }
+        }
         self.apply(spec.rule, &mut contract, validate)?;
         contract.roots.through_suspend = contract.effects.suspends;
         Ok(contract)
+    }
+    fn unelaborated_results(&self, op: &CallOp, body: Option<&Body>) -> Result<Vec<TypeId>, ContractError> {
+        let signature = |function| Ok(self.module.functions.get(function)?.signature.results.clone());
+        match op {
+            CallOp::Direct { function, .. } | CallOp::Native { function, .. }
+            | CallOp::Intrinsic { function, .. } | CallOp::Resume { function, .. } => signature(*function),
+            CallOp::Closure { callee, .. } => {
+                let body = body.ok_or(ContractError::MissingSummary)?;
+                match self.module.types.get(body.values.get(callee.value)?.ty)? {
+                    Type::Fn(ty) => Ok(ty.result.iter().copied().collect()),
+                    _ => Err(ContractError::MissingSummary),
+                }
+            }
+            CallOp::Role { role, slot, .. } => match &self.module.declarations.get(*role)?.kind {
+                DeclarationKind::Role { methods, .. } => methods.get(*slot as usize).map(|m| m.signature.results.clone()).ok_or(ContractError::MissingSummary),
+                _ => Err(ContractError::MissingSummary),
+            },
+            CallOp::Cap { field, .. } => match &self.module.declarations.get(field.declaration)?.kind {
+                DeclarationKind::Cap { fields, .. } => signature(fields.get(field.index as usize).ok_or(ContractError::MissingSummary)?.function),
+                _ => Err(ContractError::MissingSummary),
+            },
+        }
     }
     fn protocol(&self, id: ProtocolId, transition: ProtocolTransition, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
         let decl = self.module.protocols.get(id)?;
@@ -518,10 +574,15 @@ impl<'a> ContractRegistry<'a> {
                 fails(c, [preserve(Some(state), N::State), preserve(Some(packet), N::Packet)].concat(), false);
                 self.protocol(protocol, ProtocolTransition::Dynamic, c, validate)?;
             }
-            Rule::Close { input, failure } => {
+            Rule::Close { input, failure, reserve } => {
                 cleanup(c);
                 c.normal.transfers.push(TransferRule::Close { input });
                 c.normal.postconditions.push(Postcondition::Closed(input));
+                if let Some(reserve) = reserve {
+                    c.normal.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: N::Pending, merge_scope_part: failure.is_some() });
+                    c.normal.postconditions.push(Postcondition::ReserveRemainder { scope: input, reserve, merged: failure.is_some() });
+                    c.roots.roots.push(RootKind::PendingExit);
+                }
                 if failure.is_some() {
                     c.normal.results.push(ResultSlot::service(N::Failure, S::Failure));
                     // Active failure absorbs every cleanup failure; no second
@@ -530,10 +591,16 @@ impl<'a> ContractRegistry<'a> {
                     c.normal.results.push(ResultSlot::service(N::Closed, S::Closed));
                     let mut unwind = outcome(vec![ResultSlot::service(N::Closed, S::Closed), ResultSlot::service(N::Failure, S::Failure)]);
                     unwind.transfers.push(TransferRule::Close { input });
-                    unwind.postconditions.extend(c.normal.postconditions.clone());
+                    unwind.postconditions.extend(c.normal.postconditions.iter().filter(|p| !matches!(p, Postcondition::ReserveRemainder { .. })).cloned());
+                    if let Some(reserve) = reserve {
+                        unwind.results.push(ResultSlot::service(N::Pending, S::Pending));
+                        unwind.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: N::Pending, merge_scope_part: true });
+                        unwind.postconditions.push(Postcondition::ReserveRemainder { scope: input, reserve, merged: true });
+                    }
                     c.unwind = Some(unwind.clone());
                     c.cancellation = Some(CancellationContract { outcome: unwind, delivery: CancellationDelivery::AfterShieldedCleanup });
                 }
+                if reserve.is_some() { c.normal.results.push(ResultSlot::service(N::Pending, S::Pending)); }
             }
             Rule::Call(call) => { self.call(&call, c, validate)?; }
             Rule::Resume { frame, call } => {
@@ -734,7 +801,7 @@ impl<'a> ContractRegistry<'a> {
 
     fn call(&self, call: &CallSite, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
         use SlotName as N;
-        let summary = self.module.summaries.get(call.summary)?;
+        let summary = self.module.summaries.get(call.summary.ok_or(ContractError::MissingSummary)?)?;
         if validate && call.args.len() != summary.parameters.len() {
             return Err(ContractError::CallArity { expected: summary.parameters.len(), actual: call.args.len() });
         }

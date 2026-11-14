@@ -1,0 +1,11 @@
+// historical: OIR-1 comparison, OIR-2 §16.1; not a v2 module
+%r0: region = region.enter
+%f: File = call @File.new#0(%p)
+region.track %r0, %f
+region.adopt %r0, %f
+%t: FileText = call @File.text(%f)
+region.track %r0, %t
+region.adopt %r0, %t
+%n: int = call @FileText.size(%t)
+region.leave %r0
+ret %n

@@ -1,0 +1,46 @@
+oir 2 own
+// spec: 8;9.2; status: v2; expected-rule: -
+module 08-builder-journal
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+func @main(%element: Res; %input: own) -> (array<Res>, own) {
+    boundary B0 call in S
+^entry in S:
+    %buffer: builder<Res> = builder.new element Res
+    invoke.own builder.push %buffer, %element, packet %input
+        normal ^finish($buffer, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^finish(%next: builder<Res>, %journal: own) in S:
+    invoke.own builder.finish %next, packet %journal
+        normal ^done($value, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^done(%array: array<Res>, %out: own) in S:
+    ret %array, %out
+^abandon(%original: builder<Res>, %old_journal: own, %failure: failure) in S:
+    %rest: own = builder.abandon %original, packet %old_journal
+    invoke.own end %rest, boundary B0
+        normal ^failed($closed, %failure)
+        unwind ^secondary($closed, $failure, %failure)
+^failed(%closed: closed, %error: failure) in S:
+    raise %error
+^secondary(%closed2: closed, %cleanup_error: failure, %prior: failure) in S:
+    %joined: failure = fail.secondary %prior, %cleanup_error
+    raise %joined
+}

@@ -1,0 +1,33 @@
+oir 2 low
+// spec: 9.1;9.3; status: v2; expected-rule: -
+module 09-replace-abort
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+func @main(%value: Res, %deps: deps; %old: pending, %packet: own, %q: scope<S>, %schedule: int) -> void {
+    boundary B0 lexical in S
+^entry in S:
+    (%new: pending, %rest: own) = exit.replace %old, replacement prepared_exit(kind=return, value=some(%value), packet=some(%packet), deps=some(%deps), selection=selection(%value), boundary=B0)
+    %admitted: scope<S> = own.admit %q, %rest
+    %cleanup: cleanup-state = cleanup.begin %admitted, %schedule
+    %abort: cleanup-state = exit.abort %new, %cleanup, phase before_destroy
+    %plan: cleanup-state = cleanup.plan %abort
+    (%closed: closed, %failures: failure-state, %exit: exit-state) = cleanup.finish %plan
+    ret
+}

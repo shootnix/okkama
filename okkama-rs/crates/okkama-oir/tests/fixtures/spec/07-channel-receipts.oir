@@ -1,0 +1,43 @@
+oir 2 own
+// spec: 7.3; status: v2; expected-rule: -
+module 07-channel-receipts
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+native object Channel
+protocol channel holders [scope, channel, receipt, pin] rules [protocol_rule(transition=publish, from=scope, to=channel, checks=[live_dependencies], normal=protocol_poststate(holder=channel, state=accepted), unwind=some(protocol_poststate(holder=receipt, state=unaccepted)), cancel=some(protocol_poststate(holder=channel, state=accepted)))] roots [pins]
+summary Msend call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=take, destination=protocol(channel))] contract call_contract(failures=[thrown, cancelled], publication=channel_receipt, protocol=some(channel))
+func @send(%channel: Channel, %value: Res; %input: own) -> (own, deps) summary(Msend);
+func @main(%channel: Channel, %value: Res; %input: own) -> void {
+    boundary B0 call in S
+^entry in S:
+    invoke.own call @send(%channel, consume %value; %input)
+        normal ^ok($packet, $deps)
+        unwind ^bad($failure, $receipt)
+^ok(%result: own, %deps: deps) in S:
+    invoke.own end %result, boundary B0
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^bad(%failure: failure, %receipt: receipt) in S:
+    raise %failure
+^failed(%closed: closed, %error: failure) in S:
+    raise %error
+^done(%closed2: closed) in S:
+    ret
+}

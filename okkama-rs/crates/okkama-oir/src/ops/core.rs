@@ -351,7 +351,7 @@ impl OperandSource for CallArgument {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallSite {
     pub args: Vec<CallArgument>, pub packet: Option<ValueId>, pub deps: Vec<ValueId>,
-    pub descriptors: Vec<ValueId>, pub type_args: Vec<TypeId>, pub summary: SummaryId,
+    pub descriptors: Vec<ValueId>, pub type_args: Vec<TypeId>, pub summary: Option<SummaryId>,
 }
 impl CallSite {
     // Summaries number the receiver/environment first, then explicit arguments.
