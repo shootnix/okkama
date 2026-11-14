@@ -36,6 +36,19 @@ fn build_op_config(op: Operation, profile: Profile, configure: impl FnOnce(&mut 
         else if name.starts_with("await") { Type::Future(Some(int)) }
         else { Type::Int };
     let (mut m, f, s) = setup(profile, Some(param));
+    // Inline nominal spelling obtains the category from the declaration.
+    // Keep enum inventory cases in an enum context, including outlying case indices.
+    let enum_case = match &op {
+        Operation::Const(Literal::Enum { case, .. }) | Operation::Core(CoreOp::EnumCase { case, .. }) => Some(*case),
+        _ => None,
+    };
+    if let Some(case) = enum_case {
+        let decl = m.raw_mut().declarations.get_mut(DeclId::from_u32(0)).unwrap();
+        decl.name = "Status".into();
+        decl.kind = DeclarationKind::Enum {
+            cases: (0..=case).map(|index| format!("case{index}")).collect(), is_error: false,
+        };
+    }
     configure(&mut m);
     let mut b = m.function_builder(f, s).unwrap();
     let value = b.block_params(b.entry()).unwrap()[0];
@@ -95,8 +108,20 @@ fn literals_profiles_variadics_reasons_and_explicit_fields() {
 }
 
 // Hand-checked goldens: deliberately literal strings, never rewritten by tests.
-const EMPTY: &str = "oir 2 high\nmodule \"empty\" version none\nrequires []\nimports []\nentry none\ntests none\n";
-const SMALL: &str = "oir 2 high\nmodule \"small\" version some(\"1.0.0\")\nrequires [core]\nimports []\nentry some(@main#1)\ntests none\nfile 0 = source_file_decl(path=\"small.ok\")\ntype t0 = int\nscope S0 = scope_decl(function=@main#1, parent=none, kind=action, loc=none)\n\nfunc @main#1 () -> (t0) abi=unelaborated attrs=[entry] type_params=[] summary=none async_creation=none async_body=none !0:1:1 {\n    entry ^b0\n^b0() scope S0:\n    [i0] (%0: t0 facts(plain(certificate=scalar))) = const int(42) facts(result_deps=[], retention=[], provenance=[]) !0:2:5\n    ret [%0] !0:3:1\n}\n";
+const EMPTY: &str = "oir 2 high\nmodule empty\n";
+const SMALL: &str = r#"oir 2 high
+module small v1.0.0
+requires core
+file 0 "small.ok"
+entry @main#1
+scope S0 action in @main#1
+
+func @main#1() -> int [entry] !0:1:1 {
+    ^b0 in S0:
+    %0: int facts(plain(certificate=scalar)) = const 42 !0:2:5
+    ret %0 !0:3:1
+}
+"#;
 #[test]
 fn hand_checked_goldens_and_crlf_alpha_renaming() {
     let empty = ModuleBuilder::new("empty", Profile::High).finish().unwrap();
@@ -124,9 +149,9 @@ fn versions_limits_bad_names_and_malformed_input_have_spans() {
         ("oir 2\n{", K::MissingProfile), ("oir 2 wat\n{", K::UnknownProfile), ("wat 2 high", K::Header)] {
         assert_eq!(text::parse(input).unwrap_err().kind, kind);
     }
-    for (input, kind) in [(SMALL.replace("ret [%0]", "ret [%missing]"), K::UnknownName),
-        (SMALL.replace("type t0 = int", "type t0 = int\ntype t0 = bool"), K::DuplicateName),
-        (SMALL.replace("int(42)", "int(-)"), K::Literal), (SMALL.replace("int(42)", "float(0x7ff0000000000000)"), K::Literal),
+    for (input, kind) in [(SMALL.replace("ret %0", "ret %missing"), K::UnknownName),
+        (SMALL.replace("scope S0 action in @main#1", "scope S0 action in @main#1\nscope S0 block in @main#1"), K::DuplicateName),
+        (SMALL.replace("const 42", "const -"), K::Literal), (SMALL.replace("const 42", "const inf"), K::Literal),
         (SMALL.replace("small.ok", "bad\\q"), K::Lexical)] {
         let e = text::parse(&input).unwrap_err(); assert_eq!(e.kind, kind, "{e}"); assert!(e.span.start <= e.span.end && e.span.end <= input.len());
     }
@@ -910,7 +935,7 @@ fn all_terminators_facts_and_metadata_roundtrip_in_modules() {
         let mut module = build_op(Operation::Const(Literal::Int("1".into())), Profile::High);
         let file = module.files.alloc(SourceFileDecl { path: "meta.ok".into() }).unwrap();
         let loc = Some(DebugLoc { file, line: 123, column: 456 });
-        module.name = "module 🦀".into(); module.version = Some("test version".into()); module.requires = vec![Feature::Core,Feature::Async,Feature::Process,Feature::Test];
+        module.name = "meta/module".into(); module.version = Some("1.2.3".into()); module.requires = vec![Feature::Core,Feature::Async,Feature::Process,Feature::Test];
         module.imports = vec![Import { path: "other/path".into(), major: Some(4), alias: Some("lib".into()), take: vec!["A".into(),"B".into()] }];
         module.entry = Some(f); module.tests = Some(vec![TestDecl { name: "test".into(), function: f }]);
         let decl = module.functions.get_mut(f).unwrap(); decl.loc = loc;
@@ -955,21 +980,23 @@ fn invoke_schema_does_not_validate_consumption_and_rejects_foreign_slots() {
 }
 
 #[test]
-fn type_alias_depth_cycles_and_forward_declarations_are_bounded() {
-    let forward = SMALL.replace("type t0 = int", "type t0 = array(t1)\ntype t1 = int");
-    let parsed = text::parse(&forward).unwrap(); roundtrip(&parsed);
-    assert_eq!(text::parse_with_limits(&forward, Limits { max_type_depth: 1, ..Limits::default() }).unwrap_err().kind, K::Limit);
-    let cycle = SMALL.replace("type t0 = int", "type t0 = array(t1)\ntype t1 = array(t0)");
-    assert_eq!(text::parse(&cycle).unwrap_err().kind, K::Limit);
+fn inline_type_depth_and_forward_declarations_are_bounded() {
+    let nested_type = SMALL.replace("int", "array<array<int>>");
+    roundtrip(&text::parse(&nested_type).unwrap());
+    assert_eq!(text::parse_with_limits(&nested_type,
+        Limits { max_type_depth: 1, ..Limits::default() }).unwrap_err().kind, K::Limit);
     let nested = format!("oir 2 high\n{}", "[".repeat(10000));
     assert_eq!(text::parse(&nested).unwrap_err().kind, K::Limit);
-    // Module declarations, local annotations and operations can all refer forward.
-    let text = SMALL.replace("type t0 = int\n", "").replace("scope S0 = scope_decl(function=@main#1, parent=none, kind=action, loc=none)\n", "")
-        + "type t0 = int\nscope S0 = scope_decl(function=@main#1, parent=none, kind=action, loc=none)\n";
-    assert_eq!(text::print(&text::parse(&text).unwrap()).unwrap(), SMALL);
-    let leading = "oir 2 high\nmodule \"x\" version none\nrequires []\nimports []\nentry none\ntests none\nsummary M0 = summary(entry_kind=internal, parameters=[parameter_effect(convention=borrow, retention=some(";
-    let deep = format!("{leading}{}parameter(0){}), deps=[], destination=none)], results=[], contract=call_contract(results=[], failures=[], suspends=false, async_destroy=false, publication=atomic, protocol=none))\n", "union([".repeat(500), "])".repeat(500));
+    let forward = SMALL.replace("scope S0 action in @main#1\n", "") + "scope S0 action in @main#1\n";
+    assert_eq!(text::print(&text::parse(&forward).unwrap()).unwrap(), SMALL);
+    let leading = "oir 2 high\nmodule x\nsummary M0 internal parameters [parameter_effect(convention=borrow, retention=some(";
+    let deep = format!("{leading}{}parameter(0){}))] contract call_contract(publication=atomic)\n",
+        "union([".repeat(500), "])".repeat(500));
     assert_eq!(text::parse(&deep).unwrap_err().kind, K::Limit);
+    let mut cyclic = text::parse(SMALL).unwrap();
+    cyclic.types.intern(Type::Array(TypeId::from_u32(cyclic.types.len() as u32))).unwrap();
+    assert!(text::print(&cyclic).is_err());
+    assert!(text::parse(&SMALL.replace("scope S0", "type t0 = int\nscope S0")).is_err());
 }
 
 #[test]
@@ -1090,21 +1117,26 @@ fn call_argument_lists_and_proof_evidence_preserve_order_and_holder_details() {
             no_external_storage: true, no_other_waiters: false, no_live_views: true, no_collector_retention: false, scheduler_cannot_publish: true } };
     let printed = roundtrip(&build_op(Operation::Async(AsyncOp::UniqueCacheProof { proof }), Profile::Coro));
     assert!(printed.contains("frame_slots=[7, 4]"));
+    let renamed = printed.replace("i0", "iorigin").replace("%0", "%input").replace("^b0", "^entry");
+    assert!(text::normalized_eq(&text::parse(&printed).unwrap(), &text::parse(&renamed).unwrap()).unwrap());
 }
 
 #[test]
 fn annotation_forward_names_duplicates_and_cross_function_ssa_names() {
     let mut module = build_op(Operation::Ownership(OwnershipOp::SplitChecked { packet: ValueId::from_u32(0), selection: SelectionId::from_u32(0) }), Profile::Own);
+    *module.functions.get_mut(FuncId::from_u32(0)).unwrap().body.as_mut().unwrap()
+        .selections.get_mut(SelectionId::from_u32(0)).unwrap() = SelectionExpr::Union(vec![]);
     let text = roundtrip(&module);
     let selection = text.lines().find(|line| line.trim_start().starts_with("selection ")).unwrap();
     let mut forward = text.replace(&format!("{selection}\n"), "");
     let end = forward.rfind("}\n").unwrap(); forward.insert_str(end, &format!("{selection}\n"));
     assert_eq!(text::print(&text::parse(&forward).unwrap()).unwrap(), text);
-    assert_eq!(text::parse(&text.replace("selection=s0", "selection=s999")).unwrap_err().kind, K::UnknownName);
+    assert_eq!(text::parse(&text.replace(", s0", ", s999")).unwrap_err().kind, K::UnknownName);
     let duplicated = text.replace(selection, &format!("{selection}\n{selection}"));
     assert_eq!(text::parse(&duplicated).unwrap_err().kind, K::DuplicateName);
     let mut duplicate_value = text::parse(SMALL).unwrap();
     let func = duplicate_value.functions.get_mut(FuncId::from_u32(0)).unwrap();
+    func.signature.params.push(TypeId::from_u32(0));
     let body = func.body.as_mut().unwrap();
     let another = body.values.alloc(ValueData { ty: TypeId::from_u32(0), def: Definition::BlockParam { block: BlockId::from_u32(0), index: 0 }, facts: ValueFacts::Service }).unwrap();
     body.blocks.get_mut(BlockId::from_u32(0)).unwrap().params.push(another);
@@ -1114,4 +1146,194 @@ fn annotation_forward_names_duplicates_and_cross_function_ssa_names() {
     module.functions.alloc(second).unwrap(); roundtrip(&module); // identical local names in different functions
     assert_eq!(text::parse_with_limits(SMALL, Limits { max_tokens: 3, ..Limits::default() }).unwrap_err().kind, K::Limit);
     assert_eq!(text::parse_with_limits("oir 1 high\n{", Limits { max_text_bytes: 0, ..Limits::default() }).unwrap_err().kind, K::UnsupportedVersion);
+}
+
+#[test]
+fn specification_own_fragments_parse_and_roundtrip() {
+    // Complete instruction lines are copied verbatim from OIR-2 §16.
+    // Only schematic ellipses are replaced; surrounding declarations supply context.
+    for source in [
+        include_str!("../tests/fixtures/text/spec-16-1.oir"),
+        include_str!("../tests/fixtures/text/spec-16-3.oir"),
+        include_str!("../tests/fixtures/text/spec-16-4.oir"),
+        include_str!("../tests/fixtures/text/spec-16-5.oir"),
+    ] {
+        let module = text::parse(source).unwrap_or_else(|e| panic!("{e}\n{source}"));
+        roundtrip(&module);
+        let crlf = source.replace('\n', "\r\n");
+        assert!(text::normalized_eq(&module, &text::parse(&crlf).unwrap()).unwrap());
+    }
+}
+
+#[test]
+fn compact_declarations_generics_and_nondefault_metadata_roundtrip() {
+    let source = r#"oir 2 high
+module declarations v2.3.4
+requires core, test
+import std/core @1 as core
+import "native/lib" as lib take A, B
+file 7 "source.ok"
+entry @main
+test "smoke" = @main
+native object Native
+enum Status = (ready, done)
+variant Choice is Error = (item: Box)
+role Read<T> [builtin] {
+    read(T) -> (int)
+}
+object Box<T: Read<int>> {
+    field item: T = @default once
+    does Read<int> { read = @read }
+    destroy @destroy
+}
+cap Box<int> :: View {
+    field item = @read
+}
+global g0: int = @default
+scope S0 action in @main
+scope S1 block in @main parent S0 !7:1:1
+summary M0 internal contract call_contract(results=[int], publication=atomic)
+protocol opaque
+extern @default() -> int = "native.default"
+func @read() -> int [method Box] summary(M0);
+func @destroy() -> void [destroy Box];
+func @main<T>(%a: T; %p: own) -> int [entry, default Box.item, lambda captures 1 owner Box] {
+    boundary B0 lexical in S0
+    binding b0 "item": T in S0 !7:2:1
+    key k0: key = runtime(%a)
+    dependency d0: dependency = key(k0)
+    selection s0: selection = union([selection(%a)])
+    ^entry in S1:
+    %status: Status = const Status.ready
+    %selected: own = own.move %p facts(retention=[s0])
+    %result: int = const 42
+    ret %result
+}
+"#;
+    let module = text::parse(source).unwrap_or_else(|e| panic!("{e}\n{source}"));
+    let canonical = roundtrip(&module);
+    assert!(canonical.contains("extern @default() -> int = \"native.default\""));
+    assert!(canonical.contains("const Status.ready"));
+    assert!(canonical.contains("union([selection(%0)])"));
+    assert!(!canonical.contains("type t"));
+    assert!(!canonical.contains("abi unelaborated"));
+}
+
+#[test]
+fn unused_types_inline_selections_and_positional_operands_normalize() {
+    let mut module = text::parse(SMALL).unwrap();
+    let before = module.clone();
+    let extra = module.types.intern(Type::Bool).unwrap();
+    module.types.intern(Type::Array(extra)).unwrap();
+    assert!(text::normalized_eq(&module, &before).unwrap());
+    let op = Operation::Core(CoreOp::IntAdd { left: ValueId::from_u32(0), right: ValueId::from_u32(0) });
+    let source = roundtrip(&build_op(op, Profile::High));
+    assert!(source.contains("int.add %0, %0"));
+    assert!(!source.contains("int.add("));
+    assert!(!source.lines().any(|line| line.trim_start().starts_with("[i")));
+    assert!(!source.contains("facts(result_deps=[],"));
+    assert!(!source.contains("    selection "));
+}
+
+#[test]
+fn prefix_types_and_shared_type_expansion_obey_limits() {
+    let prefix = format!("oir 2 high\nmodule bounded\nfunc @f(%x: {}int) -> void;\n", "^".repeat(10000));
+    assert_eq!(text::parse(&prefix).unwrap_err().kind, K::Limit);
+    let mut module = text::parse(SMALL).unwrap();
+    let mut ty = TypeId::from_u32(0);
+    for _ in 0..40 { ty = module.types.intern(Type::Map(ty, ty)).unwrap(); }
+    module.functions.get_mut(FuncId::from_u32(0)).unwrap().signature.results = vec![ty];
+    assert!(text::print(&module).is_err());
+}
+
+#[test]
+fn exits_keep_every_optional_operand_combination() {
+    let value = ValueId::from_u32(0);
+    for present_value in [None, Some(value)] {
+        for packet in [None, Some(value)] {
+            for deps in [None, Some(value)] {
+                let op = Operation::Exit(ExitOp::Prepare { exit: PreparedExit {
+                    kind: ExitKind::Return, value: present_value, packet, deps,
+                    selection: SelectionId::from_u32(0), boundary: BoundaryId::from_u32(0),
+                } });
+                roundtrip(&build_op(op, Profile::Own));
+            }
+        }
+    }
+}
+
+#[test]
+fn profile_defaults_and_literal_spelling_are_canonical() {
+    let high = "oir 2 high\nmodule answer\nscope S0 action in @main\n\nfunc @main() -> int [entry] {\n    ^b0 in S0:\n    %0: int = const 42\n    ret %0\n}\n";
+    let own = "oir 2 own\nmodule empty\nscope S0 action in @main\n\nfunc @main() -> void {\n    ^b0 in S0:\n    %0: scope<S0> = scope.begin S0\n    %1: own = own.empty\n    %2: scope<S0> = own.admit %0, %1\n    scope.end %2\n    ret\n}\n";
+    for source in [high, own] {
+        assert_eq!(roundtrip(&text::parse(source).unwrap()), source);
+    }
+    for literal in [Literal::Float(0), Literal::Float(0x8000_0000_0000_0000), Literal::Float(1)] {
+        let expected = if let Literal::Float(bits) = literal { format!("const {:?}", f64::from_bits(bits)) }
+            else { unreachable!() };
+        assert!(roundtrip(&build_op(Operation::Const(literal), Profile::High)).contains(&expected));
+    }
+    let mut module = text::parse(high).unwrap();
+    let byte = module.types.intern(Type::Byte).unwrap();
+    module.functions.get_mut(FuncId::from_u32(0)).unwrap().body.as_mut().unwrap()
+        .values.get_mut(ValueId::from_u32(0)).unwrap().ty = byte;
+    // A deliberately wrong result annotation must not change the literal kind.
+    assert!(roundtrip(&module).contains("const int(42)"));
+}
+
+#[test]
+fn ambiguous_nominal_types_are_diagnostic_instead_of_changing_variant() {
+    let (mut builder, _, _) = setup(Profile::High, Some(Type::Role {
+        decl: DeclId::from_u32(0), args: vec![],
+    }));
+    assert!(text::print(builder.raw_mut()).is_err());
+    builder.raw_mut().declarations.get_mut(DeclId::from_u32(0)).unwrap().kind = DeclarationKind::Role {
+        methods: vec![], builtin: false,
+    };
+    roundtrip(builder.raw_mut());
+    builder.raw_mut().declarations.get_mut(DeclId::from_u32(0)).unwrap().name = "own".into();
+    assert!(text::print(builder.raw_mut()).is_err());
+}
+
+#[test]
+fn implicit_call_summaries_resolve_after_all_forward_declarations() {
+    let source = r#"oir 2 own
+module forward
+scope S action in @main
+func @callee() -> (int, int, int) summary(M1);
+func @main() -> void {
+^entry:
+    invoke.own call @callee()
+        normal ^ok($slot0, $slot1, $slot2)
+        unwind ^bad($failure)
+^ok(%a: int, %b: int, %c: int):
+    ret
+^bad(%f: failure):
+    raise %f
+}
+summary M0 call-boundary contract call_contract(results=[int], failures=[thrown], publication=atomic)
+summary M1 call-boundary contract call_contract(results=[int, int, int], failures=[thrown], publication=atomic)
+"#;
+    roundtrip(&text::parse(source).unwrap());
+}
+
+#[test]
+fn field_names_on_forward_ssa_uses_remain_nonvalidating() {
+    let source = r#"oir 2 high
+module forward_field
+native object Other
+object Object {
+    field x: int
+}
+scope S action in @main
+func @main() -> void {
+^entry:
+    %result: int = obj.get %later, x
+    %later: Object = undef ty Object
+    ret
+}
+"#;
+    // The SSA use is intentionally non-dominating; #564 diagnoses it later.
+    roundtrip(&text::parse(source).unwrap());
 }

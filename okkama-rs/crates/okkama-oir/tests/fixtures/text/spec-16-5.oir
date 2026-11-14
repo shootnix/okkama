@@ -1,0 +1,16 @@
+oir 2 own
+module projection
+requires core
+native object Connection
+object Session {
+    field connection: Connection
+}
+scope S action in @connection
+func @connection(%s: Session, %q: scope<S>) -> pending {
+    boundary B0 lexical in S
+^entry in S:
+    %c: Connection = obj.get %s, connection
+    (%rest: scope<S>, %part: own, %external_deps: deps) = scope.split %q, selection(%c)
+    %pending: pending = exit.prepare return %c, %part, deps(%c)
+    ret %pending
+}

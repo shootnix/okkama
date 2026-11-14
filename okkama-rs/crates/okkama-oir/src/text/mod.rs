@@ -1,18 +1,16 @@
 //! Canonical OIR-2 text. This codec checks representation, not ownership,
 //! lifetimes or dominance. Input spans and source DebugLoc are distinct.
 //!
-//! Concrete payload grammar is the exhaustive `record!`, `variants!` and
-//! `opcodes!` schema below: records/opcodes have ordered named fields; enum
-//! payloads are either named records or positional tuples. Lists use `[a, b]`,
-//! options `none | some(x)`. No builtin OpContract is a module declaration.
-//! Type aliases preserve the entire interned table, including unused types;
-//! `[iN]` instruction names allow UniqueCacheProof to reference creation ops.
-//! Canonical declarations retain arena order except for the unordered type
-//! table. SSA names follow block/parameter/instruction order, not arena IDs.
+//! Types are inline; unused interned types are not semantic. Operand codecs
+//! retain exhaustive schemas while spelling SSA operands positionally. Only
+//! referenced instructions carry labels. Parsing checks representation only.
 mod lexer;
 mod parser;
 mod print;
 mod diagnostic;
+mod surface;
+mod types;
+mod declarations;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind, Span, PrintError, print_diagnostic};
 pub use parser::{parse, parse_with_limits};
@@ -33,82 +31,219 @@ pub struct Limits {
     pub max_type_depth: usize,
 }
 impl Default for Limits {
-    fn default() -> Self { Self { max_text_bytes: 16 * 1024 * 1024, max_entities: 1_000_000, max_tokens: 1_000_000,
-        max_literal_bytes: 1024 * 1024, max_nesting: 64, max_type_depth: 64 } }
+    fn default() -> Self {
+        Self {
+            max_text_bytes: 16 * 1024 * 1024,
+            max_entities: 1_000_000,
+            max_tokens: 1_000_000,
+            max_literal_bytes: 1024 * 1024,
+            max_nesting: 64,
+            max_type_depth: 64,
+        }
+    }
 }
 
 pub(crate) trait Codec: Sized {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic>;
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError>;
+    fn default_value() -> Option<Self> {
+        None
+    }
+    fn is_default(&self) -> bool {
+        false
+    }
+    fn read_field(r: &mut Reader<'_>, name: &str) -> Result<Self, Diagnostic> {
+        if r.is(name) {
+            r.field(name)?;
+            let value = Self::read(r)?;
+            r.comma()?;
+            Ok(value)
+        } else {
+            Self::default_value().ok_or_else(|| r.error(DiagnosticKind::Syntax, format!("expected {name}")))
+        }
+    }
+    fn write_field(&self, w: &mut Writer<'_>, name: &str) -> Result<(), PrintError> {
+        if !self.is_default() {
+            w.field(name);
+            self.write(w)?;
+            w.push(", ");
+        }
+        Ok(())
+    }
+    fn positional(_name: &str) -> bool {
+        false
+    }
+    fn read_operand(r: &mut Reader<'_>, name: &str, first: &mut bool) -> Result<Self, Diagnostic> {
+        if !Self::positional(name) && !r.operand_keyword(name) {
+            return Self::default_value().ok_or_else(|| r.error(DiagnosticKind::Syntax, format!("expected {name}")));
+        }
+        if !*first {
+            r.expect(",")?;
+        }
+        *first = false;
+        if !Self::positional(name) {
+            r.expect(name)?;
+        }
+        Self::read(r)
+    }
+    fn write_operand(&self, w: &mut Writer<'_>, name: &str, first: &mut bool) -> Result<(), PrintError> {
+        if self.is_default() {
+            return Ok(());
+        }
+        w.push(if *first { " " } else { ", " });
+        *first = false;
+        if !Self::positional(name) {
+            w.push(name);
+            w.push(" ");
+        }
+        self.write(w)
+    }
 }
 macro_rules! record {
     ($ty:ty, $tag:literal, { $($field:ident),* }) => {
         impl Codec for $ty {
             fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-                r.expect($tag)?; r.expect("(")?;
-                $(r.field(stringify!($field))?; let $field = Codec::read(r)?; r.comma()?;)*
-                r.expect(")")?; Ok(Self { $($field),* })
+                r.expect($tag)?;
+                r.expect("(")?;
+                $(
+                    let $field = Codec::read_field(r, stringify!($field))?;
+                )*
+                r.expect(")")?;
+                Ok(Self { $($field),* })
             }
+
             fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
                 w.push(concat!($tag, "("));
-                $(w.field(stringify!($field)); self.$field.write(w)?; w.push(", ");)*
-                w.close_record(); Ok(())
+                $(
+                    self.$field.write_field(w, stringify!($field))?;
+                )*
+                w.close_record();
+                Ok(())
             }
         }
     };
 }
+
 // Each variant has a distinct tag; field and variant matches are exhaustive.
 macro_rules! variants {
-    ($ty:ty { $($variant:ident $( { $($field:ident),* } )? $( ( $($item:ident),* ) )? => $tag:literal),* $(,)? }) => {
+    ($ty:ty {
+        $($variant:ident $( { $($field:ident),* } )? $( ( $($item:ident),* ) )? => $tag:literal),* $(,)?
+    }) => {
         #[cfg(test)]
-        impl $ty { pub(crate) const TEXT_VARIANTS: &'static [&'static str] = &[$($tag),*]; }
+        impl $ty {
+            pub(crate) const TEXT_VARIANTS: &'static [&'static str] = &[$($tag),*];
+        }
+
         impl Codec for $ty {
             fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
                 let token = r.next()?;
                 match token.text.as_str() {
-                    $($tag if !token.quoted => {
-                        $(r.expect("(")?; $(r.field(stringify!($field))?; let $field = Codec::read(r)?; r.comma()?;)* r.expect(")")?;)?
-                        $(r.expect("(")?; $(let $item = Codec::read(r)?; r.comma()?;)* r.expect(")")?;)?
-                        Ok(Self::$variant $( { $($field),* } )? $( ( $($item),* ) )?)
-                    }),*
+                    $(
+                        $tag if !token.quoted => {
+                            $(
+                                r.expect("(")?;
+                                $(
+                                    let $field = Codec::read_field(r, stringify!($field))?;
+                                )*
+                                r.expect(")")?;
+                            )?
+                            $(
+                                r.expect("(")?;
+                                $(
+                                    let $item = Codec::read(r)?;
+                                    r.comma()?;
+                                )*
+                                r.expect(")")?;
+                            )?
+                            Ok(Self::$variant $( { $($field),* } )? $( ( $($item),* ) )?)
+                        }
+                    ),*
                     _ => Err(r.at(&token, DiagnosticKind::Syntax, concat!("unknown ", stringify!($ty), " variant"))),
                 }
             }
+
             fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
                 w.enter()?;
                 let result = match self {
-                    $(Self::$variant $( { $($field),* } )? $( ( $($item),* ) )? => {
-                        w.push($tag);
-                        $(w.push("("); $(w.field(stringify!($field)); $field.write(w)?; w.push(", ");)* w.close_record();)?
-                        $(w.push("("); $($item.write(w)?; w.push(", ");)* w.close_record();)?
-                        Ok(())
-                    }),*
+                    $(
+                        Self::$variant $( { $($field),* } )? $( ( $($item),* ) )? => {
+                            w.push($tag);
+                            $(
+                                w.push("(");
+                                $(
+                                    $field.write_field(w, stringify!($field))?;
+                                )*
+                                w.close_record();
+                            )?
+                            $(
+                                w.push("(");
+                                $(
+                                    $item.write(w)?;
+                                    w.push(", ");
+                                )*
+                                w.close_record();
+                            )?
+                            Ok(())
+                        }
+                    ),*
                 };
-                w.leave(); result
+                w.leave();
+                result
             }
         }
     };
 }
+
 macro_rules! opcodes {
     ($ty:ty { $($variant:ident { $($field:ident),* } => $tag:literal),* $(,)? }) => {
         impl Codec for $ty {
             fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
                 let token = r.next()?;
                 match token.text.as_str() {
-                    $($tag if !token.quoted => {
-                        r.expect("(")?;
-                        $(r.field(stringify!($field))?; let $field = Codec::read(r)?; r.comma()?;)*
-                        r.expect(")")?; Ok(Self::$variant { $($field),* })
-                    }),*,
+                    $(
+                        $tag if !token.quoted => {
+                            #[allow(unused_mut)]
+                            let mut first = true;
+                            $(
+                                let mut $field = None;
+                            )*
+                            $(
+                                surface::read_phase(&mut $field, r, stringify!($field), true, &mut first)?;
+                            )*
+                            $(
+                                surface::read_phase(&mut $field, r, stringify!($field), false, &mut first)?;
+                            )*
+                            $(
+                                let $field = $field.ok_or_else(|| {
+                                    r.error(DiagnosticKind::Structure, "missing operand")
+                                })?;
+                            )*
+                            let _ = first;
+                            Ok(Self::$variant { $($field),* })
+                        }
+                    ),*,
                     _ => Err(r.at(&token, DiagnosticKind::Syntax, "unknown opcode")),
                 }
             }
+
             fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-                match self { $(Self::$variant { $($field),* } => {
-                    w.push(concat!($tag, "("));
-                    $(w.field(stringify!($field)); $field.write(w)?; w.push(", ");)*
-                    w.close_record(); Ok(())
-                }),* }
+                match self {
+                    $(
+                        Self::$variant { $($field),* } => {
+                            w.push($tag);
+                            #[allow(unused_mut)]
+                            let mut first = true;
+                            $(
+                                surface::write_phase($field, w, stringify!($field), true, &mut first)?;
+                            )*
+                            $(
+                                surface::write_phase($field, w, stringify!($field), false, &mut first)?;
+                            )*
+                            let _ = first;
+                            Ok(())
+                        }
+                    ),*
+                }
             }
         }
     };
@@ -117,78 +252,238 @@ macro_rules! opcodes {
 impl Codec for String {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
         let token = r.next()?;
-        if token.quoted { Ok(token.text) } else { Err(r.at(&token, DiagnosticKind::Syntax, "expected string")) }
+        if token.quoted && !token.character {
+            Ok(token.text)
+        } else {
+            Err(r.at(&token, DiagnosticKind::Syntax,
+            "expected string"))
+        }
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
         w.push("\"");
         for c in self.chars() {
-            match c { '\n' => w.push("\\n"), '\r' => w.push("\\r"), '\t' => w.push("\\t"), '\\' => w.push("\\\\"), '"' => w.push("\\\""),
-                c if c.is_control() => w.push(&format!("\\u{{{:x}}}", u32::from(c))), c => w.push(&c.to_string()) }
+            match c {
+                '\n' => w.push("\\n"), '\r' => w.push("\\r"), '\t' => w.push("\\t"), '\\' => w.push("\\\\"),
+                '"' => w.push("\\\""),
+                c if c.is_control() => w.push(&format!("\\u{{{:X}}}", u32::from(c))), c => w.push(&c.to_string())
+            }
         }
-        w.push("\""); Ok(())
+        w.push("\"");
+        Ok(())
     }
 }
-macro_rules! unsigned { ($($ty:ty),*) => {$(impl Codec for $ty {
-    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        let token = r.next()?;
-        if token.quoted || !token.text.bytes().all(|b| b.is_ascii_digit()) { return Err(r.at(&token, DiagnosticKind::Syntax, "expected unsigned decimal")); }
-        token.text.parse().map_err(|_| r.at(&token, DiagnosticKind::Literal, "integer out of range"))
-    }
-    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { w.push(&self.to_string()); Ok(()) }
-})*}; }
+macro_rules! unsigned { ($($ty:ty),*) => {
+    $(impl Codec for $ty {
+        fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+            let token = r.next()?;
+            if token.quoted || !token.text.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(r.at(&token,
+                    DiagnosticKind::Syntax, "expected unsigned decimal"));
+            }
+            token.text.parse().map_err(|_| r.at(&token, DiagnosticKind::Literal, "integer out of range"))
+        }
+        fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+            w.push(&self.to_string());
+            Ok(())
+        }
+    })*
+};
+}
 unsigned!(u8, u16, u32, u64);
 impl Codec for bool {
-    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> { let t = r.next()?; match t.text.as_str() {
-        "true" if !t.quoted => Ok(true), "false" if !t.quoted => Ok(false), _ => Err(r.at(&t, DiagnosticKind::Syntax, "expected bool")) } }
-    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { w.push(if *self { "true" } else { "false" }); Ok(()) }
-}
-impl<T: Codec> Codec for Vec<T> {
+    fn default_value() -> Option<Self> {
+        Some(false)
+    }
+    fn is_default(&self) -> bool {
+        !*self
+    }
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        r.expect("[")?; let mut items = vec![];
-        while !r.is("]") { r.entity()?; items.push(T::read(r)?); r.comma()?; }
-        r.expect("]")?; Ok(items)
+        let t = r.next()?;
+        match t.text.as_str() {
+            "true" if !t.quoted => Ok(true),
+            "false" if !t.quoted => Ok(false),
+            _ => Err(r.at(&t, DiagnosticKind::Syntax, "expected bool")),
+        }
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-        w.push("["); for (i, item) in self.iter().enumerate() { if i > 0 { w.push(", "); } item.write(w)?; } w.push("]"); Ok(())
+        w.push(if *self { "true" } else { "false" });
+        Ok(())
+    }
+}
+impl<T: Codec> Codec for Vec<T> {
+    fn positional(name: &str) -> bool {
+        T::positional(name)
+    }
+    fn read_operand(r: &mut Reader<'_>, name: &str, first: &mut bool) -> Result<Self, Diagnostic> {
+        if !Self::positional(name) {
+            if !r.operand_keyword(name) {
+                return Ok(vec![]);
+            }
+        } else if !r.operand_keyword("[") {
+            return Ok(vec![]);
+        }
+        if !*first {
+            r.expect(",")?;
+        }
+        *first = false;
+        if !Self::positional(name) {
+            r.expect(name)?;
+        }
+        Self::read(r)
+    }
+    fn default_value() -> Option<Self> {
+        Some(vec![])
+    }
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("[")?;
+        let mut items = vec![];
+        while !r.is("]") {
+            r.entity()?;
+            items.push(T::read(r)?);
+            r.comma()?;
+        }
+        r.expect("]")?;
+        Ok(items)
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("[");
+        for (i, item) in self.iter().enumerate() {
+            if i > 0 {
+                w.push(", ");
+            }
+            item.write(w)?;
+        }
+        w.push("]");
+        Ok(())
     }
 }
 impl<T: Codec> Codec for Option<T> {
+    fn default_value() -> Option<Self> {
+        Some(None)
+    }
+    fn is_default(&self) -> bool {
+        self.is_none()
+    }
+    fn read_operand(r: &mut Reader<'_>, name: &str, first: &mut bool) -> Result<Self, Diagnostic> {
+        if !r.operand_keyword(name) {
+            return Ok(None);
+        }
+        if !*first {
+            r.expect(",")?;
+        }
+        *first = false;
+        r.expect(name)?;
+        Ok(Some(T::read(r)?))
+    }
+    fn write_operand(&self, w: &mut Writer<'_>, name: &str, first: &mut bool) -> Result<(), PrintError> {
+        if let Some(value) = self {
+            w.push(if *first { " " } else { ", " });
+            *first = false;
+            w.push(name);
+            w.push(" ");
+            value.write(w)?;
+        }
+        Ok(())
+    }
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        if r.eat("none") { Ok(None) } else { r.expect("some")?; r.expect("(")?; let value = T::read(r)?; r.expect(")")?; Ok(Some(value)) }
+        if r.eat("none") {
+            Ok(None)
+        } else {
+            r.expect("some")?;
+            r.expect("(")?;
+            let value = T::read(r)?;
+            r.expect(")")?;
+            Ok(Some(value))
+        }
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-        if let Some(value) = self { w.push("some("); value.write(w)?; w.push(")"); } else { w.push("none"); } Ok(())
+        if let Some(value) = self {
+            w.push("some(");
+            value.write(w)?;
+            w.push(")");
+        } else {
+            w.push("none");
+        }
+        Ok(())
     }
 }
 impl<T: Codec> Codec for Box<T> {
-    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> { Ok(Box::new(T::read(r)?)) }
-    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { (**self).write(w) }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        Ok(Box::new(T::read(r)?))
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        (**self).write(w)
+    }
 }
 impl<A: Codec, B: Codec> Codec for (A, B) {
-    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> { r.expect("(")?; let a = A::read(r)?; r.expect(",")?; let b = B::read(r)?; r.expect(")")?; Ok((a,b)) }
-    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { w.push("("); self.0.write(w)?; w.push(", "); self.1.write(w)?; w.push(")"); Ok(()) }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("(")?;
+        let a = A::read(r)?;
+        r.expect(",")?;
+        let b = B::read(r)?;
+        r.expect(")")?;
+        Ok((a,b))
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("(");
+        self.0.write(w)?;
+        w.push(", ");
+        self.1.write(w)?;
+        w.push(")");
+        Ok(())
+    }
 }
 macro_rules! ids {
-    ($($ty:ty => ($ns:literal, $prefix:literal, $local:literal)),* $(,)?) => {$(impl Codec for $ty {
-        fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> { Ok(Self::from_u32(r.reference($ns, $prefix, $local)?)) }
-        fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { w.reference($ns, self.as_u32(), $local) }
-    })*};
+    ($($ty:ty => ($ns:literal, $prefix:literal, $local:literal)),* $(,)?) => {
+        $(impl Codec for $ty {
+            fn positional(name: &str) -> bool {
+                $ns == "value" || ($ns == "scope" && name == "scope")
+                    || ($ns == "decl" && name == "declaration") || ($ns == "func" && name == "function")
+            }
+            fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+                Ok(Self::from_u32(r.reference($ns, $prefix,
+                    $local)?))
+            }
+            fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+                w.reference($ns, self.as_u32(), $local)
+            }
+        })*
+    };
 }
-ids!(TypeId => ("type", "t", false), DeclId => ("decl", "D", false), FuncId => ("func", "@", false),
-    ScopeId => ("scope", "S", false), FileId => ("file", "", false), SummaryId => ("summary", "M", false), ProtocolId => ("protocol", "P", false),
-    BlockId => ("block", "^", true), InstId => ("inst", "i", true), ValueId => ("value", "%", true),
+ids!(DeclId => ("decl", "", false), FuncId => ("func", "@", false),
+    ScopeId => ("scope", "S", false), FileId => ("file", "", false), SummaryId => ("summary", "M", false),
+    ProtocolId => ("protocol", "", false),
+    BlockId => ("block", "^", true), InstId => ("inst", "i", true),
     BindingId => ("binding", "b", true), BoundaryId => ("boundary", "B", true),
-    DepExprId => ("dependency", "d", true), KeyExprId => ("key", "k", true), SelectionId => ("selection", "s", true));
+    DepExprId => ("dependency", "d", true), KeyExprId => ("key", "k", true));
 impl Codec for CreationSiteId {
-    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> { Ok(Self::from_u32(u32::read(r)?)) }
-    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { self.as_u32().write(w) }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        Ok(Self::from_u32(u32::read(r)?))
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        self.as_u32().write(w)
+    }
 }
 impl Codec for DebugLoc {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        r.expect("!")?; let file = FileId::read(r)?; r.expect(":")?; let line = u32::read(r)?; r.expect(":")?; let column = u32::read(r)?; Ok(Self { file, line, column })
+        r.expect("!")?;
+        let file = FileId::read(r)?;
+        r.expect(":")?;
+        let line = u32::read(r)?;
+        r.expect(":")?;
+        let column = u32::read(r)?;
+        Ok(Self { file, line, column })
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-        w.push("!"); self.file.write(w)?; w.push(":"); self.line.write(w)?; w.push(":"); self.column.write(w)
+        w.push("!");
+        self.file.write(w)?;
+        w.push(":");
+        self.line.write(w)?;
+        w.push(":");
+        self.column.write(w)
     }
 }
 variants!(Feature {
@@ -245,36 +540,13 @@ variants!(ScopeKind {
     Defer => "defer"
 });
 record!(BindingDecl, "binding_decl", { name, scope, ty, loc });
-variants!(Type {
-    Int => "int",
-    Bool => "bool",
-    Byte => "byte",
-    Float => "float",
-    Rat => "rat",
-    Char => "char",
-    Str => "str",
-    Range => "range",
-    Any => "any",
-    Never => "never",
-    Object { decl, args } => "object",
-    Role { decl, args } => "role",
-    Enum(x0) => "enum",
-    Variant(x0) => "variant",
-    Handle(x0) => "handle",
-    Cap { decl, args } => "cap",
-    Successor(x0) => "successor",
-    Array(x0) => "array",
-    Map(x0, x1) => "map",
-    Builder(x0) => "builder",
-    MapBuilder(x0, x1) => "map_builder",
-    Fn(x0) => "fn",
-    Future(x0) => "future",
-    Parameter(x0) => "parameter",
-    Descriptor => "descriptor",
-    Frame(x0) => "frame",
-    LowCell(x0) => "low_cell",
-    Service(x0) => "service"
-});
+#[cfg(test)]
+impl Type {
+    pub(crate) const TEXT_VARIANTS: &'static [&'static str] = &["int", "bool", "byte", "float", "rat",
+        "char", "str", "range", "any", "never", "object", "role", "enum", "variant", "handle", "cap", "successor",
+        "array", "map", "builder", "map_builder", "fn", "future", "parameter", "descriptor", "frame", "low_cell",
+    "service"];
+}
 record!(FnType, "fn_type", { params, result, is_async });
 variants!(ServiceType {
     Own => "own",
@@ -282,20 +554,20 @@ variants!(ServiceType {
     Scope(x0) => "scope",
     Pending => "pending",
     Closed => "closed",
-    UniqueCache => "unique_cache",
+    UniqueCache => "unique-cache",
     Failure => "failure",
-    FailureState => "failure_state",
-    ExitState => "exit_state",
-    StableKey => "stable_key",
+    FailureState => "failure-state",
+    ExitState => "exit-state",
+    StableKey => "stable-key",
     Owner => "owner",
     Holder => "holder",
-    OwnerSnapshot => "owner_snapshot",
-    CacheState => "cache_state",
-    CarrierState => "carrier_state",
-    TaskState => "task_state",
+    OwnerSnapshot => "owner-snapshot",
+    CacheState => "cache-state",
+    CarrierState => "carrier-state",
+    TaskState => "task-state",
     Pin => "pin",
     Receipt => "receipt",
-    CleanupState => "cleanup_state"
+    CleanupState => "cleanup-state"
 });
 variants!(GenericOwner {
     Declaration(x0) => "declaration",
@@ -309,7 +581,20 @@ variants!(Outcome {
     Cancel => "cancel"
 });
 record!(EdgeResult, "edge_result", { outcome, slot });
-record!(SwitchCase, "switch_case", { value, target });
+impl Codec for SwitchCase {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        let value = Literal::read(r)?;
+        r.expect(":")?;
+        let target = Target::read(r)?;
+        Ok(Self { value, target })
+    }
+
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        self.value.write(w)?;
+        w.push(": ");
+        self.target.write(w)
+    }
+}
 variants!(LookupKind {
     Array => "array",
     Map => "map"
@@ -581,8 +866,8 @@ variants!(CancellationDelivery {
 });
 record!(OpContract, "op_contract", { operands, normal, unwind, cancellation, effects, roots, entry_kind });
 variants!(EntryKind {
-    CallBoundary => "call_boundary",
-    ObservationAdmissionStaysCaller => "observation_admission_stays_caller",
+    CallBoundary => "call-boundary",
+    ObservationAdmissionStaysCaller => "observation",
     Internal => "internal"
 });
 variants!(FreshConvention {
@@ -611,7 +896,7 @@ record!(CallContract, "call_contract", { results, failures, suspends, async_dest
 variants!(Publication {
     Atomic => "atomic",
     ChannelReceipt => "channel_receipt",
-    TaskState => "task_state"
+    TaskState => "task-state"
 });
 variants!(HolderKind {
     Packet => "packet",
@@ -656,7 +941,7 @@ variants!(ProtocolCheck {
     Snapshot => "snapshot",
     Owner => "owner",
     Transferable => "transferable",
-    UniqueCache => "unique_cache",
+    UniqueCache => "unique-cache",
     NoReentry => "no_reentry",
     SufficientBoundary => "sufficient_boundary"
 });
@@ -711,7 +996,8 @@ variants!(TakeBoundary {
     Temporary { awaiting } => "temporary"
 });
 record!(UniqueCacheProof, "unique_cache_proof", { future, scope, region, evidence });
-record!(UniqueCacheEvidence, "unique_cache_evidence", { creation, aliases, frame_slots, no_external_storage, no_other_waiters, no_live_views, no_collector_retention, scheduler_cannot_publish });
+record!(UniqueCacheEvidence, "unique_cache_evidence", { creation, aliases, frame_slots, no_external_storage,
+    no_other_waiters, no_live_views, no_collector_retention, scheduler_cannot_publish });
 record!(FrameSlot, "frame_slot", { slot, value, mode });
 record!(SavedSlot, "saved_slot", { slot, ty, linear });
 variants!(CarrierDestination {
@@ -1022,67 +1308,192 @@ opcodes!(CleanupOp {
 
 fn decimal(text: &str) -> Option<String> {
     let (negative, digits) = text.strip_prefix('-').map_or((false, text), |s| (true, s));
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) { return None; }
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     let digits = digits.trim_start_matches('0');
-    if digits.is_empty() { Some("0".into()) } else { Some(format!("{}{digits}", if negative { "-" } else { "" })) }
+    if digits.is_empty() {
+        Some("0".into())
+    } else {
+        Some(format!("{}{digits}", if negative { "-" } else { "" }))
+    }
 }
 impl Codec for Literal {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        let token = r.next()?; r.expect("(")?;
-        let literal = match token.text.as_str() {
-            "int" if !token.quoted => Self::Int(r.decimal()?),
-            "bool" if !token.quoted => Self::Bool(bool::read(r)?),
-            "byte" if !token.quoted => Self::Byte(u8::read(r)?),
-            "float" if !token.quoted => {
-                let bits = r.next()?;
-                let value = bits.text.strip_prefix("0x").filter(|s| s.len() == 16)
-                    .and_then(|s| u64::from_str_radix(s, 16).ok()).filter(|v| f64::from_bits(*v).is_finite());
-                Self::Float(value.filter(|_| !bits.quoted).ok_or_else(|| r.at(&bits, DiagnosticKind::Literal, "expected finite binary64 bits: 0x and 16 hex digits"))?)
-            }
-            "rat" if !token.quoted => { let numerator = r.decimal()?; r.expect(",")?; let denominator = r.decimal()?; Self::Rat { numerator, denominator } }
-            "char" if !token.quoted => {
-                let s = String::read(r)?; let mut chars = s.chars();
-                let c = chars.next().filter(|_| chars.next().is_none()).ok_or_else(|| r.error(DiagnosticKind::Literal, "expected one Unicode scalar"))?;
-                Self::Char(c)
-            }
-            "str" if !token.quoted => Self::Str(String::read(r)?),
-            "enum" if !token.quoted => { let decl = DeclId::read(r)?; r.expect(",")?; let case = u32::read(r)?; Self::Enum { decl, case } }
-            _ => return Err(r.at(&token, DiagnosticKind::Literal, "unknown literal kind")),
-        };
-        r.expect(")")?; Ok(literal)
+        let token = r.next()?;
+        if token.character {
+            let mut chars = token.text.chars();
+            let value = chars.next().filter(|_| chars.next().is_none())
+                .ok_or_else(|| r.at(&token, DiagnosticKind::Literal, "expected one Unicode scalar"))?;
+            return Ok(Self::Char(value));
+        }
+        if token.quoted {
+            return Ok(Self::Str(token.text));
+        }
+        if matches!(token.text.as_str(), "true" | "false") {
+            return Ok(Self::Bool(token.text == "true"));
+        }
+        if token.text == "int" {
+            r.expect("(")?;
+            let value = r.decimal()?;
+            r.expect(")")?;
+            return Ok(Self::Int(value));
+        }
+        if token.text == "byte" {
+            r.expect("(")?;
+            let value = u8::read(r)?;
+            r.expect(")")?;
+            return Ok(Self::Byte(value));
+        }
+        if token.text == "rat" {
+            r.expect("(")?;
+            let numerator = r.decimal()?;
+            r.expect(",")?;
+            let denominator = r.decimal()?;
+            r.expect(")")?;
+            return Ok(Self::Rat { numerator, denominator });
+        }
+        if token.text == "enum" {
+            r.expect("(")?;
+            let decl = DeclId::read(r)?;
+            r.expect(",")?;
+            let case = u32::read(r)?;
+            r.expect(")")?;
+            return Ok(Self::Enum { decl, case });
+        }
+        if let Some((owner, member)) = token.text.rsplit_once('.')
+            && owner.chars().next().is_some_and(char::is_alphabetic)
+        {
+            let mut owner_token = token.clone();
+            owner_token.text = owner.into();
+            let decl = DeclId::from_u32(r.named_reference("decl", &owner_token, false)?);
+            let case = if r.first {
+                0
+            } else {
+                r.names.get(&(decl.as_u32() as usize, "case", member.into())).copied()
+                    .ok_or_else(|| r.at(&token, DiagnosticKind::UnknownName, "unknown enum case"))?
+            };
+            return Ok(Self::Enum { decl, case });
+        }
+        if token.text.contains(['.', 'e', 'E']) || matches!(token.text.as_str(), "NaN" | "inf" | "-inf") {
+            let value = token.text.parse::<f64>().ok().filter(|v| v.is_finite())
+                .ok_or_else(|| r.at(&token, DiagnosticKind::Literal, "expected finite binary64 decimal"))?;
+            return Ok(Self::Float(value.to_bits()));
+        }
+        let decimal = decimal(&token.text)
+            .ok_or_else(|| r.at(&token, DiagnosticKind::Literal, "invalid literal"))?;
+        if r.literal_type.and_then(|id| r.types.get(id).ok()) == Some(&Type::Byte) {
+            return Ok(Self::Byte(decimal.parse().map_err(|_| r.at(&token, DiagnosticKind::Literal, "byte range"))?));
+        }
+        Ok(Self::Int(decimal))
     }
+
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-        fn integer(w: &mut Writer<'_>, s: &str) -> Result<(), PrintError> {
-            if decimal(s).as_deref() != Some(s) { return Err(PrintError::new("non-normalized decimal integer")); }
-            w.push(s); Ok(())
+        fn integer(w: &mut Writer<'_>, text: &str) -> Result<(), PrintError> {
+            if decimal(text).as_deref() != Some(text) {
+                return Err(PrintError::new("non-normalized decimal integer"));
+            }
+            w.push(text);
+            Ok(())
         }
         match self {
-            Self::Int(s) => { w.push("int("); integer(w, s)?; }
-            Self::Bool(b) => { w.push("bool("); b.write(w)?; }
-            Self::Byte(b) => { w.push("byte("); b.write(w)?; }
-            Self::Float(bits) => { if !f64::from_bits(*bits).is_finite() { return Err(PrintError::new("non-finite float")); } w.push(&format!("float(0x{bits:016x}")); }
-            Self::Rat { numerator, denominator } => { w.push("rat("); integer(w, numerator)?; w.push(", "); integer(w, denominator)?; }
-            Self::Char(c) => { w.push("char("); c.to_string().write(w)?; }
-            Self::Str(s) => { w.push("str("); s.write(w)?; }
-            Self::Enum { decl, case } => { w.push("enum("); decl.write(w)?; w.push(", "); case.write(w)?; }
+            Self::Int(text) => {
+                let needs_tag = w.literal_type.and_then(|id| w.module.types.get(id).ok()) == Some(&Type::Byte);
+                if needs_tag {
+                    w.push("int(");
+                }
+                integer(w, text)?;
+                if needs_tag {
+                    w.push(")");
+                }
+            },
+            Self::Bool(value) => value.write(w)?,
+            Self::Byte(value) => {
+                if w.literal_type.and_then(|id| w.module.types.get(id).ok()) == Some(&Type::Byte) {
+                    value.write(w)?;
+                } else {
+                    w.push("byte(");
+                    value.write(w)?;
+                    w.push(")");
+                }
+            }
+            Self::Float(bits) => {
+                let value = f64::from_bits(*bits);
+                if !value.is_finite() {
+                    return Err(PrintError::new("non-finite float"));
+                }
+                w.push(&format!("{value:?}"));
+            }
+            Self::Rat { numerator, denominator } => {
+                w.push("rat(");
+                integer(w, numerator)?;
+                w.push(", ");
+                integer(w, denominator)?;
+                w.push(")");
+            }
+            Self::Char(value) => {
+                w.push("'");
+                match value {
+                    '\\' => w.push("\\\\"), '\'' => w.push("\\'"), '\n' => w.push("\\n"),
+                    '\r' => w.push("\\r"), '\t' => w.push("\\t"),
+                    c if c.is_control() => w.push(&format!("\\u{{{:X}}}", u32::from(*c))),
+                    c => w.push(&c.to_string()),
+                }
+                w.push("'");
+            }
+            Self::Str(text) => text.write(w)?,
+            Self::Enum { decl, case } => {
+                let name = w.module.declarations.get(*decl).ok().and_then(|decl| match &decl.kind {
+                    DeclarationKind::Enum { cases, .. } => cases.get(*case as usize).map(String::as_str),
+                    _ => None,
+                });
+                if let Some(name) = name {
+                    decl.write(w)?;
+                    w.push(".");
+                    w.word(name)?;
+                } else {
+                    w.push("enum(");
+                    decl.write(w)?;
+                    w.push(", ");
+                    case.write(w)?;
+                    w.push(")");
+                }
+            }
         }
-        w.push(")"); Ok(())
+        Ok(())
     }
 }
 impl Codec for Operation {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        if let Some(op) = surface::read_operation(r)? {
+            return Ok(op);
+        }
         let opcode = r.peek().text.as_str();
-        if opcode == "const" { r.expect("const")?; return Ok(Self::Const(Literal::read(r)?)); }
-        macro_rules! groups { ($($group:ty => $variant:ident),*) => {$(
-            if <$group>::OPCODES.contains(&opcode) { return Ok(Self::$variant(<$group>::read(r)?)); }
-        )*}; }
+        if opcode == "const" {
+            r.expect("const")?;
+            return Ok(Self::Const(Literal::read(r)?));
+        }
+        macro_rules! groups { ($($group:ty => $variant:ident),*) => {
+            $(
+                if <$group>::OPCODES.contains(&opcode) {
+                    return Ok(Self::$variant(<$group>::read(r)?));
+                }
+            )*
+        };
+        }
         groups!(CoreOp => Core, LexicalOp => Lexical, OwnershipOp => Ownership, CallOp => Call,
             CollectionOp => Collection, AsyncOp => Async, CarrierOp => Carrier, ExitOp => Exit, CleanupOp => Cleanup);
         Err(r.error(DiagnosticKind::Syntax, "unknown opcode"))
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        if surface::write_operation(self, w)? {
+            return Ok(());
+        }
         match self {
-            Self::Const(op) => { w.push("const "); op.write(w) }
+            Self::Const(op) => {
+                w.push("const ");
+                op.write(w)
+            }
             Self::Core(op) => op.write(w), Self::Lexical(op) => op.write(w), Self::Ownership(op) => op.write(w),
             Self::Call(op) => op.write(w), Self::Collection(op) => op.write(w), Self::Async(op) => op.write(w),
             Self::Carrier(op) => op.write(w), Self::Exit(op) => op.write(w), Self::Cleanup(op) => op.write(w),
@@ -1095,28 +1506,47 @@ pub(crate) fn slot_name(name: SlotName) -> String {
         SlotName::Value => "value", SlotName::Packet => "packet", SlotName::Deps => "deps", SlotName::Rest => "rest",
         SlotName::Selected => "selected", SlotName::ExternalDeps => "external_deps", SlotName::State => "state",
         SlotName::From => "from", SlotName::To => "to", SlotName::Failure => "failure", SlotName::Closed => "closed",
-        SlotName::Buffer => "buffer", SlotName::Unique => "unique", SlotName::Receipt => "receipt", SlotName::Task => "task",
+        SlotName::Buffer => "buffer", SlotName::Unique => "unique", SlotName::Receipt => "receipt",
+        SlotName::Task => "task",
         SlotName::Pin => "pin", SlotName::Snapshot => "snapshot", SlotName::Slot(i) => return format!("slot{i}"),
-    }.into()
+    }
+        .into()
 }
 
 impl Codec for Signature {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
-        r.expect("(")?; let mut params = vec![];
-        while !r.is(")") { r.entity()?; params.push(TypeId::read(r)?); r.comma()?; }
-        r.expect(")")?; r.expect("->")?;
-        let mut results = vec![];
-        if !r.eat("void") { r.expect("(")?;
-            while !r.is(")") { r.entity()?; results.push(TypeId::read(r)?); r.comma()?; } r.expect(")")?;
+        r.expect("(")?;
+        let mut params = vec![];
+        while !r.is(")") {
+            r.entity()?;
+            params.push(TypeId::read(r)?);
+            r.comma()?;
         }
-        r.field("abi")?; let ownership_abi = OwnershipAbi::read(r)?;
+        r.expect(")")?;
+        r.expect("->")?;
+        let results = r.results()?;
+        let ownership_abi = if r.eat("abi") {
+            OwnershipAbi::read(r)?
+        } else {
+            OwnershipAbi::Unelaborated
+        };
         Ok(Self { params, results, ownership_abi })
     }
     fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
-        w.push("("); for (i, ty) in self.params.iter().enumerate() { if i > 0 { w.push(", "); } ty.write(w)?; }
+        w.push("(");
+        for (i, ty) in self.params.iter().enumerate() {
+            if i > 0 {
+                w.push(", ");
+            }
+            ty.write(w)?;
+        }
         w.push(") -> ");
-        if self.results.is_empty() { w.push("void"); } else { w.push("("); for (i, ty) in self.results.iter().enumerate() { if i > 0 { w.push(", "); } ty.write(w)?; } w.push(")"); }
-        w.push(" abi="); self.ownership_abi.write(w)
+        w.results(&self.results)?;
+        if self.ownership_abi != OwnershipAbi::Unelaborated {
+            w.push(" abi ");
+            self.ownership_abi.write(w)?;
+        }
+        Ok(())
     }
 }
 
@@ -1125,8 +1555,30 @@ pub(crate) const TEST_NAMES: &[(&str, &str)] = &[("type", "t0"), ("decl", "D0"),
     ("file", "0"), ("summary", "M0"), ("protocol", "P0"), ("block", "^b0"), ("inst", "i0"), ("value", "%0"),
     ("binding", "b0"), ("boundary", "B0"), ("dependency", "d0"), ("key", "k0"), ("selection", "s0")];
 #[cfg(test)]
-pub(crate) fn payload_roundtrip<T: Codec + std::fmt::Debug + PartialEq>(value: T) {
+pub(crate) fn payload_roundtrip<T: Codec + std::fmt::Debug + PartialEq + 'static>(value: T) {
     let text = print::payload_print(&value);
-    let parsed: T = parser::payload_read(&text);
+    // Nominal spelling is resolved by its declaration, never by an inline tag.
+    let nominal_kind = match (&value as &dyn std::any::Any).downcast_ref::<Type>() {
+        Some(Type::Role { .. }) => 1, Some(Type::Enum(_)) => 2, Some(Type::Variant(_)) => 3,
+        Some(Type::Handle(_)) => 4, Some(Type::Cap {
+                ..
+        }) => 5, _ => 0,
+    };
+    let parsed: T = parser::payload_read(&text, nominal_kind);
     assert_eq!(value, parsed, "payload text: {text}");
+}
+
+// Defaults are representational facts, not inferred managed dependencies.
+fn value_default(profile: Profile, ty: Option<&Type>) -> ValueFacts {
+    if profile == Profile::High {
+        return ValueFacts::Unelaborated;
+    }
+    match ty {
+        Some(Type::Service(_)) => ValueFacts::Service,
+        Some(Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat | Type::Char
+            | Type::Str | Type::Range | Type::Descriptor) => {
+            ValueFacts::Plain { certificate: PlainCertificate::Scalar }
+        }
+        _ => ValueFacts::Unelaborated,
+    }
 }

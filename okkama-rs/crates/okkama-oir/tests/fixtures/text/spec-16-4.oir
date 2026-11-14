@@ -1,0 +1,52 @@
+oir 2 own
+module defer
+requires core
+native object Res
+scope S action in @main
+summary M0 call-boundary contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary M1 call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @Res.new(%name: str; %in: own) -> (Res, own) summary(M0);
+func @risky() -> void summary(M1);
+func @log(%text: str) -> void summary(M1);
+func @main() -> void {
+^entry:
+    %q0: scope<S> = scope.begin S
+    br ^make
+^make:
+    invoke.own call @Res.new("r"; own.empty)
+        normal ^have($value, $packet)
+        unwind ^create_failed($failure)
+^create_failed(%make_error: failure):
+    %creation_failure: failure = scope.unwind %q0, %make_error
+    raise %creation_failure
+^have(%r: Res, %pr: own):
+    %q1: scope<S> = own.admit %q0, %pr
+    br ^body(%r, %q1)
+^body(%r1: Res, %q2: scope<S>) unwind ^body_failed(%r1, %q2):
+    call @risky()
+    br ^normal_defer(%q2)
+^normal_defer(%q3: scope<S>) unwind ^defer_failed(%q3):
+    call @log("d")
+    br ^close(%q3)
+^body_failed(%r2: Res, %q4: scope<S>, %body_error: failure):
+    br ^failure_defer(%q4, %body_error)
+^failure_defer(%q5: scope<S>, %f1: failure) unwind ^secondary(%q5, %f1):
+    call @log("d")
+    br ^unwind_close(%q5, %f1)
+^secondary(%q6: scope<S>, %primary: failure, %cleanup: failure):
+    %joined: failure = fail.secondary %primary, %cleanup
+    br ^unwind_close(%q6, %joined)
+^defer_failed(%q7: scope<S>, %f2: failure):
+    br ^unwind_close(%q7, %f2)
+^unwind_close(%q8: scope<S>, %f3: failure):
+    %g: failure = scope.unwind %q8, %f3
+    raise %g
+^close(%q9: scope<S>):
+    invoke.own scope.end %q9
+        normal ^done($closed)
+        unwind ^closed_failed($closed, $failure)
+^closed_failed(%s: closed, %f4: failure):
+    raise %f4
+^done(%s1: closed):
+    ret
+}
