@@ -62,6 +62,8 @@ struct Executor {
     defer_failure: bool,
     creation_failure: bool,
     created: usize,
+    creation_limit: Option<usize>,
+    dynamic_failure: bool,
 }
 impl Executor {
     fn destroy_current(&mut self, mut state: Activation) -> Vec<Value> {
@@ -133,6 +135,23 @@ impl Executor {
                         let mut values = self.packet(*state);
                         values.extend(self.packet(*packet));
                         vec![Value::Packet(values)]
+                    }
+                    Operation::Ownership(OwnershipOp::Bind { binding } | OwnershipOp::Rebind { binding }) => {
+                        let mut history = self.packet(binding.state);
+                        history.extend(self.packet(binding.resource.packet));
+                        vec![Value::Packet(history)]
+                    }
+                    Operation::Exit(ExitOp::Replace { pending, replacement }) => {
+                        let old = self.packet(*pending);
+                        let incoming = self.packet(replacement.packet.unwrap());
+                        let kept = replacement.value.and_then(|value| match self.values[&value] {
+                            Value::Identity(identity) => Some(identity),
+                            _ => None,
+                        });
+                        let (mut reserve, rest): (Vec<_>, Vec<_>) = old.into_iter()
+                            .partition(|identity| Some(*identity) == kept);
+                        reserve.extend(incoming);
+                        vec![Value::Packet(reserve), Value::Packet(rest)]
                     }
                     Operation::Ownership(OwnershipOp::ScopeSplit { state, selection }) => {
                         let SelectionExpr::Value(value) = body.selections.get(*selection).unwrap() else {
@@ -243,7 +262,8 @@ impl Executor {
                     let Value::Bool(condition) = self.values[condition] else {
                         panic!("expected condition");
                     };
-                    self.target(body, if condition { yes } else { no })
+                    let repeat = condition && self.creation_limit.is_none_or(|limit| self.created < limit);
+                    self.target(body, if repeat { yes } else { no })
                 }
                 TermKind::FailureDispatch { failure, none, some } => {
                     let Value::Failures(failure) = self.values[failure].clone() else {
@@ -298,6 +318,24 @@ impl Executor {
                     packet.remove(position);
                     self.edge(body, normal, &[Value::Packet(packet), Value::Packet(vec![identity])])
                 }
+                TermKind::InvokeOwn { op, normal, unwind }
+                    if matches!(op.as_ref(), Operation::Ownership(OwnershipOp::Dynamic { .. })) => {
+                    let Operation::Ownership(OwnershipOp::Dynamic { state, packet, .. }) = op.as_ref() else {
+                        unreachable!();
+                    };
+                    let mut inventory = self.packet(*state);
+                    let packet = self.packet(*packet);
+                    if self.dynamic_failure {
+                        let mut failure = Failure::new("protocol");
+                        failure.kind = FailureKind::Program;
+                        self.edge(body, unwind, &[
+                            Value::Packet(inventory), Value::Packet(packet), Value::Failure(failure),
+                        ])
+                    } else {
+                        inventory.extend(packet);
+                        self.edge(body, normal, &[Value::Packet(inventory)])
+                    }
+                }
                 TermKind::InvokeOwn { op, normal, unwind } => {
                     let Operation::Call(CallOp::Direct { function, call }) = op.as_ref() else {
                         panic!("expected call");
@@ -345,7 +383,7 @@ impl Executor {
     }
 }
 fn reserve_case(source: &str, identities: Vec<(&'static str, u64, Option<&'static str>)>) -> Executor {
-    let source = if identities.len() == 3 {
+    let source = if identities.len() == 3 && source.contains("// Optional third creation") {
         source.replace("    // Optional third creation is inserted here by the executor test.",
             "    (%c: Res facts(managed(deps=dc)), %pc: own, %dpc: deps) = call @new(; own.empty)\n\
              %q3: scope<S> = own.admit %q2, %pc")
@@ -443,4 +481,66 @@ fn finite_local_triplet_uses_creation_order() {
     executor.run(&module);
     assert_eq!(executor.trace, ["h", "b", "a"]);
     assert_eq!(executor.dead, [2, 1, 0]);
+}
+
+
+#[test]
+fn journal_static_and_late_protocol_entries_use_one_serial_stream() {
+    for (source, protocol) in [
+        (include_str!("fixtures/mixed-journal.own.oir"), false),
+        (include_str!("fixtures/mixed-protocol.own.oir"), true),
+    ] {
+        let module = checked(source);
+        for dynamic_failure in [false, true].into_iter().take(if protocol { 2 } else { 1 }) {
+            let identities = if protocol {
+                vec![("S", 1, None), ("P", 2, None), ("J1", 3, None), ("J2", 4, None)]
+            } else {
+                vec![("S", 1, None), ("J1", 2, None), ("J2", 3, None)]
+            };
+            let mut executor = Executor {
+                creation_limit: Some(identities.len()), identities, dynamic_failure, ..Executor::default()
+            };
+            let params = &body(&module).blocks.get(body(&module).entry).unwrap().params;
+            executor.values.insert(params[0], Value::Unit);
+            executor.values.insert(params[1], Value::Bool(true));
+            executor.run(&module);
+            let expected = if protocol { vec!["J2", "J1", "P", "S"] } else { vec!["J2", "J1", "S"] };
+            assert_eq!(executor.trace, expected);
+            if dynamic_failure {
+                let failure = executor.terminal.unwrap();
+                assert_eq!(failure.error, "protocol");
+                assert_eq!(failure.kind, FailureKind::Program);
+            } else {
+                assert!(executor.terminal.is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn closed_inner_reserve_merges_before_destroy_and_after_prefix() {
+    let before = reserve_case(include_str!("fixtures/two-scope-unwind-reserve.own.oir"),
+        vec![("A", 1, None), ("R", 2, None)]);
+    assert_eq!(before.trace, ["R", "A"]);
+    assert_eq!(before.dead, [1, 0]);
+    let after = reserve_case(include_str!("fixtures/two-scope-end-reserve.own.oir"),
+        vec![("A", 1, Some("A failed")), ("R", 2, None)]);
+    assert_eq!(after.trace, ["A", "R"]);
+    assert_eq!(after.dead, [0, 1]);
+    let suffix = reserve_case(include_str!("fixtures/two-scope-suffix.own.oir"),
+        vec![("A", 1, None), ("R", 2, Some("R failed")), ("C", 3, Some("C failed"))]);
+    assert_eq!(suffix.trace, ["C", "R", "A"]);
+    assert_eq!(suffix.dead, [2, 1, 0]);
+    let failure = suffix.terminal.unwrap();
+    assert_eq!(failure.error, "C failed");
+    assert_eq!(failure.secondaries, ["R failed"]);
+}
+
+#[test]
+fn replacement_rest_returns_to_bound_history_at_the_outer_boundary() {
+    let executor = reserve_case(include_str!("fixtures/replacement-rest.own.oir"),
+        vec![("A", 1, None), ("R", 2, None)]);
+    assert_eq!(executor.trace, ["R", "A"]);
+    assert_eq!(executor.dead, [1, 0]);
+    assert!(executor.terminal.is_none());
 }

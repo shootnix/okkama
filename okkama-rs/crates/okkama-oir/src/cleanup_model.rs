@@ -23,7 +23,7 @@ pub struct CleanupClose {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CleanupSchedule {
     pub close: CleanupCloseId,
-    /// The complete D16 inventory. L1 admits only the checked empty inventory.
+    /// The complete D16 inventory. Synchronous lowering admits only the checked empty inventory.
     pub holders: Vec<ValueId>,
     /// The checked Services protocol/dictionary for a nonempty owner duty inventory.
     /// A finite empty P1 inventory needs neither runtime operand.
@@ -31,14 +31,27 @@ pub struct CleanupSchedule {
     pub protocol: Option<ProtocolId>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MergeSource { ScopeInventory, PacketInventory, WholeReserveOnFailure }
+pub enum MergeSource {
+    /// Complete owner inventory: active static slots, admission, staging, bound journal history
+    /// and entries admitted by checked storage protocols. History survives loss of language uses.
+    ScopeInventory,
+    /// Every entry in the consumed packet, preserving its original key, serial and descriptor.
+    PacketInventory,
+    /// The single reserve joins only the unexecuted suffix after current becomes Dead.
+    /// An already active failure includes it before the first selection; later failures cannot re-add it.
+    WholeReserveOnFailure,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CleanupPlan {
     pub close: CleanupCloseId,
     /// Complete inventory in either form. Without a direct proof, one serial selector covers every source.
     /// Reserve joins only the unexecuted suffix.
     pub sources: Vec<MergeSource>,
-    /// None selects the common merge executor; Some selects the checked finite direct chain.
+    /// None selects one descending-serial merge of all runs, never a static prefix followed by history.
+    /// Runtime-selected entries are destroyed through their descriptors by cleanup.destroy.
+    /// Some selects the checked finite direct chain. These are semantic sources, not wire run IDs.
+    /// #572 S3 resolves rooted inventory runs and owns claim/body/Dead and reserve insertion.
+    /// #571 S3 preserves these sources, typed outcomes and every SSA root boundary through allocation.
     pub direct: Option<CleanupOrderProofId>,
 }
 /// A completion event, never an allocation, admission order or a fabricated serial.

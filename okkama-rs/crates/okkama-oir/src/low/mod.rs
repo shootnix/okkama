@@ -111,3 +111,6 @@ mod executor_tests;
 
 #[cfg(test)]
 mod direct_tests;
+
+#[cfg(test)]
+mod merge_tests;

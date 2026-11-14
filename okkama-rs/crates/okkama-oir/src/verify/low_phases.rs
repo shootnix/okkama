@@ -37,7 +37,7 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                 }
                 let ty = body.values.get(binding.value).ok().and_then(|value| module.types.get(value.ty).ok());
                 let valid = match (&binding.trace, ty) {
-                    (RootTrace::Value(expected), Some(_)) => {
+                    (RootTrace::Value(expected), Some(ty)) if !matches!(ty, Type::Service(_)) => {
                         body.values.get(binding.value).is_ok_and(|value| value.ty == *expected)
                     }
                     (RootTrace::Descriptor(_), Some(Type::Descriptor)) => true,

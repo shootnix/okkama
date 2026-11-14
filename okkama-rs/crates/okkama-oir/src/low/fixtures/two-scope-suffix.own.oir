@@ -1,0 +1,58 @@
+oir 2 own
+// Outer C fails after inner SI closes: finish C, then merge reserve R with suffix A; expected C R A.
+module two_scope_suffix
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+summary Mn call-boundary results [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], publication=atomic)
+func @new() -> (Res, own, deps) [extern "fixture.new"] summary(Mn);
+scope S action in @main
+scope SI block in @main parent S
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @main(%seed: int) -> pending summary(M0) {
+    boundary B0 lexical in S
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    dependency dc: dependency = retention(value=%c, selection=selection(%c))
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    (%a: Res facts(managed(deps=da)), %pa: own, %dpa: deps) = call @new(; own.empty)
+    %q1: scope<S> = own.admit %q0, %pa
+    %inner: scope<SI> = scope.begin SI
+    (%r: Res facts(managed(deps=dr)), %pr: own, %dpr: deps) = call @new(; own.empty)
+    %q2: scope<SI> = own.admit %inner, %pr
+    (%c: Res facts(managed(deps=dc)), %pc: own, %dpc: deps) = call @new(; own.empty)
+    %with_c: scope<S> = own.admit %q1, %pc
+    invoke.own scope.split %q2, selection(%r)
+        normal ^extracted($state, $selected, %with_c)
+        unwind ^inner_failed($state, %with_c, $failure)
+^extracted(%rest: scope<SI>, %selected: own, %outer: scope<S>) in SI:
+    %p: pending = exit.prepare return %r, %selected at B0
+    invoke.own scope.end %rest, reserve %p, effects scope_effects(failures=[thrown, program, panic, native])
+        normal ^outer_close($closed, $pending, %outer)
+        unwind ^inner_closed($closed, %outer, $failure)
+^outer_close(%inner_closed: closed, %forward: pending, %remaining: scope<S>) in S:
+    invoke.own scope.end %remaining, reserve %forward, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=false, cancel=false)
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure)
+^done(%closed: closed, %returned: pending) in S:
+    ret %returned
+^failed(%closed_failed: closed, %error: failure) in S:
+    raise %error
+^inner_failed(%open_inner: scope<SI>, %open_outer: scope<S>, %inner_error: failure) in SI:
+    %inner_combined: failure = scope.unwind %open_inner, %inner_error, effects scope_effects(failures=[thrown, program,
+        panic, native])
+    br ^extract_failed(%open_outer, %inner_combined)
+^inner_closed(%inner_dead: closed, %open_parent: scope<S>, %closing_error: failure) in S:
+    br ^extract_failed(%open_parent, %closing_error)
+^extract_failed(%extract_open: scope<S>, %extract_error: failure) in S:
+    %extract_combined: failure = scope.unwind %extract_open, %extract_error, effects scope_effects(failures=[thrown,
+        program, panic, native])
+    raise %extract_combined
+}

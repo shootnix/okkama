@@ -21,9 +21,10 @@ fn record(
     module: &Module, body: &mut Body, boundary: RootBoundary, live: &BTreeSet<ValueId>, budget: &mut Budget<'_>,
 ) -> Result<(), LowError> {
     let mut expanded = live.clone();
-    for value in live {
+    let mut values: Vec<_> = live.iter().copied().collect();
+    while let Some(value) = values.pop() {
         budget.step(1)?;
-        match &body.values.get(*value)?.facts {
+        match &body.values.get(value)?.facts {
             ValueFacts::Managed { deps } => {
                 let mut pending = vec![OperandRef::Dependency(*deps)];
                 let mut seen = BTreeSet::new();
@@ -33,15 +34,18 @@ fn record(
                         continue;
                     }
                     if let OperandRef::Value(value) = reference {
-                        expanded.insert(value);
+                        if expanded.insert(value) {
+                            values.push(value);
+                        }
                     } else {
                         pending.extend(cfg::expression_children(reference, body)
                             .map_err(|error| LowError::InvalidOutput(error.to_string()))?);
                     }
                 }
             }
-            ValueFacts::Plain { certificate: PlainCertificate::Descriptor(dictionary) } => {
-                expanded.insert(*dictionary);
+            ValueFacts::Plain { certificate: PlainCertificate::Descriptor(dictionary) }
+                if expanded.insert(*dictionary) => {
+                values.push(*dictionary);
             }
             _ => {}
         }

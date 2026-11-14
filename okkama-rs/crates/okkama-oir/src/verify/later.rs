@@ -201,6 +201,26 @@ fn operation(module: &Module, function: &Function, body: &Body, op: &Operation, 
                 state.error(R::B71, "dynamic reason requires its protocol family and checked dynamic transition");
             }
         }
+        if module.profile == Profile::Low
+            && let Ok(declaration) = module.protocols.get(*protocol) {
+            let dynamic: Vec<_> = declaration.rules.iter().filter(|rule| {
+                rule.transition == ProtocolTransition::Dynamic
+            }).collect();
+            let supported = *reason == DynamicReason::Merge && declaration.kind == ProtocolKind::Storage
+                && declaration.holders.contains(&HolderKind::Scope)
+                && declaration.holders.contains(&HolderKind::Packet)
+                && declaration.holders.iter().all(|holder| matches!(holder, HolderKind::Scope | HolderKind::Packet))
+                && declaration.roots.contains(&RootKind::Operands)
+                && dynamic.len() == 1 && dynamic[0].from == HolderKind::Packet
+                && dynamic[0].to == HolderKind::Scope
+                && dynamic[0].normal == ProtocolPoststate { holder: HolderKind::Scope, state: HolderState::Open }
+                && dynamic[0].unwind == Some(ProtocolPoststate {
+                    holder: HolderKind::Packet, state: HolderState::Unaccepted,
+                }) && dynamic[0].cancel.is_none();
+            if !supported {
+                state.error(R::B71, "Low dynamic source requires the synchronous storage merge transition");
+            }
+        }
         if value_type(module, body, *owner) != Some(&Type::Service(ServiceType::Scope(*target))) {
             state.error(R::B71, "dynamic target must agree with the consumed owner state");
         }

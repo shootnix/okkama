@@ -114,9 +114,33 @@ fn operation(module: &Module, function: FuncId, op: &Operation) -> Result<(), Lo
         Operation::Async(_) | Operation::Carrier(_) | Operation::Cleanup(_) => {
             return Err(unsupported(function, "async/service or preexisting Low operation"));
         }
-        Operation::Ownership(OwnershipOp::Dynamic { .. } | OwnershipOp::DynamicCheck { .. }
-            | OwnershipOp::DynamicRefresh { .. }) => {
-            return Err(unsupported(function, "dynamic protocol sources require L3"));
+        Operation::Ownership(OwnershipOp::Dynamic { reason, protocol, .. }) => {
+            let protocol = module.protocols.get(*protocol)?;
+            let supported = *reason == DynamicReason::Merge && protocol.kind == ProtocolKind::Storage
+                && protocol.holders.iter().all(|holder| matches!(holder, HolderKind::Scope | HolderKind::Packet))
+                && protocol.holders.contains(&HolderKind::Scope)
+                && protocol.holders.contains(&HolderKind::Packet)
+                && protocol.rules.iter().filter(|rule| rule.transition == ProtocolTransition::Dynamic).count() == 1
+                && protocol.roots.contains(&RootKind::Operands)
+                && protocol.rules.iter().any(|rule| {
+                    rule.transition == ProtocolTransition::Dynamic
+                        && rule.from == HolderKind::Packet && rule.to == HolderKind::Scope
+                        && rule.normal.holder == HolderKind::Scope
+                        && rule.normal.state == HolderState::Open
+                        && rule.unwind.as_ref().is_some_and(|post| {
+                            post.holder == HolderKind::Packet && post.state == HolderState::Unaccepted
+                        })
+                        && rule.cancel.is_none()
+                        && [ProtocolCheck::Owner, ProtocolCheck::LiveDependencies,
+                            ProtocolCheck::Snapshot, ProtocolCheck::Transferable]
+                            .iter().all(|check| rule.checks.contains(check))
+                });
+            if !supported {
+                return Err(unsupported(function, "dynamic source needs the synchronous storage merge protocol"));
+            }
+        }
+        Operation::Ownership(OwnershipOp::DynamicCheck { .. } | OwnershipOp::DynamicRefresh { .. }) => {
+            return Err(unsupported(function, "dynamic check/refresh is outside the storage merge protocol"));
         }
         Operation::Ownership(OwnershipOp::ScopeEnd { effects, .. }
             | OwnershipOp::ScopeUnwind { effects, .. }) => {
