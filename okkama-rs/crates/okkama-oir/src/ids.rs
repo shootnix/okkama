@@ -103,6 +103,10 @@ impl<I: ArenaId, T> Arena<I, T> {
         // Allocation guarantees that every occupied index fits in u32.
         self.items.iter().enumerate().map(|(i, value)| (I::from_u32(i as u32), value))
     }
+
+    pub fn iter_mut(&mut self) -> impl ExactSizeIterator<Item = (I, &mut T)> {
+        self.items.iter_mut().enumerate().map(|(i, value)| (I::from_u32(i as u32), value))
+    }
 }
 
 #[cfg(test)]

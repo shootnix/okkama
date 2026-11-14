@@ -23,6 +23,13 @@ macro_rules! operation_group {
         => ($name:literal, [ $( $operand:ident : $mode:ident ),* $(,)? ], $rule:expr); )* }) => {
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub enum $group { $( $variant { $( $field: $ty ),* }, )* }
+        impl crate::visit::Rewrite for $group {
+            fn rewrite(&mut self, visitor: &mut impl crate::visit::VisitorMut) {
+                match self { $( Self::$variant { $( $field ),* } => {
+                    $( $field.rewrite(visitor); )*
+                }, )* }
+            }
+        }
         impl $group {
             pub(crate) fn spec(&self) -> Spec {
                 match self { $( Self::$variant { $( $field ),* } => {

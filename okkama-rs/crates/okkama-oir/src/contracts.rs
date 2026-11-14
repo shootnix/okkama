@@ -71,7 +71,8 @@ pub struct Boundary { pub scope: ScopeId, pub kind: BoundaryKind }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundaryKind { Lexical, Call, Loop, AbortBeforeDestroy, AbortAfterPrefix }
 
-/// Symbolic result types are resolved against input types and declarations by #564.
+/// Builders resolve these formulas against input types and declarations;
+/// #564 independently re-checks their semantic validity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResultType {
     Exact(TypeId), ExactEnum(DeclId), Scalar(ScalarType), Service(ServiceType), SameAs(ValueId),

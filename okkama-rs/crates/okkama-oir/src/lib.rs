@@ -6,9 +6,10 @@
 //! separate values; `scope<S>` names a module-wide lexical scope.
 //!
 //! This crate depends only on `std`. It currently supplies the independent
-//! data model and operation contracts for #563, commits 1–2. Containers can
-//! be constructed by hand and do not imply verification. Builders, editing
-//! and text codecs belong to subsequent commits.
+//! data model, operation contracts, builders and editing for #563, commits 1–3.
+//! Builder completion is structural, not semantic verification (#564).
+//! Public containers can also be edited directly for invalid verifier fixtures.
+//! The text codec belongs to the next commit.
 //! OIR-1 in `okkama-compiler/src/ir` coexists with OIR-2 until #576; the
 //! production lowering and backends still use OIR-1.
 
@@ -17,10 +18,13 @@ mod module;
 pub mod ops;
 pub mod contracts;
 pub mod cfg;
+pub mod builder;
+pub mod visit;
 mod types;
 mod value;
 
 pub use contracts::*;
+pub use builder::*;
 pub use ids::*;
 pub use module::*;
 pub use ops::*;
@@ -40,3 +44,6 @@ mod tests;
 
 #[cfg(test)]
 mod contract_tests;
+
+#[cfg(test)]
+mod builder_tests;
