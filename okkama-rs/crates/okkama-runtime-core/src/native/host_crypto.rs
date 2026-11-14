@@ -1,6 +1,6 @@
 //! `runtime/host_crypto`: криптография хоста для native bridge Sparrow —
-//! тот же крейт `okkama-native` (RustCrypto), что JVM-рантайм вызывает через FFM.
-//! Коды отказов совпадают с JVM (`HostCryptoNatives`): `invalid_input`,
+//! Rust API крейта `okkama-native` (RustCrypto).
+//! Коды отказов: `invalid_input`,
 //! `permission_denied` (проверка подлинности), `unsupported`, `unexpected`;
 //! домен `core.crypto`.
 

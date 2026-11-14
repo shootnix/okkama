@@ -1,5 +1,5 @@
 //! Natives байтовых и текстовых преобразований — перенос части `TextNatives`
-//! JVM: `runtime/binary`, `runtime/hpack`, `runtime/collections`,
+//! `runtime/binary`, `runtime/hpack`, `runtime/collections`,
 //! `runtime/number_text` (`runtime/buffer` и `runtime/single_byte` — в своих
 //! модулях).
 use super::Error;

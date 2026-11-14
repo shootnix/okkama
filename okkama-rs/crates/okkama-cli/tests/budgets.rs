@@ -1,4 +1,4 @@
-//! Execution budgets on Sparrow and the legacy JVM backend (#71, #237):
+//! Execution budgets on Sparrow (#71, #237):
 //! the same options, reports and exit status. Every run carries a
 //! timeout, so a budget that failed to stop a program cannot hang the test.
 
@@ -34,7 +34,7 @@ const PRINT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nmain
 const GROW: &str = "module app v1.0.0;\nobject Keep {\n    Keep();\n    grow(items is @@int, n is int) is int { if n < 0 { 0; } else { self.grow(items + [(0..1000).map() -> i { i; }], n + 1); } }\n}\nmain() is int { Keep().grow([], 0); }\n";
 
 #[test]
-fn every_budget_stops_the_ir_engine_and_the_jvm_as_it_stops_the_core() {
+fn every_budget_stops_sparrow() {
     let cases: [(&str, &[&str], &str); 5] = [
         (SPIN, &["--max-steps", "100000", "--timeout", "30"], "Execution budget exhausted: steps"),
         (RECURSE, &["--max-steps", "1000", "--timeout", "30"], "Execution budget exhausted: steps"),
@@ -43,7 +43,8 @@ fn every_budget_stops_the_ir_engine_and_the_jvm_as_it_stops_the_core() {
         (SPIN, &["--timeout", "1"], "Execution interrupted"),
     ];
     for (source, budget, report) in cases {
-        for engine in ["sparrow", "jvm"] {
+        {
+        let engine = "sparrow";
             let output = run(engine, source, budget);
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert_eq!(output.status.code(), Some(1), "{engine} {budget:?}: {stderr}");
@@ -64,7 +65,8 @@ const CAUGHT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nobj
 /// program can catch, and its cleanup does not run.
 #[test]
 fn steps_are_counted_alike_and_running_out_cannot_be_caught() {
-    for engine in ["sparrow", "jvm"] {
+    {
+        let engine = "sparrow";
         let enough = run(engine, DEEP, &["--max-steps", "336", "--timeout", "60"]);
         assert_eq!(enough.status.code(), Some(0), "{engine}: {}", String::from_utf8_lossy(&enough.stderr));
         let short = run(engine, DEEP, &["--max-steps", "335", "--timeout", "60"]);
@@ -76,48 +78,6 @@ fn steps_are_counted_alike_and_running_out_cannot_be_caught() {
     }
 }
 
-/// `build --target jvm --budgeted` counts steps; the limit comes from
-/// `-Dokkama.steps` when the JAR runs. A plain build pays nothing and has no
-/// step limit; the memory limit is the runtime's and works on either.
-#[test]
-fn budgeted_jvm_builds_take_the_limit_from_the_command_line() {
-    let dir = std::env::temp_dir().join(format!("budgets-build-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let source = dir.join("deep.ok");
-    std::fs::write(&source, DEEP).unwrap();
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    for (flag, jar) in [(Some("--budgeted"), "budgeted.jar"), (None, "plain.jar")] {
-        let built = Command::new(env!("CARGO_BIN_EXE_okkama"))
-            .args(["build", "--target", "jvm"])
-            .args(flag)
-            .arg(&source)
-            .arg("-o")
-            .arg(dir.join(jar))
-            .env("OKKAMA_STDLIB_DIR", root.join("std"))
-            .output()
-            .unwrap();
-        assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
-    }
-    let java = |properties: &[&str], jar: &str| {
-        Command::new("java").args(properties).arg("-jar").arg(dir.join(jar)).output().unwrap()
-    };
-    assert_eq!(java(&["-Dokkama.steps=336"], "budgeted.jar").status.code(), Some(0));
-    let short = java(&["-Dokkama.steps=335"], "budgeted.jar");
-    assert_eq!(short.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&short.stderr).trim_end(), "Execution budget exhausted: steps");
-    assert_eq!(java(&[], "budgeted.jar").status.code(), Some(0));
-    assert_eq!(java(&["-Dokkama.steps=10"], "plain.jar").status.code(), Some(0));
-    let sparrow = Command::new(env!("CARGO_BIN_EXE_okkama"))
-        .args(["build", "--target", "sparrow", "--budgeted"])
-        .arg(&source)
-        .arg("-o")
-        .arg(dir.join("x.spb"))
-        .output()
-        .unwrap();
-    assert_eq!(sparrow.status.code(), Some(2));
-    let _ = std::fs::remove_dir_all(dir);
-}
-
 const DEEP_FAILURE: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    go(n is int, zero is int) is int { if n == 0 { 1 % zero; } else { self.go(n - 1, zero) + 1; } }\n}\nmain() is int { Down().go(300000, 0); }\n";
 const DEEP_FOREVER: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    go(n is int) is int { if n < 0 { 0; } else { self.go(n + 1) + 1; } }\n}\nmain() is int { Down().go(0); }\n";
 
@@ -127,7 +87,8 @@ const DEEP_FOREVER: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    
 /// instead of rendering a line per frame.
 #[test]
 fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
-    for engine in ["sparrow", "jvm"] {
+    {
+        let engine = "sparrow";
         let started = std::time::Instant::now();
         let output = run(engine, DEEP_FOREVER, &["--max-memory", "64M", "--timeout", "60"]);
         assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution budget exhausted: memory", "{engine}");

@@ -26,29 +26,10 @@ class ProbeCacheTests(unittest.TestCase):
                 self.assertTrue(adapter.probe()["cached"])
                 self.assertEqual(build.call_count, 1)
 
-    def test_engine_change_invalidates_cached_capabilities(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with patch.dict(adapter.os.environ, {
-                "OCS_RUST_IMPLEMENTATION_ROOT": directory,
-                "OCS_RUST_TARGET_DIR": directory,
-                "OCS_RUST_ENGINE": "sparrow",
-            }), patch.object(adapter, "source_fingerprint", return_value="same-source"), \
-                    patch.object(adapter, "probe_uncached", return_value={"modes": ["run"]}) as build:
-                self.assertEqual(adapter.probe()["engine"], "sparrow")
-                self.assertTrue(adapter.probe()["cached"])
-                self.assertEqual(build.call_count, 1)
-                adapter.os.environ["OCS_RUST_ENGINE"] = "jvm"
-                build.return_value = {"modes": ["run", "test"]}
-                self.assertIn("test", adapter.probe()["modes"])
-                self.assertEqual(build.call_count, 2)
-                adapter.os.environ["OCS_RUST_ENGINE"] = "sparrow"
-                build.return_value = {"modes": ["run"]}
-                self.assertNotIn("test", adapter.probe()["modes"])
-                self.assertEqual(build.call_count, 3)
-                adapter.os.environ["OCS_RUST_ENGINE"] = "jvm"
-                self.assertIn("test", adapter.probe()["modes"])
-                self.assertTrue(adapter.probe()["cached"])
-                self.assertEqual(build.call_count, 3)
+    def test_removed_engine_is_rejected(self):
+        with patch.dict(adapter.os.environ, {"OCS_RUST_ENGINE": "ir"}):
+            with self.assertRaisesRegex(SystemExit, "Sparrow is the only"):
+                adapter.probe()
 
 
 if __name__ == "__main__":

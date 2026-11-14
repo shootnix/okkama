@@ -1,5 +1,5 @@
 //! `float` (OIR-1 §16.2): конечное binary64. Неконечный результат и делитель 0 —
-//! ошибки программы с текстами JVM-рантайма (`okkama.rt.Floats`).
+//! ошибки программы с едиными текстами отказов.
 
 use crate::IntValue;
 use std::cmp::Ordering;
@@ -383,7 +383,7 @@ mod tests {
 }
 
 // ----- elementary functions, min, max, clamp (#192) -----
-// Sparrow and shared providers call these; okkama.rt.Floats does the same.
+// Sparrow and shared providers call these.
 
 /// `floor`, `ceil`, `round` (half away from zero), `trunc`, `exp`, `ln`,
 /// `log2`, `log10`, `sin`, `cos`, `tan`. A result that is not finite

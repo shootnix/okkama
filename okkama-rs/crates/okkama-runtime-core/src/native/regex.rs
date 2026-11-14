@@ -1,5 +1,5 @@
 //! `runtime/regex`: собственный движок регулярных выражений Okkama — перенос
-//! `RegexNatives` JVM (порт `Okkama::Runtime::Regex::Compiler`): разбор
+//! Порт `Okkama::Runtime::Regex::Compiler`: разбор
 //! шаблона, NFA Томпсона и поиск самого левого, затем самого длинного
 //! совпадения с захватами. Смещения — в символах (code points).
 use super::Error;

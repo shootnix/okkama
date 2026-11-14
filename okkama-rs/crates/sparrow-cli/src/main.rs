@@ -105,29 +105,31 @@ fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
 }
 
 fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core::budget::Limits) -> Result<u8, Failure> {
-    let (bytes, program) = load(path)?;
-    if let Some(flag) = &limits.interrupt {
-        watchdog(flag.clone());
-    }
+    let bytes = read(path)?;
+    let on_verified = limits.interrupt.as_ref().map(|flag| {
+        let flag = flag.clone();
+        Box::new(move || watchdog(flag)) as Box<dyn FnOnce() + Send>
+    });
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    let result = sparrow_core::run_described(bytes, arguments, stats, worker_command(path), limits);
+    let trace = std::env::var("OKKAMA_TRACE").as_deref() != Ok("off");
+    let options = sparrow_core::ExecutionOptions { stats, trace, on_verified, ..Default::default() };
+    let result = sparrow_core::run_executable(bytes, arguments, worker_command(path), limits, options);
     let _ = sparrow_core::stdout::flush();
     match result {
-        Ok(Ok(code)) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
-        Ok(Err((error, uncaught))) => {
-            // `OKKAMA_TRACE=off` — the failure alone, as with `okkama run`.
-            let error = match uncaught.filter(|_| std::env::var("OKKAMA_TRACE").as_deref() != Ok("off")) {
-                Some(uncaught) => sparrow_core::Error(uncaught.render_report(&error.0, |trace| sparrow_core::render_trace(&program, trace))),
-                None => error,
-            };
-            report(error)
+        Ok(sparrow_core::Execution::Main(Ok(code))) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
+        Ok(sparrow_core::Execution::Main(Err((error, trace)))) => {
+            let code = report(error);
+            eprint!("{trace}");
+            code
         }
-        Err(error) => report(error),
+        Ok(sparrow_core::Execution::Tests(_)) => unreachable!("test dispatch was not requested"),
+        Err(sparrow_core::ExecutionError::Load(error)) => Err((1, error.0)),
+        Err(sparrow_core::ExecutionError::Run(error)) => report(error),
     }
 }
 
 fn test(path: &Path) -> Result<u8, Failure> {
-    let (bytes, _) = load(path)?;
+    let bytes = read(path)?;
     match sparrow_core::run_tests(bytes, Box::new(sparrow_core::stdout::Buffered)) {
         Ok(passed) => Ok(u8::from(!passed)),
         Err(error) => Err((1, error.0)),

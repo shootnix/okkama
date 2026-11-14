@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generated Okkama programs compared across engines (hardening H-18).
+"""Generated Okkama programs compared across Sparrow configurations (hardening H-18).
 
-    tools/gen/okgen.py run [--seeds N] [--first S] [--engines sparrow,jvm] [--out DIR]
+    tools/gen/okgen.py run [--seeds N] [--first S] [--engines sparrow] [--out DIR]
     tools/gen/okgen.py show SEED
 
 Each seed makes one terminating, deterministic program: exact integers with
@@ -13,7 +13,8 @@ engines disagree is minimized (delta debugging over the statements of
 engine's output. Exit status 1 when some seed disagreed.
 
 Programs run through `okkama run --engine E` (OKKAMA, default the release
-build); a whole campaign belongs in a container (`make gate`'s image) or CI.
+build). The reference is Sparrow with IR passes off, or OKKAMA_REFERENCE
+when comparing two builds; a whole campaign belongs in a container (`make gate`'s image) or CI.
 """
 import argparse
 import os
@@ -24,6 +25,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OKKAMA = os.environ.get("OKKAMA", os.path.join(ROOT, "okkama-rs", "target", "release", "okkama"))
+
+REFERENCE = os.environ.get("OKKAMA_REFERENCE")
 
 PRELUDE = """module app;
 import "io/stdout" take Stdout;
@@ -149,12 +152,16 @@ def program(seed, statements=None):
     return PRELUDE + f"\nmain() is int {{\n    let out = Stdout();\n    let lab = Lab();\n{lines}\n    0;\n}}\n", len(body)
 
 
-def run(text, engine, directory):
+def run(text, engine, directory, reference=False):
     path = os.path.join(directory, "main.ok")
     with open(path, "w") as out:
         out.write(text)
     try:
-        p = subprocess.run([OKKAMA, "run", "--engine", engine, path], capture_output=True, text=True, timeout=120, cwd=directory)
+        env = dict(os.environ, OKKAMA_TRACE="off")
+        if reference and not REFERENCE:
+            env["OKKAMA_IR_PASSES"] = "none"
+        binary = REFERENCE if reference and REFERENCE else OKKAMA
+        p = subprocess.run([binary, "run", "--engine", engine, path], capture_output=True, text=True, timeout=120, cwd=directory, env=env)
         return (p.returncode, p.stdout, p.stderr.strip().splitlines()[:1])
     except subprocess.TimeoutExpired:
         return ("timeout", "", [])
@@ -162,7 +169,9 @@ def run(text, engine, directory):
 
 def outcomes(text, engines):
     with tempfile.TemporaryDirectory() as directory:
-        return {engine: run(text, engine, directory) for engine in engines}
+        results = {engine: run(text, engine, directory) for engine in engines}
+        results["reference"] = run(text, "sparrow", directory, reference=True)
+        return results
 
 
 def disagree(results):
@@ -198,7 +207,7 @@ def main():
     runner = sub.add_parser("run")
     runner.add_argument("--seeds", type=int, default=50)
     runner.add_argument("--first", type=int, default=1)
-    runner.add_argument("--engines", default="sparrow,jvm")
+    runner.add_argument("--engines", default="sparrow")
     runner.add_argument("--out", default=os.path.join(ROOT, "conformance", "reports", "runs", "okgen"))
     show = sub.add_parser("show")
     show.add_argument("seed", type=int)
@@ -207,8 +216,8 @@ def main():
         print(program(args.seed)[0], end="")
         return 0
     engines = args.engines.split(",")
-    if any(engine not in ("sparrow", "jvm") for engine in engines):
-        parser.error("IR engine removed (#584); use sparrow,jvm (JVM stays until #585)")
+    if any(engine not in ("sparrow",) for engine in engines):
+        parser.error("Sparrow is the only Okkama engine")
     found = 0
     for seed in range(args.first, args.first + args.seeds):
         text, count = program(seed)

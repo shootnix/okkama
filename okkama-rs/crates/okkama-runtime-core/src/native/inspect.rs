@@ -1,6 +1,6 @@
 //! `runtime/debug`: описание одного значения для `debug/dumper` — вид, тип,
 //! размер и части. Значение не меняется; многострочный дамп собирает Okkama.
-//! Тексты совпадают с `MiscNatives` JVM: дамп одинаков на всех движках.
+//! Детерминированное текстовое представление значений.
 use super::support::{array, int_value, text};
 use super::{Context, Error};
 use crate::{Value, abi::Native, heap::CANCELLED};

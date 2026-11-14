@@ -82,6 +82,12 @@ async main() is int {
     let words = (0..400).map()->i{ "w" + i.string(); };
     let joined = words.reduce("")->text,word{ text + word; };
     out.writeln(joined.length().string());
+    // #537: positional rat.new and map.len, and the scalar conversion slow path
+    // (a BigInt to float, a float above the tagged range to int).
+    let ratio = (1 + "".length()) / 3;
+    let sizes = ["a": 1, "b": 2 + "".length()];
+    let wide = 4611686018427387904.0 + "".length().float();
+    confirm ratio.string() == "1/3" && sizes.size() == 2 && wide.int() > 0 && big.float() > 0.0;
     let pair = [big, bigger, base];
     // Two replacements make a trie (#250): its elements are read by a helper.
     let tree = (0..100).map()->i{ i; }.replaced(1, 1).replaced(2, 2);

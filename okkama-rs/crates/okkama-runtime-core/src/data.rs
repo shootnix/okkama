@@ -1,4 +1,4 @@
-//! Таблицы рантайма, общие с JVM (`runtime/jvm/src/okkama/rt/*.dat`): gzip
+//! Таблицы рантайма (`okkama-runtime-core/data/*.dat`): gzip
 //! текстовых файлов, распаковываются один раз при первом обращении.
 
 /// Содержимое gzip-файла (RFC 1952: заголовок, deflate, CRC и длина).
@@ -29,7 +29,7 @@ macro_rules! table {
             static TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
             TEXT.get_or_init(|| {
                 String::from_utf8(gunzip(include_bytes!(concat!(
-                    "../../okkama-compiler/runtime/jvm/src/okkama/rt/",
+                    "../data/",
                     $file
                 ))))
                 .expect("UTF-8 table")
@@ -45,14 +45,14 @@ table!(public_suffixes, "psl.dat");
 /// Именованные ссылки HTML (WHATWG): текстовый файл `имя<TAB>hex…`.
 pub fn html_entities() -> &'static str {
     std::str::from_utf8(include_bytes!(
-        "../../okkama-compiler/runtime/jvm/src/okkama/rt/html_entities.dat"
+        "../data/html_entities.dat"
     ))
     .expect("UTF-8 table")
 }
 
-/// Архив tzdb (zip) — как ресурс JVM.
+/// Архив tzdb (zip), встроенный в рантайм.
 pub fn time_zone_archive() -> &'static [u8] {
-    include_bytes!("../../okkama-compiler/runtime/jvm/src/okkama/rt/tzdb.dat")
+    include_bytes!("../data/tzdb.dat")
 }
 
 /// Общая категория Unicode (`Lu`, `Nd`, …) из `unicode.dat`.

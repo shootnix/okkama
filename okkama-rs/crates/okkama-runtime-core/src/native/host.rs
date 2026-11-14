@@ -1,5 +1,5 @@
 //! Natives часов, ожидания, случайности и сведений хоста — перенос
-//! `HostNatives` JVM: `runtime/time` (часы, сон), `runtime/system`
+//! `runtime/time` (часы, сон), `runtime/system`
 //! (secure_random, secure_integer, secure_float, платформа, хост, хранилище)
 //! и выборки `runtime/random`.
 use super::support::{byte_array, bytes, failure, int, int_value, string, string_map, text};

@@ -1,5 +1,5 @@
-//! Операции над значениями для констант компилятора и native-провайдеров (как
-//! `okkama.rt.Rt` для JVM-байткода): ни регистров, ни кадров, ни формата
+//! Операции над значениями для констант компилятора и native-провайдеров:
+//! ни регистров, ни кадров, ни формата
 //! программы. Отказ — [`Fault`]: программная ошибка, нарушение инварианта
 //! исполнителя или неподдержанная операция; место ошибки добавляет вызывающий.
 use crate::heap::{ArrayHeap, maps};
@@ -494,7 +494,7 @@ pub fn map_lookup(map: &Value, key: &Value) -> Result<Option<Value>> {
     Ok(maps::get(map, key)?)
 }
 
-/// Отсутствующий ключ — ошибка с ключом, как `Rt.get` JVM (`formatKey`);
+/// Отсутствующий ключ — ошибка с текстом ключа;
 /// `case_name` даёт имя case ключа-enum.
 pub fn map_get(map: &Value, key: &Value, case_name: &dyn Fn(usize, usize) -> String) -> Result<Value> {
     match map_lookup(map, key)? {

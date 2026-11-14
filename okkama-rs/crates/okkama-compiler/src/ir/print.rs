@@ -115,7 +115,7 @@ fn write_term(f: &mut Formatter<'_>, module: Option<&Module>, kind: &TermKind) -
 
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "oir 1 high")?;
+        writeln!(f, "oir 2 high")?;
         match self.version.as_str() {
             "" => writeln!(f, "module {}", self.name)?,
             version => writeln!(f, "module {} {version}", self.name)?,

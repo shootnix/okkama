@@ -188,7 +188,8 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
 
 #[test]
 fn ocs_capabilities_follow_the_selected_engine() {
-    for engine in ["sparrow", "jvm"] {
+    {
+        let engine = "sparrow";
         let output = okkama()
             .arg("--ocs-capabilities")
             .env("OCS_RUST_ENGINE", engine)
@@ -291,16 +292,6 @@ fn native_run_engines_execute_source_without_java() {
         .unwrap();
     assert_eq!(output.status.code(), Some(42), "{}", stderr(&output));
     assert!(output.stderr.is_empty());
-    // OKKAMA_ENGINE меняет умолчание; JVM без java в PATH — явная ошибка, а
-    // не тихий переход на другой движок.
-    let output = okkama()
-        .args(["run", source.path()])
-        .env("PATH", "")
-        .env("OKKAMA_ENGINE", "jvm")
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
-    assert!(stderr(&output).contains("cannot start java"));
     {
         let engine = "sparrow";
         let output = okkama()
@@ -447,7 +438,7 @@ fn legacy_backend_alias_is_supported_but_conflicts_are_errors() {
             "build",
             "-",
             "--target",
-            "jvm",
+            "unknown",
             "--backend",
             "sparrow",
             "-o",
@@ -634,9 +625,9 @@ fn help_and_version() {
         assert_eq!(output.status.code(), Some(0));
         assert!(stdout(&output).contains("okkama ast <FILE|->"));
         assert!(stdout(&output).contains("Compile to Sparrow and execute it with JIT (default)"));
-        assert!(stdout(&output).contains("OKKAMA_ENGINE=sparrow|jvm"));
+        assert!(stdout(&output).contains("OKKAMA_ENGINE=sparrow"));
         assert!(stdout(&output).contains("okkama ir <FILE|->"));
-        assert!(stdout(&output).contains("okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>"));
+        assert!(stdout(&output).contains("okkama build <FILE|-> [--target sparrow] -o <FILE.spb>"));
         assert!(stderr(&output).is_empty());
     }
     let output = run(&["help", "ast"]);
@@ -655,9 +646,9 @@ fn help_and_version() {
     for args in [&["help", "build"][..], &["build", "--help"]] {
         let output = run(args);
         assert_eq!(output.status.code(), Some(0));
-        assert!(stdout(&output).contains("--target jvm"));
+        assert!(stdout(&output).contains("--target sparrow"));
         assert!(stdout(&output).contains("--output"));
-        assert!(stdout(&output).contains("executable JAR"));
+        assert!(stdout(&output).contains("verified SPB"));
         assert!(stderr(&output).is_empty());
     }
     let output = run(&["--version"]);
@@ -723,7 +714,7 @@ fn ir_file_and_stdin_include_module_function_and_return() {
     let source = b"module app v1.0.0; main() is int { 1 + 1; }";
     let file = TempFile::new("ir-addition.ok", source);
     let expected = concat!(
-        "oir 1 high\n",
+        "oir 2 high\n",
         "module app v1.0.0\n",
         "requires core\n",
         "entry @main\n",
@@ -757,7 +748,7 @@ fn ir_keeps_all_statements_and_nested_additions() {
     assert_eq!(
         stdout(&output),
         concat!(
-            "oir 1 high\n",
+            "oir 2 high\n",
             "module app v1.0.0\n",
             "requires core\n",
             "entry @main\n",
@@ -796,7 +787,7 @@ fn ir_explicit_return_is_canonical_and_missing_imports_are_errors() {
     assert_eq!(
         stdout(&output),
         concat!(
-            "oir 1 high\n",
+            "oir 2 high\n",
             "module app/math v1.2.3\n",
             "requires core\n",
             "entry @main\n",
@@ -907,19 +898,19 @@ fn ir_lowering_error_points_at_the_offending_operand() {
 }
 
 #[test]
-fn build_dispatches_file_and_stdin_to_jvm_and_writes_a_class_file() {
-    let target = TempFile::absent("build-jvm-output.class");
+fn build_dispatches_file_and_stdin_to_sparrow_and_writes_bytecode() {
+    let target = TempFile::absent("build-sparrow-output.spb");
     let source = example("arithmetic.ok");
     for output in [
-        run(&["build", &source, "--target", "jvm", "-o", target.path()]),
+        run(&["build", &source, "-o", target.path()]),
         run_stdin(
-            &["build", "--target=jvm", "--output", target.path(), "-"],
+            &["build", "--target=sparrow", "--output", target.path(), "-"],
             HELLO.as_bytes(),
         ),
         run(&[
             "build",
             &source,
-            "--target=jvm",
+            "--target=sparrow",
             &format!("--output={}", target.path()),
         ]),
     ] {
@@ -927,18 +918,16 @@ fn build_dispatches_file_and_stdin_to_jvm_and_writes_a_class_file() {
         assert!(stdout(&output).is_empty());
         assert!(stderr(&output).is_empty());
         assert!(
-            std::fs::read(&target.0)
-                .unwrap()
-                .starts_with(&[0xca, 0xfe, 0xba, 0xbe])
+            okkama_sparrow::decode(&std::fs::read(&target.0).unwrap()).is_ok()
         );
     }
 }
 
 #[test]
 fn failed_build_preserves_an_existing_output_file() {
-    let target = TempFile::new("build-preserved.class", b"previous artifact");
+    let target = TempFile::new("build-preserved.spb", b"previous artifact");
     let output = run_stdin(
-        &["build", "-", "--target", "jvm", "-o", target.path()],
+        &["build", "-", "--target", "sparrow", "-o", target.path()],
         b"module app v1.0.0; import \"missing\" take X; main() is int { 1; }",
     );
     assert_eq!(output.status.code(), Some(1));
@@ -949,7 +938,7 @@ fn failed_build_preserves_an_existing_output_file() {
 
 #[test]
 fn build_reports_frontend_errors_before_invoking_the_backend() {
-    let target = TempFile::absent("build-source-errors.class");
+    let target = TempFile::absent("build-source-errors.spb");
     for (source, expected) in [
         ("module app v1.0.0; main() is int { 1 2; }", "syntax error"),
         (
@@ -966,7 +955,7 @@ fn build_reports_frontend_errors_before_invoking_the_backend() {
         ),
     ] {
         let output = run_stdin(
-            &["build", "-", "--target", "jvm", "-o", target.path()],
+            &["build", "-", "--target", "sparrow", "-o", target.path()],
             source.as_bytes(),
         );
         assert_eq!(output.status.code(), Some(1));
@@ -981,44 +970,43 @@ fn build_reports_frontend_errors_before_invoking_the_backend() {
 fn build_option_errors_are_usage_errors() {
     for args in [
         &["build"][..],
-        &["build", "input.ok", "-o", "out.class"],
-        &["build", "input.ok", "--target", "jvm"],
-        &["build", "--target", "jvm", "-o", "out.class"],
+        &["build", "input.ok", "--target", "sparrow"],
+        &["build", "--target", "sparrow", "-o", "out.spb"],
         &["build", "input.ok", "--target"],
-        &["build", "input.ok", "--target", "jvm", "-o"],
-        &["build", "input.ok", "--target", "native", "-o", "out.class"],
-        &["build", "input.ok", "--target", "jvm", "--output="],
+        &["build", "input.ok", "--target", "sparrow", "-o"],
+        &["build", "input.ok", "--target", "native", "-o", "out.spb"],
+        &["build", "input.ok", "--target", "sparrow", "--output="],
         // Файлы одного модуля можно перечислить, но не вместе со stdin.
         &[
             "build",
             "input.ok",
             "-",
             "--target",
-            "jvm",
+            "sparrow",
             "-o",
-            "out.class",
+            "out.spb",
         ],
         &[
             "build",
             "input.ok",
             "--target",
-            "jvm",
+            "sparrow",
             "-o",
-            "out.class",
+            "out.spb",
             "--spans",
         ],
         &[
             "build",
             "input.ok",
             "--target",
-            "jvm",
+            "sparrow",
             "-o",
-            "out.class",
+            "out.spb",
             "--format",
             "text",
         ],
-        &["ir", "input.ok", "--target", "jvm"],
-        &["ast", "input.ok", "-o", "out.class"],
+        &["ir", "input.ok", "--target", "sparrow"],
+        &["ast", "input.ok", "-o", "out.spb"],
     ] {
         let output = run(args);
         assert_eq!(
@@ -1034,12 +1022,12 @@ fn build_option_errors_are_usage_errors() {
 
 #[test]
 fn build_reports_input_io_errors() {
-    let target = TempFile::absent("build-unreadable.class");
+    let target = TempFile::absent("build-unreadable.spb");
     let output = run(&[
         "build",
         "/nonexistent/okkama/input.ok",
         "--target",
-        "jvm",
+        "sparrow",
         "-o",
         target.path(),
     ]);
@@ -1052,13 +1040,13 @@ fn build_reports_input_io_errors() {
 #[test]
 fn build_reports_output_write_errors() {
     let parent = TempFile::absent("build-missing-parent");
-    let path = parent.0.join("out.class");
+    let path = parent.0.join("out.spb");
     let output = run_stdin(
         &[
             "build",
             "-",
             "--target",
-            "jvm",
+            "sparrow",
             "-o",
             path.to_str().unwrap(),
         ],

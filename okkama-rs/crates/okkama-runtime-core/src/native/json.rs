@@ -1,5 +1,5 @@
 //! `runtime/json`: строгий разбор JSON (RFC 8259) в дерево узлов — перенос
-//! `JsonNatives` JVM. Смещения, строки и столбцы — в символах (code points),
+//! Смещения, строки и столбцы — в символах (code points),
 //! тексты отказов — как у Perl-provider.
 use super::Error;
 use super::json_split::{SplitState, Splitter, Step};
@@ -9,7 +9,7 @@ use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Глубина рекурсии разбора, на которой JVM теряет стек (`StackOverflowError`).
+/// Предел глубины рекурсии разбора для переносимого отказа.
 const STACK_DEPTH: i64 = 100_000;
 
 #[derive(Debug)]

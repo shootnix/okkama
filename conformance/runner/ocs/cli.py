@@ -200,7 +200,7 @@ def cmd_run(args):
 
     info = adapter.info(SUITE_ROOT)
     meta = {
-        "schema": "ocs-run/1",
+        "schema": "ocs-run/2",
         "release": release_meta(),
         "suite_tree_sha256": suite_tree_hash(),
         "suite_git": git_info(SUITE_ROOT),
@@ -352,7 +352,7 @@ def cmd_coverage(args):
     matrix, problems = cov.compute(contracts, rep.cases, results)
     out = os.path.abspath(args.out or os.path.join(SUITE_ROOT, "coverage"))
     os.makedirs(out, exist_ok=True)
-    doc = {"schema": "ocs-coverage/1", "suite_tree_sha256": suite_tree_hash(),
+    doc = {"schema": "ocs-coverage/2", "suite_tree_sha256": suite_tree_hash(),
            "contract_errors": cerrs, "problems": problems, "matrix": matrix,
            "results_from": args.results or []}
     with open(os.path.join(out, "matrix.json"), "w") as fh:
@@ -460,7 +460,7 @@ def cmd_gate(args):
         "mandatory_cases": len(mandatory), "counts": counts,
     }
     verdict = "PASSED" if not reasons else "NOT PASSED"
-    doc = {"schema": "ocs-gate/1", "gate": gate.name, "kind": gate.data["kind"], "verdict": verdict,
+    doc = {"schema": "ocs-gate/2", "gate": gate.name, "kind": gate.data["kind"], "verdict": verdict,
            "reasons": reasons, "claim": claim}
     if args.out:
         with open(args.out, "w") as fh:
@@ -504,7 +504,7 @@ def cmd_diff(args):
             cls = "both-violate"
         counts[cls] += 1
         rows.append({"id": c.id, "left": ls, "right": rs, "class": cls})
-    doc = {"schema": "ocs-diff/1", "left": {"adapter": lruns[0]["adapter"]["name"], "dir": args.left},
+    doc = {"schema": "ocs-diff/2", "left": {"adapter": lruns[0]["adapter"]["name"], "dir": args.left},
            "right": {"adapter": rruns[0]["adapter"]["name"], "dir": args.right},
            "counts": counts, "rows": rows,
            "note": "Agreement between engines is not evidence of correctness; every row is judged against the shared expectations."}
@@ -561,7 +561,7 @@ def cmd_mutate(args):
                      "why": (rec.get("reasons") or [""])[0][:300]})
         print("%-9s %-50s %s" % (rows[-1]["result"], m["name"], rows[-1]["why"][:120]))
         shutil.rmtree(tmp, ignore_errors=True)
-    doc = {"schema": "ocs-mutation/1", "adapter": adapter.name, "suite_tree_sha256": suite_tree_hash(),
+    doc = {"schema": "ocs-mutation/2", "adapter": adapter.name, "suite_tree_sha256": suite_tree_hash(),
            "rows": rows, "survived": survived, "total": len(rows)}
     out = args.out or os.path.join(SUITE_ROOT, "reports", "mutation-%s.json" % adapter.name)
     with open(out, "w") as fh:

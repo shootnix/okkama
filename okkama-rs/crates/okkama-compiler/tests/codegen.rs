@@ -1,10 +1,10 @@
-//! Backend generation verifies IR and emits deterministic class-file bytes.
+//! Backend generation verifies IR and emits deterministic SPB bytes.
 
 use okkama_compiler::codegen::{self, Backend, CodegenError, Options};
-use okkama_compiler::ir::{self, Constant, Inst, InstKind, IntValue, TermKind, Type, ValueId};
+use okkama_compiler::ir::{self, InstKind, TermKind, ValueId};
 use okkama_compiler::lowering::lower_program;
 use okkama_compiler::syntax::{self, ParseOptions};
-use okkama_compiler::{SourceFile, Span};
+use okkama_compiler::SourceFile;
 
 fn module(source: &str) -> ir::Module {
     let source = SourceFile::new("test.ok", source).unwrap();
@@ -15,10 +15,9 @@ fn module(source: &str) -> ir::Module {
 fn generate(module: &ir::Module) -> Result<Vec<u8>, CodegenError> {
     codegen::generate(
         module,
-        Backend::Jvm,
+        Backend::Sparrow,
         &Options {
             artifact_name: "Arithmetic".to_string(),
-            ..Default::default()
         },
     )
     .map(|artifact| artifact.main().to_vec())
@@ -29,42 +28,11 @@ fn addition() -> ir::Module {
 }
 
 #[test]
-fn generates_a_deterministic_java_8_class_from_module_ir() {
-    for module in [
-        addition(),
-        module(
-            "module app v1.0.0; main() is int { let x = 3; \
-             let y = if x > 2 && x != 7 { x * 2; } else { 0; }; \
-             for 0..x -> i { next if i == 1; } y; }",
-        ),
-    ] {
-        let bytes = generate(&module).unwrap();
-        assert_eq!(&bytes[..8], &[0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 52]);
-        assert_eq!(bytes, generate(&module).unwrap());
-        let renamed = codegen::generate(
-            &module,
-            Backend::Jvm,
-            &Options {
-                artifact_name: "Other".to_string(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_ne!(bytes, renamed.main());
-        // `--max-steps` (#237): only a budgeted build calls `Rt.step`.
-        let budgeted = codegen::generate(
-            &module,
-            Backend::Jvm,
-            &Options {
-                artifact_name: "Arithmetic".to_string(),
-                budgeted: true,
-            },
-        )
-        .unwrap();
-        let calls_step = |class: &[u8]| class.windows(4).any(|w| w == b"step");
-        assert!(calls_step(budgeted.main()));
-        assert!(!calls_step(&bytes));
-    }
+fn generates_deterministic_sparrow_bytecode() {
+    let module = addition();
+    let bytes = generate(&module).unwrap();
+    okkama_sparrow::decode(&bytes).expect("valid SPB");
+    assert_eq!(bytes, generate(&module).unwrap());
 }
 
 #[test]
@@ -90,132 +58,7 @@ fn invalid_ir_is_rejected_before_serialization() {
 }
 
 #[test]
-fn unresolved_imports_missing_entry_and_method_collisions_are_errors() {
+fn unresolved_imports_are_rejected_before_serialization() {
     let imported = module("module app v1.0.0; import \"missing\"; main() is int { 1; }");
-    assert!(
-        generate(&imported)
-            .unwrap_err()
-            .to_string()
-            .contains("unresolved imports")
-    );
-    let empty = module("module library v1.0.0;");
-    assert!(
-        generate(&empty)
-            .unwrap_err()
-            .to_string()
-            .contains("requires main() is int")
-    );
-
-    let mut module = addition();
-    let mut other = module.functions[0].clone();
-    other.symbol = "okkamaMain".to_string();
-    other.attrs.clear();
-    module.functions.push(other);
-    assert!(
-        generate(&module)
-            .unwrap_err()
-            .to_string()
-            .contains("duplicate JVM method")
-    );
-}
-
-#[test]
-fn invalid_class_names_and_jvm_size_limits_are_errors() {
-    let module = addition();
-    for name in ["", "a/b", "a.b", "a;b", "a[b", "a\0b"] {
-        let error = codegen::generate(
-            &module,
-            Backend::Jvm,
-            &Options {
-                artifact_name: name.to_string(),
-                ..Default::default()
-            },
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("invalid JVM class name"));
-    }
-    let error = codegen::generate(
-        &module,
-        Backend::Jvm,
-        &Options {
-            artifact_name: "a".repeat(65536),
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("UTF-8 constant exceeds"));
-
-    // Длинный линейный код делится на части (`outline`): лимиты метода не
-    // нарушаются, пока на разрезах живо мало значений; пул констант класса
-    // остаётся общим.
-    for (count, expected) in [(65536, Some("constant pool exceeds")), (12000, None)] {
-        let mut module = addition();
-        let function = &mut module.functions[0];
-        function.values = vec![Type::Int; count];
-        function.blocks[0].insts = (0..count)
-            .map(|index| Inst {
-                result: Some(ValueId(index)),
-                kind: InstKind::Const(Constant::Int(IntValue::from_i64(index as i64))),
-                span: Span::empty(0),
-            })
-            .collect();
-        function.blocks[0].term.kind = TermKind::Ret(Some(ValueId(count - 1)));
-        match (generate(&module), expected) {
-            (Ok(_), None) => {}
-            (Err(error), Some(text)) if error.to_string().contains(text) => {}
-            (result, _) => panic!("{count}: {:?}", result.err().map(|error| error.to_string())),
-        }
-    }
-    // Литерал из 70000 значений делится на отрезки builder, но 70000 int-констант
-    // не помещаются в пул констант класса (u16): ошибка ограничения JVM.
-    let count = 70000;
-    let mut module = addition();
-    let function = &mut module.functions[0];
-    function.values = vec![Type::Int; count];
-    function.values.push(Type::Array(Box::new(Type::Int)));
-    let mut insts: Vec<Inst> = (0..count)
-        .map(|index| Inst {
-            result: Some(ValueId(index)),
-            kind: InstKind::Const(Constant::Int(IntValue::from_i64(index as i64))),
-            span: Span::empty(0),
-        })
-        .collect();
-    insts.push(Inst {
-        result: Some(ValueId(count)),
-        kind: InstKind::ArrayNew((0..count).map(ValueId).collect()),
-        span: Span::empty(0),
-    });
-    function.blocks[0].insts = insts;
-    function.blocks[0].term.kind = TermKind::Ret(Some(ValueId(0)));
-    let error = generate(&module).unwrap_err().to_string();
-    assert!(
-        error.contains("local-variable limit")
-            || error.contains("bytecode exceeds")
-            || error.contains("constant pool exceeds"),
-        "{error}"
-    );
-}
-
-/// A function over the method limit is split into parts; the root of a moved
-/// part may own its `try` handler, which moves with it (#305). Before the fix
-/// the remaining call kept an unwind edge into the moved code and the backend
-/// panicked ("unwind targets take a failure").
-#[test]
-fn split_functions_keep_try_handlers_with_their_code() {
-    let statements: Vec<String> = (0..600)
-        .map(|index| {
-            format!(
-                "let r{index} = (if true {{ let w = try {{ {index}; }} catch e is Error {{ 0; }}; w; }} else {{ 0; }}) == {index};"
-            )
-        })
-        .collect();
-    let text = format!(
-        "module p v1.0.0; object Big {{ Big(); run() is int {{ {} 0; }} }} main() is int {{ Big().run(); }}",
-        statements.join(" ")
-    );
-    let source = SourceFile::new("big.ok", &text).expect("source");
-    let program = syntax::parse(&source, &ParseOptions::default()).expect("valid syntax");
-    let module = lower_program(&program).expect("lowers");
-    codegen::generate(&module, Backend::Jvm, &Options { artifact_name: "Big".to_string(), ..Default::default() })
-        .expect("a split function generates");
+    assert!(generate(&imported).unwrap_err().to_string().contains("imports must be resolved"));
 }

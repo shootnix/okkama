@@ -1,5 +1,5 @@
 //! `runtime/application` (POSIX-терминал) и `runtime/account` — перенос
-//! `TerminalNatives` и `AccountNatives` JVM: дескрипторы stdin/stdout/stderr
+//! Дескрипторы stdin/stdout/stderr
 //! или `/dev/tty`, режимы termios (стек аренд), геометрия `TIOCGWINSZ` и
 //! `SIGWINCH`; базы пользователей и групп хоста.
 #![allow(unsafe_code)]
@@ -46,7 +46,7 @@ fn resolved(outcome: sched::Outcome) -> Value {
     Value::Future(sched::resolved(outcome))
 }
 
-/// Переносимый код errno (`Posix.code` JVM).
+/// Переносимый код errno.
 fn errno_code(errno: i32) -> &'static str {
     match errno {
         2 => "not_found",
@@ -93,7 +93,7 @@ struct Session {
     cleanup: Vec<u8>,
     claims: Vec<String>,
     resizes: Vec<Rc<RefCell<Resizes>>>,
-    /// Однопоточный исполнитель чтения JVM.
+    /// Однопоточный исполнитель чтения.
     reader: Arc<Mutex<()>>,
     /// The waiting read and its limit.
     reading: Option<(sched::Future, usize)>,
@@ -127,7 +127,7 @@ fn dup(fd: i32, operation: &str) -> Result<i32, Rc<Failure>> {
     if copy < 0 {
         return Err(errno_failure(last_errno(), operation, "Cannot duplicate terminal descriptor"));
     }
-    // Как FFM JVM: дескриптор сессии не наследуется потомками.
+    // Дескриптор сессии не наследуется потомками.
     unsafe { libc::fcntl(copy, libc::F_SETFD, libc::FD_CLOEXEC) };
     Ok(copy)
 }
@@ -694,7 +694,7 @@ fn resize_next(value: &Value) -> Result<Value, Error> {
         deliver(&source);
         return Ok(Value::Future(promise));
     }
-    // Ожидание сигнала держит программу, как присоединённый Op JVM.
+    // Ожидание сигнала держит программу до завершения операции.
     let waiting = source.clone();
     let op = sched::offload(
         move || {

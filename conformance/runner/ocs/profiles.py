@@ -36,7 +36,8 @@ def validate_profile(data, path):
     def req(c, m):
         if not c:
             raise CaseError("%s: %s" % (path, m))
-    req(data.get("schema") == PROFILE_SCHEMA, "schema must be %s" % PROFILE_SCHEMA)
+    req(data.get("schema") == PROFILE_SCHEMA,
+        "unsupported schema %r (this runner reads %s)" % (data.get("schema"), PROFILE_SCHEMA))
     for key in ("name", "description", "select", "kind"):
         req(key in data, "missing %s" % key)
     req(data["kind"] in ("milestone", "release-member", "release-gate", "informative", "benchmark"),

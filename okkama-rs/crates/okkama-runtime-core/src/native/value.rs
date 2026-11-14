@@ -1,5 +1,5 @@
 //! `runtime/uuid` и `runtime/unicode_normalization` — перенос части
-//! `ValueNatives` JVM (`runtime/decimal` — в `numbers`).
+//! `runtime/decimal` — в `numbers`.
 use super::Error;
 use super::support::{byte_array, bytes, failed, failure, int, int_value, string, text};
 use crate::{Value, abi::Native};

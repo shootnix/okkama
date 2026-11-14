@@ -4,11 +4,11 @@
 //! ```toml
 //! [build]
 //! entry = "src/main.ok"      # or a list: the files of the root module
-//! target = "sparrow"         # sparrow | jvm
-//! output = "target/app.spb"  # default target/<name>.spb or .jar
+//! target = "sparrow"         # sparrow
+//! output = "target/app.spb"  # default target/<name>.spb
 //!
 //! [run]
-//! engine = "sparrow"         # sparrow | jvm; default: the build target
+//! engine = "sparrow"         # sparrow; default: the build target
 //! args = []                  # `blade run -- a b` appends
 //! env = {}
 //! ```
@@ -24,7 +24,6 @@ use crate::manifest::{MANIFEST, Manifest, PKG};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Sparrow,
-    Jvm,
 }
 
 /// What `blade run` runs the program on.
@@ -32,8 +31,6 @@ pub enum Target {
 pub enum Engine {
     /// The built `.spb` (`okkama exec`).
     Sparrow,
-    /// The built JAR (`java -jar`).
-    Jvm,
 }
 
 /// A project with its build and run settings resolved.
@@ -82,33 +79,22 @@ impl Project {
         };
         let target = match text_of(&build, "build", "target")?.as_deref() {
             None | Some("sparrow") => Target::Sparrow,
-            Some("jvm") => Target::Jvm,
-            Some(other) => return Err(format!("[build] target \"{other}\" is not sparrow or jvm")),
+            Some("jvm") => return Err("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine".into()),
+            Some(other) => return Err(format!("[build] target \"{other}\" is not sparrow")),
         };
         let output = text_of(&build, "build", "output")?.unwrap_or_else(|| {
             let leaf = name.rsplit('/').next().unwrap_or(&name);
-            format!("target/{leaf}.{}", if target == Target::Jvm { "jar" } else { "spb" })
+            format!("target/{leaf}.spb")
         });
         let engine = match text_of(&run, "run", "engine")?.as_deref() {
             None => match target {
                 Target::Sparrow => Engine::Sparrow,
-                Target::Jvm => Engine::Jvm,
             },
             Some("sparrow") => Engine::Sparrow,
-            Some("ir") => return Err("the IR engine was removed (#584); Sparrow is the only Okkama engine; JVM remains a legacy backend until #585".into()),
-            Some("jvm") => Engine::Jvm,
-            Some(other) => return Err(format!("[run] engine \"{other}\" is not sparrow or jvm")),
+            Some("ir") => return Err("the IR engine was removed (#584); Sparrow is the only Okkama engine".into()),
+            Some("jvm") => return Err("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine".into()),
+            Some(other) => return Err(format!("[run] engine \"{other}\" is not sparrow")),
         };
-        match (engine, target) {
-            (Engine::Sparrow, Target::Jvm) | (Engine::Jvm, Target::Sparrow) => {
-                return Err(format!(
-                    "[run] engine \"{}\" needs [build] target \"{}\"",
-                    if engine == Engine::Jvm { "jvm" } else { "sparrow" },
-                    if engine == Engine::Jvm { "jvm" } else { "sparrow" },
-                ));
-            }
-            _ => {}
-        }
         let args = match run.get("args") {
             None => Vec::new(),
             Some(toml::Value::Array(args)) => strings(args, "[run] args")?,
@@ -228,7 +214,6 @@ pub fn build(project: &Project, force: bool) -> Result<bool, String> {
     }
     let target = match project.target {
         Target::Sparrow => "sparrow",
-        Target::Jvm => "jvm",
     };
     let status = Command::new(okkama())
         .current_dir(&project.root)
@@ -251,15 +236,6 @@ pub fn run_command(project: &Project, extra: &[String]) -> Command {
         Engine::Sparrow => {
             let mut command = Command::new(okkama());
             command.arg("exec").arg(project.output_path());
-            command
-        }
-        Engine::Jvm => {
-            let java = std::env::var_os("JAVA_HOME")
-                .map(|home| PathBuf::from(home).join("bin").join("java"))
-                .filter(|java| java.is_file())
-                .unwrap_or_else(|| PathBuf::from("java"));
-            let mut command = Command::new(java);
-            command.arg("-jar").arg(project.output_path());
             command
         }
     };
@@ -289,11 +265,6 @@ mod tests {
         assert_eq!((project.target, project.engine), (Target::Sparrow, Engine::Sparrow));
         assert_eq!(project.output, "target/web.spb");
         assert!(project.args.is_empty() && project.env.is_empty());
-
-        let project = Project::parse(root, "[build]\ntarget = \"jvm\"\n").unwrap();
-        assert_eq!((project.output.as_str(), project.engine), ("target/app.jar", Engine::Jvm));
-        let project = Project::parse(root, "[build]\ntarget = \"jvm\"\n[run]\nengine = \"ir\"\n");
-        assert!(project.unwrap_err().contains("Sparrow is the only"));
     }
 
     #[test]
@@ -302,7 +273,7 @@ mod tests {
         for (text, expected) in [
             ("[build]\nentry = []\n", "non-empty list"),
             ("[build]\nentry = 3\n", "[build] entry"),
-            ("[build]\ntarget = \"wasm\"\n", "not sparrow or jvm"),
+            ("[build]\ntarget = \"wasm\"\n", "not sparrow"),
             ("[run]\nargs = \"a\"\n", "[run] args must be a list"),
             ("[run]\nargs = [1]\n", "[run] args must be strings"),
             ("[run]\nenv = { A = 1 }\n", "[run] env \"A\" must be a string"),

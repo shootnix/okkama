@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run every example and compare its output with NAME.expected.
 
-    examples/check.py [--engine sparrow|jvm ...] [PATH ...]
+    examples/check.py [--engine sparrow ...] [PATH ...]
 
 Each example runs in a fresh temporary directory, with the std of this
 checkout, on every engine given (default: sparrow). Only the Python
@@ -23,8 +23,8 @@ while "--engine" in args:
     engines.append(args[at + 1])
     del args[at:at + 2]
 engines = engines or ["sparrow"]
-if any(engine not in ("sparrow", "jvm") for engine in engines):
-    sys.exit("IR engine removed (#584); use Sparrow (or legacy JVM until #585)")
+if any(engine not in ("sparrow",) for engine in engines):
+    sys.exit("Sparrow is the only Okkama engine")
 roots = [os.path.abspath(path) for path in args] or [HERE]
 examples = sorted(
     os.path.join(folder, name)

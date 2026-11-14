@@ -47,6 +47,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Removed
 
+Removed the JVM backend (#585): the `codegen/jvm` generator, the embedded Java
+runtime `okkama.rt` with its committed classes, JAR output, the `okkama-native`
+C ABI that served it through FFM, `tools/jvm-runtime`, the JDK in CI and the
+Docker image, and the `jvm` configurations of the gate, `t/`, okgen and the
+mutation check. Measured before the decision: OIR-2 would remove up to 87% of
+its time on resource-heavy code, but it would stay about 8× slower than
+Sparrow. `--engine jvm`, `OKKAMA_ENGINE=jvm` and `--target jvm` report an
+error; `okkama build` makes Sparrow bytecode without `--target`, and
+`--budgeted` is gone. Unicode, IDNA and time-zone tables that Sparrow's
+natives read moved to `okkama-runtime-core/data` unchanged. The last release
+with the JVM backend is 0.5.8.
+
 Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
 ownership state, destroy tracing and tests, plus IR-only support in
 `okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
@@ -61,6 +73,11 @@ for mutable synchronous test values and `Atomic` for async code or object and
 fake fields; role fakes and their ordinary typed fields remain available.
 
 ### Added
+
+- **Register-colouring diagnostics (#540).** `OKKAMA_PROFILE_REGISTERS=1`
+  reports compiler phase times, busy-set cloning work, conflict-list capacity,
+  edge moves and assigned registers. Bounded, opt-in large-function fixtures
+  support baseline measurement before changing the allocator; no speedup is claimed.
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three
   developer-only aids that measure how much of ownership the compiler can
@@ -80,7 +97,22 @@ fake fields; role fakes and their ordinary typed fields remain available.
     as Sparrow, numbered the same way, so one program can be compared across
     engines (#561).
 
+### Changed
+
+- **Sparrow payload ownership prototype (#436).** PAYLOAD cells keep the
+  typed owning box inline, removing the extra thin-pointer allocation.
+  Tracing, downcasts, drop, builder reuse and external-memory estimates use
+  the same owner. The 64-bit cell grows from 16 to 24 bytes; performance
+  acceptance awaits the bounded Docker A/B and release gate.
+
 ### Fixed
+
+- **Sparrow CLI loading (#480, #481).** Normal `sparrow` execution and
+  `okkama exec` decode and verify SPB once on the VM stack, rendering uncaught
+  traces before releasing the program. Test-profile execution also avoids
+  the launcher's extra decode. CLIF diagnostic counts are collected only
+  with compile profiling enabled, at the same pre-codegen sampling point.
+  Startup and allocation improvements await bounded Docker A/B measurements.
 
 - **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size
   successor iterator in each frame instead of rebuilding temporary vectors

@@ -15,9 +15,7 @@ cd /work/okkama-rs
 # A fresh target prevents stale worktree artifacts; the registry alone is shared.
 CARGO_TARGET_DIR=/work/okkama-rs/target CARGO_NET_OFFLINE=true \
     timeout --kill-after=10s "${ORACLE_BUILD_TIMEOUT:-1800}" \
-    cargo build -q --release -p okkama-cli -p okkama-native -p sparrow-cli
-case "$(uname -m)" in aarch64|arm64) ARCH=aarch64 ;; *) ARCH=$(uname -m) ;; esac
-mkdir -p "/tc/bin" "/tc/lib/okkama/native/linux-$ARCH"
+    cargo build -q --release -p okkama-cli -p sparrow-cli
+mkdir -p "/tc/bin" "/tc/lib/okkama"
 cp target/release/okkama target/release/sparrow /tc/bin/
-cp target/release/libokkama_native.so "/tc/lib/okkama/native/linux-$ARCH/"
 rsync -a --delete /work/std/ /tc/lib/okkama/std/

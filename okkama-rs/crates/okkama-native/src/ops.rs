@@ -25,16 +25,6 @@ pub enum Error {
 }
 
 impl Error {
-    /// Код для C ABI: 1 invalid, 2 authentication, 3 unsupported, 4 failed.
-    pub fn code(&self) -> i32 {
-        match self {
-            Error::Invalid(_) => 1,
-            Error::Authentication(_) => 2,
-            Error::Unsupported(_) => 3,
-            Error::Failed(_) => 4,
-        }
-    }
-
     pub fn message(&self) -> &str {
         match self {
             Error::Invalid(text)

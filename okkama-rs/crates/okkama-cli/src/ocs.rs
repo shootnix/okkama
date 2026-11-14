@@ -1,10 +1,9 @@
-//! Native endpoint протокола `ocs-adapter/1` (`conformance/adapters/PROTOCOL.md`).
+//! Native endpoint протокола `ocs-adapter/2` (`conformance/adapters/PROTOCOL.md`).
 //!
 //! `--ocs-capabilities` reports supported modes for OCS_RUST_ENGINE.
 //! `--ocs-request R --ocs-response P` parses/checks the linked source and runs
-//! it with serialized Sparrow bytecode (default, as `okkama run`), or JVM.
-//! Unsupported operations never fall back to another engine. JVM failures
-//! are distinguished from application exit codes via OKKAMA_FAILURE_REPORT.
+//! it with serialized Sparrow bytecode, as `okkama run`.
+//! Unsupported operations are reported explicitly.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -12,12 +11,12 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use super::{FileLoader, Outcome, render_all};
-use okkama_compiler::codegen::{self, Backend, Options as CodegenOptions};
+use okkama_compiler::codegen;
 use okkama_compiler::lowering::{self, LinkError, LoweringError, RootFile};
 use okkama_compiler::source::SourceFile;
 use okkama_compiler::syntax::{self, ParseMode, ParseOptions, ast, prune};
 
-const PROTOCOL: &str = "ocs-adapter/1";
+const PROTOCOL: &str = "ocs-adapter/2";
 
 pub(super) fn capabilities() -> Outcome {
     let engine = match engine() {
@@ -32,13 +31,14 @@ pub(super) fn capabilities() -> Outcome {
 }
 
 fn engine() -> Result<String, String> {
-    // Как `okkama run` и адаптер: Sparrow по умолчанию, JVM — явно.
+    // Как `okkama run` и адаптер: Sparrow — единственный движок.
     let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "sparrow".into());
     match engine.as_str() {
-        "sparrow" | "jvm" => Ok(engine),
-        "ir" => Err("the IR engine was removed (#584); Sparrow is the only Okkama engine; JVM remains a legacy backend until #585".into()),
+        "sparrow" => Ok(engine),
+        "jvm" => Err("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine".into()),
+        "ir" => Err("the IR engine was removed (#584); Sparrow is the only Okkama engine".into()),
         _ => Err(format!(
-            "unknown OCS_RUST_ENGINE `{engine}`; expected sparrow or jvm"
+            "unknown OCS_RUST_ENGINE `{engine}`; expected sparrow"
         )),
     }
 }
@@ -372,79 +372,14 @@ fn handle(request: &Json) -> Reply {
     run(&mode, &module, request)
 }
 
-/// Собрать классы во временный каталог и запустить `java`.
+/// Execute the program on Sparrow.
 fn run(mode: &str, module: &okkama_compiler::ir::Module, request: &Json) -> Reply {
-    let engine = match engine() {
-        Ok(engine) => engine,
-        Err(message) => return Reply::internal(mode, message),
-    };
-    if engine != "jvm" {
-        return run_native(mode, module, request);
+    if let Err(message) = engine() {
+        return Reply::internal(mode, message);
     }
-    let options = CodegenOptions {
-        artifact_name: "Main".to_string(),
-        ..Default::default()
-    };
-    let artifact = match codegen::generate(module, Backend::Jvm, &options) {
-        Ok(artifact) => super::with_native_libraries(module, artifact),
-        Err(error) => return Reply::unsupported(mode, "check", format!("codegen error: {error}")),
-    };
-    let dir = match super::write_temporary(&artifact.files, "okkama-ocs") {
-        Ok(dir) => dir,
-        Err(text) => return Reply::internal(mode, text.trim_end().to_string()),
-    };
-    let report = dir.join("failure.report");
-    let args: Vec<&str> = request
-        .get("args")
-        .and_then(Json::as_array)
-        .map(|items| items.iter().filter_map(Json::as_str).collect())
-        .unwrap_or_default();
-    let mut command = super::java_command(&dir, "Main", &args, &[]);
-    command.env("OKKAMA_FAILURE_REPORT", &report);
-    if let Some(cwd) = request.get("cwd").and_then(Json::as_str) {
-        command.current_dir(cwd);
-    }
-    let status = command.status();
-    let recorded = std::fs::read_to_string(&report).ok();
-    let _ = std::fs::remove_dir_all(&dir);
-    let status = match status {
-        Ok(status) => status,
-        Err(error) => return Reply::internal(mode, format!("cannot start java: {error}")),
-    };
-    let Some(code) = status.code() else {
-        return Reply::internal(mode, format!("java terminated by a signal: {status}"));
-    };
-    let code = u8::try_from(code).unwrap_or(1);
-    match recorded {
-        Some(record) => {
-            let mut parts = record.splitn(3, '\t');
-            let kind = parts.next().unwrap_or("runtime");
-            let error_type = parts.next().unwrap_or("").to_string();
-            let message = parts.next().unwrap_or("").to_string();
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: match kind {
-                    "panic" => "panic",
-                    "uncaught-error" => "uncaught-error",
-                    _ => "runtime",
-                },
-                error_type: (!error_type.is_empty()).then_some(error_type),
-                message,
-            });
-            reply.process_exit = code.max(1);
-            reply
-        }
-        None => {
-            let mut reply = Reply::new(mode, "completed", "runtime");
-            reply.exit_status = Some(code);
-            reply.process_exit = code;
-            reply
-        }
-    }
+    run_native(mode, module, request)
 }
 
-/// Execute serialized Sparrow bytecode, without a JVM fallback.
 fn run_native(
     mode: &str,
     module: &okkama_compiler::ir::Module,

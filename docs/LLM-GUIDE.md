@@ -59,7 +59,7 @@ okkama-new/
 ├── okkama-rs/                  Rust workspace (version in okkama-rs/Cargo.toml)
 │   ├── crates/
 │   │   ├── okkama-compiler     lexer, parser, AST, checker (THIR), lowering to OIR,
-│   │   │                       IR verifier, codegen: sparrow (SPB) and jvm; LSP/ide
+│   │   │                       IR verifier, codegen: sparrow (SPB); LSP/ide
 │   │   ├── okkama-cli          `okkama`: run/build/exec/check/fmt/lint/lsp, OCS adapter
 │   │   ├── okkama-runtime-core native providers, bridge values, scheduler `sched`;
 │   │   │                       also compiler constants and shared exact arithmetic
@@ -67,7 +67,7 @@ okkama-new/
 │   │   ├── okkama-sparrow      SPB format: Program, Instruction, encode/decode, assembler
 │   │   ├── sparrow-core        Sparrow, THE runtime (version Tomato): JIT (Cranelift), heap, GC, async, natives
 │   │   ├── sparrow-cli         binary `sparrow` (Tomato)
-│   │   ├── okkama-native       host cryptography (C ABI dylib)
+│   │   ├── okkama-native       host cryptography (Rust API, built into Sparrow)
 │   │   └── blade, blade-cli    project manager: new/add/sync/update/remove/build/run;
 │   │                           git packages, minimum versions, blade.lock (install.rs)
 │   ├── examples/               small programs used by compiler tests (printer, corpus)
@@ -90,15 +90,15 @@ okkama-new/
 ## 3. Build, install, run
 
 ```sh
-make build                 # okkama, sparrow, blade, okkama-native — release
+make build                 # okkama, sparrow, blade — release
 make install               # ./install.sh: build and install into ~/.local
 make install-pgo           # profile-guided build (rustup component add llvm-tools)
 make test                  # cargo test --workspace
 make gate                  # release gate in Docker (§5)
 ```
 
-`./install.sh` puts `okkama`, `sparrow`, `blade` into `<prefix>/bin` and std,
-the native dylib and ICU into `<prefix>/lib/okkama`; `okkama` finds them next
+`./install.sh` puts `okkama`, `sparrow`, `blade` into `<prefix>/bin` and std
+and ICU into `<prefix>/lib/okkama`; `okkama` finds them next
 to itself. Without installing, set `OKKAMA_STDLIB_DIR=<repo>/std`.
 
 Builds for experiments go to the scratchpad, not to `okkama-rs/target`:
@@ -107,8 +107,7 @@ Builds for experiments go to the scratchpad, not to `okkama-rs/target`:
 Running programs:
 
 ```sh
-okkama hello.ok                          # Sparrow JIT (the only Okkama engine; JVM backend remains until #585)
-okkama run --engine jvm hello.ok         # JVM classes + java (JDK 22+)
+okkama hello.ok                          # Sparrow JIT (the only Okkama engine)
 okkama run -t module.ok                  # the module's inline tests on Sparrow
 okkama run -t --filter TEXT module.ok    # only the tests whose names contain TEXT
 okkama build x.ok --target sparrow -o x.spb [--tests]
@@ -117,11 +116,20 @@ sparrow --disassemble x.spb   |  sparrow --native-capabilities
 okkama exec x.spb      # SPB on Sparrow inside okkama
 ```
 
-Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE=sparrow|jvm`,
+Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE=sparrow`,
 `SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
 regions, awaits, heap bytes, compile time and code size per function),
+`OKKAMA_PROFILE_REGISTERS=1` (compiler OIR-to-SPB register-colouring phase
+times and work/capacity counters on stderr, #540; includes the baseline busy
+set clones and the final function clone separately). This is compiler
+diagnostics, separate from JIT machine-register allocation or runtime timing;
+keep it out of timed samples.
+Other runtime diagnostics:
 `SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
-(§9), `SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
+(§9), `SPARROW_CORE_OLD_DISPATCH=symbol,…|*` (keep reference lazy dispatch
+for selected callers instead of embedding ready static ordinary entries;
+[ABI/lifetime proof and #542 measurement checklist](../okkama-rs/crates/sparrow-core/docs/ready-callees.md)),
+`SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
 stderr — instructions, registers, suspensions, CLIF blocks and instructions,
 safepoints, code and frame bytes, microseconds per compile stage — and
 Cranelift's passes summed at exit, #345), `SPARROW_CORE_VERIFY=1` (Cranelift's
@@ -135,20 +143,21 @@ JIT roots and async frame tracing, default enabled; load-time setting).
 Under `SPARROW_CORE_PROFILE_COMPILE`, `pointer-free analysis` lines separately
 report its load-time cost; `roots` lines under profiling or `SPARROW_CORE_DUMP`
 report traced/omitted registers and the sum of root words across stack maps.
-The same root counts appear under `--stats`. See
-[the #535 validation handoff](pointer-free-roots-535.md).
+The same root counts appear under `--stats`.
 `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
 once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,
 `OKKAMA_STRINGS=flat` (Sparrow's persistent representations of 0.4.3 off or
 one kind only, for A/B on one binary: shared array buffers and tries, maps
 that turn persistent at their first version, text buffers for chains of
-`+`; the default has all of them; on the JVM `OKKAMA_ARRAYS=flat` turns off the
-shared buffers and slices of `okkama.rt.Vec`, `OKKAMA_ARRAYS=trie` adds its
-tries for `replaced` (off by default there), and `OKKAMA_MAPS=btree` turns
-off the persistent `okkama.rt.PMap`, #336), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
+`+`; the default has all of them, #336), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
+
+For differential root checks, `SPARROW_CORE_POINTER_FREE=0` keeps every traced
+register rooted; `SPARROW_CORE_INT_RANGE=0` keeps #535's constant-only proofs
+while disabling #539's operation proofs. Both are read once per loaded program
+and apply to stack maps and suspended-frame layouts (#535, #539).
 
 `SPARROW_TRACE_DESTROY=FILE`
 append `<ObjectTypeName> <creation serial>\n` before each selected sync or async
@@ -169,7 +178,7 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 
 **Docker** (everything with workers, sockets, PostgreSQL, the gate):
 
-- Image: `docker build -t okkama-dev tools/docker` (Rust, JDK 25, Python with
+- Image: `docker build -t okkama-dev tools/docker` (Rust, Python with
   psycopg2, Perl, Ruby, gdb). Older ad-hoc image `okkama-bench:latest` is the
   same idea.
 - Linux build of Sparrow: mount the repo read-only and keep outputs in a
@@ -198,12 +207,12 @@ For every 0.6.0 ownership rebuild step, use the [ownership oracle](../tools/owne
 | One std module | `okkama build --tests std/X.ok --target sparrow -o t.spb` then `sparrow --test t.spb` (in the cage) | `okkama run -t std/X.ok` on Sparrow |
 | Conformance (OCS) | `cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 6 --adapter-env OCS_RUST_ENGINE=sparrow` | Docker only; the adapter builds its own debug `okkama` in `adapters/rust/.target` |
 | Dependency advisories | `cd okkama-rs && cargo audit --deny warnings` | RustSec against `Cargo.lock`; CI `audit.yml` on every change and weekly. Exceptions with reason and ticket in `okkama-rs/.cargo/audit.toml` (none since #70) |
-| t/ suite (#245) | `python3 tools/t/run.py --configs sparrow --cage [--okkama BIN] [t/op t/gen/strings …]` | self-checking Okkama programs printing TAP: hand-written `t/base`, `t/op`, `t/lang` and families generated by `tools/t/gen.py` into `t/gen` (not committed; the runner regenerates it) with a Python oracle. Every configuration (sparrow, jvm, sparrow-passes-off, sparrow-gc-stress) must give the same stream. Locally only `--cage` (sparrow); jvm in Docker. A check blocked by an open issue goes through `skip(issue)` and is listed in the file. A gate step |
-| Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on sparrow/jvm; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
-| Release gate | `make gate` (= `tools/gate/docker.sh`, ~15 min) | Rust tests (profile `gate`: release optimizations without fat LTO; and debug), clippy with `-D warnings`, conformance sparrow/jvm/sparrow-passes-off/sparrow-gc-stress, std tests Sparrow vs `tools/gate/known-failures.txt`, the t/ suite on all four configurations; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO for the release binaries only) |
+| t/ suite (#245) | `python3 tools/t/run.py --configs sparrow --cage [--okkama BIN] [t/op t/gen/strings …]` | self-checking Okkama programs printing TAP: hand-written `t/base`, `t/op`, `t/lang` and families generated by `tools/t/gen.py` into `t/gen` (not committed; the runner regenerates it) with a Python oracle. Every configuration (sparrow, sparrow-passes-off, sparrow-gc-stress) must give the same stream. Locally use `--cage`. A check blocked by an open issue goes through `skip(issue)` and is listed in the file. A gate step |
+| Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on Sparrow configurations; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
+| Release gate | `make gate` (= `tools/gate/docker.sh`, ~15 min) | Rust tests (profile `gate`: release optimizations without fat LTO; and debug), clippy with `-D warnings`, conformance sparrow/sparrow-passes-off/sparrow-gc-stress, std tests Sparrow vs `tools/gate/known-failures.txt`, the t/ suite on all three configurations; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO for the release binaries only) |
 
 Sparrow is the only Okkama engine (#584); `--engine ir` and
-`OKKAMA_ENGINE=ir` are errors. The legacy JVM backend stays until #585.
+`OKKAMA_ENGINE=ir` are errors.
 `OKKAMA_IR_PASSES=none` remains covered by `sparrow-passes-off`: OIR is still
 the compiler's intermediate representation. The IR-dependent REPL was removed.
 
@@ -213,7 +222,7 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 (`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
 
 - Micro-benchmarks (#244, protocol v2): `python3 micro/run.py --image okkama-dev --toolchain TC --stdlib TC/lib/okkama/std --okkama /toolchain/bin/okkama --engines sparrow --n N --warmup W --runs 5 --build-profile P --revision REV --label L` in `okkama-docs/benchmarks` runs each program in a limited Linux container (TC is a Linux installation built in Docker); gross ns/iteration, independent checksum oracles, VALID/INCONCLUSIVE cells, result files never overwritten. `micro/report.py TEXTS --old A.json… --new B.json… -o micro.html` makes the release page. Required before every release and, when quick, after a ticket (Sparrow N=4M)
-- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,jvm,go,java,kotlin,python]`
+- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines tomato,go,java,kotlin,python]`
   — the reference languages are Go, Java, Kotlin and Python (#363). Go, Java
   and Kotlin are built before measuring, and their build time is kept apart.
   Perl and Ruby ports stay for history and run only when named in `--engines`.
@@ -272,11 +281,11 @@ back-to-back A/B, not against an older report, and never against a PGO build.
   pairs, the IR engine +1.0%. 0.5.5 against 0.5.4: Sparrow −7.5%, one program
   slower (`try-catch` +24% on Linux with peak memory 535 → 76 MB, accepted
   in #544).
-- Ladder against 0.5.4: wall time at parity (Sparrow +0.7%, the JVM +0.8%);
+- Ladder against 0.5.4: wall time was at parity (Sparrow +0.7%, the JVM +0.8%);
   10-app 107 → 95 ms and 13.3 → 12.5 MB with #522.
 - Cold runs (ladder, 01–10): Go is 2.3× faster than Sparrow. Sparrow is 1.5×
   faster than Java, 1.8× faster than Kotlin, 5.8× faster than Python and 4.4×
-  faster than Okkama's JVM backend.
+  faster than Okkama's then-current JVM backend.
 - Warmed up (`--steady`): Go and HotSpot (Java, Kotlin) are 2.6–2.8× faster
   than Sparrow, and Sparrow is 8.7× faster than Python.
 - Memory: Sparrow 7–46 MB, Go 4–13 MB, Java 44–429 MB.
@@ -294,8 +303,7 @@ early close, failures mid-stream, COPY refusal, transactions).
 
 **Pipeline**: source → lexer/parser (`syntax`) → registry and checker
 (`analysis`: types, roles, caps, errors; THIR) → lowering (`lowering`) to OIR
-(`ir`, verified by `ir/verify.rs`) → backends: SPB (`codegen/sparrow`) executed by Sparrow (`sparrow-core`), JVM
-classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`). What each
+(`ir`, verified by `ir/verify.rs`) → SPB (`codegen/sparrow`) executed by Sparrow (`sparrow-core`). What each
 phase guarantees and what checks it: [phases.md](phases.md).
 
 **Shared native support** (`okkama-runtime-core`): providers reached through
@@ -331,15 +339,14 @@ payloads (errors included: `enum E is Error = (case(payload is T), …)`) is an
 OIR variant (#290): `module.variants` lists its cases, each with its own
 layout object holding only that case's payload, and `variant.new`,
 `variant.tag`, `variant.get` (traps on another active case) and `variant.of`
-(case object → variant) work on it. The engines store a value as the object
+(case object → variant) work on it. Sparrow stores a value as the object
 of its case; the case number comes from the object's declaration (Sparrow
-needs the cases consecutive; the JVM gives each variant an abstract class with
-a `$tag` field and each case a subclass). Runtime-raised errors are the first
+needs the cases consecutive). Runtime-raised errors are the first
 case's object;
 `once let` (#491) adds hidden `$onceN` fields of type `Maybe<T>` (marked
 `once` in `ir::Field`), initialised to `none` by every constructor and reset
 by successors; `once.load`/`once.store` read and fill them. Sparrow
-and the JVM store into the field, and equality, map keys and dumps skip
+stores into the field, and equality, map keys and dumps skip
 `once` fields (Tomato by the `$once` name prefix);
 resources (`destroy`) are released by cleanup regions that the compiler emits
 (`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
@@ -366,7 +373,21 @@ not needed (#292).
 | `failures.rs` | failures, cleanup regions, resource identities and graph walks (`descriptor_flags`: closed-world reachability of `destroy`), failure reports |
 | `intrinsics.rs`, `primitives.rs` | runtime-provided functions; Atomic, Event, Lock, channels, groups |
 | `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
-| `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
+| `worker.rs`, `worker_process.rs` | process workers (OKW2 format), child `--worker FILE.spb` |
+
+### Форматы с явной версией
+
+| Формат | Где записывается | Где читается | Версия |
+|---|---|---|---|
+| SPB (`SPRW` + u16) | `okkama-sparrow::encode`, assembler | `okkama-sparrow::decode`, Sparrow VM | 16 |
+| Кадры process worker (`OKW2`) | `okkama-runtime-core`, `sparrow-core` workers | оба worker reader | OKW2 |
+| Текст OIR (`oir 2 high`) | `okkama-compiler/src/ir/print.rs` | compiler/IR tooling | 2 |
+| OCS cases, contracts, profiles, fixtures, adapter protocol/config и run/coverage/gate/diff/mutation reports | `conformance/runner/ocs`, suite files и `tools/write_schemas.py` | OCS runner/validators и consumers | schema/protocol 2 |
+| Ownership census JSON (`schema`) | `tools/ownership/oracle.py` | oracle report consumers | 2 |
+| Blade manifests и lockfiles | `okkama-rs/crates/blade` | Blade | не изменялось: формат относится к package workflow |
+| TAP test output | test runners | TAP consumers | явной версии в формате проекта нет |
+
+Несовпадающая версия формата отклоняется; старые SPB, OKW и OCS версии не читаются.
 
 **Register allocation** (`codegen/sparrow/registers.rs`) is checked by an
 independent must-analysis (`check.rs`): every read finds its value in its
@@ -390,8 +411,8 @@ the decoder charges every count at its element size against
 analysis keeps one register set per block leader within `MAX_ANALYSIS_BYTES`
 (64 MiB per function); a new vector in the decoder uses `count_of::<T>()`.
 
-**Adding a native** — every engine needs it, or std code that calls it fails
-there ("native provider is not implemented"; the gate catches it):
+**Adding a native** — Sparrow needs it, or std code that calls it fails
+("native provider is not implemented"; the gate catches it):
 
 1. `okkama-runtime-abi/src/table.rs`: id, symbol, signature;
    `std/runtime/<module>.ok`: the `native` declaration.
@@ -400,12 +421,6 @@ there ("native provider is not implemented"; the gate catches it):
    can run the `okkama-runtime-core` implementation.
 3. For a bridged native: `okkama-runtime-core/src/native/*.rs` (register its
    provider in `native.rs`).
-4. Legacy JVM backend (until #585): a `public static` method `runtime_<module>__<name>` in a class of
-   `okkama-compiler/runtime/jvm/src/okkama/rt` (Java 22, FFM natives
-   included); types: `int` → `BigInteger`, `bool` → `boolean`, `float` →
-   `Double`, arrays → `List<Object>` (bytes as `Byte`), native objects →
-   `Object`. Rebuild with `okkama-rs/tools/jvm-runtime/build.sh` and commit
-   the classes (they are embedded in `okkama`).
 
 `sparrow --native-capabilities` lists Sparrow's coverage.
 
