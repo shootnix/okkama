@@ -489,6 +489,7 @@ fn write_inst(
             write_list(f, captures)?;
             f.write_char(']')
         }
+        InstKind::AwaitTake(future) => write!(f, "await.take {future}"),
         InstKind::Await(future) => write!(f, "await {future}"),
         InstKind::CapMake(owner) => write!(f, "cap.make {owner}"),
         InstKind::CallCap { cap, field } => write!(f, "call.cap {cap}, #{field}()"),

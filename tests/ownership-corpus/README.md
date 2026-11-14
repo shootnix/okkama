@@ -16,12 +16,15 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 - 95 main programs expect exit code 0 with all TAP assertions passing.
 - Two main programs intentionally exit 1 after two passing cleanup assertions
   each: `panic-unwind.ok` and `secondary-failures.ok`.
-- No pending assertions remain: #581 restores the eight checks from #579–#581
-  after focused in-process verification on both engines.
+- No pending assertions remain. The initial #581 implementation restored the
+  eight checks from #579–#581 on both engines. Its temporary-await regression
+  is corrected on Sparrow by the follow-up described below; the retiring IR
+  engine still has borrow-only behavior.
 - `rejected/`: six compile-negative fixtures, not executable oracle inputs.
 - All 441 assertions are in the main corpus. Original assertions are retained
-  exactly once; the four historical corrections below and `channel-transfer`
-  check 1 (the #581 ownership decision) change expected values. #578 adds
+  exactly once; the four historical corrections below change expected values.
+  `channel-transfer` check 1 is restored to its original empty-log expectation
+  by unique temporary take. #578 adds
   four checks for running
   an escaped Future, cached reuse, and cleanup at its owner’s exit.
 - Claude's original 0.5.8 IR/Sparrow results: 849 passing and 25 failing
@@ -83,23 +86,45 @@ Numbers below refer to checks in the original 97-program corpus.
 All four new expectations match both saved engine observations. Final cleanup
 expectations (`B`, `D`, `ACB`, `ED`) are unchanged.
 
-#581 resolves cached-outcome ownership: a Future owns its outcome and `await`
-borrows it. The Book wording change is proposed separately; the Book is not
-edited by this implementation.
+#581 resolves cached-outcome ownership: a Future owns its outcome and ordinary
+`await` borrows it. The regression follow-up implements OIR-2 draft 3 §10 on
+Sparrow: an immediately awaited fresh async invocation emits `await.take`;
+bound Futures (including bound-once), collection items, captured/stored Futures
+and synchronous calls returning possibly aliased Futures stay borrowed. Taken
+results are tracked once in the awaiting scope; external borrows keep their
+owners. The Book is not edited by this implementation.
 
 | Restored checks | Expectations | Verification |
 | --- | --- | --- |
-| `async-results` 6 (#579) | `"LR"` | Temporary Future cleanup, including `region.track` after await |
+| `async-results` 6 (#579) | `"LR"` | Awaiting-scope cleanup, including one `region.track` after `await.take` |
 | `all-futures` 1–3 (#580) | `""`, `""`, `"BA"` | Duplicate inputs, repeated collection, creation-order LIFO |
 | `future-completions` 1–4 (#581) | `""`, `""`, `""`, `"BA"` | Repeated Future identities and settlement requests |
 
 The restored assertions keep their original expectations. `channel-transfer`
-check 1 changes from `""` to `"R"`: the receive helper returns a borrowed await
-result, whose local Future dies at helper exit. The caller must not dereference
-that expired borrow. Checks 2–3 still expect `"R"` and describe no duplicate
-cleanup. Wording only changes in `async-results` 4–5, `async-destroy` 4,
-`raced` 2 and 4, and restored `all-futures` 3 identify the Future as owner and
-state reverse creation order explicitly.
+check 1 changes from the initial #581 expectation `"R"` back to `""`: taking
+both the receive helper's temporary Future and its caller's temporary Future
+keeps the received resource alive through helper return. The fixture now reads
+its label at that checkpoint. Checks 2–6 are unchanged (`"R"`, `"R"`, `""`,
+`"ML"`, `"ML"`). `async-results` 5–6 change wording only: the discarded taken
+result lives until awaiting-scope cleanup (`"L"`, then `"LR"`). No assertion
+counts or other expected values change.
+
+Focused verification is in `sparrow-core/tests/future_outcomes.rs`, entirely
+in-process, including the real in-memory SQLite path and a socket-free model
+of WebApplication's listener returned inside a server. It covers temporary,
+bound-once, repeated, collection/group and collector awaits, borrowed inputs,
+suspension, async/throwing cleanup, fresh call admission and nested escapes.
+Verification on the regression branch: 27 tests in that file pass normally
+and with `SPARROW_CORE_GC_STRESS=1`, including execution of both modified corpus
+files (12 TAP checks). The two existing `all_futures` in-process assembly tests
+also pass in both modes. All 17 `okkama-compiler --test lowering_ownership`
+tests pass, including corpus lowering, SPB binary/text round-trips and compile-only
+inspection of both HTTP/HTTPS listener takes in the real signals fixture.
+`cargo check --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`
+pass; all Cargo commands use `--offline -j 4`. No format command, CLI/server,
+Docker run or commit was made. The whole-corpus oracle and network/signal gate
+are left to the external runner;
+IR is not expected to match the new temporary-take checkpoint on this branch.
 
 ## Handwritten programs
 
@@ -144,7 +169,7 @@ order.
 | [channels.ok](channels.ok) | 8 | 20.2, 31.5.2; async/channel: message pins, unread messages, close and alias ownership |
 | [atomic-resources.ok](atomic-resources.ok) | 6 | 20.2; Book Shared infrastructure snapshots with Atomic: stored capabilities borrow |
 | [async-destroy.ok](async-destroy.ok) | 10 | 20.1.1, 20.3, 31.5: awaited LIFO destruction and shielded cancellation |
-| [channel-transfer.ok](channel-transfer.ok) | 6 | 20.2, 31.5–31.5.2: returned await borrow expires; cancel blocked send |
+| [channel-transfer.ok](channel-transfer.ok) | 6 | 20.2, 31.5–31.5.2: temporary await take survives helper return; cancel blocked send |
 | [panic-unwind.ok](panic-unwind.ok) | 2 | 14.2, 15, 20.1–20.3: panic unwind; cleanup allocation |
 | [secondary-failures.ok](secondary-failures.ok) | 2 | 14.2–14.4, 20.1–20.3: uncaught primary and secondary failures |
 

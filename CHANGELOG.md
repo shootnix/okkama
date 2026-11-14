@@ -8,7 +8,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
-- **Future-owned cached outcomes (#581).** On IR and Sparrow, await borrows
+- **Unique temporary await takes on Sparrow (#581 regression).** Lowering emits
+  `await.take` for directly awaited fresh async invocations. The cache relinquishes
+  only its own outcome package, and the awaiting scope tracks it exactly once
+  (#579); borrowed inputs keep their owners. Bound, repeated and collected Futures
+  retain borrow semantics. This keeps SQLite connections and returned network
+  listeners alive after their producer exits. Future-owned async outcomes now
+  select asynchronous region cleanup. The retiring IR engine keeps borrow-only
+  execution. The corpus restores `channel-transfer` check 1 to an empty log.
+
+- **Future-owned cached outcomes (#581).** On IR and Sparrow, ordinary await borrows
   a Future's result. Repeated awaits and duplicate collector inputs keep one
   owner; destroying that Future releases its fresh outcome exactly once in
   reverse creation order. Retained inputs still follow escaping Futures (#578),

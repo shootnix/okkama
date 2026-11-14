@@ -1,4 +1,4 @@
-// Book 20.2, 31.5–31.5.2: returned await borrows and cancelled undelivered sends.
+// Book 20.2, 31.5–31.5.2: unique temporary await takes and cancelled undelivered sends.
 module ownership v1.0.0;
 
 import "tap" take Tap;
@@ -46,18 +46,18 @@ async main() is int {
         await channel.sending().send(Res("R", log));
         {
             let received = await Work().receive(channel);
-            // The helper's local Future has closed: do not dereference this borrow.
-            t.note("returning await borrow does not extend its Future lifetime: " + log.value());
-            t = t.is(log.value(), "R", "returning await borrow does not extend its Future lifetime");
+            received.label();
+            t.note("temporary await takes the received resource through helper return: " + log.value());
+            t = t.is(log.value(), "", "temporary await takes the received resource through helper return");
         }
 
-        t.note("caller scope does not destroy returned borrow twice: " + log.value());
-        t = t.is(log.value(), "R", "caller scope does not destroy returned borrow twice");
+        t.note("caller scope destroys the taken resource once: " + log.value());
+        t = t.is(log.value(), "R", "caller scope destroys the taken resource once");
         channel.sending().close();
     }
 
-    t.note("expired returned borrow has no residual channel owner: " + log.value());
-    t = t.is(log.value(), "R", "expired returned borrow has no residual channel owner");
+    t.note("taken result has no residual channel owner: " + log.value());
+    t = t.is(log.value(), "R", "taken result has no residual channel owner");
     log.replace("");
     {
         let channel is Channel<Res> = Channel(capacity: 0);

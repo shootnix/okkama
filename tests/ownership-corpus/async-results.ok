@@ -59,11 +59,11 @@ async main() is int {
     log.replace("");
     {
         await Work().make(log, Event(), Event(ready: true));
-        t.note("temporary Future retains discarded awaited result: " + log.value());
-        t = t.is(log.value(), "L", "temporary Future retains discarded awaited result");
+        t.note("temporary await takes discarded result into its scope: " + log.value());
+        t = t.is(log.value(), "L", "temporary await takes discarded result into its scope");
     }
 
-    t.note("discarded awaited result closes with temporary Future: " + log.value());
-    t = t.is(log.value(), "LR", "discarded awaited result closes with temporary Future");
+    t.note("discarded taken result closes with awaiting scope: " + log.value());
+    t = t.is(log.value(), "LR", "discarded taken result closes with awaiting scope");
     t.done();
 }

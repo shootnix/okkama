@@ -170,7 +170,7 @@ fn chain_literals(function: &mut Function, block: usize) {
 fn movable(inst: &Inst) -> bool {
     !matches!(
         inst.kind,
-        InstKind::Await(_)
+        InstKind::Await(_) | InstKind::AwaitTake(_)
             | InstKind::FutSpawn(_)
             | InstKind::RegionLeave { .. }
             | InstKind::RegionUnwind { .. }

@@ -823,7 +823,7 @@ pub(crate) fn execute_function(
                         count.map(|count| read(slots, count, inst.span)).transpose()?,
                         inst.span,
                     )?,
-                    InstKind::Await(future) => {
+                    InstKind::Await(future) | InstKind::AwaitTake(future) => {
                         let Value::Future(future) = read(slots, *future, inst.span)? else {
                             return Err(invalid_state(inst.span, "await of a non-future value"));
                         };

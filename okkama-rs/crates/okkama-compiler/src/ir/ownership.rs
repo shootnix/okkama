@@ -542,7 +542,7 @@ impl Flow {
                         flow.unknown(&operands, result, "any");
                         site = Some(name(&inst.kind));
                     }
-                    InstKind::Await(future) => {
+                    InstKind::Await(future) | InstKind::AwaitTake(future) => {
                         if let Some(InstKind::Call { func, args }) = definition(function, *future)
                             && module.functions[func.0].is_async()
                         {
@@ -604,7 +604,7 @@ impl Flow {
                         site = Some(name(&inst.kind));
                     }
                 }
-                if !matches!(inst.kind, InstKind::Await(_) | InstKind::FutSpawn(_)
+                if !matches!(inst.kind, InstKind::Await(_) | InstKind::AwaitTake(_) | InstKind::FutSpawn(_)
                     | InstKind::Fut { .. } | InstKind::WorkerSpawn { .. } | InstKind::WorkerBind { .. }
                     | InstKind::RegionEnter | InstKind::RegionAdopt { .. } | InstKind::RegionTrack { .. }
                     | InstKind::RegionTransfer { .. } | InstKind::RegionLeave { .. }

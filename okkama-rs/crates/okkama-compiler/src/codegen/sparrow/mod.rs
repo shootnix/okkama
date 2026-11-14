@@ -241,6 +241,7 @@ impl FunctionGen<'_> {
                 };
                 I::CallCap { dst: dst()?, cap: reg(*cap), ty: CapRef(id.0 as u32), field: *field as u32 }
             }
+            K::AwaitTake(future) => I::AwaitTake { dst: opt, future: reg(*future) },
             K::Await(future) => I::Await { dst: opt, future: reg(*future) },
             K::FutSpawn(future) => I::FutSpawn { dst: dst()?, future: reg(*future) },
             K::WorkerSpawn { entry, args, direct } => I::WorkerSpawn { dst: dst()?, entry: reg(*entry), args: regs(args), direct: *direct },

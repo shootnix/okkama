@@ -86,7 +86,7 @@ fn discarded_await_results_are_tracked_by_the_enclosing_block() {
     ));
     let main = function(&module, "main");
     let insts: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
-    let awaited = insts.iter().find(|inst| matches!(inst.kind, InstKind::Await(_)))
+    let awaited = insts.iter().find(|inst| matches!(inst.kind, InstKind::AwaitTake(_)))
         .expect("await exists").result.expect("await returns Res");
     let tracked_region = |value| {
         let regions: Vec<_> = insts.iter().filter_map(|inst| match inst.kind {
@@ -456,6 +456,29 @@ fn future_ownership_corpus_lowers_with_stdlib() {
         let module = lower_linked(&program, source.name(), &mut CorpusLoader(root.clone())).unwrap();
         ir::verify(&module).unwrap();
     }
+
+    // Compile the real signals fixture without opening sockets or running it.
+    // Both HTTP and HTTPS server factories must take the listener before
+    // returning it inside HttpServer, rather than leaving it in a dying cache.
+    let path = root.join("okkama-rs/crates/okkama-cli/tests/signals/serve.ok");
+    let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
+    let program = syntax::parse(&source, &ParseOptions::default()).unwrap();
+    let module = lower_linked(&program, source.name(), &mut CorpusLoader(root)).unwrap();
+    ir::verify(&module).unwrap();
+    let mut listeners = 0;
+    for function in module.functions.iter().filter(|function| function.symbol.contains("WebApplication.server")) {
+        let insts: Vec<_> = function.blocks.iter().flat_map(|block| &block.insts).collect();
+        for inst in &insts {
+            if let InstKind::Call { func, .. } = &inst.kind
+                && module.functions[func.0].symbol.ends_with("TcpListening.listener")
+            {
+                let future = inst.result.unwrap();
+                assert!(insts.iter().any(|inst| matches!(inst.kind, InstKind::AwaitTake(value) if value == future)));
+                listeners += 1;
+            }
+        }
+    }
+    assert_eq!(listeners, 2, "HTTP and HTTPS factories take their listeners");
 }
 
 #[test]
@@ -466,12 +489,42 @@ fn future_outcome_await_tracking_preserves_future_owner() {
     ));
     let main = function(&module, "main");
     let instructions: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
-    let awaited: Vec<_> = instructions.iter().filter_map(|inst| {
-        matches!(inst.kind, InstKind::Await(_)).then_some(inst.result).flatten()
-    }).collect();
-    assert_eq!(awaited.len(), 2, "{module}");
-    for result in awaited {
-        assert!(instructions.iter().any(|inst| matches!(inst.kind,
-            InstKind::RegionTrack { value, .. } if value == result)), "{module}");
-    }
+    let borrowed = instructions.iter().find(|inst| matches!(inst.kind, InstKind::Await(_)))
+        .expect("bound Future borrows").result.unwrap();
+    let taken = instructions.iter().find(|inst| matches!(inst.kind, InstKind::AwaitTake(_)))
+        .expect("temporary Future takes").result.unwrap();
+    assert!(!instructions.iter().any(|inst| matches!(inst.kind,
+        InstKind::RegionTrack { value, .. } if value == borrowed)), "{module}");
+    assert_eq!(instructions.iter().filter(|inst| matches!(inst.kind,
+        InstKind::RegionTrack { value, .. } if value == taken)).count(), 1, "{module}");
+}
+
+#[test]
+fn only_fresh_async_invocations_take_the_cache() {
+    let module = module(&format!(
+        "{RES} object Work {{ Work(); async make() is Res {{ Res(n: 1); }} \
+         alias(f is Future<Res>) is Future<Res> {{ f; }} }} \
+         async main() is int {{ let w = Work(); let f = w.make(); \
+         await f; await f; await w.alias(f); let fs = [f]; await fs.item(0); \
+         await w.make(); let action is async () is Res = w.make; await action(); 0; }}"
+    ));
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::Await(_))), 4, "{module}");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::AwaitTake(_))), 2, "{module}");
+    let text = module.to_string();
+    assert!(text.contains("await.take "), "{text}");
+    let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
+    let bytes = okkama_sparrow::encode(&program).unwrap();
+    assert_eq!(okkama_sparrow::decode(&bytes).unwrap(), program);
+    assert_eq!(okkama_sparrow::assemble(&okkama_sparrow::disassemble(&program)).unwrap(), program);
+}
+
+#[test]
+fn borrowed_async_outcome_cleanup_settles_the_future_owner() {
+    let module = module("module app v1.0.0; \
+        object Res { Res(); async destroy {} } \
+        object Work { Work(); async make() is Res { Res(); } } \
+        async main() is int { let f = Work().make(); { await f; } 0; }");
+    assert!(settles(&module, "main"), "{module}");
+    assert_eq!(count(function(&module, "main"), |kind| matches!(kind, InstKind::Await(_))), 1);
 }

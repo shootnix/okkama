@@ -1080,6 +1080,8 @@ pub enum InstKind {
     },
     /// `await %fu` (§13.1): только в `[async]`; результат — `R` future<R>.
     Await(ValueId),
+    /// Unique temporary Future: consume its cache into the awaiting scope.
+    AwaitTake(ValueId),
     /// `fut.spawn %fu`: запустить сейчас; результат — тот же Future.
     FutSpawn(ValueId),
     /// `worker.spawn %f(%a…)` (§18.1): синхронный action в отдельном
@@ -1544,7 +1546,7 @@ impl InstKind {
             InstKind::RatSign(value) | InstKind::RatPart { value, .. } => vec![*value],
             InstKind::RangeNew { start, end, .. } => vec![*start, *end],
             InstKind::FnClosure { captures, .. } => captures.clone(),
-            InstKind::Await(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
                 vec![*future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![*owner],
@@ -1673,7 +1675,7 @@ impl InstKind {
             InstKind::RatSign(value) | InstKind::RatPart { value, .. } => vec![value],
             InstKind::RangeNew { start, end, .. } => vec![start, end],
             InstKind::FnClosure { captures, .. } => captures.iter_mut().collect(),
-            InstKind::Await(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
                 vec![future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![owner],

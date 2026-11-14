@@ -221,7 +221,7 @@ impl Runtime {
         }
     }
 
-    /// The cached outcome belongs to the Future, never to an awaiter.
+    /// Publication owns the outcome until cache cleanup or a proven unique take.
     pub(crate) fn own_outcome(&mut self, frame: Word, success: bool, value: Word) {
         if !self.resources.enabled {
             return;
@@ -240,6 +240,27 @@ impl Runtime {
         for value in roots {
             self.region_add(owned, value, true);
         }
+    }
+
+    /// Release only this cache's actual package. External borrows retain their
+    /// owners. No allocation, safepoint or user code occurs before region.track
+    /// admits the successfully delivered result in the caller.
+    pub(crate) fn take_outcome(&mut self, frame: Word) {
+        let owned = crate::tasks::get(frame, crate::tasks::OWNED);
+        if owned == UNBOUND {
+            return;
+        }
+        for index in 0..self.region_len(owned) {
+            let object = self.region_get(owned, index);
+            let identity = self.resources.identities.get_mut(&object).expect("identity");
+            if identity.owner == Owner::Region(owned) {
+                identity.owner = Owner::Free;
+                let serial = identity.serial;
+                self.freed(serial);
+            }
+        }
+        self.region_clear(owned);
+        crate::tasks::set(frame, crate::tasks::OWNED, UNBOUND);
     }
 
     /// Free or `via`-owned identities reachable from `roots`, oldest first.

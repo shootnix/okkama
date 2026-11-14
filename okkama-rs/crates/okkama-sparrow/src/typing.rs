@@ -894,7 +894,7 @@ impl<'a> Typing<'a> {
                     None => Err("call.cap of a void field".into()),
                 }
             }
-            I::Await { dst, future } => {
+            I::Await { dst, future } | I::AwaitTake { dst, future } => {
                 if !self.function.is_async {
                     return Err("await is allowed only in async functions".into());
                 }
