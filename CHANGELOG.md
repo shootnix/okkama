@@ -64,7 +64,7 @@ ownership state, destroy tracing and tests, plus IR-only support in
 `okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
 and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
 removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
-coverage; the legacy JVM backend remains until #585. Shared native providers,
+coverage; the JVM backend followed later in this release (#585). Shared native providers,
 values and scheduler support used by Sparrow remain available.
 
 Removed hidden fake storage from the test profile, including its six operations,
@@ -98,6 +98,30 @@ fake fields; role fakes and their ordinary typed fields remain available.
     engines (#561).
 
 ### Changed
+
+- **Faster Sparrow: the 0.6.0 perf wave.** Micro A/B against the previous
+  0.6.0 state: geometric mean −7.0% over 69 benchmarks (Docker, fat LTO, five
+  runs). `float` −70%, `rat` operations −13…−26%, `try-catch` −24%, and calls,
+  arrays, constructors and maps −3…−5%. `json-parse` +2.7% and `map-keys`
+  +3.8% are known costs of the wave. Contents:
+  - payload objects lose their extra box (#436);
+  - the GC walks precomputed pointer-bearing field indices (#437);
+  - SPB is decoded and verified once on the CLI path, and CLIF diagnostics are
+    collected only when profiling (#480, #481);
+  - one invocation record per function for closure and direct calls (#536,
+    phase A);
+  - direct helpers for builder, rational and map-length operations, and
+    guarded scalar conversions (#537, phase A);
+  - range proofs keep more integers out of GC root maps (#539);
+  - register-colouring profile and fixtures (#540, stage 1);
+  - direct calls to already compiled static callees (#542);
+  - region entries are borrowed once per pass, and size classes come from a
+    table (#543).
+- **Format versions bumped (#586).** SPB 16, worker frames `OKW2`,
+  conformance schemas `/2`. Old versions are rejected with a message that
+  names the expected one; no old readers remain. The OIR-1 text dump keeps
+  `oir 1`: version 2 belongs to the OIR-2 text format (#563), and the OIR-1
+  dump is deleted with OIR-1 (#576).
 
 - **Sparrow payload ownership prototype (#436).** PAYLOAD cells keep the
   typed owning box inline, removing the extra thin-pointer allocation.
@@ -5471,14 +5495,6 @@ moved out.
 
 ### Removed
 
-Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
-ownership state, destroy tracing and tests, plus IR-only support in
-`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
-and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
-removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
-coverage; the legacy JVM backend remains until #585. Shared native providers,
-values and scheduler support used by Sparrow remain available.
-
 - `sparrow-engine` and `sparrow-proto`, the intermediate runtimes of the core rebuild,
   and the `sparrow-next` binary (the core is `sparrow`).
 - **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors
@@ -5713,14 +5729,6 @@ the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
 
 ### Removed
 
-Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
-ownership state, destroy tracing and tests, plus IR-only support in
-`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
-and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
-removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
-coverage; the legacy JVM backend remains until #585. Shared native providers,
-values and scheduler support used by Sparrow remain available.
-
 - `conformance/contracts/stdlib-inventory.json`: the snapshot of the std public surface had
   fallen far behind `std/` and nothing read it. `tools/inventory_std.py` now writes only
   the per-module coverage contracts in `contracts/stdlib.json`.
@@ -5827,14 +5835,6 @@ values and scheduler support used by Sparrow remain available.
   clear error instead of an internal compiler error.
 
 ### Removed
-
-Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
-ownership state, destroy tracing and tests, plus IR-only support in
-`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
-and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
-removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
-coverage; the legacy JVM backend remains until #585. Shared native providers,
-values and scheduler support used by Sparrow remain available.
 
 - **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
   `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of

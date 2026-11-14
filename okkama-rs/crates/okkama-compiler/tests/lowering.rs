@@ -33,7 +33,7 @@ fn integer_addition_has_the_canonical_module_text() {
     assert_eq!(
         listing("1 + 1;"),
         concat!(
-            "oir 2 high\n",
+            "oir 1 high\n",
             "module app v1.0.0\n",
             "requires core\n",
             "entry @main\n",

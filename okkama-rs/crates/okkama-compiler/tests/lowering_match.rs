@@ -27,7 +27,7 @@ fn a_covering_enum_match_skips_the_last_test() {
              match l { case Light.red { 1; } case Light.amber, Light.green { 2; } } }"
         ),
         concat!(
-            "oir 2 high\n",
+            "oir 1 high\n",
             "module app v1.0.0\n",
             "requires core\n",
             "entry @main\n",

@@ -69,7 +69,7 @@ fn empty_library_module_keeps_its_import_metadata() {
     assert_eq!(
         module.to_string(),
         concat!(
-            "oir 2 high\n",
+            "oir 1 high\n",
             "module library v1.0.0\n",
             "requires core\n",
             "import \"math\" as m take Number, value\n",
