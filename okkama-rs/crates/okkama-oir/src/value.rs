@@ -7,12 +7,17 @@ pub struct Body {
     pub blocks: Arena<BlockId, Block>,
     pub insts: Arena<InstId, Instruction>,
     pub bindings: Arena<BindingId, BindingDecl>,
+    pub boundaries: Arena<crate::BoundaryId, crate::Boundary>,
+    pub deps: Arena<crate::DepExprId, crate::DepExpr>,
+    pub keys: Arena<crate::KeyExprId, crate::KeyExpr>,
+    pub selections: Arena<crate::SelectionId, crate::SelectionExpr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValueData {
     pub ty: TypeId,
     pub def: Definition,
+    pub facts: crate::ValueFacts,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +30,7 @@ pub enum Definition {
 pub struct Instruction {
     pub results: Vec<ValueId>,
     pub op: Operation,
+    pub facts: crate::InstructionFacts,
     pub loc: Option<DebugLoc>,
 }
 
@@ -50,7 +56,7 @@ pub struct BlockUnwind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome { Normal, Unwind }
+pub enum Outcome { Normal, Unwind, Cancel }
 
 /// An invoke result belongs only to its edge, never to the source block's SSA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,7 +83,7 @@ pub struct Terminator {
     pub loc: Option<DebugLoc>,
 }
 
-/// Structural control flow only; operation outcome schemas arrive in commit 2.
+/// Edge results are interpreted with the invoked operation contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TermKind {
     Br(Target),
@@ -88,6 +94,9 @@ pub enum TermKind {
     Throw(ValueId),
     Raise(ValueId),
     Panic(ValueId),
+    Trap { code: crate::TrapCode, message: String },
+    Catch { failure: ValueId, ty: TypeId, handler: InvokeEdge, next: Target },
+    Lookup { kind: LookupKind, collection: ValueId, key: ValueId, found: InvokeEdge, missing: Target },
     Unreachable,
 }
 
@@ -96,3 +105,9 @@ pub struct SwitchCase {
     pub value: crate::Literal,
     pub target: Target,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LookupKind { Array, Map }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrapCode { Confirm, Range, Empty, Unbound, Unreachable, Pending }

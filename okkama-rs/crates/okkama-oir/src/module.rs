@@ -11,6 +11,8 @@ pub struct Module {
     pub declarations: Arena<DeclId, Declaration>,
     pub types: TypeTable,
     pub scopes: Arena<ScopeId, ScopeDecl>,
+    pub summaries: Arena<crate::SummaryId, crate::Summary>,
+    pub protocols: Arena<crate::ProtocolId, crate::ProtocolDecl>,
     pub functions: Arena<FuncId, Function>,
     pub entry: Option<FuncId>,
     /// `None` denotes a production module; `Some([])` is an empty test module.
@@ -111,6 +113,9 @@ pub struct Function {
     pub signature: Signature,
     pub attrs: Vec<FunctionAttr>,
     pub type_params: Vec<TypeParameter>,
+    pub summary: Option<crate::SummaryId>,
+    pub async_creation_summary: Option<crate::SummaryId>,
+    pub async_body_summary: Option<crate::SummaryId>,
     pub body: Option<Body>,
     pub loc: Option<DebugLoc>,
 }

@@ -73,6 +73,7 @@ fn construct_minimal_module_by_hand() -> Result<(), ArenaError> {
         declarations: Arena::new(),
         types: TypeTable::new(),
         scopes: Arena::new(),
+        summaries: Arena::new(), protocols: Arena::new(),
         functions: Arena::new(),
         entry: None,
         tests: None,
@@ -88,6 +89,7 @@ fn construct_minimal_module_by_hand() -> Result<(), ArenaError> {
         },
         attrs: vec![FunctionAttr::Entry],
         type_params: Vec::new(),
+        summary: None, async_creation_summary: None, async_body_summary: None,
         body: None,
         loc,
     })?;
@@ -104,11 +106,11 @@ fn construct_minimal_module_by_hand() -> Result<(), ArenaError> {
     })?;
     let mut insts = Arena::new();
     let inst = insts.alloc(Instruction {
-        results: Vec::new(), op: Operation::Const(Literal::Int("42".into())), loc,
+        results: Vec::new(), op: Operation::Const(Literal::Int("42".into())), facts: InstructionFacts::default(), loc,
     })?;
     let mut values = Arena::new();
     let result = values.alloc(ValueData {
-        ty: int, def: Definition::InstResult { inst, index: 0 },
+        ty: int, def: Definition::InstResult { inst, index: 0 }, facts: ValueFacts::Unelaborated,
     })?;
     insts.get_mut(inst)?.results.push(result);
     let block = blocks.get_mut(entry)?;
@@ -116,7 +118,7 @@ fn construct_minimal_module_by_hand() -> Result<(), ArenaError> {
     block.term.kind = TermKind::Ret { values: vec![result] };
     let mut bindings = Arena::new();
     let binding = bindings.alloc(BindingDecl { name: "answer".into(), scope, ty: int, loc })?;
-    module.functions.get_mut(main)?.body = Some(Body { entry, values, blocks, insts, bindings });
+    module.functions.get_mut(main)?.body = Some(Body { entry, values, blocks, insts, bindings, boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(), selections: Arena::new() });
     module.entry = Some(main);
 
     let function = module.functions.get(module.entry.unwrap())?;

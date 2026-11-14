@@ -52,6 +52,10 @@ pub enum ServiceType {
     Closed,
     UniqueCache,
     Failure,
+    /// Optional accumulated failure inside cleanup; not a failure view.
+    FailureState,
+    /// Optional pending exit after cleanup; preserves an empty state explicitly.
+    ExitState,
     StableKey,
     Owner,
     Holder,
@@ -105,4 +109,14 @@ impl TypeTable {
     pub fn len(&self) -> usize { self.types.len() }
     pub fn is_empty(&self) -> bool { self.types.is_empty() }
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (TypeId, &Type)> { self.types.iter() }
+}
+
+impl ServiceType {
+    /// SSA holders and permissions that must be forwarded or consumed exactly
+    /// once per path. Failure/deps/snapshot views and closed evidence are copies.
+    pub const fn is_linear(self) -> bool {
+        matches!(self, Self::Own | Self::Scope(_) | Self::Pending | Self::UniqueCache |
+            Self::CacheState | Self::CarrierState | Self::TaskState | Self::Pin |
+            Self::Receipt | Self::CleanupState | Self::ExitState)
+    }
 }
