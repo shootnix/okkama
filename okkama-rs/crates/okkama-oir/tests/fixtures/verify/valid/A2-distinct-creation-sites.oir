@@ -1,0 +1,22 @@
+oir 2 high
+module distinct_origins
+object C {
+    field x: int
+}
+scope S action in @f
+func @f(%choose: bool, %x: int) -> C [ctor C] {
+    boundary B0 lexical in S
+^entry in S:
+    cond %choose, ^left, ^right
+^left in S unwind ^failed:
+    %a: C = obj.new C { x: %x }
+    br ^merge(%a)
+^right in S unwind ^failed:
+    %b: C = obj.new C { x: %x }
+    br ^merge(%b)
+^merge(%v: C) in S:
+    exit.prepare return %v at B0
+    ret %v
+^failed(%e: failure) in S:
+    raise %e
+}

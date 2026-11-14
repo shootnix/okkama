@@ -1,0 +1,10 @@
+oir 2 high
+// expect OIR2-H6 instruction:0:0
+module verify
+requires core
+scope S action in @f
+func @f(%future: future<int>) -> void {
+^entry in S:
+    %b0: bool = fut.done %future
+    ret
+}

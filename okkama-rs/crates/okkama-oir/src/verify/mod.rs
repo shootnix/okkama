@@ -1,6 +1,7 @@
 //! Independent, read-only verification of OIR-2.
-//! Currently implements structural typing (S1–S3, T1–T6). Later semantic
-//! passes are explicitly reserved below; a certificate covers this implemented subset.
+//! Implements structure, types, SSA, edge contracts, authority, summary shapes
+//! and the high contract. Ownership/lifetime and lowered protocol checks remain
+//! reserved passes; a certificate covers only the implemented subset.
 mod diagnostic;
 mod limits;
 mod index;
@@ -9,6 +10,14 @@ mod types;
 mod expressions;
 pub(crate) mod read;
 mod later;
+mod graph;
+mod dominance;
+mod contracts;
+mod authority;
+mod construction;
+mod summaries;
+mod high;
+mod high_defer;
 
 use crate::*;
 pub use diagnostic::*;
@@ -208,7 +217,11 @@ fn run<'m>(
     }
     structure::check(module, function, &mut state);
     types::check(module, function, &mut state);
-    later::ssa_dominance_edges_authority(module, &mut state);
+    dominance::check(module, function, &mut state);
+    contracts::check(module, function, &mut state);
+    authority::check(module, function, &mut state);
+    summaries::check(module, function, &mut state);
+    high::check(module, function, &mut state);
     later::ownership_and_lifetimes(module, &mut state);
     later::async_cleanup_and_profiles(module, &mut state);
     order_diagnostics(module, &mut state);
@@ -330,7 +343,12 @@ fn diagnostic_key(
     };
     let pass = match rule {
         RuleId::S1 | RuleId::S2 | RuleId::S3 => 0,
-        _ => 1,
+        RuleId::T1 | RuleId::T2 | RuleId::T3 | RuleId::T4 | RuleId::T5 | RuleId::T6 => 1,
+        RuleId::SSA1 | RuleId::SSA2 | RuleId::B61 => 2,
+        RuleId::B62 => 3,
+        RuleId::A1 | RuleId::A2 | RuleId::A3 => 4,
+        RuleId::B51 => 5,
+        _ => 6,
     };
     (pass, class, entity, function.map_or(0, FuncId::as_u32), block, position, minor, path, rule)
 }

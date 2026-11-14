@@ -1,0 +1,14 @@
+oir 2 high
+// expect OIR2-SSA2 instruction:0:1
+module loop_bypass
+scope S action in @f
+func @f(%c: bool) -> void {
+^entry in S:
+    cond %c, ^loop, ^done
+^loop in S:
+    %v: int = const 1
+    cond %c, ^loop, ^done
+^done in S:
+    %a: int = int.add %v, %v
+    ret
+}

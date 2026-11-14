@@ -558,12 +558,23 @@ impl<'a> ContractRegistry<'a> {
                 } else {
                     c.normal.postconditions.extend([Postcondition::NoFreshAdmission, Postcondition::PreserveFullDependencies]);
                 }
-                c.normal.results.push(ResultSlot::service(N::Deps, S::Deps));
+                if self.module.profile != Profile::High {
+                    c.normal.results.push(ResultSlot::service(N::Deps, S::Deps));
+                }
                 if result.is_some() { c.normal.retention.push(RetentionRule { result: N::Value, selection: match take {
                     Some((_, boundary)) => Retention::TakenOutcome { future, boundary }, None => Retention::Cache(future),
                 } }); }
-                let mut unwind = outcome(vec![ResultSlot::service(N::Failure, S::Failure), ResultSlot::service(N::Task, S::TaskState), ResultSlot::service(N::Receipt, S::Receipt)]);
-                unwind.postconditions.extend([Postcondition::TaskDeterminesHolder, Postcondition::ReceiptDeterminesHolder, Postcondition::NoPublication]);
+                let mut unwind = outcome(vec![ResultSlot::service(N::Failure, S::Failure)]);
+                unwind.postconditions.push(Postcondition::NoPublication);
+                if self.module.profile != Profile::High {
+                    unwind.results.extend([
+                        ResultSlot::service(N::Task, S::TaskState),
+                        ResultSlot::service(N::Receipt, S::Receipt),
+                    ]);
+                    unwind.postconditions.extend([
+                        Postcondition::TaskDeterminesHolder, Postcondition::ReceiptDeterminesHolder,
+                    ]);
+                }
                 unwind.retention.push(RetentionRule { result: N::Failure, selection: Retention::AwaitFailure { future, take: take.map(|(_, boundary)| boundary) } });
                 if let Some((unique, _)) = take {
                     unwind.transfers.push(TransferRule::Settle { inputs: vec![unique] });
@@ -655,7 +666,9 @@ impl<'a> ContractRegistry<'a> {
                 self.protocol(protocol, ProtocolTransition::Transfer, c, validate)?;
             }
             Rule::Prepare(exit) => {
-                c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                if self.module.profile != Profile::High {
+                    c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                }
                 if let Some(packet) = exit.packet { c.normal.transfers.push(TransferRule::Reserve { packet, boundary: exit.boundary }); }
                 c.normal.postconditions.push(Postcondition::LexicalExit { kind: exit.kind, boundary: exit.boundary, selection: exit.selection });
                 c.roots.roots.push(RootKind::PendingExit);

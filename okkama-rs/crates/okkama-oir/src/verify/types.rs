@@ -1069,3 +1069,38 @@ fn witness_abi(role: OwnershipAbi, method: OwnershipAbi) -> bool {
         _ => role == method,
     }
 }
+
+pub(super) fn edge_slot_matches(
+    module: &Module,
+    body: &Body,
+    op: &Operation,
+    expected: &ResultType,
+    actual: TypeId,
+    state: &mut State<'_>,
+) -> bool {
+    let sub = super::summaries::call(op).and_then(|(call, receiver, target)| {
+        if let Some(function) = target {
+            return Some(substitution(GenericOwner::Function(function), &call.type_args));
+        }
+        let receiver = receiver?;
+        let ty = module.types.get(body.values.get(receiver.value).ok()?.ty).ok()?;
+        match ty {
+            Type::Role { decl, args } | Type::Cap { decl, args } => {
+                Some(substitution(GenericOwner::Declaration(*decl), args))
+            }
+            _ => None,
+        }
+    }).unwrap_or_default();
+    matches_result_type(module, body, expected, actual, &sub, state).unwrap_or(false)
+}
+
+pub(super) fn instantiated_matches(
+    module: &Module,
+    expected: TypeId,
+    actual: TypeId,
+    owner: GenericOwner,
+    args: &[TypeId],
+    state: &mut State<'_>,
+) -> bool {
+    matches_type(module, expected, actual, &substitution(owner, args), state).unwrap_or(false)
+}

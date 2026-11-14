@@ -1,0 +1,12 @@
+oir 2 high
+// expect OIR2-H7 instruction:0:1
+module verify
+requires core
+scope S action in @f
+func @f(%x: int) -> void {
+    binding b0 "x": int in S
+^entry in S:
+    bind %x, binding b0
+    bind %x, binding b0
+    ret
+}

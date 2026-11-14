@@ -1,0 +1,12 @@
+oir 2 high
+// expect OIR2-A3 instruction:0:0
+module verify
+requires core
+scope S action in @f
+func @f(%future: future<int>) -> void {
+^entry in S unwind ^failed:
+    %v: int = await %future, result int
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

@@ -7,6 +7,33 @@ fn function(symbol: &str, params: Vec<TypeId>, results: Vec<TypeId>) -> Function
         async_body_summary: None, body: None, loc: None,
     }
 }
+fn prepare_return(builder: &mut FunctionBuilder<'_>, scope: ScopeId, value: ValueId) {
+    let boundary = builder.declare_boundary(Boundary { scope, kind: BoundaryKind::Lexical }).unwrap();
+    let selection = builder.declare_selection(SelectionExpr::Value(value)).unwrap();
+    builder.emit_schema(Operation::Exit(ExitOp::Prepare { exit: PreparedExit {
+        kind: ExitKind::Return, value: Some(value), packet: None, deps: None, selection, boundary,
+    } })).unwrap();
+}
+fn complete_summaries(module: &mut Module) {
+    let ids: Vec<_> = module.functions.iter().map(|(id, _)| id).collect();
+    for id in ids {
+        if module.functions.get(id).unwrap().summary.is_some() { continue; }
+        let signature = &module.functions.get(id).unwrap().signature;
+        let language = |types: &[TypeId]| types.iter().filter(|ty| module.types.get(**ty)
+            .is_ok_and(|ty| !matches!(ty, Type::Service(_) | Type::Descriptor))).count();
+        let mut summary = own_summary(vec![]);
+        summary.parameters = (0..language(&signature.params)).map(|_| ParameterEffect {
+            convention: FreshConvention::Borrow, retention: None, deps: vec![], destination: TransferDestination::None,
+        }).collect();
+        summary.contract.results = signature.results.iter().copied().filter(|ty| module.types.get(*ty)
+            .is_ok_and(|ty| !matches!(ty, Type::Service(_) | Type::Descriptor))).collect();
+        summary.results = summary.contract.results.iter().map(|_| ResultRelation {
+            fresh: vec![], aliases: vec![], external_deps: vec![], provenance: AdmissionProvenance::UnboundResult,
+        }).collect();
+        let summary = module.summaries.alloc(summary).unwrap();
+        module.functions.get_mut(id).unwrap().summary = Some(summary);
+    }
+}
 fn arithmetic() -> Module {
     let mut module = ModuleBuilder::new("verify", Profile::High);
     let int = module.intern_type(Type::Int).unwrap();
@@ -17,6 +44,7 @@ fn arithmetic() -> Module {
     let mut builder = module.function_builder(function, scope).unwrap();
     let params = builder.block_params(builder.entry()).unwrap().to_vec();
     let result = builder.emit_schema(Operation::Core(CoreOp::IntAdd { left: params[0], right: params[1] })).unwrap();
+    prepare_return(&mut builder, scope, result[0]);
     builder.terminate(TermKind::Ret { values: result }).unwrap();
     let body = builder.finish().unwrap();
     module.define_function(function, body).unwrap();
@@ -32,8 +60,11 @@ fn rejected(module: &Module, rule: RuleId) -> VerifyReport {
     report
 }
 fn own_summary(results: Vec<TypeId>) -> Summary {
+    let relations = results.iter().map(|_| ResultRelation {
+        fresh: vec![], aliases: vec![], external_deps: vec![], provenance: AdmissionProvenance::UnboundResult,
+    }).collect();
     Summary {
-        entry_kind: EntryKind::CallBoundary, parameters: vec![], results: vec![],
+        entry_kind: EntryKind::CallBoundary, parameters: vec![], results: relations,
         contract: CallContract {
             results, failures: vec![], suspends: false, async_destroy: false,
             publication: Publication::Atomic, protocol: None,
@@ -53,6 +84,13 @@ fn public_apis_are_read_only_and_require_exact_profiles() {
     assert_eq!(verify_own(&module).unwrap_err().diagnostics[0].rule, RuleId::S1);
     for profile in [Profile::Own, Profile::Coro, Profile::Low] {
         module.profile = profile;
+        // High return intents acquire a pending result only during elaboration.
+        let body = body_mut(&mut module);
+        let instruction = body.blocks.get(body.entry).unwrap().insts[1];
+        body.insts.get_mut(instruction).unwrap().op = Operation::Lexical(LexicalOp::Discard {
+            value: ValueId::from_u32(2),
+        });
+        complete_summaries(&mut module);
         match profile {
             Profile::Own => { verify_own(&module).unwrap(); }
             Profile::Coro => { verify_coro(&module).unwrap(); }
@@ -108,7 +146,7 @@ fn s2_scope_ownership_parents_boundaries_and_expression_cycles() {
     module.scopes.get_mut(root).unwrap().function = FuncId::from_u32(99);
     rejected(&module, RuleId::S2);
     let mut module = arithmetic();
-    let selection = SelectionId::from_u32(0);
+    let selection = SelectionId::from_u32(body(&module).selections.len() as u32);
     body_mut(&mut module).selections.alloc(SelectionExpr::Union(vec![selection])).unwrap();
     rejected(&module, RuleId::S2);
     let mut module = arithmetic();
@@ -167,6 +205,8 @@ fn malformed_arenas_never_panic_and_other_functions_are_checked() {
     }).unwrap();
     module.functions.get_mut(second).unwrap().body.as_mut().unwrap().blocks
         .get_mut(BlockId::from_u32(0)).unwrap().lexical_scope = scope;
+    let other_body = module.functions.get_mut(second).unwrap().body.as_mut().unwrap();
+    for (_, boundary) in other_body.boundaries.iter_mut() { boundary.scope = scope; }
     body_mut(&mut module).entry = BlockId::from_u32(u32::MAX);
     let report = rejected(&module, RuleId::T2);
     assert!(report.diagnostics.iter().any(|diag| matches!(diag.primary.entity,
@@ -240,7 +280,9 @@ fn t2_tuple_arity_and_read_only_result_formulas() {
     builder.terminate(TermKind::Ret { values: vec![] }).unwrap();
     let body = builder.finish().unwrap();
     module.define_function(caller, body).unwrap();
-    verify(&module.finish().unwrap()).unwrap();
+    let mut module = module.finish().unwrap();
+    complete_summaries(&mut module);
+    verify(&module).unwrap();
 }
 
 #[test]
@@ -358,7 +400,9 @@ fn generic_object() -> (Module, DeclId, TypeId) {
         fields.push(Field { name: "value".into(), ty: parameter, default: None, once: false });
     }
     let object = module.intern_type(Type::Object { decl, args: vec![int] }).unwrap();
-    let function = module.declare_function(function("project", vec![object], vec![])).unwrap();
+    let mut declaration = function("project", vec![object], vec![]);
+    declaration.attrs.push(FunctionAttr::Method(decl));
+    let function = module.declare_function(declaration).unwrap();
     let scope = module.declare_scope(ScopeDecl {
         function, parent: None, kind: ScopeKind::Action, loc: None,
     }).unwrap();
@@ -429,6 +473,7 @@ fn t5_layouts_witnesses_defaults_and_destroy_signatures() {
     }).unwrap();
     let mut body_builder = builder.function_builder(method, scope).unwrap();
     let value = body_builder.block_params(body_builder.entry()).unwrap()[1];
+    prepare_return(&mut body_builder, scope, value);
     body_builder.terminate(TermKind::Ret { values: vec![value] }).unwrap();
     let method_body = body_builder.finish().unwrap();
     builder.define_function(method, method_body).unwrap();
@@ -629,7 +674,9 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
         }
         let body = builder.finish().unwrap();
         module.define_function(function, body).unwrap();
-        let positive = module.finish().unwrap();
+        let mut positive = module.finish().unwrap();
+        complete_summaries(&mut positive);
+        positive.functions.get_mut(function).unwrap().attrs.push(FunctionAttr::Async);
         verify(&positive).unwrap_or_else(|report| panic!("case {case} {op:?}: {report:?}"));
         for index in 0..operand_count {
             let mut negative = positive.clone();
@@ -727,7 +774,8 @@ fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
     builder.terminate(TermKind::Ret { values: vec![] }).unwrap();
     let body = builder.finish().unwrap();
     module.define_function(caller, body).unwrap();
-    let module = module.finish().unwrap();
+    let mut module = module.finish().unwrap();
+    complete_summaries(&mut module);
     rejected(&module, RuleId::T1);
     let context = VerifyContext { text_locations: None, external_contracts: &catalog };
     verify_with(&module, &VerifyOptions::default(), context).unwrap();

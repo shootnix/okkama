@@ -1,0 +1,17 @@
+oir 2 own
+// expect OIR2-B6.2 edge:0:1
+module verify
+requires core
+scope S action in @f
+summary M0 call-boundary contract call_contract(publication=atomic)
+func @f(%p: own) -> void summary(M0) {
+^entry in S:
+    %local: int = const 1
+    invoke.own own.split.checked %p, selection(%local)
+        normal ^ok($rest, $selected, $external_deps, %local)
+        unwind ^failed(%p, $failure, %local)
+^ok(%r: own, %s: own, %d: deps, %x: int) in S:
+    ret
+^failed(%q: own, %e: failure, %y: int) in S:
+    raise %e
+}

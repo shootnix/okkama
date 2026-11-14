@@ -1,0 +1,11 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S unwind ^failed:
+    %v: int = int.mod %x, %x
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

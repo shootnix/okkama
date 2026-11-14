@@ -17,7 +17,7 @@ impl Reader<'_> {
     pub(super) fn word(&mut self) -> Result<String, Diagnostic> {
         let token = self.next()?;
         if token.quoted || token.text.is_empty()
-            || !token.text.chars().all(|c| c.is_alphanumeric() || "_./:#-".contains(c))
+            || token.text != "$pending" && !token.text.chars().all(|c| c.is_alphanumeric() || "_./:#-".contains(c))
         {
             return Err(self.at(&token, DiagnosticKind::Syntax, "expected identifier or path"));
         }
@@ -471,7 +471,7 @@ fn generic_scope(owner: GenericOwner) -> usize {
 
 impl Writer<'_> {
     pub(super) fn word(&mut self, word: &str) -> Result<(), PrintError> {
-        if word.is_empty() || !word.chars().all(|c| c.is_alphanumeric() || "_./:#-".contains(c)) {
+        if word.is_empty() || word != "$pending" && !word.chars().all(|c| c.is_alphanumeric() || "_./:#-".contains(c)) {
             return Err(PrintError::new("unrepresentable identifier or module path"));
         }
         self.push(word);

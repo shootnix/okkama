@@ -1,0 +1,11 @@
+oir 2 high
+module test_authority
+requires core, test
+scope S action in @f
+func @f(%condition: bool) -> void {
+^entry in S unwind ^failed:
+    test.ok %condition
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

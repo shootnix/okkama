@@ -1,0 +1,16 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+func @f(%c: bool) -> void {
+^entry in S:
+    %v: int = const 1
+    cond %c, ^left, ^right
+^left in S:
+    br ^done
+^right in S:
+    %w: int = int.add %v, %v
+    br ^done
+^done in S:
+    ret
+}

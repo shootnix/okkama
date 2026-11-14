@@ -1,0 +1,18 @@
+oir 2 high
+// expect OIR2-A1 instruction:1:0
+module private
+object C {
+    field x: int
+}
+scope SD action in @callee
+scope S action in @f
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+func @callee(%x: C) -> void [method C, private] summary(M0) {
+^entry in SD:
+    ret
+}
+func @f(%x: C) -> void {
+^entry in S:
+    call @callee(%x)
+    ret
+}

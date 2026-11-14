@@ -1,7 +1,14 @@
 use crate::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RuleId { S1, S2, S3, T1, T2, T3, T4, T5, T6 }
+pub enum RuleId {
+    S1, S2, S3,
+    T1, T2, T3, T4, T5, T6,
+    SSA1, SSA2,
+    A1, A2, A3,
+    B51, B61, B62,
+    H1, H2, H3, H4, H5, H6, H7, H8, H9,
+}
 
 impl RuleId {
     pub const fn as_str(self) -> &'static str {
@@ -15,6 +22,24 @@ impl RuleId {
             Self::T4 => "OIR2-T4",
             Self::T5 => "OIR2-T5",
             Self::T6 => "OIR2-T6",
+            Self::SSA1 => "OIR2-SSA1",
+            Self::SSA2 => "OIR2-SSA2",
+            Self::A1 => "OIR2-A1",
+            Self::A2 => "OIR2-A2",
+            Self::A3 => "OIR2-A3",
+            Self::B51 => "OIR2-B5.1",
+            Self::B61 => "OIR2-B6.1",
+            Self::B62 => "OIR2-B6.2",
+            Self::H1 => "OIR2-H1",
+            Self::H2 => "OIR2-H2",
+            Self::H3 => "OIR2-H3",
+            Self::H4 => "OIR2-H4",
+            Self::H5 => "OIR2-H5",
+            Self::H6 => "OIR2-H6",
+            Self::H7 => "OIR2-H7",
+            Self::H8 => "OIR2-H8",
+            Self::H9 => "OIR2-H9",
+
         }
     }
 }

@@ -1,0 +1,10 @@
+oir 2 high
+// expect OIR2-H3 instruction:0:0
+module valued
+scope S action in @f
+func @f(%v: int) -> int {
+    boundary B0 lexical in S
+^entry in S:
+    %p: pending = exit.prepare return %v at B0
+    ret %v
+}

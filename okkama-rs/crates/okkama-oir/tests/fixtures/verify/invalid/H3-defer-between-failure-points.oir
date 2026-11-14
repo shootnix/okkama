@@ -1,0 +1,18 @@
+oir 2 high
+// expect OIR2-H3 instruction:1:1
+module reached_defers
+scope SD action in @d
+scope S action in @f
+func @d() -> void {
+^entry in SD:
+    ret
+}
+func @f(%x: int) -> void {
+^entry in S unwind ^failed:
+    %before: int = int.mod %x, %x
+    defer.register S, action defer_action(function=@d)
+    %after: int = int.mod %x, %x
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

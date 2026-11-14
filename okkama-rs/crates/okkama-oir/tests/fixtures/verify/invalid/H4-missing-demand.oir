@@ -1,0 +1,15 @@
+oir 2 high
+// expect OIR2-H4 terminator:0:1
+module verify
+requires core
+scope S action in @f
+scope S1 branch in @f parent S
+func @f(%x: int) -> void {
+    boundary B0 lexical in S1
+^entry in S:
+    br ^inner
+^inner in S1:
+    br ^out(%x)
+^out(%p: int) in S:
+    ret
+}

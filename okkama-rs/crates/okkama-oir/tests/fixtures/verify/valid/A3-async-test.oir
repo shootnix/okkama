@@ -1,0 +1,13 @@
+oir 2 high
+module verify
+requires core
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M1 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[future<void>], publication=atomic)
+scope S action in @f
+func @f(%future: future<int>) -> void [async] async-creation(M1) async-body(M0) {
+^entry in S unwind ^failed:
+    %v: int = await %future, result int
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}
