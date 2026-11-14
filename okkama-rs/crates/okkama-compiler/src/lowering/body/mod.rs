@@ -1486,7 +1486,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             Type::Object(object),
             span,
         );
-        // `^C` на JVM — тот же объект; payload — новая идентичность.
+        // `^C` сохраняет объект case; payload — новая идентичность.
         self.ret(
             Some(Typed {
                 value: next,

@@ -1,4 +1,4 @@
-//! `runtime/idna` и `runtime/public_suffix` — перенос `IdnaNatives` JVM:
+//! `runtime/idna` и `runtime/public_suffix`:
 //! UTS #46 (nontransitional, STD3, без unassigned) как Net::IDN::UTS46 2.591
 //! на тех же таблицах (`idna.dat`) и Public Suffix List (`psl.dat`).
 use super::Error;

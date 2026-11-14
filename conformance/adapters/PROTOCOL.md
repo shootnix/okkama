@@ -141,17 +141,14 @@ error). Diagnostics are rendered to stderr exactly as the CLI does.
 binary for `--ocs-capabilities`. It forwards only modes the binary declares,
 using the same protocol natively (`--ocs-request R --ocs-response P`). The
 workspace builds the `okkama` binary (`okkama-cli`). `OCS_RUST_ENGINE` selects
-`ir` (default), `sparrow`, or `jvm`; use `--adapter-env OCS_RUST_ENGINE=sparrow`
-to obtain an independent Sparrow report. IR and Sparrow declare `parse`,
-`check`, and `run`; JVM also declares `test`. Sparrow execution includes
-code generation and SPB encode/decode before running the VM. JVM explicitly
-compiles temporary class files and starts `java`. There is no engine fallback.
+`sparrow` (default and only engine). Sparrow declares `parse`, `check`,
+`run` and `test`. Execution includes code generation and SPB encode/decode
+before running the VM. There is no engine fallback.
 Unsupported constructs are reported as `unsupported`, runtime traps as
 `failed`, and invalid internal state as `internal-error`. The selected engine
 is recorded in adapter configuration and participates in the capability cache.
 The probe
-fingerprint covers the embedded JVM runtime classes (`*.class`) as well as the
-Rust sources.
+fingerprint covers embedded runtime data (`*.dat`) as well as the Rust sources.
 
 ## Writing a new adapter
 

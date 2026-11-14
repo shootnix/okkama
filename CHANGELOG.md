@@ -42,6 +42,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Removed
 
+Removed the JVM backend (#585): the `codegen/jvm` generator, the embedded Java
+runtime `okkama.rt` with its committed classes, JAR output, the `okkama-native`
+C ABI that served it through FFM, `tools/jvm-runtime`, the JDK in CI and the
+Docker image, and the `jvm` configurations of the gate, `t/`, okgen and the
+mutation check. Measured before the decision: OIR-2 would remove up to 87% of
+its time on resource-heavy code, but it would stay about 8× slower than
+Sparrow. `--engine jvm`, `OKKAMA_ENGINE=jvm` and `--target jvm` report an
+error; `okkama build` makes Sparrow bytecode without `--target`, and
+`--budgeted` is gone. Unicode, IDNA and time-zone tables that Sparrow's
+natives read moved to `okkama-runtime-core/data` unchanged. The last release
+with the JVM backend is 0.5.8.
+
 Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
 ownership state, destroy tracing and tests, plus IR-only support in
 `okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`

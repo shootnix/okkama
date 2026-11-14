@@ -13,7 +13,7 @@ come from an oracle written here in Python with Okkama's semantics
 float text), never from running Okkama.
 
 Each family writes t/gen/<family>/NN.ok: one program, checks grouped forty
-to an action (the JVM limits the size of a method), TAP through t/support/
+to an action (to keep generated programs small), TAP through t/support/
 tap.ok. The output is deterministic; t/gen is not committed — the runner
 generates it.
 """

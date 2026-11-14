@@ -29,8 +29,8 @@ import "runtime/system" take secure_random, secure_integer, secure_float;
 // It is reproducible, not cryptographically secure. SecureRandom has no seed
 // constructor and draws from the operating system's cryptographic generator:
 // arc4random on Apple systems, getrandom elsewhere (served from the vDSO by
-// glibc 2.41 on Linux 6.11 and later, one system call on older systems), and
-// java.security.SecureRandom on the JVM. Its integers take as many 64-bit
+// glibc 2.41 on Linux 6.11 and later, one system call on older systems).
+// Its integers take as many 64-bit
 // samples as the range needs, so any non-empty range is accepted.
 // Integer ranges are always non-empty and half-open [start, stop). Random byte
 // requests are capped at 16 MiB per call.

@@ -45,5 +45,5 @@ echo "==> merge profiles"
 
 echo "==> optimized build"
 (cd "$rs" && RUSTFLAGS="-Cforce-frame-pointers=yes -Cprofile-use=$work/merged.profdata" \
-    cargo build --release -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli)
+    cargo build --release -p okkama-cli -p sparrow-cli -p blade-cli)
 echo "pgo: built $rs/target/release with $(ls "$work/data" | wc -l | tr -d ' ') profiles"

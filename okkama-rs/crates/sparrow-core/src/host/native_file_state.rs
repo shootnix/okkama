@@ -18,7 +18,7 @@ use std::{
 #[derive(Debug)]
 pub(crate) struct FileState {
     pub(crate) path: PathBuf,
-    /// A temporary file's path as the program spelled it, as the IR and JVM runtimes report it.
+    /// A temporary file's path as the program spelled it.
     pub(crate) shown: String,
     pub(crate) temporary: bool,
     pub(crate) delete_on_close: Option<PathBuf>,

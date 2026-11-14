@@ -1,6 +1,6 @@
 //! `runtime/unicode_character`: свойства символов по таблицам Unicode::UCD
 //! Perl (`unicode.dat`) и ширина графем для терминала — перенос
-//! `UnicodeNatives` JVM.
+//! на основе встроенных Unicode-таблиц.
 use super::Error;
 use super::support::{array, int_value, string, string_array, text};
 use crate::data;

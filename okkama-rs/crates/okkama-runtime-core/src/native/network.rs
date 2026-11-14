@@ -1,5 +1,5 @@
 //! `runtime/network`: TCP-слушатели и потоки, UDP, multicast, Unix-сокеты и
-//! системный резолвер — перенос `NetNatives` и `UnixNatives` JVM. Сокеты
+//! системный резолвер. Сокеты
 //! хоста неблокирующие: ожидающая операция — на рабочем потоке, который ждёт
 //! готовности `poll(2)` и замечает закрытие; исход приходит событием цикла
 //! (`sched::offload`). Результат, пришедший после отмены ожидания
@@ -453,7 +453,7 @@ fn new_stream(socket: Socket, family: u8, unnamed: bool) -> SockRef {
     }))
 }
 
-/// TLS-клиент отбирает TCP-поток (`TlsNatives.client` JVM): сетевой
+/// TLS-клиент отбирает TCP-поток: сетевой
 /// дескриптор закрыт, сокет — нет; непрочитанные байты переходят к TLS.
 pub(crate) fn take_tcp(value: &Value, operation: &str) -> Result<(Arc<Shared>, Vec<u8>), Rc<Failure>> {
     let state = stream_of(value, operation)?;
@@ -997,7 +997,7 @@ fn dns_addresses(native: Native, host: &str, port: &crate::IntValue) -> Value {
                     Err(fail("resource_exhausted", &operation, "System resolution answer exceeds 256 records"))
                 }
                 Ok(mut records) => {
-                    // InetAddress.getAllByName JVM: IPv4 раньше IPv6.
+                    // Порядок адресов: IPv4 раньше IPv6.
                     records.sort_by_key(|record| u8::from(record.is_ipv6()));
                     let mut seen = std::collections::HashSet::new();
                     let mut out = Vec::new();
@@ -1023,7 +1023,7 @@ fn dns_addresses(native: Native, host: &str, port: &crate::IntValue) -> Value {
     Value::Future(promise)
 }
 
-/// Обратный поиск с проверкой прямым (`getCanonicalHostName` JVM).
+/// Обратный поиск с проверкой прямым.
 fn reverse_lookup(address: IpAddr) -> Option<String> {
     let socket = SockAddr::from(SocketAddr::new(address, 0));
     let mut host = vec![0 as libc::c_char; 1025];
@@ -1102,13 +1102,13 @@ fn tcp_bound(native: Native, args: &[Value]) -> Result<Value, Error> {
     let socket = Socket::new(domain_of(family), Type::STREAM, Some(Protocol::TCP))
         .map_err(|error| as_error(host_failure(operation, "Cannot create TCP socket", &error)))?;
     if family == IPV6 {
-        // ServerSocketChannel JVM — всегда dual stack.
+        // Слушающий сокет поддерживает dual stack.
         let _ = socket.set_only_v6(false);
     }
     socket
         .set_reuse_address(reuse)
         .map_err(|error| as_error(host_failure(operation, "Cannot apply TCP listener address reuse", &error)))?;
-    // JVM связывает и начинает слушать одним вызовом; `tcp_start_listening` разрешает `accept`.
+    // Привязка и начало прослушивания выполняются вместе; `tcp_start_listening` разрешает `accept`.
     socket
         .bind(&SockAddr::from(local))
         .and_then(|()| socket.listen(128))

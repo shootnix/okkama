@@ -95,8 +95,8 @@ jobs:
                 --default-toolchain "$(cat tools/release-toolchain.txt)"
               . "$HOME/.cargo/env"
               cd okkama-rs
-              cargo build --release --locked -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
-              objdump -T target/release/okkama target/release/libokkama_native.so \
+              cargo build --release --locked -p okkama-cli -p sparrow-cli -p blade-cli
+              objdump -T target/release/okkama \
                 | grep -o "GLIBC_[0-9.]*" | sort -t. -k2,2n -k3,3n -u | tail -n 1'
           sudo chown -R "$(id -u):$(id -g)" okkama-rs/target "$HOME/.cargo/registry"
       - name: Package

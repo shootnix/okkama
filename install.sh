@@ -13,14 +13,10 @@
 #     <prefix>/bin/sparrow                                 VM байткода Sparrow (.spb)
 #     <prefix>/bin/blade                                   менеджер проектов (`blade new`)
 #     <prefix>/lib/okkama/std/                             стандартная библиотека
-#     <prefix>/lib/okkama/native/<os>-<arch>/libokkama_native.*   хостовая криптография
 #     <prefix>/lib/okkama/icu-76.1/lib/                    ICU для locale/collation (если собрана)
 #     <prefix>/lib/okkama/uninstall.sh
 #
-# `okkama` находит std, native и ICU относительно себя: переменные окружения не
-# нужны (OKKAMA_STDLIB_DIR и др. по-прежнему переопределяют). Java-рантайм
-# (`okkama.rt`) встроен в сам `okkama`; для `okkama run --engine jvm` нужен
-# `java` JDK 22+ (рантайм использует FFM: crypto, SQLite, терминал).
+# `okkama` находит std и ICU относительно себя; криптография встроена в Sparrow.
 #
 # Старые ссылки `okkama` на Perl-версию (`okkama-pl`) в PATH заменяются;
 # ссылки, которые может снять только root, печатаются командой `sudo rm`.
@@ -59,8 +55,8 @@ if [[ $UNINSTALL -eq 1 ]]; then
 fi
 
 case "$(uname -s)" in
-    Darwin) OS=macos; NATIVE=libokkama_native.dylib ;;
-    Linux) OS=linux; NATIVE=libokkama_native.so ;;
+    Darwin) OS=macos ;;
+    Linux) OS=linux ;;
     *) echo "install.sh: unsupported system $(uname -s)" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
@@ -76,7 +72,7 @@ if [[ $BUILD -eq 1 ]]; then
     make -C "$ROOT" build
 fi
 
-for built in "$TARGET/okkama" "$TARGET/sparrow" "$TARGET/blade" "$TARGET/$NATIVE"; do
+for built in "$TARGET/okkama" "$TARGET/sparrow" "$TARGET/blade"; do
     if [[ ! -f "$built" ]]; then
         echo "install.sh: $built is missing; run without --no-build" >&2
         exit 1
@@ -84,13 +80,10 @@ for built in "$TARGET/okkama" "$TARGET/sparrow" "$TARGET/blade" "$TARGET/$NATIVE
 done
 
 say "installing into $PREFIX"
-mkdir -p "$BIN" "$LIB/native/$PLATFORM"
+mkdir -p "$BIN" "$LIB"
 
 # std — копия текущей версии репозитория (лишние старые файлы удаляются).
 rsync -a --delete "$ROOT/std/" "$LIB/std/"
-# Хостовая криптография (встраивается в JAR при `okkama build/run`).
-cp "$TARGET/$NATIVE" "$LIB/native/$PLATFORM/$NATIVE.tmp"
-mv -f "$LIB/native/$PLATFORM/$NATIVE.tmp" "$LIB/native/$PLATFORM/$NATIVE"
 # ICU 76.1 для locale/collation, если собрана (tools/build-icu-collation.sh).
 ICU="$ROOT/.runtime/icu-76.1/lib"
 if [[ -d "$ICU" ]]; then
@@ -156,7 +149,4 @@ esac
 resolved="$(command -v okkama || true)"
 if [[ -n "$resolved" && "$resolved" != "$BIN/okkama" ]]; then
     warn "\`okkama\` in PATH is $resolved, not $BIN/okkama"
-fi
-if ! command -v java >/dev/null 2>&1; then
-    warn "java is not installed: \`okkama run --engine jvm\` needs a JDK (22+ for FFM natives)"
 fi

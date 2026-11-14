@@ -26,7 +26,7 @@ pub struct Site {
     pub pc: u32,
 }
 
-/// Отказ изменяем на месте, как `okkama.rt.Failure` JVM: вторичные отказы
+/// Отказ изменяем на месте: вторичные отказы
 /// и причина дописываются в тот же объект, и это видят все его ссылки.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure {
@@ -148,7 +148,7 @@ fn push_links(failure: &Failure, pending: &mut Vec<(Rc<Failure>, &'static str)>)
     pending.extend(failure.secondaries().into_iter().rev().map(|secondary| (secondary, "Secondary cleanup failure:")));
 }
 
-/// Имя Okkama-типа Error-объекта: последний сегмент имени класса JVM
+/// Имя Okkama-типа Error-объекта: последний сегмент имени типа
 /// (`async.channel::ChannelClosed` → `ChannelClosed`).
 pub fn error_type_name(name: &str) -> String {
     let class = name.replace(['.', ':', '<', '>', ',', ' ', '@', '%', '^'], "$");

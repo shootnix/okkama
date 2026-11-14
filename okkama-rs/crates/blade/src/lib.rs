@@ -44,10 +44,10 @@ its own. `blade install` is now `blade sync`, `blade install SOURCE` is now
 blade.toml, build and run (all keys optional, defaults shown):
     [build]
     entry = \"src/main.ok\"       # or a list of the root module's files
-    target = \"sparrow\"          # sparrow | jvm
-    output = \"target/NAME.spb\"  # .jar for jvm
+    target = \"sparrow\"          # sparrow
+    output = \"target/NAME.spb\"  # Sparrow bytecode
     [run]
-    engine = \"sparrow\"          # sparrow | ir | jvm (default: the target)
+    engine = \"sparrow\"          # sparrow (default: the target)
     args = []
     env = {}
 Blade runs the okkama next to it (or on PATH; BLADE_OKKAMA overrides).

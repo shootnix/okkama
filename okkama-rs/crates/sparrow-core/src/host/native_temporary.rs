@@ -13,7 +13,7 @@ use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 #[derive(Debug)]
 pub(crate) struct TemporaryDirectory {
     path: PathBuf,
-    /// The path as the program spelled it, as the IR and JVM runtimes report it.
+    /// The path as the program spelled it.
     shown: String,
     closed: bool,
 }

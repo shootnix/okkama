@@ -10,11 +10,11 @@
 #      останавливаются), тесты Rust всего workspace (профиль gate —
 #      оптимизации release без fat LTO, — и debug: глубина стека и
 #      debug-проверки видны только там), clippy без предупреждений;
-#   2. conformance на Sparrow, JVM, Sparrow без IR-проходов
+#   2. conformance на Sparrow, Sparrow без IR-проходов
 #      (OKKAMA_IR_PASSES=none) и Sparrow со стресс-GC
 #      (SPARROW_CORE_GC_STRESS=1);
 #   3. актуальный перечень std в conformance; встроенные тесты std на Sparrow;
-#   4. t/ на sparrow, jvm, sparrow-passes-off, sparrow-gc-stress;
+#   4. t/ на sparrow, sparrow-passes-off, sparrow-gc-stress;
 #      TAP-потоки конфигураций обязаны совпадать.
 #
 # Статус каждого шага — код выхода его команды (ocs: 0 только если прошли все
@@ -161,7 +161,6 @@ conformance() {
 
 step "conformance"
 conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
-conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
 # Sparrow also runs OIR with the passes off: a second configuration
 # shows a pass that changes meaning (#29).
 # Without the passes tail calls are real calls: L03.recursion.tail-constant-stack
@@ -196,7 +195,7 @@ fi
 
 step "t/ suite"
 started=$SECONDS
-if python3 "$ROOT/tools/t/run.py" --configs sparrow,jvm,sparrow-passes-off,sparrow-gc-stress --okkama "$OKKAMA" \
+if python3 "$ROOT/tools/t/run.py" --configs sparrow,sparrow-passes-off,sparrow-gc-stress --okkama "$OKKAMA" \
         | tee "$LOGS/t-suite.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
     record "t suite" pass $((SECONDS - started))
 else

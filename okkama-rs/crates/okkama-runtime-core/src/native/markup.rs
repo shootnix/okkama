@@ -1,5 +1,5 @@
 //! `runtime/toml` (TOML 1.0 в дерево узлов) и `runtime/html` (поток событий
-//! HTML с именованными ссылками WHATWG) — перенос `MarkupNatives` JVM.
+//! HTML с именованными ссылками WHATWG).
 //! Смещения — в символах; тексты отказов — как у Perl-provider.
 use super::Error;
 use super::support::{array, failure, handle, int, int_value, new_handle, string, text};

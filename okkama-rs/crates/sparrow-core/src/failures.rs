@@ -990,7 +990,7 @@ impl Runtime {
             match &record.kind {
                 FailureKind::Cancelled => output.push_str("Cancelled: Operation was cancelled"),
                 FailureKind::Native(object) => {
-                    // Host details as the IR engine and the JVM print them; a
+                    // Host details use the shared diagnostic contract; a
                     // nested entry keeps them indented under its label.
                     let field = |index| self.heap.text(self.heap.field(*object, index));
                     let text = format!(

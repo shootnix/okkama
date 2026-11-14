@@ -26,7 +26,7 @@ const HEX: &str = "native hex_encode(origin is @byte) is string;
     native hex_decode(origin is string) is @byte;";
 
 #[test]
-fn hex_round_trips_and_rejects_odd_input_like_the_jvm() {
+fn hex_round_trips_and_rejects_odd_input() {
     both(
         "runtime/hex",
         HEX,
