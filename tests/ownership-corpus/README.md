@@ -6,7 +6,7 @@ not runtime-derived replacement expectations. The branch rule follows #308,
 which supersedes the outdated branch-tail wording in OIR-1 section 7.
 
 The entire corpus lives outside `t/`: `tools/t/run.py` discovers every `.ok`
-under `t/` for the six-configuration release gate, including JVM. Intentional
+under `t/` for the three-configuration Sparrow release gate. Intentional
 failures, compile-negative fixtures and pending semantics must not enter it.
 
 ## Inventory and validation

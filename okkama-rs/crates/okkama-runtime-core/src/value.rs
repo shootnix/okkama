@@ -36,7 +36,7 @@ pub enum Value {
     /// Служебный линейный сборщик словаря.
     MapBuilder(Rc<crate::heap::MapBuilder>),
     /// Значение-функция: замыкание или связанный action; равенство — по
-    /// идентичности, как у `okkama.rt.Fn` JVM.
+    /// идентичности.
     Fn(Rc<crate::heap::Closure>),
     /// Непрозрачный box `any`: сравнение без сужения — ошибка программы.
     Any(Rc<Value>),

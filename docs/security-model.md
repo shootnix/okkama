@@ -73,10 +73,10 @@ separate process with an OS memory limit.
 ## 3. Programs
 
 **Guaranteed.**
-- On Sparrow and the legacy JVM backend, `--max-steps`, `--max-memory`,
+- On Sparrow, `--max-steps`, `--max-memory`,
   `--max-output` and `--timeout` stop a runaway program with its own report,
   which `catch` cannot intercept; without them nothing changes and nothing is
-  spent ([#21], [#71], [#237]). Steps are counted alike on all three.
+  spent ([#21], [#71], [#237]). Steps count function entries and loop iterations.
 - Shared native value graphs are freed without recursion ([#28]).
 - A cancelled SQLite query never reaches a closed connection ([#18]); X.509
   path search is bounded ([#17]).
@@ -85,8 +85,6 @@ separate process with an OS memory limit.
   ([#70]).
 
 **Not guaranteed.**
-- On the JVM the memory budget is the Java heap and the thread stacks, not
-  the whole process ([#237]).
 - A single native operation (a long BigInt division, a sort) finishes before a
   budget stops the run; the memory budget measures the whole process ([#72]).
 - From the CLI a program has the host access of the user running it: files,

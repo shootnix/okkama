@@ -1,4 +1,4 @@
-//! Таблицы рантайма, общие с JVM (`runtime/jvm/src/okkama/rt/*.dat`): gzip
+//! Таблицы рантайма (`okkama-runtime-core/data/*.dat`): gzip
 //! текстовых файлов, распаковываются один раз при первом обращении.
 
 /// Содержимое gzip-файла (RFC 1952: заголовок, deflate, CRC и длина).
@@ -32,7 +32,7 @@ macro_rules! table {
             static TEXT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
             TEXT.get_or_init(|| {
                 String::from_utf8(gunzip(include_bytes!(concat!(
-                    "../../../okkama-compiler/runtime/jvm/src/okkama/rt/",
+                    "../../../okkama-runtime-core/data/",
                     $file
                 ))))
                 .expect("UTF-8 table")

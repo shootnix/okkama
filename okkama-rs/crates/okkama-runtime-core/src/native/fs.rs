@@ -1,5 +1,5 @@
 //! `runtime/fs`: лексические пути (File::Spec Unix/Win32), файлы, каталоги,
-//! блокировки, временные файлы, glob и наблюдение — перенос `FsNatives` JVM.
+//! блокировки, временные файлы, glob и наблюдение.
 //! Пути — байты UTF-8; относительные разрешаются от виртуального cwd
 //! (`crate::host`). Тексты и коды отказов — как у Perl-provider.
 #![allow(unsafe_code)]
@@ -459,7 +459,7 @@ fn child(path: &str, name: &str) -> String {
     Spec::Unix.catfile(&[path.to_string(), name.to_string()])
 }
 
-// ---- блокировки: таблица процесса, как FileLockTable JVM ----
+// ---- блокировки: таблица процесса ----
 
 type FileKey = (u64, u64);
 

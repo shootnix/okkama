@@ -1,7 +1,7 @@
 # Fixtures
 
 Suite-owned helpers declared by cases in `requires.fixtures`
-(`fixture.json`, schema `ocs-fixture/1`). Service fixtures bind `127.0.0.1` on an
+(`fixture.json`, schema `ocs-fixture/2`). Service fixtures bind `127.0.0.1` on an
 OS-assigned port, announce `READY port=N`, own every resource they create and are
 terminated by the runner after the case; their stderr log is kept in the result.
 

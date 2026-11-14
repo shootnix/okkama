@@ -14,7 +14,6 @@ trap 'rm -rf "$WORK"' EXIT
 # name | file | text | defect
 MUTANTS=(
     "sparrow|okkama-rs/crates/sparrow-core/src/runtime.rs|            &*l * &*r|            &*l * &*r + 1"
-    "jvm|okkama-rs/crates/okkama-compiler/src/codegen/jvm/function.rs|IntBinaryOp::Sub => Some(\"subtract\"),|IntBinaryOp::Sub => Some(\"add\"),"
 )
 
 failed=0
@@ -34,7 +33,7 @@ PY
         echo "!! build failed"; failed=1; continue; }
     out="$ROOT/conformance/reports/runs/okgen-mutants/$name"
     rm -rf "$out"
-    OKKAMA="$ROOT/okkama-rs/target/mutants/release/okkama" python3 "$ROOT/tools/gen/okgen.py" run --seeds "$SEEDS" --out "$out" | tail -3
+    OKKAMA_REFERENCE="$ROOT/okkama-rs/target/release/okkama" OKKAMA="$ROOT/okkama-rs/target/mutants/release/okkama" python3 "$ROOT/tools/gen/okgen.py" run --seeds "$SEEDS" --out "$out" | tail -3
     if ls "$out"/*/minimized.ok >/dev/null 2>&1; then
         first="$(ls -d "$out"/*/ | head -1)"
         echo "found and minimized: $(grep -c 'out.writeln' "$first/minimized.ok") statement(s) in $first"

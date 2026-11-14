@@ -1,0 +1,58 @@
+; No timers, I/O or workers. The closure suspends on an in-process Event.
+sparrow 16
+module "async-bridge" "1.0.0"
+type t0 int
+type t1 str
+type t2 bool
+type t3 object obj0
+type t4 future t3
+type t5 future t0
+type t6 fn [t1] -> t5
+object obj0 "Event" {}
+function f0 "Event.new" intrinsic "okkama.event.Event.new_ready" [obj0] [] {
+ registers [t2]
+ params [r0]
+ result t3
+}
+function f1 "Event.wait" async intrinsic "okkama.event.Event.wait" [] [] {
+ registers [t3]
+ params [r0]
+ result t3
+}
+function f2 "Event.set" intrinsic "okkama.event.Event.set" [] [] {
+ registers [t3]
+ params [r0]
+ result void
+}
+function f3 "captured" async {
+ registers [t3, t0, t1, t4, t3, t0, t1, t0]
+ params [r0, r1, r2]
+ result t0
+ 0: call r3, f1, [r0]
+ 1: await r4, r3
+ 2: str.concat r6, r2, r2
+ 3: int.add r5, r1, r1
+ 4: int.sub r5, r5, r1
+ 5: int.sub r5, r5, r1
+ 6: str.len r7, r6
+ 7: int.add r5, r5, r7
+ 8: ret r5
+}
+function f4 "main" async {
+ registers [t3, t0, t1, t2, t6, t5, t0]
+ params []
+ result t0
+ 0: const r3, bool false
+ 1: call r0, f0, [r3]
+ 2: const r1, int 123456789012345678901234567890
+ 3: int.add r1, r1, r1
+ 4: const r2, str "root"
+ 5: str.concat r2, r2, r2
+ 6: fn.closure r4, f3, [r0, r1]
+ 7: call.fn r5, r4, [r2]
+ 8: fut.spawn r5, r5
+ 9: call _, f2, [r0]
+ 10: await r6, r5
+ 11: ret r6
+}
+entry f4

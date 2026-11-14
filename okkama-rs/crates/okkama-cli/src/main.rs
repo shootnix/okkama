@@ -59,11 +59,10 @@ USAGE:
     okkama lsp
     okkama env
     okkama ir <FILE|-> [--format text]
-    okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
-    okkama build <FILE|-> --target sparrow -o <FILE.spb>
+    okkama build <FILE|-> [--target sparrow] -o <FILE.spb>
     okkama exec [BUDGETS] <FILE.spb>
     okkama run [-t [--filter TEXT]...] <FILE> [FILE.ok...] [ARGS...]
-    okkama run --engine sparrow|jvm <FILE> [FILE.ok...]
+    okkama run --engine sparrow <FILE> [FILE.ok...]
     okkama <FILE.ok> [FILE.ok...]
     okkama help [COMMAND]
     okkama --version
@@ -76,12 +75,12 @@ COMMANDS:
     lint      Check programs and report errors, warnings and lint findings
     man       Show the reference page of a module, a declaration or an action,
               from its doc comments; without MODULE, the index of std
-    env       Show where okkama finds std, the native library, ICU and Java
+    env       Show where okkama finds std and ICU
     lsp       Run the language server (LSP over stdio) for editors
     ir        Lower a source module to IR and print its functions
     build     Lower a source module and invoke the selected backend
     exec      Execute a Sparrow bytecode file in this process
-    run       Run a program on Sparrow (JIT); `--engine jvm` builds and runs Java
+    run       Run a program on Sparrow (JIT)
 
 Use `-` as FILE to read the source from standard input. `check`, `ir` and
 `build` accept several FILE paths: the files of one module (spec §5.1) share
@@ -103,29 +102,22 @@ IR OPTIONS:
     --format text          Output format (default: text); see `okkama help ir`
 
 BUILD OPTIONS:
-    --target jvm          Select the backend (required; the JAR runs on JDK 22+)
-    --target sparrow      Select Sparrow bytecode (.spb)
+    --target sparrow      Select Sparrow bytecode (.spb; default)
     --backend NAME        Compatibility alias for --target
     -o, --output FILE      Output artifact path (required)
-    --budgeted            JVM: count steps (`java -Dokkama.steps=N`)
 
 RUN OPTIONS:
     --engine sparrow      Compile to Sparrow and execute it with JIT (default)
-    --engine jvm          Compile to JVM classes and execute them with `java`
-                          Place engine options before FILE; every engine runs
+                          Place engine options before FILE; Sparrow runs
                           tests (-t), program arguments and `spawn` workers.
-                          OKKAMA_ENGINE=sparrow|jvm sets the default.
+                          OKKAMA_ENGINE=sparrow sets the default.
     --filter TEXT         With -t: run only the tests whose name contains
                           TEXT (literally, case-sensitive); repeated, the
                           tests that contain any of the texts
     --max-steps N         Stop after N steps: function entries and loop
-                          iterations (off by default), counted alike on
-                          every engine; on the jvm only a run with this
-                          option generates the counting code
+                          iterations (off by default)
     --max-memory SIZE     Stop when the run holds more than SIZE bytes
-                          (K/M/G suffixes); also bounds recursion depth. On
-                          the jvm: the Java heap (-Xmx, runtime included)
-                          and every thread stack
+                          (K/M/G suffixes); also bounds recursion depth
     --max-output SIZE     Stop when stdout and stderr exceed SIZE bytes
     --timeout SECONDS     Interrupt the run after SECONDS of wall-clock time
                           Running out exits 1: \"Execution budget exhausted:
@@ -203,28 +195,18 @@ const BUILD_HELP: &str = "\
 okkama build — invoke a code generation backend
 
 USAGE:
-    okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
-    okkama build <FILE|-> --target sparrow -o <FILE.spb>
+    okkama build <FILE|-> [--target sparrow] -o <FILE.spb>
 
 OPTIONS:
-    --target jvm          Select the backend (required)
-    --target sparrow      Generate Sparrow bytecode
+    --target sparrow      Generate Sparrow bytecode (default)
     --backend NAME        Compatibility alias for --target
     -o, --output FILE      Output artifact path (required)
-    --budgeted            JVM: count steps; the limit comes from
-                          `java -Dokkama.steps=N` (without it, no limit)
 
 Use `-` as input to read Okkama source from standard input.
 The pipeline is source -> AST -> module IR -> selected backend -> output file.
 
-The JVM backend names the main class after the output file stem. `-o out.jar`
-writes one executable JAR (program classes, the okkama.rt runtime, manifest),
-runnable with `java -jar out.jar`. `-o out.class` writes the class files
-instead: `out.class`, and the object, enum, role and runtime classes next to
-it (`java -cp . out`).
-`int` is exact (BigInteger). The generated Java main calls Okkama main and uses
-its result as the process exit status. Several FILE paths form one module
-(spec §5.1). A generation error leaves output intact.
+Several FILE paths form one module (spec §5.1). A generation error leaves
+output intact.
 
 Sparrow writes a verified SPB 9 file (register bytecode with the program's
 type, object, role and function tables), runnable with `okkama exec FILE.spb`
@@ -246,7 +228,7 @@ BUDGETS (off by default): --max-steps N, --max-memory SIZE, --max-output SIZE,
 
 Loads and verifies an SPB file, then executes it in the Rust process with
 ARGS as the program's arguments; a test-profile file (`build -t`) runs its
-tests. Source files and Java are not required. main must return an integer
+tests. Source files are not required. main must return an integer
 in 0..255, used as the process exit status; an uncaught failure is reported
 on stderr with exit 1. File-format errors exit with 1, usage errors with 2,
 and read errors with 3.
@@ -285,17 +267,26 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     {
         return Outcome::failure(format!("okkama: cannot read `{path}`: {error}\n"), EXIT_IO);
     }
-    let program = match okkama_sparrow::decode(&bytes) {
-        Ok(program) => program,
-        Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-    };
-    if program.tests.is_some() {
-        return core_tests(bytes);
-    }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    let (outcome, trace) =
-        core_described(sparrow_core::run_described(bytes, arguments, false, core::worker_command(Path::new(path)), limits));
-    with_trace(outcome, || sparrow_core::render_trace(&program, &trace))
+    let trace = std::env::var("OKKAMA_TRACE").as_deref() != Ok("off");
+    match sparrow_core::run_executable(
+        bytes, arguments, core::worker_command(Path::new(path)), limits,
+        sparrow_core::ExecutionOptions {
+            tests: Some(Box::new(okkama_runtime_core::stdout::Buffered)), trace, ..Default::default()
+        },
+    ) {
+        Ok(sparrow_core::Execution::Tests(passed)) => Outcome {
+            stdout: String::new(), stderr: String::new(), code: u8::from(!passed),
+        },
+        Ok(sparrow_core::Execution::Main(Ok(value))) => core_outcome(Ok(value)),
+        Ok(sparrow_core::Execution::Main(Err((error, trace)))) => {
+            let mut outcome = core_outcome(Err(error));
+            outcome.stderr.push_str(&trace);
+            outcome
+        }
+        Err(sparrow_core::ExecutionError::Load(error)) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
+        Err(sparrow_core::ExecutionError::Run(error)) => core_outcome(Err(error)),
+    }
 }
 
 /// A test-profile program on the core: the report goes to stdout.
@@ -476,8 +467,6 @@ struct CommandLine {
     prune_tests: bool,
     backend: Option<String>,
     output: Option<String>,
-    /// `build --budgeted`: JVM-классы считают шаги (`-Dokkama.steps=N`, #237).
-    budgeted: bool,
     help: bool,
 }
 
@@ -521,7 +510,6 @@ fn parse_command_line(args: &[String], options: CommandOptions) -> Result<Comman
             "-o" | "--output" if options == CommandOptions::Build => {
                 line.output = Some(value_for(flag)?);
             }
-            "--budgeted" if options == CommandOptions::Build => line.budgeted = true,
             "-" => set_input(&mut line, arg, options)?,
             other if other.starts_with('-') => return Err(format!("unknown option `{other}`")),
             _ => set_input(&mut line, arg, options)?,
@@ -1273,15 +1261,9 @@ fn build_command(args: &[String]) -> Outcome {
         return Outcome::success(BUILD_HELP.to_string());
     }
     let backend = match line.backend.as_deref() {
-        Some(name) => match Backend::from_name(name) {
-            Some(backend) => backend,
-            None => {
-                return Outcome::usage(&format!("unknown backend `{name}` (use jvm or sparrow)"));
-            }
-        },
-        None => {
-            return Outcome::usage("missing --target (use --target jvm or --target sparrow)");
-        }
+        None | Some("sparrow") => Backend::Sparrow,
+        Some("jvm") => return Outcome::usage("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine"),
+        Some(name) => return Outcome::usage(&format!("unknown backend `{name}` (use sparrow)")),
     };
     let output = match line.output.as_deref() {
         Some("") => return Outcome::usage("output file path must not be empty"),
@@ -1299,15 +1281,11 @@ fn build_command(args: &[String]) -> Outcome {
         Ok(lowered) => lowered,
         Err(outcome) => return outcome,
     };
-    if line.budgeted && backend != Backend::Jvm {
-        return Outcome::usage("--budgeted applies to --target jvm (Sparrow bytecode always honours budgets)");
-    }
     let options = CodegenOptions {
         artifact_name: artifact_name.to_string(),
-        budgeted: line.budgeted,
     };
     let artifact = match codegen::generate(&module, backend, &options) {
-        Ok(artifact) => with_native_libraries(&module, artifact),
+        Ok(artifact) => artifact,
         Err(error) => {
             return Outcome::failure(
                 format!("okkama: codegen error: {error}\n"),
@@ -1316,32 +1294,7 @@ fn build_command(args: &[String]) -> Outcome {
         }
     };
     // Open the destinations only after generation succeeds. Backend errors must
-    // leave a previous artifact intact and must not create an empty class file.
-    if output.ends_with(".jar") {
-        let bytes = match artifact.jar(artifact_name) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return Outcome::failure(
-                    format!("okkama: codegen error: {error}\n"),
-                    EXIT_DIAGNOSTICS,
-                );
-            }
-        };
-        if let Err(error) = std::fs::write(output, bytes) {
-            return Outcome::failure(
-                format!("okkama: cannot write `{output}`: {error}\n"),
-                EXIT_IO,
-            );
-        }
-        return Outcome {
-            stdout: String::new(),
-            stderr: warnings,
-            code: 0,
-        };
-    }
-    // The main file goes to `-o`; supporting files (JVM object and role
-    // classes, the okkama.rt runtime) are written next to it under their own
-    // relative names.
+    // leave a previous artifact intact and must not create an empty bytecode file.
     let directory = Path::new(output).parent().unwrap_or(Path::new(""));
     for (index, file) in artifact.files.iter().enumerate() {
         let path = if index == 0 {
@@ -1349,7 +1302,6 @@ fn build_command(args: &[String]) -> Outcome {
         } else {
             directory.join(&file.name)
         };
-        // Runtime classes live in package subdirectories (`okkama/rt/`).
         if let Some(parent) = path.parent().filter(|_| index > 0)
             && let Err(error) = std::fs::create_dir_all(parent) {
                 return Outcome::failure(
@@ -1372,8 +1324,7 @@ fn build_command(args: &[String]) -> Outcome {
 }
 
 /// `okkama run`: Sparrow (JIT) в процессе; `OKKAMA_ENGINE` меняет умолчание;
-/// --engine jvm собирает классы и запускает java с потоками и кодом выхода
-/// программы. Файлы модуля — первый и следующие
+/// Файлы модуля — первый и следующие
 /// за ним существующие `.ok`; остальное (после необязательного `--`) —
 /// аргументы программы.
 fn run_command(args: &[String]) -> Outcome {
@@ -1382,7 +1333,6 @@ fn run_command(args: &[String]) -> Outcome {
     let mut filters: Vec<String> = Vec::new();
     let default = std::env::var("OKKAMA_ENGINE").unwrap_or_default();
     let mut limits = sparrow_core::budget::Limits::default();
-    let mut budgeted = false;
     let mut engine = match default.as_str() {
         "sparrow" => "sparrow",
         "ir" => "ir",
@@ -1401,13 +1351,16 @@ fn run_command(args: &[String]) -> Outcome {
             }
             "--engine" => {
                 let Some(value) = rest.get(1) else {
-                    return Outcome::usage("--engine needs a value: sparrow or jvm");
+                    return Outcome::usage("--engine needs a value: sparrow");
                 };
                 if value == "ir" {
-                    return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow); JVM remains a legacy backend until #585");
+                    return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow)");
                 }
-                if !matches!(value.as_str(), "sparrow" | "jvm") {
-                    return Outcome::usage("unknown engine (use sparrow or jvm)");
+                if value == "jvm" {
+                    return Outcome::usage("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine");
+                }
+                if value != "sparrow" {
+                    return Outcome::usage("unknown engine (use sparrow)");
                 }
                 engine = value;
                 rest = &rest[1..];
@@ -1430,7 +1383,7 @@ fn run_command(args: &[String]) -> Outcome {
                     return Outcome::usage(&format!("{budget} needs a value"));
                 };
                 match limits.option(budget, value) {
-                    Ok(true) => budgeted = true,
+                    Ok(true) => {},
                     Ok(false) => return Outcome::usage(&format!("unknown option `{budget}`")),
                     Err(message) => return Outcome::usage(&message),
                 }
@@ -1444,13 +1397,13 @@ fn run_command(args: &[String]) -> Outcome {
         rest = &rest[1..];
     }
     if engine == "ir" {
-        return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow); JVM remains a legacy backend until #585");
+        return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow)");
+    }
+    if engine == "jvm" {
+        return Outcome::usage("the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine");
     }
     if !filters.is_empty() && !tests {
         return Outcome::usage("--filter selects tests: use it with -t");
-    }
-    if budgeted && !matches!(engine, "sparrow" | "jvm") {
-        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow or jvm");
     }
     let Some((input, mut program_args)) = rest.split_first() else {
         return Outcome::usage("missing input file");
@@ -1492,339 +1445,33 @@ fn run_command(args: &[String]) -> Outcome {
             );
         }
     }
-    if engine != "jvm" && std::env::var_os("OKKAMA_ICU_LIBDIR").is_none() {
-        // Как у JVM-запуска: программа видит закреплённую ICU в окружении.
-        if let Some(icu) = pinned_icu() {
-            sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
-        }
-    }
-    if engine == "sparrow" {
-        let program = match codegen::sparrow::generate(&module) {
-            Ok(program) => program,
-            Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        };
-        let bytes = match okkama_sparrow::encode(&program) {
-            Ok(bytes) => bytes,
-            Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        };
-        if tests {
-            return core_tests(bytes);
-        }
-        let (command, _file) = match core::workers_for(&program, &bytes) {
-            Ok(workers) => workers,
-            Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
-        };
-        let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
-        if let Some(flag) = &limits.interrupt {
-            watchdog(flag.clone());
-        }
-        // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
-        let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
-        return with_trace(outcome, || trace::render_trace(&module, &trace));
-    }
-    let options = CodegenOptions {
-        artifact_name: "Main".to_string(),
-        budgeted: limits.steps.is_some(),
-    };
-    let artifact = match codegen::generate(&module, Backend::Jvm, &options) {
-        Ok(artifact) => with_native_libraries(&module, artifact),
-        Err(error) => {
-            return Outcome::failure(
-                format!("okkama: codegen error: {error}\n"),
-                EXIT_DIAGNOSTICS,
-            );
-        }
-    };
-    let classpath = match cached_classpath(&artifact.files) {
-        Ok(classpath) => classpath,
-        Err(text) => return Outcome::failure(text, EXIT_IO),
-    };
-    // The runtime classes are Java 22 (FFM natives); an older `java` would
-    // only fail with UnsupportedClassVersionError.
-    let major = java_major();
-    if (1..22).contains(&major) {
-        return Outcome::failure(
-            format!("okkama: the JVM engine needs JDK 22 or newer; `java` is Java {major}\n"),
-            EXIT_IO,
-        );
-    }
-    let args: Vec<&str> = program_args.iter().map(String::as_str).collect();
-    let mut command = java_command(&classpath, "Main", &args, &jvm_limits(limits.steps, limits.memory));
-    if limits.output.is_some() || limits.interrupt.is_some() {
-        return jvm_budgeted(&mut command, limits.output, limits.interrupt.clone());
-    }
-    exec_or_wait(&mut command)
-}
-
-/// Steps and memory on the JVM (#237): the program counts steps itself
-/// (classes generated with `budgeted`, `Rt.step`), and the memory limit is the
-/// Java heap (`-Xmx`, which also counts the runtime's own objects) and the
-/// bound of every thread stack; `okkama.rt.Rt` turns running out of either
-/// into the core's report.
-fn jvm_limits(steps: Option<u64>, memory: Option<u64>) -> Vec<String> {
-    let mut options = Vec::new();
-    if let Some(steps) = steps {
-        options.push(format!("-Dokkama.steps={steps}"));
-    }
-    if let Some(memory) = memory {
-        // The JVM refuses a heap below 2 MiB and an initial heap above the maximum.
-        let heap = memory.max(2 << 20);
-        options.push(format!("-Xmx{heap}"));
-        options.push(format!("-Xms{}", heap.min(8 << 20)));
-        options.push(format!("-Dokkama.memory={heap}"));
-    }
-    options
-}
-
-/// The JVM under an output limit or a timeout (#71): `java` as a child whose
-/// stdout and stderr pass through counters; past the limit, or when the
-/// timer raises `interrupt`, it is killed with the core's report.
-fn jvm_budgeted(
-    command: &mut std::process::Command,
-    output: Option<u64>,
-    interrupt: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-) -> Outcome {
-    use std::io::Read;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::sync::Arc;
-    command.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(error) => return Outcome::failure(format!("okkama: cannot start java: {error}\n"), EXIT_IO),
-    };
-    let left = Arc::new(AtomicU64::new(output.unwrap_or(u64::MAX)));
-    let exceeded = Arc::new(AtomicBool::new(false));
-    let copy = |mut from: Box<dyn Read + Send>, to: fn() -> Box<dyn Write>| {
-        let (left, exceeded) = (left.clone(), exceeded.clone());
-        std::thread::spawn(move || {
-            let mut buffer = [0u8; 8192];
-            while let Ok(count) = from.read(&mut buffer) {
-                if count == 0 {
-                    break;
-                }
-                let allowed = left.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| Some(n.saturating_sub(count as u64))).unwrap_or(0);
-                let shown = count.min(allowed as usize);
-                let mut out = to();
-                let _ = out.write_all(&buffer[..shown]).and_then(|()| out.flush());
-                if shown < count {
-                    exceeded.store(true, Ordering::SeqCst);
-                    break;
-                }
-            }
-        })
-    };
-    let stdout = copy(Box::new(child.stdout.take().expect("piped")), || Box::new(io::stdout()));
-    let stderr = copy(Box::new(child.stderr.take().expect("piped")), || Box::new(io::stderr()));
-    let report = loop {
-        if exceeded.load(Ordering::SeqCst) {
-            break Some(sparrow_core::budget::Exhausted::Output);
-        }
-        if interrupt.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            break Some(sparrow_core::budget::Exhausted::Interrupted);
-        }
-        match child.try_wait() {
-            Ok(Some(_)) => break None,
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
-            Err(error) => return Outcome::failure(format!("okkama: java: {error}\n"), EXIT_IO),
-        }
-    };
-    if let Some(exhausted) = report {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = stdout.join();
-        let _ = stderr.join();
-        return Outcome::failure(format!("{}\n", exhausted.message()), 1);
-    }
-    let status = child.wait();
-    let _ = stdout.join();
-    let _ = stderr.join();
-    // The last bytes may have run past the limit after the program ended.
-    if exceeded.load(Ordering::SeqCst) {
-        return Outcome::failure(format!("{}\n", sparrow_core::budget::Exhausted::Output.message()), 1);
-    }
-    let code = status.ok().and_then(|status| status.code()).map_or(1, |code| u8::try_from(code).unwrap_or(1));
-    Outcome { stdout: String::new(), stderr: String::new(), code }
-}
-
-/// Запуск программы: на Unix процесс заменяется `java` (сигналы и код выхода —
-/// у самой программы), иначе — ожидание дочернего процесса.
-fn exec_or_wait(command: &mut std::process::Command) -> Outcome {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let error = command.exec();
-        Outcome::failure(format!("okkama: cannot start java: {error}\n"), EXIT_IO)
-    }
-    #[cfg(not(unix))]
-    {
-        match command.status() {
-            Ok(status) => Outcome {
-                stdout: String::new(),
-                stderr: String::new(),
-                code: status
-                    .code()
-                    .map_or(1, |code| u8::try_from(code).unwrap_or(1)),
-            },
-            Err(error) => {
-                Outcome::failure(format!("okkama: cannot start java: {error}\n"), EXIT_IO)
-            }
-        }
-    }
-}
-
-/// Классы программы и рантайма в кеше временного каталога (по хешу
-/// содержимого: повторный запуск того же кода их не переписывает).
-/// Результат — classpath: каталог программы, затем каталог рантайма.
-fn cached_classpath(files: &[codegen::ArtifactFile]) -> Result<std::ffi::OsString, String> {
-    use std::hash::{Hash, Hasher};
-    let root = std::env::temp_dir().join("okkama-run");
-    let (runtime, program): (Vec<_>, Vec<_>) = files
-        .iter()
-        .partition(|file| file.name.starts_with("okkama/rt/"));
-    let mut dirs = Vec::new();
-    for (prefix, group) in [("program", program), ("runtime", runtime)] {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for file in &group {
-            file.name.hash(&mut hasher);
-            file.bytes.hash(&mut hasher);
-        }
-        let dir = root.join(format!("{prefix}-{:016x}", hasher.finish()));
-        let marker = dir.join(".complete");
-        if !marker.is_file() {
-            let staging = root.join(format!("{prefix}-staging-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&staging);
-            for file in &group {
-                let path = staging.join(&file.name);
-                path.parent()
-                    .map_or(Ok(()), std::fs::create_dir_all)
-                    .and_then(|()| std::fs::write(&path, &file.bytes))
-                    .map_err(|error| {
-                        format!("okkama: cannot write `{}`: {error}\n", path.display())
-                    })?;
-            }
-            let _ = std::fs::write(staging.join(".complete"), b"");
-            // Другой запуск мог успеть первым: его каталог равноценен.
-            if std::fs::rename(&staging, &dir).is_err() {
-                let _ = std::fs::remove_dir_all(&staging);
-            }
-        }
-        dirs.push(dir);
-    }
-    std::env::join_paths(&dirs).map_err(|error| format!("okkama: invalid class path: {error}\n"))
-}
-
-/// Файлы артефакта во временном каталоге; путь каталога или текст ошибки.
-fn write_temporary(files: &[codegen::ArtifactFile], prefix: &str) -> Result<PathBuf, String> {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |time| time.as_nanos());
-    let dir = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()));
-    for file in files {
-        let path = dir.join(&file.name);
-        let written = path
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&path, &file.bytes));
-        if let Err(error) = written {
-            let _ = std::fs::remove_dir_all(&dir);
-            return Err(format!(
-                "okkama: cannot write `{}`: {error}\n",
-                path.display()
-            ));
-        }
-    }
-    Ok(dir)
-}
-
-/// Команда `java` для класса `main` из classpath `dir` с потоками процесса.
-fn java_command(
-    dir: impl AsRef<std::ffi::OsStr>,
-    main: &str,
-    args: &[&str],
-    options: &[String],
-) -> std::process::Command {
-    let mut command = std::process::Command::new("java");
-    // Natives на FFM (SQLite, crypto, терминал) без предупреждений о native access.
-    command.arg("--enable-native-access=ALL-UNNAMED");
-    command
-        .args(options)
-        .arg("-cp")
-        .arg(dir)
-        .arg(main)
-        .args(args)
-        // Байты аргументов как есть: локаль JVM (`LANG=C`) исказила бы UTF-8.
-        .env(
-            "OKKAMA_ARGV_HEX",
-            args.iter()
-                .map(|arg| {
-                    // `x` перед каждым: пустой аргумент отличим от их отсутствия.
-                    let hex: String = arg.bytes().map(|byte| format!("{byte:02x}")).collect();
-                    format!("x{hex}")
-                })
-                .collect::<Vec<_>>()
-                .join(","),
-        )
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit());
     if std::env::var_os("OKKAMA_ICU_LIBDIR").is_none()
-        && let Some(icu) = pinned_icu() {
-            command.env("OKKAMA_ICU_LIBDIR", icu);
-        }
-    command
-}
-
-/// Программа вызывает хостовую криптографию: артефакт получает библиотеку
-/// `okkama-native` текущей платформы (рядом с `okkama`, или
-/// `OKKAMA_NATIVE_LIB`) и библиотеки других платформ из каталогов
-/// `OKKAMA_NATIVE_DIR/<os>-<arch>/` — ресурсы `okkama/native/<os>-<arch>/`.
-fn with_native_libraries(
-    module: &okkama_compiler::ir::Module,
-    mut artifact: okkama_compiler::codegen::Artifact,
-) -> okkama_compiler::codegen::Artifact {
-    let uses = module.functions.iter().any(|function| {
-        function
-            .extern_symbol()
-            .is_some_and(|symbol| symbol.starts_with("runtime/host_crypto@"))
-    });
-    if !uses {
-        return artifact;
+        && let Some(icu) = pinned_icu()
+    {
+        sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
     }
-    let name = |os: &str| match os {
-        "macos" => "libokkama_native.dylib",
-        "windows" => "okkama_native.dll",
-        _ => "libokkama_native.so",
+    let program = match codegen::sparrow::generate(&module) {
+        Ok(program) => program,
+        Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
     };
-    let platform = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
-    let file = name(std::env::consts::OS);
-    let local = std::env::var_os("OKKAMA_NATIVE_LIB")
-        .map(PathBuf::from)
-        .or_else(|| native_library(&platform, file));
-    let mut libraries: Vec<(String, PathBuf)> = Vec::new();
-    if let Some(path) = local.filter(|path| path.is_file()) {
-        libraries.push((platform.clone(), path));
+    let bytes = match okkama_sparrow::encode(&program) {
+        Ok(bytes) => bytes,
+        Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
+    };
+    if tests {
+        return core_tests(bytes);
     }
-    if let Some(root) = std::env::var_os("OKKAMA_NATIVE_DIR")
-        && let Ok(entries) = std::fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let target = entry.file_name().to_string_lossy().into_owned();
-                let os = target.split('-').next().unwrap_or("").to_string();
-                let path = entry.path().join(name(&os));
-                if path.is_file() && !libraries.iter().any(|(known, _)| *known == target) {
-                    libraries.push((target, path));
-                }
-            }
-        }
-    for (target, path) in libraries {
-        if let Ok(bytes) = std::fs::read(&path) {
-            let os = target.split('-').next().unwrap_or("").to_string();
-            artifact.files.push(okkama_compiler::codegen::ArtifactFile {
-                name: format!("okkama/native/{target}/{}", name(&os)),
-                bytes,
-            });
-        }
+    let (command, _file) = match core::workers_for(&program, &bytes) {
+        Ok(workers) => workers,
+        Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
+    };
+    let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
+    if let Some(flag) = &limits.interrupt {
+        watchdog(flag.clone());
     }
-    artifact
+    // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
+    let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
+    with_trace(outcome, || trace::render_trace(&module, &trace))
 }
 
 /// `<prefix>/lib/okkama` установки, в которой лежит этот `okkama`
@@ -1865,27 +1512,14 @@ fn stdlib_dir() -> PathBuf {
     PathBuf::from("/usr/local/lib/okkama/std")
 }
 
-/// Библиотека `okkama-native` платформы: рядом с `okkama` (сборка) или в
-/// `<prefix>/lib/okkama/native/<os>-<arch>/` (установка).
-fn native_library(platform: &str, file: &str) -> Option<PathBuf> {
-    let exe = std::fs::canonicalize(std::env::current_exe().ok()?).ok()?;
-    let beside = exe.parent()?.join(file);
-    if beside.is_file() {
-        return Some(beside);
-    }
-    let installed = install_root()?.join("native").join(platform).join(file);
-    installed.is_file().then_some(installed)
-}
-
 const ENV_HELP: &str = "okkama env — where this okkama finds its parts
 
 USAGE:
     okkama env
 
-Prints the version, the executable, the std directory, the host crypto
-library, the pinned ICU used by locale/collation and the `java` that
-`okkama run --engine jvm` starts (the JVM engine needs JDK 22 or newer).
-OKKAMA_STDLIB_DIR, OKKAMA_NATIVE_LIB and
+Prints the version, the executable, the std directory and the pinned ICU
+used by locale/collation. Host cryptography is built into Sparrow.
+OKKAMA_STDLIB_DIR and
 OKKAMA_ICU_LIBDIR override the installed locations.
 ";
 
@@ -1897,37 +1531,23 @@ fn env_command(args: &[String]) -> Outcome {
         return Outcome::usage(&format!("unknown env argument `{other}`"));
     }
     let platform = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
-    let file = match std::env::consts::OS {
-        "macos" => "libokkama_native.dylib",
-        "windows" => "okkama_native.dll",
-        _ => "libokkama_native.so",
-    };
     let found = |path: Option<PathBuf>| match path {
         Some(path) if path.exists() => path.display().to_string(),
         Some(path) => format!("{} (missing)", path.display()),
         None => "(not found)".to_string(),
     };
     let stdlib = stdlib_dir();
-    let native = std::env::var_os("OKKAMA_NATIVE_LIB")
-        .map(PathBuf::from)
-        .or_else(|| native_library(&platform, file));
     let icu = std::env::var_os("OKKAMA_ICU_LIBDIR")
         .map(PathBuf::from)
         .or_else(pinned_icu);
-    let java = match java_major() {
-        0 => "(not found: `okkama run` needs Java)".to_string(),
-        major if major >= 22 => format!("Java {major}"),
-        major => format!("Java {major} (too old: the JVM engine needs JDK 22+)"),
-    };
     let exe = std::env::current_exe()
         .ok()
         .and_then(|exe| std::fs::canonicalize(exe).ok());
     let text = format!(
-        "okkama {}\nplatform  {platform}\nbinary    {}\nstd       {}\nnative    {}\nicu       {}\njava      {java}\n",
+        "okkama {}\nplatform  {platform}\nbinary    {}\nstd       {}\nicu       {}\n",
         env!("CARGO_PKG_VERSION"),
         found(exe),
         found(Some(stdlib)),
-        found(native),
         found(icu),
     );
     Outcome::success(text)
@@ -1945,23 +1565,6 @@ fn pinned_icu() -> Option<PathBuf> {
     ]
     .into_iter()
     .find(|dir| dir.is_dir())
-}
-
-/// Основная версия `java` из `java -version` (0, если не узнать).
-fn java_major() -> u32 {
-    let Ok(output) = std::process::Command::new("java").arg("-version").output() else {
-        return 0;
-    };
-    let text = String::from_utf8_lossy(&output.stderr);
-    let Some(version) = text.split('"').nth(1) else {
-        return 0;
-    };
-    let mut parts = version.split(['.', '-', '_', '+']);
-    match parts.next().and_then(|part| part.parse::<u32>().ok()) {
-        Some(1) => parts.next().and_then(|part| part.parse().ok()).unwrap_or(0),
-        Some(major) => major,
-        None => 0,
-    }
 }
 
 /// Предупреждения анализа (`file:line:col: warning: …`).

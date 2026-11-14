@@ -1,4 +1,4 @@
-//! Поведение библиотеки Java, на которое опираются providers JVM: регулярные
+//! Совместимая с Java семантика, которую используют natives Sparrow: регулярные
 //! выражения `java.util.regex` (через `fancy-regex`), `String.split`,
 //! `replaceAll`/`replaceFirst` с буквальной заменой, строгие кодировки
 //! `Charset` (REPORT).

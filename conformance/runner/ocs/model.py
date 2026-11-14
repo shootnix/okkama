@@ -11,9 +11,9 @@ import json
 import os
 import re
 
-CASE_SCHEMA = "ocs-case/1"
-CONTRACTS_SCHEMA = "ocs-contracts/1"
-PROFILE_SCHEMA = "ocs-profile/1"
+CASE_SCHEMA = "ocs-case/2"
+CONTRACTS_SCHEMA = "ocs-contracts/2"
+PROFILE_SCHEMA = "ocs-profile/2"
 
 LEVELS = {
     "L00": "L00-bootstrap",
@@ -181,7 +181,7 @@ def validate_case_data(data, case_dir, level_dir_name=None):
     _require(not missing, "missing required keys: %s" % ", ".join(missing))
     unknown = set(data) - set(CASE_KEYS_REQUIRED) - set(CASE_KEYS_OPTIONAL)
     _require(not unknown, "unknown keys: %s" % ", ".join(sorted(unknown)))
-    _require(data["schema"] == CASE_SCHEMA, "schema must be %s" % CASE_SCHEMA)
+    _require(data["schema"] == CASE_SCHEMA, "unsupported case schema %r (this runner reads %s)" % (data["schema"], CASE_SCHEMA))
 
     cid = data["id"]
     _require(isinstance(cid, str) and ID_RE.match(cid), "invalid id %r" % (cid,))

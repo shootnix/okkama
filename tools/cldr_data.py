@@ -1,7 +1,7 @@
 """CLDR tables as runtime data (#223).
 
 The CLDR generators write their tables to gzip text files next to the other
-runtime data (okkama-rs/crates/okkama-compiler/runtime/jvm/src/okkama/rt).
+runtime data (okkama-rs/crates/okkama-runtime-core/data).
 The runtimes read a file the first time one of its tables is asked for, and
 std/runtime/cldr.ok answers lookups with `cldr_fields(table, key)`.
 
@@ -14,7 +14,7 @@ import gzip
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME = ROOT / 'okkama-rs/crates/okkama-compiler/runtime/jvm/src/okkama/rt'
+RUNTIME = ROOT / 'okkama-rs/crates/okkama-runtime-core/data'
 
 
 class Tables:

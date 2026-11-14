@@ -348,7 +348,7 @@ impl Runtime {
                     continue;
                 }
                 // A runtime failure of the run, worded as the IR engine and
-                // the JVM report it (#342).
+                // the shared diagnostic contract requires (#342).
                 let ctx = unsafe { &mut *ctx };
                 ctx.failure = self.failure_new(FailureKind::Program("async main cannot complete: no task can make progress".into()));
                 ctx.status = FAILED;

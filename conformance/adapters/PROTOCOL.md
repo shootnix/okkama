@@ -1,4 +1,4 @@
-# Adapter protocol `ocs-adapter/1`
+# Adapter protocol `ocs-adapter/2`
 
 An adapter is any executable that lets the runner drive one Okkama
 implementation. The runner is written in Python only as a portable baseline; an
@@ -7,12 +7,12 @@ into the runner.
 
 ## Configuration
 
-`adapters/<name>/adapter.json` (schema `ocs-adapter-config/1`):
+`adapters/<name>/adapter.json` (schema `ocs-adapter-config/2`):
 
 ```json
 {
-  "schema": "ocs-adapter-config/1",
-  "protocol": "ocs-adapter/1",
+  "schema": "ocs-adapter-config/2",
+  "protocol": "ocs-adapter/2",
   "name": "okkama-perl",
   "command": ["perl", "{adapter_dir}/okkama_perl_adapter.pl"],
   "env": {"OCS_PERL_IMPLEMENTATION_ROOT": "{suite_root}/../okkama-pl"},
@@ -55,7 +55,7 @@ For a case the runner starts the command with:
 
 ```json
 {
-  "protocol": "ocs-adapter/1",
+  "protocol": "ocs-adapter/2",
   "mode": "run",
   "sources": ["/tmp/ocs-x/work/main.ok", "/tmp/ocs-x/work/part.ok"],
   "args": ["alpha", ""],
@@ -72,7 +72,7 @@ file; several sources form one multi-file module.
 
 ```json
 {
-  "protocol": "ocs-adapter/1",
+  "protocol": "ocs-adapter/2",
   "adapter": {"name": "okkama-perl", "version": "1"},
   "mode": "run",
   "outcome": "failed",
@@ -141,17 +141,14 @@ error). Diagnostics are rendered to stderr exactly as the CLI does.
 binary for `--ocs-capabilities`. It forwards only modes the binary declares,
 using the same protocol natively (`--ocs-request R --ocs-response P`). The
 workspace builds the `okkama` binary (`okkama-cli`). `OCS_RUST_ENGINE` selects
-`ir` (default), `sparrow`, or `jvm`; use `--adapter-env OCS_RUST_ENGINE=sparrow`
-to obtain an independent Sparrow report. IR and Sparrow declare `parse`,
-`check`, and `run`; JVM also declares `test`. Sparrow execution includes
-code generation and SPB encode/decode before running the VM. JVM explicitly
-compiles temporary class files and starts `java`. There is no engine fallback.
+`sparrow` (default and only engine). Sparrow declares `parse`, `check`,
+`run` and `test`. Execution includes code generation and SPB encode/decode
+before running the VM. There is no engine fallback.
 Unsupported constructs are reported as `unsupported`, runtime traps as
 `failed`, and invalid internal state as `internal-error`. The selected engine
 is recorded in adapter configuration and participates in the capability cache.
 The probe
-fingerprint covers the embedded JVM runtime classes (`*.class`) as well as the
-Rust sources.
+fingerprint covers embedded runtime data (`*.dat`) as well as the Rust sources.
 
 ## Writing a new adapter
 

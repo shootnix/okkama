@@ -1,5 +1,5 @@
 //! `runtime/buffer`: изменяемый байтовый буфер `BufferState` — перенос
-//! `TextNatives` JVM-рантайма (те же отказы `core.buffer`).
+//! Единые отказы `core.buffer`.
 
 use std::cell::RefCell;
 use std::rc::Rc;

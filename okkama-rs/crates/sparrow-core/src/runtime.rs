@@ -80,13 +80,40 @@ impl Payload for Failure {
     }
 }
 
+/// One stable invocation record per function, shared with generated static,
+/// role and async calls. Only `code` changes, after code/maps publication.
+/// Captures are a per-closure prefix, not a per-function count: the same
+/// function may be closed over different prefixes with different fn types.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Invocation {
+    pub code: u64,
+    pub params: u32,
+    pub is_async: bool,
+}
+
+impl Invocation {
+    fn capture_count(self, count: u64) -> Result<usize, &'static str> {
+        if self.params > 8 {
+            return Err("closure with more than 8 parameters");
+        }
+        if count > u64::from(self.params) {
+            return Err("closure argument count exceeds parameter count");
+        }
+        // Both operands are now in 0..=8, before conversion/subtraction.
+        Ok(self.params as usize - count as usize)
+    }
+}
+
 #[derive(Debug)]
 pub struct Runtime {
     pub heap: Heap,
     pub loaded: Loaded,
     pub jit: crate::jit::Jit,
-    /// Code address per function; 0 until compiled on its first call.
-    pub code: Box<[u64]>,
+    /// Stable allocation embedded in machine code; code is 0 until compiled.
+    pub invocations: Box<[Invocation]>,
+    /// Same-binary diagnostic control, read once at runtime construction.
+    closure_bridge_reference: bool,
     /// Constants embedded in machine code; always roots.
     pub constants: Vec<(Word, Repr)>,
     /// Values held by Rust while machine code runs (entry arguments, results).
@@ -141,7 +168,7 @@ pub(crate) struct Budget {
     /// Steps left in the current slice; machine code polls below zero.
     pub fuel: crate::budget::Fuel,
     /// The memory budget caps the machine stack: overflowing it is running
-    /// out of memory, as on the IR engine and the JVM (#241).
+    /// out of memory (#241).
     pub stack_capped: bool,
 }
 
@@ -170,7 +197,13 @@ impl Runtime {
         if std::env::var_os("SPARROW_CORE_STATS").is_some() {
             heap.allocations = Some(Box::default());
         }
-        let functions = loaded.program.functions.len();
+        let invocations = loaded.program.functions.iter().map(|f| {
+            Ok(Invocation {
+                code: 0,
+                params: u32::try_from(f.params.len()).map_err(|_| Error("too many function parameters".into()))?,
+                is_async: f.is_async,
+            })
+        }).collect::<Result<Box<[_]>, Error>>()?;
         let resources = crate::failures::Resources::new(&loaded.program);
         let intrinsics = loaded
             .program
@@ -202,7 +235,8 @@ impl Runtime {
             budget: Budget::default(),
             heap,
             jit: crate::jit::Jit::new()?,
-            code: vec![0; functions].into_boxed_slice(),
+            invocations,
+            closure_bridge_reference: std::env::var_os("SPARROW_CORE_CLOSURE_BRIDGE").is_some_and(|value| value == "reference"),
             globals: vec![None; loaded.program.globals.len()],
             loaded,
             constants: Vec::new(),
@@ -285,6 +319,7 @@ impl Runtime {
         let stats = self.stats.as_ref()?;
         let heap = self.heap.stats();
         let extra = [
+            ("invocation metadata, bytes".to_string(), std::mem::size_of_val(&*self.invocations) as u64),
             ("heap bytes allocated".to_string(), heap.allocated_bytes as u64),
             ("heap live bytes, mean after collection".to_string(), (heap.live_sum / heap.collections.max(1)) as u64),
             ("collections".to_string(), heap.collections as u64),
@@ -815,6 +850,14 @@ pub extern "C" fn rt_float(ctx: *mut Ctx, op: u64, left: u64, right: u64) -> u64
 pub extern "C" fn rt_closure(ctx: *mut Ctx, function: u64, captures: *const Word, count: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
+    let Some(entry) = usize::try_from(function).ok().and_then(|index| runtime.invocations.get(index)) else {
+        return fatal(ctx, runtime, "invalid closure function".into());
+    };
+    if count > u64::from(entry.params) {
+        return fatal(ctx, runtime, "closure capture count exceeds parameter count".into());
+    }
+    // The verified caller supplies `count` initialized words (a non-null
+    // spill address even for zero captures); count fits the function layout.
     let captures = unsafe { std::slice::from_raw_parts(captures, count as usize) };
     let closure = runtime.heap.closure_new(function as u32, captures);
     runtime.safepoint(frame, ctx, &[(closure, Repr::Ref)]);
@@ -828,21 +871,44 @@ pub extern "C" fn rt_call_closure(ctx: *mut Ctx, closure: Word, arguments: *cons
     let (ctx_ref, runtime) = unsafe { runtime(ctx) };
     runtime.count(|_| "closure call".into());
     let function = heap::payload(runtime.heap.header_of(closure)) as usize;
-    let params = runtime.loaded.program.functions[function].params.len();
-    let captured = params - count as usize;
-    let mut words = [UNBOUND; 8];
-    if params > words.len() {
-        return fatal(ctx_ref, runtime, "closure with more than 8 parameters".into());
+    let Some(mut entry) = runtime.invocations.get(function).copied() else {
+        return fatal(ctx_ref, runtime, "invalid closure function".into());
+    };
+    if runtime.closure_bridge_reference {
+        let source = &runtime.loaded.program.functions[function];
+        entry.params = source.params.len() as u32;
+        entry.is_async = source.is_async;
     }
+    let captured = match entry.capture_count(count) {
+        Ok(captured) => captured,
+        Err(message) => return fatal(ctx_ref, runtime, message.into()),
+    };
+    let params = entry.params as usize;
+    // Keep initialized storage until removing it has a measured benefit.
+    // No uninitialized Word or partially initialized slice reaches any path.
+    let mut words = [UNBOUND; 8];
     for (i, word) in words.iter_mut().enumerate().take(captured) {
         *word = runtime.heap.field(closure, i);
     }
-    words[captured..params].copy_from_slice(unsafe { std::slice::from_raw_parts(arguments, count as usize) });
-    if runtime.loaded.program.functions[function].is_async {
+    if runtime.closure_bridge_reference {
+        words[captured..params].copy_from_slice(unsafe { std::slice::from_raw_parts(arguments, count as usize) });
+    } else {
+        // Bound the short copy explicitly. Inspect optimized target code:
+        // a Rust loop alone does not promise absence of memcpy/memmove.
+        for i in 0..8 {
+            if i >= count as usize {
+                break;
+            }
+            // SAFETY: i < count <= params <= 8; captured + count = params.
+            // The verified caller's spill contains count initialized words.
+            words[captured + i] = unsafe { *arguments.add(i) };
+        }
+    }
+    if entry.is_async {
         // Calling an async action makes its cold Future.
         return runtime.future_new(function, &words[..params]);
     }
-    let code = match runtime.code[function] {
+    let code = match entry.code {
         0 => match crate::jit::compile(runtime, function) {
             Ok(code) => code,
             Err(error) => return fatal(ctx_ref, runtime, error.0),
@@ -880,6 +946,97 @@ mod embedding_tests {
     use super::*;
     use crate::budget::{Limits, NativeGroup};
     use okkama_sparrow::{Dst, FuncRef, Function, Instruction as I, Program, Register, Type, TypeRef};
+
+    #[test]
+    fn closure_bridge_counts_are_checked_before_access() {
+        for params in [0, 1, 2, 8] {
+            let entry = Invocation { code: 0, params, is_async: false };
+            for count in 0..=u64::from(params) {
+                assert_eq!(entry.capture_count(count), Ok(params as usize - count as usize));
+            }
+            assert_eq!(entry.capture_count(u64::from(params) + 1), Err("closure argument count exceeds parameter count"));
+            assert_eq!(entry.capture_count(u64::MAX), Err("closure argument count exceeds parameter count"));
+        }
+        let entry = Invocation { code: 0, params: 9, is_async: true };
+        assert_eq!(entry.capture_count(0), Err("closure with more than 8 parameters"));
+        assert_eq!(entry.capture_count(u64::MAX), Err("closure with more than 8 parameters"));
+    }
+
+    fn bridge_runtime() -> Box<Runtime> {
+        let source = "sparrow 16\nmodule \"bridge\" \"1.0.0\"\ntype t0 int\n\
+            function f0 \"sync\" {\n registers [t0, t0]\n params [r0, r1]\n result t0\n 0: ret r0\n}\n\
+            function f1 \"async\" async {\n registers [t0]\n params [r0]\n result t0\n 0: ret r0\n}\n";
+        Box::new(Runtime::new(Loaded::new(okkama_sparrow::assemble(source).unwrap())).unwrap())
+    }
+
+    fn bridge_context(runtime: &mut Runtime) -> Ctx {
+        Ctx { status: OK, stack_limit: 0, failure: UNBOUND, runtime, entry_frame: 0, scratch: UNBOUND }
+    }
+
+    #[test]
+    fn closure_bridge_invalid_helpers_fail_before_touching_input() {
+        for reference in [false, true] {
+            for count in [3, u64::MAX] {
+                let mut runtime = bridge_runtime();
+                runtime.closure_bridge_reference = reference;
+                let closure = runtime.heap.closure_new(0, &[]);
+                let mut ctx = bridge_context(&mut runtime);
+                // No readable arguments: invalid counts must fail before a read.
+                assert_eq!(rt_call_closure(&mut ctx, closure, std::ptr::null(), count), 0);
+                assert_eq!(ctx.status, FATAL);
+                assert_eq!(runtime.fatal.as_deref(), Some("closure argument count exceeds parameter count"));
+            }
+        }
+        for (function, count, expected) in [
+            (0, 3, "closure capture count exceeds parameter count"),
+            (0, u64::MAX, "closure capture count exceeds parameter count"),
+            (u64::MAX, 0, "invalid closure function"),
+        ] {
+            let mut runtime = bridge_runtime();
+            let mut ctx = bridge_context(&mut runtime);
+            assert_eq!(rt_closure(&mut ctx, function, std::ptr::null(), count), 0);
+            assert_eq!(ctx.status, FATAL);
+            assert_eq!(runtime.fatal.as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn closure_bridge_invocation_publication_is_stable() {
+        let mut runtime = bridge_runtime();
+        let base = runtime.invocations.as_ptr();
+        assert_eq!(std::mem::size_of::<Invocation>(), 16);
+        assert_eq!(std::mem::offset_of!(Invocation, code), 0);
+        assert!(runtime.invocations.iter().all(|entry| entry.code == 0));
+        for function in [0, 1] {
+            let entry = runtime.invocations[function];
+            let address = crate::jit::compile(&mut runtime, function).unwrap();
+            assert_ne!(address, 0);
+            assert_eq!(runtime.invocations.as_ptr(), base);
+            assert_eq!(runtime.invocations[function].code, address);
+            assert_eq!(runtime.invocations[function].params, entry.params);
+            assert_eq!(runtime.invocations[function].is_async, entry.is_async);
+            assert_eq!(crate::jit::compile(&mut runtime, function).unwrap(), address);
+        }
+    }
+
+    #[test]
+    fn closure_bridge_compilation_failure_does_not_publish_code() {
+        let mut runtime = bridge_runtime();
+        // A tiny compile-cost budget refuses even this one-instruction body.
+        // No large fixture or machine-code invocation is needed.
+        runtime.limits.memory = Some(1);
+        let closure = runtime.heap.closure_new(0, &[crate::word::small(1).unwrap(), crate::word::small(2).unwrap()]);
+        let mut ctx = bridge_context(&mut runtime);
+        assert_eq!(rt_call_closure(&mut ctx, closure, [].as_ptr(), 0), 0);
+        assert_eq!(ctx.status, FATAL);
+        assert!(runtime.fatal.as_deref().unwrap().contains("compiling it would take more than"));
+        assert_eq!(runtime.invocations[0].code, 0);
+        assert_eq!(runtime.invocations[0].params, 2);
+        // A failed compilation left no callable address; the compiler can
+        // still finalize the same declaration after its budget is restored.
+        runtime.limits = Limits::default();
+        assert_ne!(crate::jit::compile(&mut runtime, 0).unwrap(), 0);
+    }
 
     /// `main` returns the wall clock: one native of the Clock group.
     fn clock() -> Box<Runtime> {

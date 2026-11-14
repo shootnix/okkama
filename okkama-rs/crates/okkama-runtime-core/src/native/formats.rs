@@ -1,8 +1,8 @@
-//! Natives форматов данных — перенос `DataNatives` JVM: `runtime/io_decorators`,
+//! Natives форматов данных: `runtime/io_decorators`,
 //! `runtime/testing`, `runtime/csv_state`, `runtime/pem`, `runtime/template`
 //! (`runtime/ini` переписан на Okkama, #13). Смещения и длины — в символах (code points), тексты отказов
 //! — как у Perl-provider. Строки Rust всегда скалярны, поэтому проверки
-//! одиночных суррогатов JVM здесь не срабатывают никогда.
+//! одиночных суррогатов здесь не срабатывают никогда.
 use super::Error;
 use super::support::{
     bytes, failed, failure, handle, int, int_value, new_handle, string, string_array, text,

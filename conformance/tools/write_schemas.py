@@ -40,7 +40,7 @@ def stage_spec(stages):
 
 
 case = {
-    "$schema": D, "$id": "ocs-case/1", "title": "Okkama conformance case (case.json)", "type": "object",
+    "$schema": D, "$id": "ocs-case/2", "title": "Okkama conformance case (case.json)", "type": "object",
     "required": list(model.CASE_KEYS_REQUIRED),
     "additionalProperties": False,
     "properties": {
@@ -81,16 +81,16 @@ case = {
         "defects": {"type": "array", "items": {"type": "string", "pattern": "^DEF-[0-9]{3}$"}},
         "features": {"type": "array", "items": {"type": "string"}},
     }}
-request = {"$schema": D, "$id": "ocs-adapter-request/1", "title": "Adapter request", "type": "object",
+request = {"$schema": D, "$id": "ocs-adapter-request/2", "title": "Adapter request", "type": "object",
            "required": ["protocol", "mode", "sources", "args", "cwd", "stdlib_root", "timeout_s"], "additionalProperties": False,
-           "properties": {"protocol": {"const": "ocs-adapter/1"}, "mode": {"enum": list(model.MODES)},
+           "properties": {"protocol": {"const": "ocs-adapter/2"}, "mode": {"enum": list(model.MODES)},
                           "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
                           "args": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"},
                           "stdlib_root": {"type": "string"}, "timeout_s": {"type": "number"}}}
-response = {"$schema": D, "$id": "ocs-adapter-response/1", "title": "Adapter response (observations only)", "type": "object",
+response = {"$schema": D, "$id": "ocs-adapter-response/2", "title": "Adapter response (observations only)", "type": "object",
             "required": ["protocol", "mode", "outcome"],
             "not": {"anyOf": [{"required": ["verdict"]}, {"required": ["pass"]}, {"required": ["status"]}]},
-            "properties": {"protocol": {"const": "ocs-adapter/1"}, "mode": {"enum": list(model.MODES)},
+            "properties": {"protocol": {"const": "ocs-adapter/2"}, "mode": {"enum": list(model.MODES)},
                            "outcome": {"enum": list(ADAPTER_OUTCOMES)},
                            "exit_status": {"type": "integer", "minimum": 0, "maximum": 255},
                            "stage_reached": {"enum": ["none", "parse", "check", "runtime"]},
@@ -100,14 +100,14 @@ response = {"$schema": D, "$id": "ocs-adapter-response/1", "title": "Adapter res
                                "category": {"enum": list(model.CATEGORIES) + ["unclassified", "internal"]},
                                "error_type": {"type": "string"}, "message": {"type": "string"}, "raw": {"type": "string"}}},
                            "adapter": {"type": "object"}, "elapsed_ms": {"type": "integer"}}}
-config = {"$schema": D, "$id": "ocs-adapter-config/1", "title": "Adapter configuration", "type": "object",
+config = {"$schema": D, "$id": "ocs-adapter-config/2", "title": "Adapter configuration", "type": "object",
           "required": ["schema", "protocol", "name", "command"],
-          "properties": {"schema": {"const": "ocs-adapter-config/1"}, "protocol": {"const": "ocs-adapter/1"},
+          "properties": {"schema": {"const": "ocs-adapter-config/2"}, "protocol": {"const": "ocs-adapter/2"},
                          "name": {"type": "string"}, "description": {"type": "string"},
                          "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
                          "env": {"type": "object", "additionalProperties": {"type": "string"}},
                          "pass_env": {"type": "array", "items": {"type": "string"}}, "notes": {"type": "string"}}}
-profile = {"$schema": D, "$id": "ocs-profile/1", "title": "Profile", "type": "object",
+profile = {"$schema": D, "$id": "ocs-profile/2", "title": "Profile", "type": "object",
            "required": ["schema", "name", "kind", "description", "select"],
            "properties": {"schema": {"const": model.PROFILE_SCHEMA}, "name": {"type": "string"},
                           "kind": {"enum": ["milestone", "release-member", "release-gate", "informative", "benchmark"]},
@@ -120,7 +120,7 @@ profile = {"$schema": D, "$id": "ocs-profile/1", "title": "Profile", "type": "ob
                               "mandatory_only": {"type": "boolean"},
                               "statuses": {"type": "array", "items": {"enum": list(model.CASE_STATUSES)}}}}}}
 aspect = {"oneOf": [{"const": "required"}, {"type": "string", "pattern": "^n/a: .{4,}"}]}
-contracts = {"$schema": D, "$id": "ocs-contracts/1", "title": "Contract inventory", "type": "object",
+contracts = {"$schema": D, "$id": "ocs-contracts/2", "title": "Contract inventory", "type": "object",
              "required": ["schema", "contracts"],
              "properties": {"schema": {"const": model.CONTRACTS_SCHEMA}, "family": {"type": "string"}, "description": {"type": "string"},
                             "contracts": {"type": "array", "items": {"type": "object", "required": ["id", "title", "status", "aspects", "spec_refs"],
@@ -130,8 +130,8 @@ contracts = {"$schema": D, "$id": "ocs-contracts/1", "title": "Contract inventor
                                                "discrepancies": {"type": "array", "items": {"type": "string", "pattern": "^D-[0-9]{3}$"}},
                                                "aspects": {"type": "object", "required": list(model.ASPECTS),
                                                            "properties": {a: aspect for a in model.ASPECTS}}}}}}}
-fixture = {"$schema": D, "$id": "ocs-fixture/1", "title": "Fixture", "type": "object", "required": ["schema", "kind"],
-           "properties": {"schema": {"const": "ocs-fixture/1"}, "kind": {"enum": ["files", "service"]},
+fixture = {"$schema": D, "$id": "ocs-fixture/2", "title": "Fixture", "type": "object", "required": ["schema", "kind"],
+           "properties": {"schema": {"const": "ocs-fixture/2"}, "kind": {"enum": ["files", "service"]},
                           "path": {"type": "string"}, "target": {"type": "string"},
                           "command": {"type": "array", "items": {"type": "string"}}, "ready_regex": {"type": "string"},
                           "ready_timeout_s": {"type": "number"}, "provides": {"type": "array", "items": {"type": "string"}},

@@ -5,7 +5,7 @@ use crate::IntValue;
 /// `int` точный (R01, OIR-1 §23): `+`, `-`, `*` и унарный минус не
 /// переполняются — `add`, `subtract`, `multiply`, `negate` ниже.
 /// Битовые операции и сдвиги работают со словом signed-64; операнд вне его
-/// диапазона — ошибка, как в JVM-рантайме (`Rt.word`).
+/// диапазона — ошибка.
 pub fn word(value: &IntValue) -> Result<i64, &'static str> {
     value
         .to_i64()
@@ -111,7 +111,7 @@ pub fn slice_range(
     end: &IntValue,
 ) -> Result<std::ops::Range<usize>, &'static str> {
     // Сначала сравнения точных целых. Огромный индекс не должен усекаться
-    // до usize или менять приоритет ошибок относительно JVM.
+    // до usize или менять установленный приоритет ошибок.
     if start.is_negative() {
         return Err("Slice start must not be negative");
     }
@@ -164,7 +164,7 @@ pub fn shift(
     }))
 }
 
-/// Битовые действия над словом (§16.2); коды — как у `Rt.intBits` JVM.
+/// Битовые действия над словом (§16.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BitOp {

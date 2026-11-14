@@ -18,25 +18,23 @@ book and the specification disagree, the specification and the test suite
 
 ```sh
 okkama run test.ok
-okkama build test.ok --target jvm -o out.class
 okkama build test.ok --target sparrow -o out.spb
 sparrow out.spb
 ```
 
 `run` executes source on Sparrow (JIT) by default, including inline tests
 with `run -t`. Sparrow is the only Okkama engine (#584); the IR interpreter
-and its REPL were removed. `OKKAMA_ENGINE=sparrow|jvm` selects Sparrow or
-the legacy JVM backend, retained until #585.
-`build` emits the selected
-bytecode; the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
+and its REPL were removed, and the JVM backend was removed in 0.6.0 (#585;
+0.5.8 is the last release with it).
+`build` emits Sparrow
+bytecode (`--target sparrow` is the default); the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
 version is called Tomato). `--backend` remains an alias
 for `--target`. `sparrow check out.spb` verifies without execution.
 See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
-Every engine can bound a run, for untrusted programs or services: Sparrow
-(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`) and the legacy
-JVM backend (`okkama run --engine jvm`). Every budget is
+Sparrow can bound a run, for untrusted programs or services (`okkama exec`,
+`okkama run`, `sparrow run`). Every budget is
 off by default and costs nothing then:
 
 ```sh
@@ -60,14 +58,6 @@ timeout; another single native operation (a long BigInt division, an Argon2
 hash) finishes first, but with `--timeout` the command line ends the run at
 most a second after the time is up. A BigInt product that cannot fit is
 refused before it is computed.
-
-Steps are counted alike on every engine, so a limit that is enough on one is
-enough on the others. On the JVM the steps are counted by code generated only
-when `--max-steps` is given, and the memory budget is the Java heap (`-Xmx`,
-which includes the runtime's own objects) and the size of each thread stack.
-A JAR built with `okkama build --target jvm --budgeted` takes its step limit
-from `java -Dokkama.steps=N -jar app.jar`; `-Xmx` with `-Dokkama.memory=N`
-gives any JAR the memory report.
 
 ---
 
@@ -3513,18 +3503,17 @@ its dependencies, so a new release of a dependency changes nothing until some
 ```toml
 [build]
 entry = "src/main.ok"      # or a list: the files of the root module
-target = "sparrow"         # sparrow | jvm
-output = "target/app.spb"  # default target/<name>.spb or .jar
+target = "sparrow"         # the only target
+output = "target/app.spb"  # default target/<name>.spb
 
 [run]
-engine = "sparrow"         # sparrow | jvm; default: the build target
+engine = "sparrow"         # the only engine
 args = []                  # `blade run -- a b` appends a and b
 env = {}                   # extra environment variables
 ```
 
 `blade run` builds first when a `.ok` file, `blade.toml` or `blade.lock` is
-newer than the output, then runs the `.spb` (`okkama exec`) or the JAR
-(`java -jar`); the program's exit status is Blade's. Both commands refuse a
+newer than the output, then runs the `.spb` (`okkama exec`); the program's exit status is Blade's. Both commands refuse a
 project whose dependencies are not installed. Blade uses the `okkama` next to
 it, else the one on `PATH` (`BLADE_OKKAMA` names another).
 
@@ -4888,17 +4877,15 @@ process started never starts. Structured groups and root shutdown await that
 same completion. The kill is immediate (SIGKILL), so the worker's Okkama
 defers and `destroy` blocks do not run. A worker leads its own process group on
 Sparrow, and the whole group is killed, so processes the
-worker started go with it; the JVM, which has no process groups, kills the
-worker and the descendants it has at that moment (#359).
+worker started go with it (#359).
 
 The worker is the same program run again by the same engine: Tomato runs its
-`.spb` (one compiled in memory is written to a temporary file first), and
-the JVM its classes. It gets an explicit working directory; source filenames are made
+`.spb` (one compiled in memory is written to a temporary file first). It gets an explicit working directory; source filenames are made
 absolute in the parent before the worker changes directory, so relative CLI
 source paths work too. An embedder that runs programs which `spawn` must pass
 Tomato the worker command, and a `spawn` without one fails with
 `process workers require an explicit worker command`. Arguments and results
-cross as binary `OKW1` frames, an implementation detail rather than part of the
+cross as binary `OKW2` frames, an implementation detail rather than part of the
 language. This is process isolation, not exposed POSIX `fork` semantics.
 
 ### 31.5.2 Bounded typed channels

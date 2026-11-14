@@ -88,6 +88,13 @@ pub(crate) enum Closed {
     Async(Word, Option<Word>),
 }
 
+/// One close action selected without calling out or mutating the heap.
+/// Returning ends the entry borrow before summary invalidation or destruction.
+enum CloseAction {
+    Freed(u64),
+    Destroy(Word, u64),
+}
+
 /// A region is an array `[overflow, slot × REGION_SLOTS]`: identities fill the
 /// slots in order, then the overflow `RegionValue`; an empty first slot means
 /// an empty region (machine code checks just that word).
@@ -240,7 +247,7 @@ impl Runtime {
             return;
         }
         let roots = if success {
-            let repr = self.heap.layouts.frames[self.function_of(frame)][1];
+            let repr = self.heap.layouts().frames[self.function_of(frame)][1];
             repr.pointer(value).into_iter().collect()
         } else {
             self.failure_payloads(value)
@@ -377,7 +384,7 @@ impl Runtime {
                         continue;
                     }
                     seen.push(object);
-                    let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
+                    let layout = &self.heap.layouts().objects[heap::payload(header) as usize];
                     for (index, &field) in layout.iter().enumerate().rev() {
                         pending.push((self.heap.field(object, index), field));
                     }
@@ -409,7 +416,7 @@ impl Runtime {
                     // the Future itself is already owned through another edge.
                     let function = heap::payload(header) as usize;
                     let source = &self.loaded.program.functions[function];
-                    let layout = &self.heap.layouts.frames[function];
+                    let layout = &self.heap.layouts().frames[function];
                     let retained = layout.len() - source.params.len();
                     for index in (retained..layout.len()).rev() {
                         pending.push((self.heap.field(object, index), layout[index]));
@@ -422,7 +429,7 @@ impl Runtime {
                     pending.extend(elements.iter().rev().map(|&e| (e, repr)));
                 }
                 heap::CLOSURE => {
-                    let layout = &self.heap.layouts.closures[heap::payload(header) as usize];
+                    let layout = &self.heap.layouts().closures[heap::payload(header) as usize];
                     for (index, &field) in layout.iter().enumerate().rev() {
                         pending.push((self.heap.field(object, index), field));
                     }
@@ -509,7 +516,7 @@ impl Runtime {
         if heap::kind(header) != heap::OBJECT {
             return None;
         }
-        let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
+        let layout = &self.heap.layouts().objects[heap::payload(header) as usize];
         for (index, &field) in layout.iter().enumerate() {
             if field.pointer(self.heap.field(value, index)).is_some_and(|pointer| self.may_reach_free(pointer)) {
                 return None;
@@ -535,6 +542,41 @@ impl Runtime {
         }
         let overflow = self.heap.field(region, 0);
         self.heap.payload::<RegionValue>(overflow).expect("region").entries[index - REGION_SLOTS]
+    }
+
+    /// Scan a stable entry view until work needs the whole runtime again.
+    /// No allocation, heap mutation, safepoint or callback is allowed here.
+    /// In particular, never retain this view across a destroy: nested cleanup
+    /// can mutate regions and collection can reclaim their payloads.
+    fn region_next_action(&mut self, region: Word, index: &mut usize, kept: &HashSet<Word>) -> Option<CloseAction> {
+        let entries = if *index > REGION_SLOTS {
+            let overflow = self.heap.field(region, 0);
+            &self.heap.payload::<RegionValue>(overflow).expect("region").entries[..]
+        } else {
+            &[]
+        };
+        while *index > 0 {
+            *index -= 1;
+            let object = if *index < REGION_SLOTS {
+                self.heap.field(region, *index + 1)
+            } else {
+                entries[*index - REGION_SLOTS]
+            };
+            let Some(identity) = self.resources.identities.get_mut(&object) else { continue };
+            if kept.contains(&object) {
+                if identity.owner == Owner::Region(region) {
+                    identity.owner = Owner::Free;
+                    return Some(CloseAction::Freed(identity.serial));
+                }
+                continue;
+            }
+            if identity.owner != Owner::Free && identity.owner != Owner::Region(region) {
+                continue;
+            }
+            identity.owner = Owner::Dead;
+            return Some(CloseAction::Destroy(object, identity.serial));
+        }
+        None
     }
 
     fn region_contains(&self, region: Word, object: Word) -> bool {
@@ -811,23 +853,14 @@ impl Runtime {
         // The region and the primary failure stay alive while destroys run.
         self.roots.push((region, Repr::Ref));
         let mut index = self.region_len(region);
-        while index > 0 {
-            index -= 1;
-            let object = self.region_get(region, index);
-            let Some(identity) = self.resources.identities.get_mut(&object) else { continue };
-            if kept.contains(&object) {
-                if identity.owner == Owner::Region(region) {
-                    identity.owner = Owner::Free;
-                    let serial = identity.serial;
+        while let Some(action) = self.region_next_action(region, &mut index, &kept) {
+            let (object, serial) = match action {
+                CloseAction::Freed(serial) => {
                     self.freed(serial);
+                    continue;
                 }
-                continue;
-            }
-            if identity.owner != Owner::Free && identity.owner != Owner::Region(region) {
-                continue;
-            }
-            identity.owner = Owner::Dead;
-            let serial = identity.serial;
+                CloseAction::Destroy(object, serial) => (object, serial),
+            };
             let descriptor = heap::payload(self.heap.header_of(object)) as usize;
             let Some(destroy) = self.loaded.program.objects[descriptor].destroy else { continue };
             if let Some(trace) = &mut self.resources.trace {
@@ -990,7 +1023,7 @@ impl Runtime {
             match &record.kind {
                 FailureKind::Cancelled => output.push_str("Cancelled: Operation was cancelled"),
                 FailureKind::Native(object) => {
-                    // Host details as the IR engine and the JVM print them; a
+                    // Host details use the shared diagnostic contract; a
                     // nested entry keeps them indented under its label.
                     let field = |index| self.heap.text(self.heap.field(*object, index));
                     let text = format!(

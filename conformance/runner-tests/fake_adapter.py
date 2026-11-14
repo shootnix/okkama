@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A deliberately misbehaving ocs-adapter/1 implementation for runner self-tests.
+"""A deliberately misbehaving ocs-adapter/2 implementation for runner self-tests.
 
 Behaviour is chosen by OCS_FAKE_BEHAVIOR. The adapter never sees expected
 results; each behaviour models one way a real implementation or adapter can
@@ -15,7 +15,7 @@ import time
 
 
 def respond(path, mode, **fields):
-    doc = {"protocol": "ocs-adapter/1", "adapter": {"name": "fake", "version": "1"}, "mode": mode}
+    doc = {"protocol": "ocs-adapter/2", "adapter": {"name": "fake", "version": "1"}, "mode": mode}
     doc.update(fields)
     with open(path, "w") as fh:
         json.dump(doc, fh)
@@ -115,7 +115,7 @@ def main(argv):
     if b == "wrong-protocol":
         sys.stdout.write("hello\n")
         with open(resp, "w") as fh:
-            json.dump({"protocol": "ocs-adapter/0", "mode": mode, "outcome": "completed", "exit_status": 0}, fh)
+            json.dump({"protocol": "ocs-adapter/1", "mode": mode, "outcome": "completed", "exit_status": 0}, fh)
         return 0
     if b == "missing-async-completion":
         sys.stdout.write("started\n")

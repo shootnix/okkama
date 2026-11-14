@@ -6,7 +6,7 @@ fn runtime(source: &str, enabled: bool, frontend: bool) -> Box<Runtime> {
     let mut loaded = crate::program::Loaded::new(program);
     for (source, info) in loaded.program.functions.iter().zip(&mut loaded.functions) {
         info.pointer_free = if enabled {
-            crate::pointer_free::analyze(source, &info.kinds)
+            crate::pointer_free::analyze_with_ranges(source, &info.kinds, &loaded.program, false)
         } else {
             vec![false; info.kinds.len()]
         };
@@ -112,3 +112,6 @@ fn sync_and_async_unwind_cleanup_preserve_failure_and_destroy_log() {
         Ok(())
     }).unwrap();
 }
+
+#[path = "jit_int_range_tests.rs"]
+mod int_range_tests;

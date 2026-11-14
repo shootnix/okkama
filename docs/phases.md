@@ -13,7 +13,6 @@ public consumer of a phase's output checks it again.
 | Lowering (`lowering`) | THIR | OIR-1: typed SSA, blocks with explicit unwind targets, cleanup regions; specializations bounded ([#32]); synthetic instructions carry the span of the source operation they implement (short-circuit, `throw`, closures, region cleanup) | `ir::verify` on the result (an invalid module is an internal compiler error), `okkama-cli/tests/provenance.rs` |
 | IR passes (`lowering/mod.rs`) | verified OIR | verified OIR with the same meaning: `regions`, `tail-calls`, `fold`, `hoist`, `undef`, `jumps` | `ir::verify` after them; the gate's sparrow-passes-off conformance run; `okkama-cli/tests/ir_passes.rs` ([#29]) |
 | Sparrow codegen (`codegen/sparrow`) | OIR (verified again on entry) | SPB whose register allocation keeps every read value in its register | independent allocation check in debug builds and the gate ([#30]); `okkama_sparrow::Program::verify` (types, [#16]) on encode |
-| JVM codegen (`codegen/jvm`) | OIR (verified again on entry) | class files the JVM verifier accepts | JVM verification at load; conformance on `jvm` |
 | SPB loading (`okkama-sparrow`, `sparrow-core`) | any bytes | a verified, type-checked program within decode and analysis budgets ([#24]), intrinsic contracts hold | `decode`, `sparrow check`, fuzz target `spb` |
 
 Test-mode role fakes lower to ordinary `Role$fake` objects with typed fields.

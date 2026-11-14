@@ -1,9 +1,9 @@
 # okkama-rs
 
 Реализация языка Okkama на Rust: компилятор (лексер, парсер, анализ,
-lowering в OIR-1), бэкенды JVM и Sparrow, VM Sparrow с JIT
+lowering в OIR-1), бэкенд Sparrow, VM Sparrow с JIT
 (Cranelift) и сборщиком циклов, рантайм и natives std, LSP, форматтер и
-линтер. Единственный движок Okkama — Sparrow; JVM-бэкенд сохранён до #585.
+линтер. Единственный движок Okkama — Sparrow.
 Conformance (`../conformance`) проверяет поведение по общим ожиданиям.
 
 ## Сборка
@@ -33,9 +33,9 @@ cargo run -p okkama-cli -- ast examples/hello.ok --spans
 cargo run -p okkama-cli -- ir examples/arithmetic.ok
 cargo run -p okkama-cli -- ir examples/arithmetic.ok --format text
 
-# сборка JVM class-файла
-cargo run -p okkama-cli -- build examples/arithmetic.ok --target jvm -o out.class
-java -cp . out
+# сборка SPB-артефакта
+cargo run -p okkama-cli -- build examples/arithmetic.ok --target sparrow -o out.spb
+sparrow out.spb
 # Код завершения процесса: 2 (результат main).
 
 # исходный текст из stdin
@@ -91,8 +91,7 @@ stdout, scheduler bridge, точную арифметику и вычислен�
 
 IR-интерпретатор и зависевший от него `okkama repl` удалены (#584).
 `--engine ir` и `OKKAMA_ENGINE=ir` возвращают понятную ошибку.
-`--engine sparrow|jvm` и `OKKAMA_ENGINE=sparrow|jvm` выбирают Sparrow или
-временно сохранённый JVM-бэкенд. OIR и его passes остаются частью компилятора.
+`--engine sparrow` и `OKKAMA_ENGINE=sparrow` явно выбирают Sparrow. OIR и его passes остаются частью компилятора.
 
 [План полного рантайма, GC и JIT](docs/sparrow-runtime-roadmap.md).
 
@@ -149,13 +148,13 @@ IR сохраняет имя и версию модуля, импорты и с�
 ### Выбор backend и сборка
 
 ```sh
-cargo run -p okkama-cli -- build examples/arithmetic.ok --target jvm -o out.class
-cargo run -p okkama-cli -- build examples/arithmetic.ok --target=jvm --output=out.class
-cat examples/arithmetic.ok | cargo run -p okkama-cli -- build - --target jvm -o out.class
+cargo run -p okkama-cli -- build examples/arithmetic.ok --target sparrow -o out.spb
+cargo run -p okkama-cli -- build examples/arithmetic.ok --target=sparrow --output=out.spb
+cat examples/arithmetic.ok | cargo run -p okkama-cli -- build - --target sparrow -o out.spb
 cargo run -p okkama-cli -- build --help
 ```
 
-В `build` обязательны входной файл (или `-`), `--target` и `-o`/`--output`.
+В `build` обязательны входной файл (или `-`), `-o`/`--output`; `--target sparrow` необязателен.
 `--backend` остаётся алиасом `--target`. Разные цели в двух ключах дают ошибку.
 Команда выполняет цепочку `source → AST → module IR → backend → файл`.
 Backend получает готовый модуль IR и возвращает байты артефакта; файловый ввод
@@ -163,33 +162,8 @@ Backend получает готовый модуль IR и возвращает 
 
 `codegen::generate(module, backend, options)` передаёт IR выбранному backend.
 В `Options.artifact_name` CLI передаёт имя выходного файла без каталога и
-расширения. Для JVM это имя класса: `-o out.class` создаёт класс `out`.
-Класс можно проверить и запустить:
-
-```sh
-javap -c out.class
-java -Xverify:all -cp . out
-echo $?  # 2 для 1 + 1
-```
-
-Backend сам записывает бинарный формат `.class` версии 52 из Rust; классы
-рантайма `okkama.rt` собраны под Java 22 (FFM natives), поэтому программа
-запускается на JDK 22+. `javac` для сборки Okkama не используется. Каждая функция IR становится
-статическим методом с дескриптором по типам IR. `int` хранится как `BigInteger`;
-`okkamaMain()` возвращает `BigInteger`. Стандартный `main(String[])` проверяет
-результат в 0..255 и передаёт его в `System.exit(int)`.
-
-Ссылочные значения занимают один локальный слот. `int` точный (R01):
-арифметика — `BigInteger.add/subtract/multiply/negate`, без переполнения
-signed-64; битовые операции работают со словом signed-64 и отвергают больший
-операнд. `%` имеет знак делимого (D-031).
-
-До выдачи байтов backend проверяет ссылки на значения, возврат, имена методов
-и ограничения размера JVM. Неразрешённые импорты пока дают ошибку codegen.
-При ошибке генерации выходной файл не создаётся и не перезаписывается.
-
-Описание формата и инструкций: [JVMS §4](https://docs.oracle.com/javase/specs/jvms/se26/html/jvms-4.html),
-[JVMS §6](https://docs.oracle.com/javase/specs/jvms/se26/html/jvms-6.html).
+расширения. Sparrow генерирует проверенный SPB; запуск: `okkama exec out.spb`
+или `sparrow out.spb`. При ошибке генерации выходной файл не перезаписывается.
 
 ### Токены
 
@@ -328,7 +302,6 @@ okkama-rs/
     src/ir/                   модуль, функции, инструкции, терминаторы, принтер
     src/lowering/             AST → IR, разворачивание выражений в инструкции
     src/codegen/mod.rs        выбор backend и общий интерфейс генерации
-    src/codegen/jvm/          JVM bytecode и writer бинарного class-файла
     src/analysis, jit         границы будущих стадий (только документация)
     tests/                    интеграционные тесты, фикстуры, снапшоты, корпус
   crates/okkama-cli/          бинарник `okkama`: файлы, stdin, опции, коды выхода
@@ -336,8 +309,6 @@ okkama-rs/
   crates/blade-cli/           бинарник `blade`
   examples/                   небольшие корректные программы на Okkama
   docs/                       architecture.md, syntax-coverage.md, compatibility.md
-  tools/engines/              сверка Sparrow с JVM
-  tools/jvm-runtime/          сборка Java-рантайма okkama.rt и его данных
 ```
 
 Библиотека не читает аргументы командной строки, ничего не печатает и не
@@ -345,10 +316,7 @@ okkama-rs/
 
 ## Тесты и проверки
 
-Для полной регрессии нужны инструменты JDK 22+ `java`, `javap` и `javac` в PATH.
-Тесты JVM действительно запускают сгенерированные классы с `-Xverify:all`;
-`javac` компилирует только вспомогательный тестовый probe для чтения 64-битного
-результата через reflection. Для сборки Rust и генерации `.class` JDK не нужен.
+Для сборки и проверки достаточно Rust; криптография встроена в Sparrow.
 
 ```sh
 cargo fmt --all -- --check
@@ -368,8 +336,7 @@ cargo test --workspace
   разбора из `case.json`;
 - IR: выражения, функции, возвраты и source spans;
 - CLI: команды, stdin, форматы, коды выхода, диагностика lowering.
-- JVM: запуск `1 + 1`, полные 64-битные результаты, проверка class-файлов,
-  широкие local slots, Unicode-имена классов, дополнительные функции и overflow.
+- Sparrow: детерминизм SPB, проверка IR, исполнение программ и бюджетов.
 
 Корпусные тесты требуют полного checkout репозитория. Пропустить их можно
 только явно: `OKKAMA_SKIP_CORPUS=1`.

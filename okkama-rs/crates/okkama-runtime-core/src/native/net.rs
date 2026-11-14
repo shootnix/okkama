@@ -1,4 +1,4 @@
-//! `runtime/net` (числовые IP-адреса) — часть `NetNatives` JVM: текст
+//! `runtime/net` (числовые IP-адреса): текст
 //! `inet_pton`/`inet_ntop` и конверт адреса `'O' 'K' 1 family port(be) address`.
 use super::Error;
 use super::support::{byte_array, bytes, failure, int, string, text};

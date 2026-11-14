@@ -17,10 +17,7 @@ fn terminal_reads_survive_cancellation_and_resizes_report_geometry() {
     let std = here.join("../../../std");
     let driver = here.join("tests/terminal/pty_driver.py");
     let program = here.join("tests/terminal/cancel.ok");
-    let mut engines = vec!["sparrow"];
-    if Command::new("java").arg("-version").output().is_ok() {
-        engines.push("jvm");
-    }
+    let engines = vec!["sparrow"];
     let failures: Vec<String> = engines
         .into_iter()
         .filter_map(|engine| {

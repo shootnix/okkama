@@ -1,0 +1,63 @@
+; #539: verified public loading, big dividend, per-op results after collection.
+sparrow 16
+module "int-range" "1"
+type t0 int
+type t1 str
+type t2 array t0
+type t3 byte
+type t4 char
+type t5 bool
+function f0 "range.main" {
+    registers [t0, t0, t0, t0, t0, t1, t0, t2, t0, t3, t0, t4, t0, t0, t0, t5]
+    params []
+    result t0
+    0: const r0, int 4611686018427387903
+    1: const r1, int 1
+    2: int.add r2, r0, r1
+    3: const r3, int -7
+    4: int.mod r4, r2, r3
+    5: const r5, str "é🙂"
+    6: str.len r6, r5
+    7: arr.new r7, [r2, r2]
+    8: arr.len r8, r7
+    9: const r9, byte 255
+    10: cvt r10, r9
+    11: const r11, char 1114111
+    12: cvt r12, r11
+    13: call _, f1, []
+    14: const r13, int 4
+    15: call _, f2, [r4, r13]
+    16: const r13, int 2
+    17: call _, f2, [r6, r13]
+    18: call _, f2, [r8, r13]
+    19: const r13, int 255
+    20: call _, f2, [r10, r13]
+    21: const r13, int 1114111
+    22: call _, f2, [r12, r13]
+    23: const r13, int 0
+    24: arr.get r14, r7, r13
+    25: int.sub r14, r14, r0
+    26: call _, f2, [r14, r1]
+    27: int.sub r14, r2, r0
+    28: call _, f2, [r14, r1]
+    29: const r13, int 42
+    30: ret r13
+}
+function f1 "range.collect" {
+    registers [t1, t1]
+    params []
+    result void
+    0: const r0, str "collect"
+    1: str.concat r1, r0, r0
+    2: ret _
+}
+function f2 "range.assert" {
+    registers [t0, t0, t5]
+    params [r0, r1]
+    result void
+    0: int.cmp eq, r2, r0, r1
+    1: br r2, @3, @2
+    2: trap confirm, "range oracle mismatch"
+    3: ret _
+}
+entry f0

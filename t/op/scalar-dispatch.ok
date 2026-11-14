@@ -1,0 +1,46 @@
+module t v1.0.0;
+
+// #537: independent, all-engine oracles around Sparrow's tagged-small
+// boundaries. NaN/infinity cannot be language values; Rust parameter fixtures
+// cover their guard misses. Signed-64 failures also have OCS cast coverage.
+import "tap" take Tap;
+
+object Conversion {
+    Conversion();
+    floating(value is int) is float { value.float(); }
+    integer(value is float) is int { value.int(); }
+}
+
+main() is int {
+    let t = Tap(28);
+    let c = Conversion();
+    t = t.is(c.floating(0), 0.0, "zero int to float");
+    t = t.is(c.floating(-1), -1.0, "negative int to float");
+    t = t.is(c.floating(9007199254740991), 9007199254740991.0, "last consecutive exact int");
+    t = t.is(c.floating(9007199254740993), 9007199254740992.0, "halfway rounds down to even");
+    t = t.is(c.floating(9007199254740995), 9007199254740996.0, "halfway rounds up to even");
+    t = t.is(c.floating(-9007199254740995), -9007199254740996.0, "negative halfway rounds to even");
+    t = t.is(c.floating(4611686018427387903), 4611686018427387904.0, "small max rounds to two to 62");
+    t = t.is(c.floating(-4611686018427387904), -4611686018427387904.0, "small min is exact");
+    t = t.is(c.floating(4611686018427387904), 4611686018427387904.0, "big int just past small max");
+    t = t.is(c.floating(-4611686018427387905), -4611686018427387904.0, "big int below small min");
+    t = t.is(c.floating(9223372036854775807), 9223372036854775808.0, "signed-64 max rounds up");
+    t = t.is(c.floating(-9223372036854775808), -9223372036854775808.0, "signed-64 min is exact");
+    t = t.is(c.floating(9223372036854775808), 9223372036854775808.0, "big int beyond signed-64");
+    t = t.is(c.integer(0.0), 0, "positive zero to int");
+    t = t.is(c.integer(-0.0), 0, "negative zero to int");
+    t = t.is(c.integer(0.75), 0, "positive sub-unit truncation");
+    t = t.is(c.integer(-0.75), 0, "negative sub-unit truncation");
+    t = t.is(c.integer(1.999), 1, "positive truncation");
+    t = t.is(c.integer(-1.999), -1, "negative truncation");
+    t = t.is(c.integer(4611686018427387392.0), 4611686018427387392, "float below two to 62 remains small");
+    t = t.is(c.integer(4611686018427387904.0), 4611686018427387904, "two to 62 needs a big int");
+    t = t.is(c.integer(4611686018427388928.0), 4611686018427388928, "next float above two to 62");
+    t = t.is(c.integer(-4611686018427387392.0), -4611686018427387392, "float above small min");
+    t = t.is(c.integer(-4611686018427387904.0), -4611686018427387904, "small min stays tagged");
+    t = t.is(c.integer(-4611686018427388928.0), -4611686018427388928, "float below small min needs big int");
+    t = t.is(c.integer(9223372036854774784.0), 9223372036854774784, "last float below signed-64 upper bound");
+    t = t.is(c.integer(-9223372036854774784.0), -9223372036854774784, "float above signed-64 minimum");
+    t = t.is(c.integer(-9223372036854775808.0), -9223372036854775808, "signed-64 minimum conversion");
+    t.done();
+}

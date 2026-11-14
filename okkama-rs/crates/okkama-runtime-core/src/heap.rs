@@ -767,7 +767,7 @@ impl Map {
 pub struct Closure {
     pub function: usize,
     pub captures: Vec<Value>,
-    /// `worker.bind`: вход воркера и поля receiver (`Worker.Bound` JVM).
+    /// `worker.bind`: вход воркера и поля receiver.
     pub worker: Option<Box<Bound>>,
 }
 
@@ -789,7 +789,7 @@ impl Drop for Closure {
 }
 
 /// Линейный сборщик массива: верификатор гарантирует одно использование
-/// каждой версии, поэтому push изменяет тот же буфер, как `ArrayList` JVM.
+/// каждой версии, поэтому push изменяет тот же буфер.
 pub type ArrayBuilder = RefCell<Vec<Value>>;
 pub type MapBuilder = RefCell<BTreeMap<MapKey, Value>>;
 
@@ -1077,7 +1077,7 @@ impl MapKey {
 }
 
 impl Ord for MapKey {
-    /// `KeyOrder` JVM: числа по значению (`-0.0 == 0.0`), `false < true`,
+    /// Порядок ключей: числа по значению (`-0.0 == 0.0`), `false < true`,
     /// строки по code points (для UTF-8 — побайтово), enum — порядок case.
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {

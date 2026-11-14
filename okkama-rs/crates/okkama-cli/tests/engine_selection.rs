@@ -42,3 +42,32 @@ fn repl_is_no_longer_a_command() {
     let help = command().arg("--help").output().unwrap();
     assert!(!String::from_utf8_lossy(&help.stdout).contains("okkama repl"));
 }
+
+const REMOVED_BACKEND: &str = "the JVM backend was removed in 0.6.0 (#585); Sparrow is the only Okkama engine";
+
+#[test]
+fn removed_backend_selections_are_usage_errors() {
+    for flags in [
+        &["run", "--engine", "jvm", "missing.ok"][..],
+        &["run", "-t", "--engine", "jvm", "missing.ok"],
+        &["build", "--target", "jvm", "missing.ok", "-o", "out.spb"],
+        &["build", "--target=jvm", "missing.ok", "-o", "out.spb"],
+    ] {
+        let output = command().args(flags).output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(REMOVED_BACKEND));
+    }
+    for variable in ["OKKAMA_ENGINE", "OCS_RUST_ENGINE"] {
+        let mut selected = command();
+        selected.env(variable, "jvm");
+        if variable == "OKKAMA_ENGINE" {
+            selected.args(["run", "missing.ok"]);
+        } else {
+            selected.arg("--ocs-capabilities");
+        }
+        let output = selected.output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains(REMOVED_BACKEND));
+    }
+}

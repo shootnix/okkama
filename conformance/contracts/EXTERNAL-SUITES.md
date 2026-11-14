@@ -23,7 +23,7 @@ was copied** into this repository, so no third-party licence obligations arise.
 | Harness | `assert.js`, `sta.js` injected unless `raw` | MSpec | `Test` module | No injection. Minimal cases use exit status and stdout only; richer cases import the small `conformance/check` Okkama module, whose own failure paths are tested. |
 | Asynchronous completion | `async` flag; completion via `print` | Not central | Promise tests in-language | Async programs must print explicit completion observations; missing output fails. Concurrent output uses declared partial orders, never sleeps. |
 | Language versions | Spec ids (`esid`), `features` | `ruby_version_is` guards | Branches per language version (`6.c`, `6.d`) | `release.json` pins suite version, language contract document and std root; gate claims name all of them. |
-| Implementation adapters | Hosts provide `$262`, `print` | `mspec -t <ruby>` | `fudgeall <impl>` | Versioned external adapter protocol (`ocs-adapter/1`) — the runner never links an implementation and adapters never see case ids or expectations. |
+| Implementation adapters | Hosts provide `$262`, `print` | `mspec -t <ruby>` | `fudgeall <impl>` | Versioned external adapter protocol (`ocs-adapter/2`) — the runner never links an implementation and adapters never see case ids or expectations. |
 | Standard library organisation | Built-ins under `test/built-ins` | `core/` vs `library/` | Synopsis-numbered dirs | Levels L09–L11 for std, and per-module coverage contracts generated from an audited inventory of `std/`. |
 | Timing | Implementation-chosen timeout | — | `ROAST_TIMING_SCALE` multiplier | `--timeout-scale` multiplier recorded in every report (borrowed from Roast); timeouts never satisfy expected errors. |
 

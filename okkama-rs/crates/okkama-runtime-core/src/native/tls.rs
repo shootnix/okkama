@@ -1,4 +1,4 @@
-//! `runtime/tls_transport` — перенос `TlsNatives` JVM: TLS-клиент и (#209)
+//! `runtime/tls_transport`: TLS-клиент и (#209)
 //! TLS-сервер rustls
 //! поверх TCP-потока, отобранного у `runtime/network`. Как у JDK-провайдера,
 //! движок не проверяет цепочку пира сам (подписи рукопожатия — проверяет):
@@ -47,7 +47,7 @@ fn resolved(outcome: sched::Outcome) -> Value {
     Value::Future(sched::resolved(outcome))
 }
 
-/// Проверка пира отложена до `authorize` (`Deferred` JVM).
+/// Проверка пира отложена до `authorize`.
 #[derive(Debug)]
 struct Deferred(Arc<rustls::crypto::CryptoProvider>);
 
@@ -117,7 +117,7 @@ struct Engine {
     plain: Mutex<Vec<u8>>,
     /// Порядок записей на проводе: берётся до освобождения движка.
     sending: Mutex<()>,
-    /// Однопоточные исполнители чтения и записи JVM.
+    /// Однопоточные исполнители чтения и записи.
     reader: Mutex<()>,
     writer: Mutex<()>,
     eof: AtomicBool,
@@ -227,7 +227,7 @@ impl Engine {
                     }
                     Ok(count) => {
                         buffer.truncate(count);
-                        // Остаток записи — туда же, вслед за прочитанным, как у JVM.
+                        // Остаток записи — туда же, вслед за прочитанным.
                         let _ = connection.reader().read_to_end(&mut buffer);
                         drop(connection);
                         self.plain.lock().expect("TLS plain lock").extend(buffer);
@@ -365,7 +365,7 @@ fn client(args: &[Value]) -> Result<Value, Error> {
         return Err(abort_with("unsupported", "required TLS engine policy unavailable"));
     };
     config.alpn_protocols = names.iter().map(|name| name.chars().map(|c| c as u8).collect()).collect();
-    // SNI — только для имени хоста, как `SNIHostName` JVM.
+    // SNI — только для имени хоста.
     let sni = !server.is_empty() && !server.bytes().all(|b| b.is_ascii_digit() || b == b'.');
     let name = if sni {
         ServerName::try_from(server.to_string()).ok()

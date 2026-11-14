@@ -112,10 +112,8 @@ git clone https://github.com/shootnix/okkama.git && cd okkama
 make install                      # into ~/.local; PREFIX=/opt/okkama make install
 ```
 
-`okkama` finds the standard library and native libraries next to itself, so no
-environment variables are needed — `okkama env` shows what it found. The JVM
-engine additionally needs a JDK (22+ for the FFM natives: cryptography,
-SQLite, terminal, accounts, collation); Sparrow needs nothing.
+`okkama` finds the standard library and ICU next to itself; host cryptography
+is built into Sparrow. `okkama env` shows the installed locations.
 
 ## Quick start
 
@@ -142,7 +140,7 @@ okkama hello.ok                   # run (Sparrow JIT)
 okkama -t hello.ok                # run the file's `test` blocks
 okkama fmt -w hello.ok            # format in place
 okkama lint hello.ok              # errors, warnings, lint findings
-okkama build hello.ok --target jvm -o hello.jar && java -jar hello.jar
+okkama build hello.ok -o hello.spb && sparrow hello.spb
 ```
 
 ## Why Okkama
@@ -491,28 +489,25 @@ twice" is a job for durable state and idempotency.
 
 Sparrow is the only Okkama engine for source programs and inline tests
 (`okkama run -t`). The IR interpreter and its REPL were removed (#584);
-`--engine ir` and `OKKAMA_ENGINE=ir` report an error. The legacy JVM backend
-remains until #585.
+`--engine ir` and `OKKAMA_ENGINE=ir` report an error. The JVM backend was
+removed in 0.6.0 (#585); its last frozen version is tag `v0.5.8`.
 
-The compiler lowers Okkama to OIR, then generates Sparrow bytecode (SPB) or
-JVM classes. The [conformance suite](conformance/) checks output, errors and
+The compiler lowers Okkama to OIR, then generates Sparrow bytecode (SPB). The [conformance suite](conformance/) checks output, errors and
 exit status against the same expectations.
 
 ```sh
 okkama hello.ok                              # Sparrow JIT (default), in-process
-okkama run --engine jvm hello.ok             # JVM class files, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
 
-| | Sparrow (JIT) | JVM |
-|---|---|---|
-| Start-up (`hello`) | **11 ms** | 53 ms |
-| `fib(32)`, 7 M calls | **30 ms** | 188 ms |
-| Mandelbrot (float) | **28 ms** | 147 ms |
-| 1 M successor steps | **25 ms** | 131 ms |
-| 6-module application | **96 ms** | 365 ms |
-| Peak memory, application | 13 MB | 259 MB |
-| Needs | nothing | JDK |
+| | Sparrow (JIT) |
+|---|---|
+| Start-up (`hello`) | **11 ms** |
+| `fib(32)`, 7 M calls | **30 ms** |
+| Mandelbrot (float) | **28 ms** |
+| 1 M successor steps | **25 ms** |
+| 6-module application | **96 ms** |
+| Peak memory, application | 13 MB |
 
 Median of ten cold runs on an Apple M2 Max (0.5.6, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
@@ -561,7 +556,7 @@ for the feature table.
 ## Development
 
 ```sh
-make build                        # okkama, sparrow, blade, okkama-native (release)
+make build                        # okkama, sparrow, blade, host cryptography built in (release)
 make test                         # cargo test --workspace
 make dist                         # packages for this machine into dist/
 cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 8
@@ -578,7 +573,7 @@ for each `vX.Y.Z` tag, which must match the version in `okkama-rs/Cargo.toml`.
 
 ```text
 okkama/
-├── okkama-rs/        Rust implementation: compiler, JVM backend, Sparrow (Tomato),
+├── okkama-rs/        Rust implementation: compiler, Sparrow (Tomato),
 │                     Sparrow runtime and natives, LSP, fmt, lint, blade
 ├── std/              standard library
 ├── docs/             the Book (EN/RU) and the guide for LLM agents

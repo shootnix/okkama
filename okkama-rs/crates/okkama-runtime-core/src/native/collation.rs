@@ -1,5 +1,5 @@
 //! `runtime/collation` и `runtime/locale` — перенос `CollationNatives` и
-//! `LocaleNatives` JVM. Ключи сортировки даёт закреплённая ICU 76.1
+//! Ключи сортировки даёт закреплённая ICU 76.1
 //! (Unicode 16, CLDR 46) из каталога `OKKAMA_ICU_LIBDIR`; языки платформы —
 //! `CFLocaleCopyPreferredLanguages` на macOS, пусто на прочих POSIX.
 #![allow(unsafe_code)]
@@ -59,7 +59,7 @@ struct Icu {
     enum_close: unsafe extern "C" fn(*mut c_void),
 }
 
-/// Загрузка ICU: успех или код и текст отказа (запоминается, как у JVM).
+/// Загрузка ICU: успех или код и текст отказа (запоминается).
 fn load() -> Result<Icu, (&'static str, &'static str)> {
     let unavailable = (
         "unsupported",
