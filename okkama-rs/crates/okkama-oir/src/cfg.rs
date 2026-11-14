@@ -5,7 +5,10 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseSite { Instruction(InstId), Terminator(BlockId), BlockUnwind(BlockId), ValueFacts(ValueId), InstructionFacts(InstId), Declaration(OperandRef) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind { Branch, Yes, No, SwitchCase(u32), Default, BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
+pub enum EdgeKind {
+    CleanupSelected, CleanupDone, ExitSuccess, ExitPending, ExitFailure, FailureNone, FailureSome,
+    DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
+    BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CfgEvent {
     Use { site: UseSite, operand: OperandUse },
@@ -27,47 +30,93 @@ impl std::error::Error for TraversalError {}
 /// Path-local cycle detection also terminates on deliberately malformed IR.
 pub fn operation_uses(op: &Operation, body: &Body) -> Result<Vec<OperandUse>, TraversalError> {
     let mut uses = vec![];
-    for operand in op.operand_refs() { expand(operand, body, &mut vec![], &mut uses)?; }
+    for operand in op.operand_refs() { expand(operand, body, &mut uses)?; }
     Ok(uses)
 }
-fn expand(operand: ReferencedOperand, body: &Body, stack: &mut Vec<OperandRef>, uses: &mut Vec<OperandUse>) -> Result<(), TraversalError> {
-    let mode = operand.mode;
-    if let OperandRef::Value(value) = operand.reference { uses.push(OperandUse { value, mode }); return Ok(()); }
-    if stack.contains(&operand.reference) { return Err(TraversalError::CyclicExpression(operand.reference)); }
-    stack.push(operand.reference);
+
+/// Immediate references, without recursively expanding a shared expression DAG.
+pub(crate) fn expression_children(reference: OperandRef, body: &Body) -> Result<Vec<OperandRef>, TraversalError> {
     let mut refs = vec![];
     let mut value = |value| refs.push(OperandRef::Value(value));
-    match operand.reference {
-        OperandRef::Value(_) => unreachable!(),
+    match reference {
+        OperandRef::Value(v) => value(v),
         OperandRef::Selection(id) => match body.selections.get(id)? {
             SelectionExpr::Value(v) | SelectionExpr::OwnerGraph(v) | SelectionExpr::ViewOwner(v) => value(*v),
             SelectionExpr::Projection(projection) => match projection {
                 Projection::Field { value: v, .. } => value(*v),
-                Projection::Index { value: v, index } => { value(*v); value(*index); }
-                Projection::Slice { value: v, start, end } => { value(*v); value(*start); value(*end); }
-                Projection::Map { value: v, keys } => { value(*v); value(*keys); }
+                Projection::Index { value: v, index } => {
+                    value(*v);
+                    value(*index);
+                }
+                Projection::Slice { value: v, start, end } => {
+                    value(*v);
+                    value(*start);
+                    value(*end);
+                }
+                Projection::Map { value: v, keys } => {
+                    value(*v);
+                    value(*keys);
+                }
             },
             SelectionExpr::Admissible(id) => refs.push(OperandRef::Selection(*id)),
             SelectionExpr::Union(items) => refs.extend(items.iter().copied().map(OperandRef::Selection)),
-            SelectionExpr::Descriptor { descriptor, value: v } => { value(*descriptor); value(*v); }
+            SelectionExpr::Descriptor { descriptor, value: v } => {
+                value(*descriptor);
+                value(*v);
+            }
         },
         OperandRef::Dependency(id) => match body.deps.get(id)? {
-            DepExpr::Empty => {}, DepExpr::Key(id) => refs.push(OperandRef::Key(*id)),
+            DepExpr::Empty => {}
+            DepExpr::Key(id) => refs.push(OperandRef::Key(*id)),
             DepExpr::Union(items) => refs.extend(items.iter().copied().map(OperandRef::Dependency)),
             DepExpr::FromSsa(v) => value(*v),
-            DepExpr::Retention { value: v, selection } => { value(*v); refs.push(OperandRef::Selection(*selection)); }
+            DepExpr::Retention { value: v, selection } => {
+                value(*v);
+                refs.push(OperandRef::Selection(*selection));
+            }
         },
         OperandRef::Key(id) => match body.keys.get(id)? {
             KeyExpr::Created { instance, .. } => value(*instance),
             KeyExpr::ServiceOf { value: v, .. } | KeyExpr::Runtime(v) => value(*v),
         },
     }
-    for reference in refs { expand(ReferencedOperand { reference, mode }, body, stack, uses)?; }
-    stack.pop(); Ok(())
+    Ok(refs)
 }
-fn emit_refs(refs: impl IntoIterator<Item = ReferencedOperand>, site: UseSite, body: &Body, visit: &mut impl FnMut(CfgEvent)) -> Result<(), TraversalError> {
+
+fn expand(
+    operand: ReferencedOperand,
+    body: &Body,
+    uses: &mut Vec<OperandUse>,
+) -> Result<(), TraversalError> {
+    // Leave markers give path-local cycle detection. A shared node is revisited
+    // on each occurrence, preserving the previous walk's order and multiplicity.
+    let mut pending = vec![(operand.reference, false)];
+    let mut active = HashSet::new();
+    while let Some((reference, leaving)) = pending.pop() {
+        if leaving {
+            active.remove(&reference);
+            continue;
+        }
+        if let OperandRef::Value(value) = reference {
+            uses.push(OperandUse { value, mode: operand.mode });
+            continue;
+        }
+        if !active.insert(reference) { return Err(TraversalError::CyclicExpression(reference)); }
+        pending.push((reference, true));
+        let children = expression_children(reference, body)?;
+        pending.extend(children.into_iter().rev().map(|child| (child, false)));
+    }
+    Ok(())
+}
+fn emit_refs(
+    refs: impl IntoIterator<Item = ReferencedOperand>,
+    site: UseSite,
+    body: &Body,
+    visit: &mut impl FnMut(CfgEvent),
+) -> Result<(), TraversalError> {
     for operand in refs {
-        let mut uses = vec![]; expand(operand, body, &mut vec![], &mut uses)?;
+        let mut uses = vec![];
+        expand(operand, body, &mut uses)?;
         for operand in uses { visit(CfgEvent::Use { site, operand }); }
     }
     Ok(())
@@ -97,6 +146,37 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
     let site = UseSite::Terminator(block);
     let mut operands = vec![];
     match &term.kind {
+        TermKind::CleanupNext { cleanup, selected, done } => {
+            operands.push(ssa(*cleanup, OperandMode::Consume));
+            for (kind, outcome, edge) in [
+                (EdgeKind::CleanupSelected, Outcome::CleanupSelected, selected),
+                (EdgeKind::CleanupDone, Outcome::CleanupDone, done),
+            ] {
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, edge, kind, site, visit);
+            }
+        }
+        TermKind::ExitDispatch { closed, failure, exit, .. } => {
+            operands.push(ssa(*closed, OperandMode::Observe));
+            operands.push(ssa(*failure, OperandMode::Observe));
+            operands.push(ssa(*exit, OperandMode::Consume));
+            for (outcome, target) in dispatch_edges(&term.kind) {
+                let kind = match outcome {
+                    Outcome::ExitSuccess => EdgeKind::ExitSuccess,
+                    Outcome::ExitPending => EdgeKind::ExitPending,
+                    _ => EdgeKind::ExitFailure,
+                };
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, target, kind, site, visit);
+            }
+        }
+        TermKind::FailureDispatch { failure, none, some } => {
+            operands.push(ssa(*failure, OperandMode::Observe));
+            edge(block, none, EdgeKind::FailureNone, site, visit);
+            edge_definitions(block, EdgeKind::FailureSome, Outcome::FailureSome,
+                &dispatch_slots(Outcome::FailureSome), visit)?;
+            invoke_edge(block, some, EdgeKind::FailureSome, site, visit);
+        }
         TermKind::Br(target) => edge(block, target, EdgeKind::Branch, site, visit),
         TermKind::Cond { condition, yes, no } => {
             operands.push(ssa(*condition, OperandMode::Observe));
@@ -114,6 +194,25 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
             if let Some(outcome) = &contract.unwind { edge_definitions(block, EdgeKind::InvokeUnwind, Outcome::Unwind, &outcome.results, visit)?; }
             invoke_edge(block, normal, EdgeKind::InvokeNormal, site, visit); invoke_edge(block, unwind, EdgeKind::InvokeUnwind, site, visit);
         }
+        TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+            call.append(OperandMode::Borrow, &mut operands);
+            edge_definitions(block, EdgeKind::DeferContinue, Outcome::DeferContinue,
+                &registry.defer_results(*function, Outcome::DeferContinue)?, visit)?;
+            invoke_edge(block, continue_edge, EdgeKind::DeferContinue, site, visit);
+            for (index, replacement) in replacements.iter().enumerate() {
+                let index = u16::try_from(index).map_err(|_| TraversalError::TooManySlots)?;
+                let outcome = Outcome::DeferReplace(index);
+                edge_definitions(block, EdgeKind::DeferReplace(index), outcome,
+                    &registry.defer_results(*function, outcome)?, visit)?;
+                invoke_edge(block, &replacement.edge, EdgeKind::DeferReplace(index), site, visit);
+            }
+            if let Some(unwind) = unwind {
+                edge_definitions(block, EdgeKind::DeferUnwind, Outcome::Unwind,
+                    &registry.defer_results(*function, Outcome::Unwind)?, visit)?;
+                invoke_edge(block, unwind, EdgeKind::DeferUnwind, site, visit);
+            }
+        }
+        TermKind::RetDefer { values, .. } |
         TermKind::Ret { values } => operands.extend(values.iter().map(|&value| ssa(value, OperandMode::Forward))),
         TermKind::Throw(value) | TermKind::Raise(value) | TermKind::Panic(value) => operands.push(ssa(*value, OperandMode::Observe)),
         TermKind::Catch { failure, ty, handler, next } => {
@@ -134,6 +233,10 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
 /// Includes unused declarations and annotations. Expression leaves can occur at
 /// several sites; no use is deduplicated. Edge results have no source ValueId.
 pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl FnMut(CfgEvent)) -> Result<(), TraversalError> {
+    for binding in &body.descriptor_bindings {
+        emit_refs([ssa(binding.dictionary, OperandMode::Observe)],
+            UseSite::Terminator(body.entry), body, &mut visit)?;
+    }
     for (id, _) in body.keys.iter() { let reference = OperandRef::Key(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
     for (id, _) in body.deps.iter() { let reference = OperandRef::Dependency(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
     for (id, _) in body.selections.iter() { let reference = OperandRef::Selection(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
@@ -155,6 +258,11 @@ pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl Fn
         }
         for &inst_id in &block.insts {
             let inst = body.insts.get(inst_id)?;
+            if let Operation::Cleanup(CleanupOp::Begin { close, .. }) = inst.op {
+                let dictionaries = body.cleanup.schedules.iter().filter(|(_, schedule)| schedule.close == close)
+                    .filter_map(|(_, schedule)| schedule.dictionary).map(|value| ssa(value, OperandMode::Observe));
+                emit_refs(dictionaries, UseSite::Instruction(inst_id), body, &mut visit)?;
+            }
             emit_refs(inst.op.operand_refs(), UseSite::Instruction(inst_id), body, &mut visit)?;
             let facts = inst.facts.result_deps.iter().map(|(_, id)| ReferencedOperand { reference: OperandRef::Dependency(*id), mode: OperandMode::Observe })
                 .chain(inst.facts.retention.iter().chain(inst.facts.provenance.iter().map(|fact| &fact.obligations)).map(|id| ReferencedOperand { reference: OperandRef::Selection(*id), mode: OperandMode::Observe }));
@@ -162,6 +270,9 @@ pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl Fn
             for (index, &value) in inst.results.iter().enumerate() {
                 visit(CfgEvent::Definition { value, definition: Definition::InstResult { inst: inst_id, index: u16::try_from(index).map_err(|_| TraversalError::TooManySlots)? } });
             }
+        }
+        for record in body.high_results.iter().filter(|record| record.block == block_id) {
+            emit_refs([ssa(record.value, OperandMode::Observe)], UseSite::Terminator(block_id), body, &mut visit)?;
         }
         walk_terminator(block_id, &block.term, body, registry, &mut visit)?;
     }

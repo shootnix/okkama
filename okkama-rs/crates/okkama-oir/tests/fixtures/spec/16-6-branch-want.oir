@@ -12,24 +12,30 @@ object Holder {
 }
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
 summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res];
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 scope Sbranch block in @main parent S
 func @main(%test: bool) -> void {
+    boundary Bbranch lexical in Sbranch
 ^entry in S:
     cond %test, ^branch, ^done
 ^branch in Sbranch unwind ^failed:
     %a: Res = call @new("A")
+    [iprep0] exit.prepare fallthrough %a at Bbranch
     want %a
+    result.exit edge normal(0), value %a, demand want, prepare iprep0
+    br ^wanted(%a)
+^wanted(%result: Res) in S:
+    temp %result, S
     br ^done
 ^done in S:
     ret
-^failed(%failure: failure) in Sbranch:
+^failed(%failure: failure) in S:
     raise %failure
 }

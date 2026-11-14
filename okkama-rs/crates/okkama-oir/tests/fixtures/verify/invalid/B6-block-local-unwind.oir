@@ -1,0 +1,13 @@
+oir 2 high
+// expect OIR2-B6.1 block:0:0
+module verify
+requires core
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S unwind ^failed(%local):
+    %local: int = int.add %x, %x
+    %n: int = int.mod %x, %x
+    ret
+^failed(%p: int, %e: failure) in S:
+    raise %e
+}

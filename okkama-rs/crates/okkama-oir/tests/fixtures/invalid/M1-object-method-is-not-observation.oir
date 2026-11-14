@@ -13,15 +13,18 @@ object Holder {
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
 summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
 summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify5 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 summary Mobs observation parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], publication=atomic)
-func @main(%value: Res) -> void {
+func @main(%value: Res facts(managed(deps=dfull_value))) -> void summary(Mverify5) {
+    dependency dfull_value: dependency = retention(value=%value, selection=selection(%value))
 ^entry in S:
     %text: str = call @label(%value) summary(Mobs)
     ret

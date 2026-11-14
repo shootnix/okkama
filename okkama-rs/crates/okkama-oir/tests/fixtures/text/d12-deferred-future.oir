@@ -1,0 +1,13 @@
+oir 2 own
+module deferred_future
+scope SB action in @body
+scope S action in @create
+func @body(%arg: int) -> int {
+^entry in SB:
+    ret %arg
+}
+func @create(%inputs: own, %external: deps, %q: scope<S>, %arg: int) -> (future<int>, scope<S>) {
+^entry in S:
+    (%future: future<int>, %next: scope<S>) = fut.new %inputs, %external, %q, environment deferred(function=@body, arguments=[%arg], descriptors=[]), result int, owner S
+    ret %future, %next
+}

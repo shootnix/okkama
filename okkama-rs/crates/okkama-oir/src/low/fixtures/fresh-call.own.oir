@@ -1,0 +1,81 @@
+oir 2 own
+// Independent creation events a then b: destroy b then a (Champ G1 7.3).
+module fresh_call
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @main(%out: Res facts(managed(deps=dout))) -> Res [ctor Res] summary(M0) {
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    dependency db: dependency = retention(value=%b, selection=selection(%b))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %descriptor: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, async_destroy=false, summary=Md)
+    %ea: own = own.empty
+    invoke.own obj.new Res {; %ea} construction complete
+        normal ^a($value, $packet, %q0)
+        unwind ^create_failed($packet, $failure, %q0)
+^a(%a: Res facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %q1: scope<S> = own.admit %qa, %pa
+    %eb: own = own.empty
+    invoke.own call @fresh(; %eb)
+        normal ^b($value, $packet, $deps, %q1)
+        unwind ^call_failed($failure, %q1)
+^b(%b: Res facts(managed(deps=db)), %pb: own, %bd: deps, %qb: scope<S>) in S:
+    %q2: scope<S> = own.admit %qb, %pb
+    invoke.own scope.end %q2, effects scope_effects(failures=[thrown])
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^call_failed(%call_error: failure, %call_open: scope<S>) in S:
+    %call_combined: failure = scope.unwind %call_open, %call_error, effects scope_effects(failures=[thrown])
+    raise %call_combined
+^create_failed(%rest: own, %error: failure, %open: scope<S>) in S:
+    %restored: scope<S> = own.admit %open, %rest
+    %combined: failure = scope.unwind %restored, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed) in S:
+    ret %out
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+}
+
+scope ST action in @fresh
+scope SC block in @fresh parent ST
+scope SR block in @fresh parent ST
+summary Mf call-boundary results [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @fresh(%input: own) -> (Res, own, deps) [ctor Res] summary(Mf) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in ST:
+    %q0: scope<SC> = scope.begin SC
+    %q1: scope<SC> = own.accept %q0, %input
+    invoke.own scope.end %q1, effects scope_effects(failures=[thrown, program, panic, native])
+        normal ^make($closed)
+        unwind ^failed($closed, $failure)
+^make(%closed: closed) in ST:
+    %empty: own = own.empty
+    invoke.own obj.new Res {; %empty} construction complete
+        normal ^created($value, $packet)
+        unwind ^create_failed($packet, $failure)
+^created(%r: Res facts(managed(deps=dr)), %packet: own) in ST:
+    (%rest: own, %selected: own, %deps: deps) = own.split %packet, selection(%r)
+    %q2: scope<SR> = scope.begin SR
+    %q3: scope<SR> = own.admit %q2, %rest
+    %closed2: closed = scope.end %q3, effects scope_effects()
+    ret %r, %selected, %deps
+^create_failed(%restored: own, %error: failure) in ST:
+    %q4: scope<SR> = scope.begin SR
+    %q5: scope<SR> = own.admit %q4, %restored
+    %combined: failure = scope.unwind %q5, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^failed(%failed_closed: closed, %failure: failure) in ST:
+    raise %failure
+}

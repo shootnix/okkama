@@ -1,0 +1,21 @@
+oir 2 own
+// expect OIR2-T1 operand-term:1:0:[0]
+module shielded
+scope SC action in @cleanup
+scope SF action in @f
+summary Mc internal contract call_contract(failures=[thrown, cancelled], publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown], publication=atomic)
+func @cleanup() -> void summary(Mc) {
+^entry in SC:
+    ret
+}
+func @f() -> void summary(Mf) {
+^entry in SF:
+    invoke.own call @cleanup() summary(Mc), cleanup shielded
+        normal ^ok()
+        unwind ^failed($failure)
+^ok in SF:
+    ret
+^failed(%failure: failure) in SF:
+    raise %failure
+}

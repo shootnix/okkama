@@ -12,20 +12,24 @@ object Holder {
 }
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
 summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify6 internal parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[parameter(0), parameter(1)], external_deps=[0, 1], provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 role Read {
     read(Res) -> str
 }
-summary Mslot call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mslot call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
 scope Sadapter action in @adapter
-func @adapter(%self: Read, %r: Res; %input: own) -> (str, own, deps) summary(Mslot) {
+func @adapter(%self: Read facts(managed(deps=dfull_self)), %r: Res facts(managed(deps=dfull_r)); %input: own) -> (str, own, deps) [async] summary(Mslot) {
+    dependency dfull_self: dependency = retention(value=%self, selection=selection(%self))
+    dependency dfull_r: dependency = retention(value=%r, selection=selection(%r))
 ^entry in Sadapter:
     %q: scope<Sadapter> = scope.begin Sadapter
     %accepted: scope<Sadapter> = own.accept %q, %input
@@ -35,26 +39,46 @@ func @adapter(%self: Read, %r: Res; %input: own) -> (str, own, deps) summary(Msl
         normal ^close($value, %state)
         unwind ^bad($failure, %state)
 ^bad(%failure: failure, %failed_state: scope<Sadapter>) in Sadapter:
-    %final: failure = scope.unwind %failed_state, %failure
+    %final: failure = scope.unwind %failed_state, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^close(%text: str, %rest: scope<Sadapter>) in Sadapter:
-    invoke.own scope.end %rest
+    invoke.own scope.end %rest, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed, %text)
         unwind ^close_failed($closed, $failure)
 ^close_failed(%closed: closed, %error: failure) in Sadapter:
     raise %error
 ^done(%closed2: closed, %answer: str) in Sadapter:
-    %empty: own = own.empty
-    %deps: deps = undef ty deps
-    ret %answer, %empty, %deps
+    %empty0: own = own.empty
+    (%empty: own, %selected: own, %deps: deps) = own.split %empty0, selection(%answer)
+    %out: own = own.join [%empty, %selected]
+    ret %answer, %out, %deps
 }
-func @main(%reader: Read, %r: Res; %input: own) -> (str, own, deps) {
+summary Mcaller call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
+func @main(%reader: Read facts(managed(deps=dreader))) -> (str, own, deps) [async] summary(Mcaller) {
+    dependency dreader: dependency = retention(value=%reader, selection=selection(%reader))
+    dependency dfresh: dependency = retention(value=%fresh, selection=selection(%fresh))
 ^entry in S:
-    invoke.own call.role %reader, Read slot 0(%r; %input) summary(Mslot)
-        normal ^ok($value, $packet, $deps)
-        unwind ^bad($failure)
-^ok(%result: str, %out: own, %deps: deps) in S:
-    ret %result, %out, %deps
-^bad(%failure: failure) in S:
-    raise %failure
+    %root: scope<S> = scope.begin S
+    invoke.own call @new("fresh"; own.empty)
+        normal ^have($value, $packet, %root)
+        unwind ^failed(%root, $failure)
+^have(%fresh: Res facts(managed(deps=dfresh)), %offered: own, %q: scope<S>) in S:
+    invoke.own call.role %reader, Read slot 0(%fresh; %offered) summary(Mslot)
+        normal ^close($value, $packet, %q)
+        unwind ^failed(%q, $failure)
+^close(%text: str, %rest: own, %open: scope<S>) in S:
+    %admitted: scope<S> = own.admit %open, %rest
+    invoke.own scope.end %admitted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^done($closed, %text)
+        unwind ^closed_failed($closed, $failure)
+^done(%closed: closed, %answer: str) in S:
+    %empty0: own = own.empty
+    (%empty: own, %selected: own, %deps: deps) = own.split %empty0, selection(%answer)
+    %out: own = own.join [%empty, %selected]
+    ret %answer, %out, %deps
+^failed(%open2: scope<S>, %failure: failure) in S:
+    %final: failure = scope.unwind %open2, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %final
+^closed_failed(%closed2: closed, %error: failure) in S:
+    raise %error
 }

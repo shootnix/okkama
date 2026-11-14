@@ -1,0 +1,69 @@
+oir 2 own
+// spec: 3.3;12;15.1; status: semantic-reject; expected-rule: OIR2-B2.3
+module annotations
+requires core
+file 7 "annotations.ok"
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify5 internal parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
+scope S action in @main
+scope Sblock block in @main parent S
+scope Sbranch branch in @main parent Sblock
+scope Siteration iteration in @main parent Sblock
+scope Stry try in @main parent S
+scope Scatch catch in @main parent S
+scope Sdefer defer in @main parent S
+func @main(%a: Res facts(managed(deps=d0)), %b: Res facts(managed(deps=dfull_b)), %descriptor: type, %deps: deps, %i: int facts(plain(certificate=scalar)), %closed_graph: int facts(plain(certificate=closed_graph(ty=int))), %generic: any facts(plain(certificate=descriptor(%descriptor))), %high: int facts(unelaborated); %p0: own, %p1: own, %p2: own, %p3: own, %p4: own, %p5: own) -> (own, own, own, own, own, own) summary(Mverify5) {
+    dependency dfull_b: dependency = retention(value=%b, selection=selection(%b))
+    boundary B0 lexical in S
+    boundary B1 call in S
+    boundary B2 loop in Siteration
+    boundary B3 abort_before_destroy in S
+    boundary B4 abort_after_prefix in S
+    key k0: key = created(site=0, instance=%a)
+    key k1: key = created(site=0, instance=%b)
+    key k2: key = service_of(value=%a, kind=cache)
+    key k3: key = service_of(value=%a, kind=frame)
+    key k4: key = service_of(value=%a, kind=channel)
+    key k5: key = service_of(value=%a, kind=carrier)
+    key k6: key = service_of(value=%a, kind=pin)
+    key k7: key = service_of(value=%a, kind=group)
+    dependency d0: dependency = key(k0)
+    dependency d1: dependency = empty
+    dependency d2: dependency = union([d0, d1])
+    dependency d3: dependency = from_ssa(%deps)
+    dependency d4: dependency = retention(value=%a, selection=s0)
+    selection s0: selection = union([selection(%a), selection(%b)])
+    selection s1: selection = admissible(s0)
+    selection s2: selection = owner_graph(%a)
+    selection s3: selection = view_owner(%a)
+    selection s4: selection = descriptor(descriptor=%descriptor, value=%a)
+    selection s5: selection = projection(field(value=%a, field=field_ref(declaration=Res, index=0)))
+    selection s6: selection = projection(index(value=%a, index=%i))
+    selection s7: selection = projection(slice(value=%a, start=%i, end=%i))
+    selection s8: selection = projection(map(value=%a, keys=%b))
+^entry in S:
+    %r0: own = own.move %p0 facts(result_deps=[(0, d4)], retention=[s1, s2, s3, s4, s5, s6, s7, s8]) !7:10:2
+    %r1: own = own.move %p1 facts(provenance=[provenance_fact(obligations=s0, state=bound)])
+    %r2: own = own.move %p2 facts(provenance=[provenance_fact(obligations=s0, state=staged_or_carrier_owned)])
+    %r3: own = own.move %p3 facts(provenance=[provenance_fact(obligations=s0, state=cache_owned)])
+    %r4: own = own.move %p4 facts(provenance=[provenance_fact(obligations=s0, state=extracted_at_existing_boundary)])
+    %r5: own = own.move %p5 facts(provenance=[provenance_fact(obligations=s0, state=temporary_await_result)])
+    ret %r0, %r1, %r2, %r3, %r4, %r5
+}

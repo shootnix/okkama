@@ -1,0 +1,24 @@
+oir 2 own
+// expect OIR2-B10.4 instruction:1:2
+module cleanup_effects
+object R {
+    field x: int
+    destroy @destroy
+}
+scope SD action in @destroy
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+summary Mf call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @f(%r: R facts(managed(deps=dr)); %input: own) -> void summary(Mf) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %accepted: scope<S> = own.accept %q, %input
+    %closed: closed = scope.end %accepted, effects scope_effects(failures=[], suspends=false, cancel=false)
+    ret
+}

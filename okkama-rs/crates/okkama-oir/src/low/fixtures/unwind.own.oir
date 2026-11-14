@@ -1,0 +1,13 @@
+oir 2 own
+// Concrete synchronous D3 inventory; no opaque scope or pending parameters.
+module unwind
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @main(%seed: int, %active: failure) -> failure summary(M0) {
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %combined: failure = scope.unwind %q0, %active, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=false, cancel=false)
+    ret %combined
+}

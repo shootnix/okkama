@@ -1,0 +1,41 @@
+oir 2 low
+// expect OIR2-B10.2 instruction:0:9
+module runtime_merge
+protocol Services kind services
+scope S action in @f
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @f(%schedule: type, %input: own) -> void [async] summary(Mf) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[thrown, program, panic, native], suspends=true,
+        cancel=false))], schedules=[cleanup_schedule(close=0, holders=[], dictionary=some(%schedule),
+        protocol=some(Services))], plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=none)],
+        roots=[root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%c2,
+        trace=cleanup_activation)], through_suspend=true)], proofs=[])
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %admitted: scope<S> = own.accept %q, %input
+    %c: cleanup-state = cleanup.begin %admitted, close 0, effects scope_effects(failures=[thrown, program, panic,
+        native], suspends=true, cancel=false)
+    %c1: cleanup-state = cleanup.shield %c
+    %c2: cleanup-state = cleanup.settle.empty %c1, schedule 0
+    [i5] %c3: cleanup-state = cleanup.plan %c2, plan 0
+    br ^next(%c3)
+^next(%state: cleanup-state) in S:
+    cleanup.next %state selected ^skip($state, $selected) done ^finish($state)
+^skip(%skipped: cleanup-state, %key: stable-key) in S:
+    %skip: bool = const true
+    cond %skip, ^finish(%skipped), ^destroy(%skipped)
+^destroy(%claimed: cleanup-state) in S:
+    (%after: cleanup-state, %step_failure: failure-state) = cleanup.destroy %claimed, %key
+    failure.dispatch %step_failure none ^next(%after) some ^record(%after, $failure)
+^record(%failed: cleanup-state, %failure: failure) in S:
+    %recorded: cleanup-state = cleanup.failure %failed, %failure
+    br ^next(%recorded)
+^finish(%remaining: cleanup-state) in S:
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %remaining
+    exit.dispatch 0 %closed %fs %xs success ^done($closed) failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%closed2: closed, %final: failure) in S:
+    raise %final
+}

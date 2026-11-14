@@ -1,0 +1,12 @@
+oir 2 high
+// expect OIR2-A3 instruction:0:0
+module test_authority
+requires core
+scope S action in @f
+func @f(%condition: bool) -> void {
+^entry in S unwind ^failed:
+    test.ok %condition
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

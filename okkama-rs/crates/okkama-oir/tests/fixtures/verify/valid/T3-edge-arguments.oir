@@ -1,0 +1,10 @@
+oir 2 high
+module verify
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.add %x, %x
+    br ^done(%v)
+^done(%n: int) in S:
+    ret
+}

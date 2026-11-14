@@ -1,0 +1,67 @@
+oir 2 own
+// spec: 16.1; status: v2; expected-rule: -
+module resource
+requires core
+object File {
+    field path: str
+    destroy @File.destroy
+}
+object FileText {
+    field file: File
+}
+scope S action in @main
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[File], failures=[thrown,
+        program, panic, native], publication=atomic)
+summary M1 call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)),
+        destination=result)] results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+        contract call_contract(results=[FileText], failures=[thrown], publication=atomic)
+summary M2 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(provenance=bound)] contract call_contract(results=[int], failures=[thrown], publication=atomic)
+summary Mverify4 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract
+        call_contract(results=[], failures=[thrown, program, panic, native], publication=atomic)
+summary Mverify5 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract
+        call_contract(results=[int], failures=[thrown, program, panic, native], publication=atomic)
+func @File.new#0(%path: str; %input: own) -> (File, own, deps) [extern "fixture.File.new#0"] summary(M0);
+func @File.text(%file: File; %input: own) -> (FileText, own, deps) [extern "fixture.File.text"] summary(M1);
+func @FileText.size(%text: FileText; %input: own) -> (int, own, deps) [extern "fixture.FileText.size"] summary(M2);
+func @File.destroy(%self: File) -> void [extern "fixture.File.destroy", destroy File] summary(Mverify4);
+func @main(%path: str) -> int summary(Mverify5) {
+    binding bfile "file": File in S
+    dependency dfull_file: dependency = retention(value=%file, selection=selection(%file))
+    dependency dfull_text: dependency = retention(value=%text, selection=selection(%text))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %empty0: own = own.empty
+    invoke.own call @File.new#0(%path; %empty0)
+        normal ^file($value, $packet, $deps, %q0)
+        unwind ^failed($failure, %q0)
+^file(%file: File facts(managed(deps=dfull_file)), %pf: own, %df: deps, %q1: scope<S>) in S:
+    %q2: scope<S> = own.bind binding elaborated_binding(binding=bfile, resource=resource_value(value=%file, packet=%pf),
+        state=%q1, original_scope=S)
+    %empty1: own = own.empty
+    invoke.own call @File.text(consume %file; %empty1)
+        normal ^text($value, $packet, $deps, %q2)
+        unwind ^failed($failure, %q2)
+^text(%text: FileText facts(managed(deps=dfull_text)), %pt: own, %dt: deps, %q3: scope<S>) in S:
+    %q4: scope<S> = own.admit %q3, %pt
+    %empty2: own = own.empty
+    invoke.own call @FileText.size(%text; %empty2)
+        normal ^size($value, $packet, $deps, %q4)
+        unwind ^failed($failure, %q4)
+^size(%n: int, %pn: own, %dn: deps, %q5: scope<S>) in S:
+    %q6: scope<S> = own.admit %q5, %pn
+    invoke.own scope.end %q6, effects scope_effects(failures=[thrown, program, panic, native], suspends=false,
+        cancel=false)
+        normal ^done($closed, %n)
+        unwind ^closed_failed($closed, $failure)
+^failed(%failure: failure, %open: scope<S>) in S:
+    %final: failure = scope.unwind %open, %failure, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=false, cancel=false)
+    raise %final
+^closed_failed(%closed: closed, %cleanup_failure: failure) in S:
+    raise %cleanup_failure
+^done(%closed2: closed, %answer: int) in S:
+    ret %answer
+}

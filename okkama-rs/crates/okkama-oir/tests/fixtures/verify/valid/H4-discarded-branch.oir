@@ -1,0 +1,16 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+scope S1 branch in @f parent S
+func @f(%x: int) -> void {
+    boundary B0 lexical in S1
+^entry in S:
+    br ^inner
+^inner in S1:
+    discard %x
+    result.exit edge normal(0), value %x, demand discard, prepare none
+    br ^out(%x)
+^out(%p: int) in S:
+    ret
+}

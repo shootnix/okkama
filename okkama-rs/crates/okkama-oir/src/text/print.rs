@@ -114,6 +114,8 @@ pub fn print(module: &Module) -> Result<String, PrintError> {
     for (id, protocol) in module.protocols.iter() {
         w.push("protocol ");
         id.write(&mut w)?;
+        w.push(" kind ");
+        protocol.kind.write(&mut w)?;
         if !protocol.holders.is_empty() {
             w.push(" holders ");
             protocol.holders.write(&mut w)?;
@@ -219,7 +221,8 @@ pub fn normalized_eq(left: &Module, right: &Module) -> Result<bool, PrintError> 
 
 pub(crate) struct Writer<'a> {
     pub(crate) module: &'a Module, pub(crate) output: String,
-    pub(super) names: HashMap<(usize, &'static str, u32), String>, scope: usize, depth: usize, overflow: bool,
+    pub(super) names: HashMap<(usize, &'static str, u32), String>, pub(super) scope: usize, depth: usize,
+        overflow: bool,
     pub(super) generic_owner: Option<GenericOwner>,
     pub(super) body: Option<&'a Body>,
     pub(super) literal_type: Option<TypeId>,
@@ -360,6 +363,12 @@ impl Writer<'_> {
         self.bind(self.scope, "value", value.as_u32(), format!("%{index}"))
     }
     fn body(&mut self, body: &Body) -> Result<(), PrintError> {
+        self.elaboration_declarations(body)?;
+        if body.cleanup != CleanupMetadata::default() {
+            self.push("    low.metadata ");
+            body.cleanup.write(self)?;
+            self.push("\n");
+        }
         for (id, binding) in body.bindings.iter() {
             self.push("    binding ");
             id.write(self)?;
@@ -405,6 +414,30 @@ impl Writer<'_> {
             self.push("\n");
         }
         let mut referenced = HashSet::new();
+        for (_, map) in body.cleanup.roots.iter() {
+            if let RootBoundary::BeforeInstruction(inst) | RootBoundary::AfterInstruction(inst) = map.boundary {
+                referenced.insert(inst);
+            }
+        }
+        for (_, proof) in body.cleanup.proofs.iter() {
+            for slot in &proof.slots {
+                let site = match &slot.origin {
+                    CreationWitness::Singleton => continue,
+                    CreationWitness::Create { site } | CreationWitness::FreshResult { site, .. } => site,
+                };
+                if let HighOperationSite::Instruction(inst) = site {
+                    referenced.insert(*inst);
+                }
+            }
+        }
+        for result in &body.high_results {
+            referenced.extend(result.prepared);
+        }
+        for record in &body.high_effects {
+            if let HighOperationSite::Instruction(instruction) = record.site {
+                referenced.insert(instruction);
+            }
+        }
         for (_, inst) in body.insts.iter() {
             referenced_creation(&inst.op, &mut referenced);
         }
@@ -447,6 +480,7 @@ impl Writer<'_> {
                 self.push("\n");
             }
             self.push("    ");
+            self.high_records(body, id)?;
             self.terminator(&block.term)?;
             self.push("\n");
         }
@@ -550,6 +584,42 @@ impl Writer<'_> {
     }
     fn terminator(&mut self, term: &Terminator) -> Result<(), PrintError> {
         match &term.kind {
+            TermKind::CleanupNext { cleanup, selected, done } => {
+                self.push("cleanup.next ");
+                cleanup.write(self)?;
+                self.push(" selected ");
+                self.edge(&term.kind, selected, Outcome::CleanupSelected)?;
+                self.push(" done ");
+                self.edge(&term.kind, done, Outcome::CleanupDone)?;
+            }
+            TermKind::ExitDispatch { close, closed, failure, exit, success, pending, failed } => {
+                self.push("exit.dispatch ");
+                close.write(self)?;
+                self.push(" ");
+                closed.write(self)?;
+                self.push(" ");
+                failure.write(self)?;
+                self.push(" ");
+                exit.write(self)?;
+                for (name, outcome, edge) in [
+                    (" success ", Outcome::ExitSuccess, success),
+                    (" pending ", Outcome::ExitPending, pending),
+                    (" failure ", Outcome::ExitFailure, failed),
+                ] {
+                    if let Some(edge) = edge {
+                        self.push(name);
+                        self.edge(&term.kind, edge, outcome)?;
+                    }
+                }
+            }
+            TermKind::FailureDispatch { failure, none, some } => {
+                self.push("failure.dispatch ");
+                failure.write(self)?;
+                self.push(" none ");
+                none.write(self)?;
+                self.push(" some ");
+                self.edge(&term.kind, some, Outcome::FailureSome)?;
+            }
             TermKind::Br(t) => {
                 self.push("br ");
                 t.write(self)?;
@@ -577,6 +647,39 @@ impl Writer<'_> {
                 self.edge(&term.kind, normal, Outcome::Normal)?;
                 self.push("\n        unwind ");
                 self.edge(&term.kind, unwind, Outcome::Unwind)?;
+            }
+            TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+                self.push("invoke.defer ");
+                function.write(self)?;
+                self.module.functions.get(*function).map_err(|error| PrintError::new(error.to_string()))?;
+                surface::write_call(call, None, self)?;
+                self.push("\n        continue ");
+                self.edge(&term.kind, continue_edge, Outcome::DeferContinue)?;
+                for (index, replacement) in replacements.iter().enumerate() {
+                    self.push("\n        replace ");
+                    self.push(&replacement.label);
+                    self.push(" ");
+                    let index = u16::try_from(index).map_err(|_| PrintError::new("too many defer edges"))?;
+                    self.edge(&term.kind, &replacement.edge, Outcome::DeferReplace(index))?;
+                }
+                if let Some(unwind) = unwind {
+                    self.push("\n        unwind ");
+                    self.edge(&term.kind, unwind, Outcome::Unwind)?;
+                }
+            }
+            TermKind::RetDefer { tag, values } => {
+                self.push("ret defer ");
+                match tag {
+                    DeferReturnTag::Continue => self.push("continue"),
+                    DeferReturnTag::Replace(label) => {
+                        self.push("replace ");
+                        self.push(label);
+                    }
+                }
+                for value in values {
+                    self.push(", ");
+                    value.write(self)?;
+                }
             }
             TermKind::Ret { values } => {
                 self.push("ret");

@@ -1,0 +1,49 @@
+oir 2 own
+// expect OIR2-B2.2 instruction:4:0
+// spec: 3.3;4.2;16.5; status: v2; expected-rule: -
+module 04-split-overlap
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify5 internal parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
+scope S action in @main
+func @main(%child: Res facts(managed(deps=dfull_child)), %other: Res facts(managed(deps=dfull_other)); %input: own) -> (own, own, own, deps) summary(Mverify5) {
+    dependency dfull_child: dependency = retention(value=%child, selection=selection(%child))
+    dependency dfull_other: dependency = retention(value=%other, selection=selection(%other))
+    key k0: key = created(site=0, instance=%child)
+    dependency d0: dependency = key(k0)
+    selection s0: selection = union([selection(%child), selection(%other), selection(%child)])
+    selection s1: selection = admissible(s0)
+    boundary B0 call in S
+^entry in S:
+    (%first_rest: own, %first_selected: own, %first_external: deps) = own.split %input, s1
+    br ^second(%first_rest, %first_selected, %first_external)
+^second(%rest: own, %selected: own, %external: deps) in S:
+    invoke.own own.split.checked %rest, selection(%child)
+        normal ^done($rest, $selected, $external_deps, %selected)
+        unwind ^failed_second($packet, $failure, %selected)
+^done(%rest2: own, %again: own, %external2: deps, %first: own) in S:
+    ret %rest2, %first, %again, %external2
+^failed_second(%restored: own, %error: failure, %kept: own) in S:
+    %all: own = own.join [%restored, %kept]
+    br ^failed(%all, %error)
+^failed(%packet: own, %failure: failure) in S:
+    %closed: closed = end %packet, boundary B0
+    raise %failure
+}

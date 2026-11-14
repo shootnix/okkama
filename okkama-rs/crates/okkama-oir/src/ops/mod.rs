@@ -30,6 +30,13 @@ macro_rules! operation_group {
                 }, )* }
             }
         }
+        impl crate::verify::read::Read for $group {
+            fn read(&self, visitor: &mut impl crate::verify::read::Reader) {
+                match self { $( Self::$variant { $( $field ),* } => {
+                    $( $field.read(visitor); )*
+                }, )* }
+            }
+        }
         impl $group {
             pub(crate) fn spec(&self) -> Spec {
                 match self { $( Self::$variant { $( $field ),* } => {

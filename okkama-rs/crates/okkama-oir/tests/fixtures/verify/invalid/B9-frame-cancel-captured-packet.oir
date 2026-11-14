@@ -1,0 +1,39 @@
+oir 2 low
+// expect OIR2-B9.5 instruction:1:5
+module frame_cancel
+protocol Services kind services
+protocol Frames kind services holders [frame, scope] rules [protocol_rule(transition=cancel, from=frame, to=scope,
+    checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=closed))] roots [frame_slots,
+    cleanup_remainder]
+scope ST action in @target
+scope S action in @f
+summary Mt internal contract call_contract(publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @target() -> void summary(Mt) {
+    low.metadata cleanup_metadata(closes=[], schedules=[], plans=[], roots=[], proofs=[])
+^entry in ST:
+    ret
+}
+func @f(%schedule: type) -> void [async] summary(Mf) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[thrown, program, panic, native], suspends=true,
+        cancel=false))], schedules=[cleanup_schedule(close=0, holders=[%saved], dictionary=some(%schedule),
+        protocol=some(Services))], plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=none)],
+        roots=[root_requirement(boundary=before_instruction(i6), bindings=[root_binding(value=%cancelled,
+        trace=cleanup_activation)], through_suspend=true)], proofs=[])
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %frame: frame<@target> = frame.alloc @target
+    %empty: own = own.empty
+    %saved: frame<@target> = frame.save %frame, slots [frame_slot(slot=0, value=%empty, mode=consume)], continuation 1
+    %begin: cleanup-state = cleanup.begin %q, close 0, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=true, cancel=false)
+    %cancelled: cleanup-state = frame.cancel %saved, %begin, protocol Frames
+    [i6] %planned: cleanup-state = cleanup.plan %cancelled, plan 0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch 0 %closed %fs %xs success ^done($closed) failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%failed: closed, %failure: failure) in S:
+    raise %failure
+}

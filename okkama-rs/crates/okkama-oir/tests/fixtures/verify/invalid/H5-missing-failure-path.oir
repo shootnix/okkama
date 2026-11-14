@@ -1,0 +1,10 @@
+oir 2 high
+// expect OIR2-H5 instruction:0:0
+module verify
+requires core
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.mod %x, %x
+    ret
+}

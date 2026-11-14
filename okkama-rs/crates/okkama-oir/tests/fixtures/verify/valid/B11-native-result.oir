@@ -1,0 +1,14 @@
+oir 2 own
+module native_result
+object R {
+    field x: int
+}
+scope S action in @f
+summary Mn internal results [result_relation(provenance=bound)] contract call_contract(results=[int], publication=atomic)
+summary Mf internal contract call_contract(publication=atomic)
+func @native() -> int [extern "fixture.scalar"] summary(Mn);
+func @f() -> void summary(Mf) {
+^entry in S:
+    %out: int = call.native @native() summary(Mn)
+    ret
+}

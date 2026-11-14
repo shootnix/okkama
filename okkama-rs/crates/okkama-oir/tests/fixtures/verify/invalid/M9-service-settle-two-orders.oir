@@ -1,0 +1,29 @@
+oir 2 low
+// expect OIR2-B10.6 instruction:0:5
+module cleanup_empty
+protocol Services kind services holders [scope, group] rules [protocol_rule(transition=settle, from=group, to=scope,
+    checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled))]
+scope S action in @f
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @f(%schedule: type, %t1: task-state, %t2: task-state) -> void [async] summary(Mf) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[thrown, program, panic, native], suspends=true,
+        cancel=false))], schedules=[cleanup_schedule(close=0, holders=[%t1, %t2], dictionary=some(%schedule),
+        protocol=some(Services))], plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=none)],
+        roots=[root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%settled2,
+        trace=cleanup_activation)], through_suspend=true)], proofs=[])
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %c: cleanup-state = cleanup.begin %q, close 0, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=true, cancel=false)
+    %shield: cleanup-state = cleanup.shield %c
+    %settled: cleanup-state = cleanup.settle %shield, %t1, protocol Services
+    %settled2: cleanup-state = cleanup.shield %settled
+    [i5] %planned: cleanup-state = cleanup.plan %settled2, plan 0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch 0 %closed %fs %xs success ^done($closed) failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%closed2: closed, %failure: failure) in S:
+    raise %failure
+}

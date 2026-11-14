@@ -1,0 +1,86 @@
+oir 2 low
+module frame_cancel
+protocol Services kind services
+protocol Frames kind services holders [frame, scope] rules [protocol_rule(transition=cancel, from=frame, to=scope,
+    checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=closed))] roots [frame_slots,
+    cleanup_remainder]
+scope ST action in @target
+scope S action in @f
+summary Mt internal contract call_contract(publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @target() -> void summary(Mt) {
+    low.metadata cleanup_metadata(closes=[], schedules=[], plans=[],
+        roots=[root_requirement(boundary=terminator(^entry), through_suspend=true),
+        root_requirement(boundary=entry(^entry), through_suspend=true), ], proofs=[])
+^entry in ST:
+    ret
+}
+func @f(%schedule: type) -> void [async] summary(Mf) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[thrown, program, panic, native], suspends=true,
+        cancel=false))], schedules=[cleanup_schedule(close=0, holders=[%saved], dictionary=some(%schedule),
+        protocol=some(Services))], plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=none)],
+        roots=[root_requirement(boundary=terminator(^entry), bindings=[root_binding(value=%fs,
+        trace=failure_graph), root_binding(value=%xs, trace=exit_reserve)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i8), bindings=[root_binding(value=%fs, trace=failure_graph),
+        root_binding(value=%xs, trace=exit_reserve)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i8), bindings=[root_binding(value=%planned,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=after_instruction(i7),
+        bindings=[root_binding(value=%planned, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i7), bindings=[root_binding(value=%cancelled,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=after_instruction(i6),
+        bindings=[root_binding(value=%cancelled, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i6), bindings=[root_binding(value=%saved,
+        trace=value(frame<@target>)), root_binding(value=%shield, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i5), bindings=[root_binding(value=%saved,
+        trace=value(frame<@target>)), root_binding(value=%shield, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%saved,
+        trace=value(frame<@target>)), root_binding(value=%begin, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i4), bindings=[root_binding(value=%saved,
+        trace=value(frame<@target>)), root_binding(value=%begin, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i4), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory), root_binding(value=%saved, trace=value(frame<@target>))],
+        through_suspend=true), root_requirement(boundary=after_instruction(i3),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%q, trace=scope_inventory),
+        root_binding(value=%saved, trace=value(frame<@target>))], through_suspend=true),
+        root_requirement(boundary=before_instruction(i3), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory), root_binding(value=%frame, trace=value(frame<@target>)),
+        root_binding(value=%empty, trace=packet_inventory)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i2), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory), root_binding(value=%frame, trace=value(frame<@target>)),
+        root_binding(value=%empty, trace=packet_inventory)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i2), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory), root_binding(value=%frame, trace=value(frame<@target>))],
+        through_suspend=true), root_requirement(boundary=after_instruction(i1),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%q, trace=scope_inventory),
+        root_binding(value=%frame, trace=value(frame<@target>))], through_suspend=true),
+        root_requirement(boundary=before_instruction(i1), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i0), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%q, trace=scope_inventory)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i0), bindings=[root_binding(value=%schedule, trace=value(type))],
+        through_suspend=true), root_requirement(boundary=entry(^entry), bindings=[root_binding(value=%schedule,
+        trace=value(type))], through_suspend=true), root_requirement(boundary=terminator(^done),
+        through_suspend=true), root_requirement(boundary=entry(^done), through_suspend=true),
+        root_requirement(boundary=terminator(^failed), bindings=[root_binding(value=%failure, trace=failure_graph)],
+        through_suspend=true), root_requirement(boundary=entry(^failed), bindings=[root_binding(value=%failure,
+        trace=failure_graph)], through_suspend=true), ], proofs=[])
+^entry in S:
+    [i0] %q: scope<S> = scope.begin S
+    [i1] %frame: frame<@target> = frame.alloc @target
+    [i2] %empty: own = own.empty
+    [i3] %saved: frame<@target> = frame.save %frame, slots [frame_slot(slot=0, value=%empty,
+        mode=consume)], continuation 1
+    [i4] %begin: cleanup-state = cleanup.begin %q, close 0, effects scope_effects(failures=[thrown, program,
+        panic, native],
+        suspends=true, cancel=false)
+    [i5] %shield: cleanup-state = cleanup.shield %begin
+    [i6] %cancelled: cleanup-state = frame.cancel %saved, %shield, protocol Frames
+    [i7] %planned: cleanup-state = cleanup.plan %cancelled, plan 0
+    [i8] (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch 0 %closed %fs %xs success ^done($closed) failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%failed: closed, %failure: failure) in S:
+    raise %failure
+}

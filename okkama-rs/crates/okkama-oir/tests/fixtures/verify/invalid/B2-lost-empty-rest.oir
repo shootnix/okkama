@@ -1,0 +1,12 @@
+oir 2 own
+// expect OIR2-B2.2 terminator:0:0
+module core
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]  contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%p: own, %n: int) -> own summary(M0) {
+^entry in S:
+    (%rest: own, %selected: own, %external: deps) = own.split %p, selection(%n)
+    (%rest2: own, %again: own, %external2: deps) = own.split %rest, selection(%n)
+    %all: own = own.join [%selected, %again]
+    ret %all
+}

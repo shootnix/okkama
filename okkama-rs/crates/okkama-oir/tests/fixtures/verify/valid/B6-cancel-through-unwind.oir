@@ -1,0 +1,25 @@
+oir 2 coro
+module cancellation
+protocol Services kind services holders [scope, group, receipt] rules [protocol_rule(transition=settle, from=group,
+    to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled)),
+    protocol_rule(transition=settle, from=receipt, to=scope, checks=[owner, live_dependencies],
+    normal=protocol_poststate(holder=scope, state=settled))]
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%schedule: type, %future: future<int> facts(managed(deps=d0))) -> void [async] summary(M0) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule, duties [%t, %r]
+    key k0: key = service_of(value=%future, kind=cache)
+    dependency d0: dependency = key(k0)
+^entry in S:
+    invoke.own await %future, result int
+        normal ^ok($value, $deps)
+        unwind ^failed($failure, $task, $receipt)
+^ok(%v: int, %d: deps) in S:
+    ret
+^failed(%e: failure, %t: task-state, %r: receipt) in S:
+    %q: scope<S> = scope.begin S
+    %combined: failure = scope.unwind %q, %e, effects scope_effects(failures=[thrown, program, panic, native],
+        suspends=true)
+    raise %combined
+}

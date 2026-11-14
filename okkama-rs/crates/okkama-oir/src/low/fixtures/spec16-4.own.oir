@@ -1,0 +1,61 @@
+oir 2 own
+// Spec 16.4: reached defer on both risky-call outcomes, none on creation failure.
+module risky_defer
+object Res {
+    field name: str
+    destroy @destroy
+}
+scope S action in @main
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mdefer internal contract call_contract(failures=[thrown], publication=atomic)
+summary Mdestroy internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @new(%name: str; %packet: own) -> (Res, own, deps) [extern "fixture.new"] summary(Mnew);
+func @risky(%packet: own) -> (own, deps) [extern "fixture.risky"] summary(Mvoid);
+func @log(%packet: own) -> void [extern "fixture.log", defer(replacements=[])] summary(Mdefer);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mdestroy);
+summary Mmain internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @main(%name: str) -> void summary(Mmain) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %empty: own = own.empty
+    invoke.own call @new(%name; %empty)
+        normal ^have($value, $packet, $deps, %q0)
+        unwind ^unwind(%q0, $failure)
+^have(%r: Res facts(managed(deps=dr)), %packet: own, %deps: deps, %q1: scope<S>) in S:
+    %q2: scope<S> = own.admit %q1, %packet
+    %empty_risky: own = own.empty
+    invoke.own call @risky(; %empty_risky)
+        normal ^normal_defer(%q2, $packet, $deps)
+        unwind ^failure_defer(%q2, $failure)
+^normal_defer(%q3: scope<S>, %post: own, %post_deps: deps) in S:
+    %q4: scope<S> = own.admit %q3, %post
+    %empty_defer: own = own.empty
+    invoke.defer @log(; %empty_defer) summary(Mdefer)
+        continue ^close(%q4)
+        unwind ^unwind(%q4, $failure)
+^failure_defer(%q5: scope<S>, %primary: failure) in S:
+    %empty_failed_defer: own = own.empty
+    invoke.defer @log(; %empty_failed_defer) summary(Mdefer)
+        continue ^unwind(%q5, %primary)
+        unwind ^secondary(%q5, %primary, $failure)
+^secondary(%q6: scope<S>, %first: failure, %second: failure) in S:
+    %joined: failure = fail.secondary %first, %second
+    br ^unwind(%q6, %joined)
+^close(%q7: scope<S>) in S:
+    invoke.own scope.end %q7, effects scope_effects(failures=[thrown])
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^unwind(%q8: scope<S>, %active: failure) in S:
+    %combined: failure = scope.unwind %q8, %active, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed) in S:
+    ret
+^failed(%closed2: closed, %failure: failure) in S:
+    raise %failure
+}

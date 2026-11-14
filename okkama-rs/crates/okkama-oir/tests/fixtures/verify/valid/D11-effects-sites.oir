@@ -1,0 +1,17 @@
+oir 2 high
+module explicit_effects
+scope SD action in @d
+scope S action in @f
+func @d() -> void {
+^entry in SD:
+    ret
+}
+func @f() -> void {
+^entry in S unwind ^failed:
+    [i0] call @d() summary(none)
+    high.effects at #0 failures [thrown, program, panic, native, cancelled], suspends true
+    ret
+^failed(%error: failure) in S:
+    high.effects at terminator ^failed failures [thrown], suspends false
+    raise %error
+}

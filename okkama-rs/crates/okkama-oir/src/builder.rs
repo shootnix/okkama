@@ -86,7 +86,9 @@ impl<'a> FunctionBuilder<'a> {
         let declaration = module.functions.get(function)?;
         if declaration.body.is_some() { return Err(BuildError::AlreadyDefined(function)); }
         let params: Vec<_> = declaration.signature.params.iter().copied().map(ParamSpec::new).collect();
-        let body = Body { entry: BlockId::from_u32(0), values: Arena::new(), blocks: Arena::new(),
+        let body = Body { cleanup: CleanupMetadata::default(), high_results: vec![], high_effects: vec![],
+            descriptor_bindings: vec![],
+            service_schedules: vec![], entry: BlockId::from_u32(0), values: Arena::new(), blocks: Arena::new(),
             insts: Arena::new(), bindings: Arena::new(), boundaries: Arena::new(),
             deps: Arena::new(), keys: Arena::new(), selections: Arena::new() };
         let mut builder = Self { module, function, body, current: None, location: None,
@@ -99,6 +101,7 @@ impl<'a> FunctionBuilder<'a> {
     pub fn body(&self) -> &Body { &self.body }
     pub fn module(&self) -> &Module { self.module }
     pub fn entry(&self) -> BlockId { self.body.entry }
+    pub fn current_block(&self) -> Option<BlockId> { self.current }
     pub fn intern_type(&mut self, ty: Type) -> Result<TypeId, BuildError> { Ok(self.module.types.intern(ty)?) }
     pub fn declare_binding(&mut self, binding: BindingDecl) -> Result<BindingId, BuildError> {
         self.check_scope(binding.scope)?; self.module.types.get(binding.ty)?;
@@ -182,6 +185,38 @@ impl<'a> FunctionBuilder<'a> {
         validate_term(self.module, &self.body, &term, Some(&signature))?;
         self.body.blocks.get_mut(block)?.term = Terminator { kind: term, loc: self.location };
         self.terminated.insert(block); Ok(())
+    }
+    pub fn defer_result_schema(&mut self, function: FuncId, outcome: Outcome) -> Result<Vec<ResultSpec>, BuildError> {
+        let slots = ContractRegistry::new(self.module).defer_results(function, outcome)?;
+        slots.iter().map(|slot| {
+            Ok(ResultSpec::new(resolve_result_type(self.module, &self.body, &slot.ty)?))
+        }).collect()
+    }
+    pub fn invoke_defer(
+        &mut self, function: FuncId, call: CallSite, continue_edge: InvokeEdge,
+        replacements: Vec<DeferReplaceEdge>, unwind: Option<InvokeEdge>,
+    ) -> Result<(), BuildError> {
+        self.terminate(TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind })
+    }
+    pub fn add_high_result(&mut self, result: HighResultExit) -> Result<(), BuildError> {
+        check_references(&result, self.module, &self.body)?;
+        self.body.high_results.push(result);
+        Ok(())
+    }
+    pub fn add_high_effect(&mut self, effect: HighEffectRecord) -> Result<(), BuildError> {
+        check_references(&effect, self.module, &self.body)?;
+        self.body.high_effects.push(effect);
+        Ok(())
+    }
+    pub fn bind_descriptor(&mut self, binding: DescriptorBinding) -> Result<(), BuildError> {
+        check_references(&binding, self.module, &self.body)?;
+        self.body.descriptor_bindings.push(binding);
+        Ok(())
+    }
+    pub fn declare_service_schedule(&mut self, schedule: ServiceSchedule) -> Result<(), BuildError> {
+        check_references(&schedule, self.module, &self.body)?;
+        self.body.service_schedules.push(schedule);
+        Ok(())
     }
     pub fn invoke_own(&mut self, op: Operation, normal: InvokeEdge, unwind: InvokeEdge) -> Result<(), BuildError> {
         self.terminate(TermKind::InvokeOwn { op: Box::new(op), normal, unwind })
@@ -409,6 +444,12 @@ fn validate_invoke_edge(module: &mut Module, body: &Body, edge: &InvokeEdge, out
 fn validate_term(module: &mut Module, body: &Body, term: &TermKind, signature: Option<&Signature>) -> Result<(), BuildError> {
     check_references(term, module, body)?;
     match term {
+        TermKind::CleanupNext { .. } | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+            for (outcome, edge) in dispatch_edges(term) {
+                validate_invoke_edge(module, body, edge, outcome, &dispatch_slots(outcome))?;
+            }
+            if let TermKind::FailureDispatch { none, .. } = term { validate_target(body, none)?; }
+        }
         TermKind::Br(target) => validate_target(body, target)?,
         TermKind::Cond { condition, yes, no } => {
             check_result_types(&[module.types.intern(Type::Bool)?], &[value_type(body, *condition)?])?;
@@ -422,6 +463,21 @@ fn validate_term(module: &mut Module, body: &Body, term: &TermKind, signature: O
             validate_invoke_edge(module, body, normal, Outcome::Normal, &contract.normal.results)?;
             validate_invoke_edge(module, body, unwind, Outcome::Unwind, &failure.results)?;
         }
+        TermKind::InvokeDefer { function, continue_edge, replacements, unwind, .. } => {
+            let slots = ContractRegistry::new(module).defer_results(*function, Outcome::DeferContinue)?;
+            validate_invoke_edge(module, body, continue_edge, Outcome::DeferContinue, &slots)?;
+            for (index, replacement) in replacements.iter().enumerate() {
+                let index = u16::try_from(index).map_err(|_| BuildError::InvalidPosition)?;
+                let outcome = Outcome::DeferReplace(index);
+                let slots = ContractRegistry::new(module).defer_results(*function, outcome)?;
+                validate_invoke_edge(module, body, &replacement.edge, outcome, &slots)?;
+            }
+            if let Some(unwind) = unwind {
+                let slots = ContractRegistry::new(module).defer_results(*function, Outcome::Unwind)?;
+                validate_invoke_edge(module, body, unwind, Outcome::Unwind, &slots)?;
+            }
+        }
+        TermKind::RetDefer { .. } => {}
         TermKind::Ret { values } => {
             if let Some(signature) = signature { check_result_types(&signature.results, &values.iter().map(|&value| value_type(body, value)).collect::<Result<Vec<_>, _>>()?)?; }
         }
@@ -446,8 +502,39 @@ pub struct IdRemap {
     pub blocks: HashMap<BlockId, BlockId>,
     pub instructions: HashMap<InstId, InstId>,
     pub values: HashMap<ValueId, ValueId>,
+    pub cleanup_closes: HashMap<CleanupCloseId, CleanupCloseId>,
+    pub cleanup_schedules: HashMap<CleanupScheduleId, CleanupScheduleId>,
+    pub cleanup_plans: HashMap<CleanupPlanId, CleanupPlanId>,
+    pub cleanup_proofs: HashMap<CleanupOrderProofId, CleanupOrderProofId>,
+    pub root_maps: HashMap<RootMapId, RootMapId>,
 }
 impl VisitorMut for IdRemap {
+    fn cleanup_close(&mut self, id: &mut CleanupCloseId) {
+        if let Some(new) = self.cleanup_closes.get(id) {
+            *id = *new;
+        }
+    }
+    fn cleanup_schedule(&mut self, id: &mut CleanupScheduleId) {
+        if let Some(new) = self.cleanup_schedules.get(id) {
+            *id = *new;
+        }
+    }
+    fn cleanup_plan(&mut self, id: &mut CleanupPlanId) {
+        if let Some(new) = self.cleanup_plans.get(id) {
+            *id = *new;
+        }
+    }
+    fn cleanup_order_proof(&mut self, id: &mut CleanupOrderProofId) {
+        if let Some(new) = self.cleanup_proofs.get(id) {
+            *id = *new;
+        }
+    }
+    fn root_map(&mut self, id: &mut RootMapId) {
+        if let Some(new) = self.root_maps.get(id) {
+            *id = *new;
+        }
+    }
+
     fn block(&mut self, id: &mut BlockId) { if let Some(new) = self.blocks.get(id) { *id = *new; } }
     fn instruction(&mut self, id: &mut InstId) { if let Some(new) = self.instructions.get(id) { *id = *new; } }
     fn value(&mut self, id: &mut ValueId) { if let Some(new) = self.values.get(id) { *id = *new; } }
@@ -501,6 +588,14 @@ impl<'a> FunctionEditor<'a> {
         let prefix = self.body.blocks.get_mut(block)?;
         prefix.insts.truncate(position);
         prefix.term = Terminator { kind: TermKind::Br(Target { block: next, args: vec![] }), loc: None };
+        for record in &mut self.body.high_results {
+            if record.block == block { record.block = next; }
+        }
+        for record in &mut self.body.high_effects {
+            if record.site == HighOperationSite::Terminator(block) {
+                record.site = HighOperationSite::Terminator(next);
+            }
+        }
         Ok(next)
     }
     pub fn replace_uses(&mut self, old: ValueId, new: ValueId) -> Result<(), BuildError> {
@@ -526,6 +621,18 @@ impl<'a> FunctionEditor<'a> {
             (TermKind::Cond { no: target, .. }, E::No) | (TermKind::Switch { default: target, .. }, E::Default) |
             (TermKind::Catch { next: target, .. }, E::CatchNext) | (TermKind::Lookup { missing: target, .. }, E::LookupMissing) => target.args = ordinary_args(args)?,
             (TermKind::Switch { cases, .. }, E::SwitchCase(index)) => cases.get_mut(index as usize).ok_or(BuildError::InvalidPosition)?.target.args = ordinary_args(args)?,
+            (TermKind::FailureDispatch { none, .. }, E::FailureNone) => none.args = ordinary_args(args)?,
+            (TermKind::CleanupNext { selected: edge, .. }, E::CleanupSelected)
+            | (TermKind::CleanupNext { done: edge, .. }, E::CleanupDone)
+            | (TermKind::FailureDispatch { some: edge, .. }, E::FailureSome)
+            | (TermKind::ExitDispatch { success: Some(edge), .. }, E::ExitSuccess)
+            | (TermKind::ExitDispatch { pending: Some(edge), .. }, E::ExitPending)
+            | (TermKind::ExitDispatch { failed: Some(edge), .. }, E::ExitFailure) => edge.args = args,
+            (TermKind::InvokeDefer { continue_edge: edge, .. }, E::DeferContinue)
+            | (TermKind::InvokeDefer { unwind: Some(edge), .. }, E::DeferUnwind) => edge.args = args,
+            (TermKind::InvokeDefer { replacements, .. }, E::DeferReplace(index)) => {
+                replacements.get_mut(usize::from(index)).ok_or(BuildError::InvalidPosition)?.edge.args = args;
+            }
             (TermKind::InvokeOwn { normal: edge, .. }, E::InvokeNormal) | (TermKind::InvokeOwn { unwind: edge, .. }, E::InvokeUnwind) |
             (TermKind::Catch { handler: edge, .. }, E::CatchHandler) | (TermKind::Lookup { found: edge, .. }, E::LookupFound) => edge.args = args,
             _ => return Err(BuildError::InvalidPosition),

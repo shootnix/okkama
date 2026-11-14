@@ -1,0 +1,118 @@
+oir 2 low
+module direct_destroy
+object R {
+    field x: int
+    destroy @destroy
+}
+protocol Services kind services
+scope SD action in @destroy
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(publication=atomic)
+summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract
+    call_contract(results=[R], publication=atomic)
+summary Mf internal contract call_contract(publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    low.metadata cleanup_metadata(closes=[], schedules=[], plans=[],
+        roots=[root_requirement(boundary=terminator(^entry), through_suspend=true),
+        root_requirement(boundary=entry(^entry), bindings=[root_binding(value=%self, trace=value(R))],
+        through_suspend=true), ], proofs=[])
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @create(%packet: own) -> (R, own, deps) [extern "fixture.singleton"] summary(Mc);
+func @f(%schedule: type, %descriptor: type) -> void summary(Mf) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[], suspends=false, cancel=false))],
+        schedules=[cleanup_schedule(close=0, holders=[], dictionary=some(%schedule), protocol=some(Services))],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=some(0))],
+        roots=[root_requirement(boundary=terminator(^entry), bindings=[root_binding(value=%c4,
+        trace=cleanup_activation), root_binding(value=%fs, trace=failure_graph)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i8), bindings=[root_binding(value=%c4, trace=cleanup_activation),
+        root_binding(value=%fs, trace=failure_graph)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i8), bindings=[root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%r, trace=value(R)), root_binding(value=%c3,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=after_instruction(i7),
+        bindings=[root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%c3, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i7), bindings=[root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%r, trace=value(R)), root_binding(value=%c2,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=after_instruction(i6),
+        bindings=[root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%c2, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i6), bindings=[root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%r, trace=value(R)), root_binding(value=%c1,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=after_instruction(i5),
+        bindings=[root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%c1, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%r, trace=value(R)), root_binding(value=%c, trace=cleanup_activation)],
+        through_suspend=true), root_requirement(boundary=after_instruction(i4),
+        bindings=[root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%c, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i4), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%admitted, trace=scope_inventory)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i3), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%descriptor, trace=value(type)), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%admitted, trace=scope_inventory)], through_suspend=true),
+        root_requirement(boundary=before_instruction(i3), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%descriptor, trace=value(type)), root_binding(value=%q, trace=scope_inventory),
+        root_binding(value=%r, trace=value(R)), root_binding(value=%packet, trace=packet_inventory)],
+        through_suspend=true), root_requirement(boundary=after_instruction(i2),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%q, trace=scope_inventory), root_binding(value=%r, trace=value(R)),
+        root_binding(value=%packet, trace=packet_inventory), root_binding(value=%deps, trace=full_dependencies)],
+        through_suspend=true), root_requirement(boundary=before_instruction(i2),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%q, trace=scope_inventory), root_binding(value=%root_empty0,
+        trace=packet_inventory)], through_suspend=true), root_requirement(boundary=after_instruction(i1),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%q, trace=scope_inventory), root_binding(value=%root_empty0,
+        trace=packet_inventory)], through_suspend=true), root_requirement(boundary=before_instruction(i1),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type)), root_binding(value=%q, trace=scope_inventory)], through_suspend=true),
+        root_requirement(boundary=after_instruction(i0), bindings=[root_binding(value=%schedule, trace=value(type)),
+        root_binding(value=%descriptor, trace=value(type)), root_binding(value=%q, trace=scope_inventory)],
+        through_suspend=true), root_requirement(boundary=before_instruction(i0),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type))], through_suspend=true), root_requirement(boundary=entry(^entry),
+        bindings=[root_binding(value=%schedule, trace=value(type)), root_binding(value=%descriptor,
+        trace=value(type))], through_suspend=true), root_requirement(boundary=terminator(^finished),
+        bindings=[root_binding(value=%failures, trace=failure_graph), root_binding(value=%xs, trace=exit_reserve)],
+        through_suspend=true), root_requirement(boundary=after_instruction(i9),
+        bindings=[root_binding(value=%failures, trace=failure_graph), root_binding(value=%xs, trace=exit_reserve)],
+        through_suspend=true), root_requirement(boundary=before_instruction(i9),
+        bindings=[root_binding(value=%remaining, trace=cleanup_activation)], through_suspend=true),
+        root_requirement(boundary=entry(^finished), bindings=[root_binding(value=%remaining,
+        trace=cleanup_activation)], through_suspend=true), root_requirement(boundary=terminator(^done),
+        through_suspend=true), root_requirement(boundary=entry(^done), through_suspend=true),
+        root_requirement(boundary=terminator(^no_failure_fs), bindings=[root_binding(value=%unexpected_fs,
+        trace=failure_graph)], through_suspend=true), root_requirement(boundary=entry(^no_failure_fs),
+        bindings=[root_binding(value=%unexpected_fs, trace=failure_graph)], through_suspend=true),
+        ], proofs=[order_proof(state=%admitted,
+        slots=[direct_slot(identity=%r, descriptor=%descriptor, destroy=@destroy, origin=singleton, active_at=^entry)],
+        suffixes=[suffix(completed=1, remaining=[], roots=[])], reserve_empty=true)])
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    [i0] %q: scope<S> = scope.begin S
+    [i1] %root_empty0: own = own.empty
+    [i2] (%r: R facts(managed(deps=dr)), %packet: own, %deps: deps) = call @create(; %root_empty0)
+    [i3] %admitted: scope<S> = own.admit %q, %packet
+    [i4] %c: cleanup-state = cleanup.begin %admitted, close 0, effects scope_effects(failures=[], suspends=false,
+        cancel=false)
+    [i5] %c1: cleanup-state = cleanup.shield %c
+    [i6] %c2: cleanup-state = cleanup.settle.empty %c1, schedule 0
+    [i7] %c3: cleanup-state = cleanup.plan %c2, plan 0
+    [i8] (%c4: cleanup-state, %fs: failure-state) = destroy.direct %c3, %r, %descriptor, destroy @destroy
+    failure.dispatch %fs none ^finished(%c4) some ^no_failure_fs($failure)
+^finished(%remaining: cleanup-state) in S:
+    [i9] (%closed: closed, %failures: failure-state, %xs: exit-state) = cleanup.finish %remaining
+    exit.dispatch 0 %closed %failures %xs success ^done($closed)
+^done(%done: closed) in S:
+    ret
+
+^no_failure_fs(%unexpected_fs: failure) in S:
+    raise %unexpected_fs
+}

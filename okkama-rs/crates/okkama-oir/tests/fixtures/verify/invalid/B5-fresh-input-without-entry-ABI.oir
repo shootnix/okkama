@@ -1,0 +1,32 @@
+oir 2 own
+// expect OIR2-B5.4 terminator:3:0
+module paired_entry_deps
+object R {
+    destroy @destroy
+}
+scope Sc action in @callee
+scope S action in @main
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mn call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+summary Mc call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary M0 call-boundary contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R) -> void [extern "fixture.destroy", destroy R] summary(Md);
+func @new(%input: own) -> (R, own, deps) [extern "fixture.new"] summary(Mn);
+func @callee(%arg: R facts(managed(deps=darg)), %arg_deps: deps) -> own summary(Mc) {
+    dependency darg: dependency = from_ssa(%arg_deps)
+^entry in Sc:
+    %out: own = own.empty
+    ret %out
+}
+func @main() -> own summary(M0) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    (%r: R facts(managed(deps=dr)), %packet: own, %full: deps) = call @new(; own.empty)
+    invoke.own call @callee(%r; %packet) deps [%full]
+        normal ^done($packet, $deps)
+        unwind ^failed($failure)
+^done(%out: own, %dependencies: deps) in S:
+    ret %out
+^failed(%error: failure) in S:
+    raise %error
+}

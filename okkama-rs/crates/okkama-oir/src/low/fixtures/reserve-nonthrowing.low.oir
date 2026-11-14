@@ -1,0 +1,277 @@
+oir 2 low
+module reserve_nonthrowing
+
+object Res {
+    destroy @destroy
+}
+scope S0 action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(publication=atomic)
+summary M1 internal parameters [parameter_effect(convention=borrow, destination=none)] results
+    [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[Res],
+    failures=[thrown, program, panic, native], publication=atomic)
+
+func @destroy(%arg0: Res) -> void [extern "fixture.destroy", destroy Res] summary(M0);
+
+func @main(%0: Res facts(managed(deps=d0))) -> (Res, pending) [ctor Res] summary(M1) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S0), after_defers=^b3, reserve=true,
+        effects=scope_effects(failures=[], suspends=false, cancel=false)), cleanup_close(source=scope(S0),
+        after_defers=^b4, active_failure=true, effects=scope_effects(failures=[thrown], suspends=false, cancel=false)),
+        cleanup_close(source=scope(S0), after_defers=^b6, active_failure=true, effects=scope_effects(failures=[thrown],
+        suspends=false, cancel=false)), ], schedules=[cleanup_schedule(close=0), cleanup_schedule(close=1),
+        cleanup_schedule(close=2), ], plans=[cleanup_plan(close=0, sources=[scope_inventory, whole_reserve_on_failure],
+        direct=some(0)), cleanup_plan(close=1, sources=[scope_inventory]), cleanup_plan(close=2,
+        sources=[scope_inventory]), ], roots=[root_requirement(boundary=terminator(^b0),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%1, trace=scope_inventory),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%3, trace=packet_inventory)]),
+        root_requirement(boundary=after_instruction(i2), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%1, trace=scope_inventory), root_binding(value=%2, trace=value(type)), root_binding(value=%3,
+        trace=packet_inventory)]), root_requirement(boundary=before_instruction(i2), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%1, trace=scope_inventory), root_binding(value=%2, trace=value(type))]),
+        root_requirement(boundary=after_instruction(i1), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%1, trace=scope_inventory), root_binding(value=%2, trace=value(type))]),
+        root_requirement(boundary=before_instruction(i1), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%1, trace=scope_inventory)]), root_requirement(boundary=after_instruction(i0),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%1, trace=scope_inventory)]),
+        root_requirement(boundary=before_instruction(i0), bindings=[root_binding(value=%0, trace=value(Res))]),
+        root_requirement(boundary=entry(^b0), bindings=[root_binding(value=%0, trace=value(Res))]),
+        root_requirement(boundary=terminator(^b1), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%7,
+        trace=scope_inventory), root_binding(value=%8, trace=packet_inventory)]),
+        root_requirement(boundary=after_instruction(i4), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%7,
+        trace=scope_inventory), root_binding(value=%8, trace=packet_inventory)]),
+        root_requirement(boundary=before_instruction(i4), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%7,
+        trace=scope_inventory)]), root_requirement(boundary=after_instruction(i3), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%7, trace=scope_inventory)]), root_requirement(boundary=before_instruction(i3),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%5, trace=packet_inventory), root_binding(value=%6,
+        trace=scope_inventory)]), root_requirement(boundary=entry(^b1), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%5, trace=packet_inventory), root_binding(value=%6, trace=scope_inventory)]),
+        root_requirement(boundary=terminator(^b2), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%9,
+        trace=value(Res)), root_binding(value=%12, trace=scope_inventory)]),
+        root_requirement(boundary=after_instruction(i5), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%9,
+        trace=value(Res)), root_binding(value=%12, trace=scope_inventory)]),
+        root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%9,
+        trace=value(Res)), root_binding(value=%10, trace=packet_inventory), root_binding(value=%11,
+        trace=scope_inventory)]), root_requirement(boundary=entry(^b2), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%9, trace=value(Res)), root_binding(value=%10, trace=packet_inventory),
+        root_binding(value=%11, trace=scope_inventory)]), root_requirement(boundary=terminator(^b3),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%18, trace=cleanup_activation)]),
+        root_requirement(boundary=after_instruction(i9), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%18,
+        trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i9), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%17, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i8),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%17, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i8), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%16,
+        trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i7), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%16, trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i7),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%13, trace=scope_inventory),
+        root_binding(value=%15, trace=pending_value_reserve_deps)]), root_requirement(boundary=after_instruction(i6),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%13, trace=scope_inventory),
+        root_binding(value=%15, trace=pending_value_reserve_deps)]), root_requirement(boundary=before_instruction(i6),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%9, trace=value(Res)), root_binding(value=%13,
+        trace=scope_inventory), root_binding(value=%14, trace=packet_inventory)]), root_requirement(boundary=entry(^b3),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%2, trace=value(type)),
+        root_binding(value=%4, trace=value(Res)), root_binding(value=%9, trace=value(Res)), root_binding(value=%13,
+        trace=scope_inventory), root_binding(value=%14, trace=packet_inventory)]),
+        root_requirement(boundary=terminator(^b4), bindings=[root_binding(value=%25, trace=cleanup_activation)]),
+        root_requirement(boundary=after_instruction(i13), bindings=[root_binding(value=%25, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i13), bindings=[root_binding(value=%24,
+        trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i12), bindings=[root_binding(value=%24,
+        trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i12),
+        bindings=[root_binding(value=%23, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i11),
+        bindings=[root_binding(value=%23, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i11), bindings=[root_binding(value=%20, trace=failure_graph),
+        root_binding(value=%22, trace=scope_inventory)]), root_requirement(boundary=after_instruction(i10),
+        bindings=[root_binding(value=%20, trace=failure_graph), root_binding(value=%22, trace=scope_inventory)]),
+        root_requirement(boundary=before_instruction(i10), bindings=[root_binding(value=%19, trace=packet_inventory),
+        root_binding(value=%20, trace=failure_graph), root_binding(value=%21, trace=scope_inventory)]),
+        root_requirement(boundary=entry(^b4), bindings=[root_binding(value=%19, trace=packet_inventory),
+        root_binding(value=%20, trace=failure_graph), root_binding(value=%21, trace=scope_inventory)]),
+        root_requirement(boundary=terminator(^b5), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%27, trace=pending_value_reserve_deps)]), root_requirement(boundary=entry(^b5),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%27, trace=pending_value_reserve_deps)]),
+        root_requirement(boundary=terminator(^b6), bindings=[root_binding(value=%32, trace=cleanup_activation)]),
+        root_requirement(boundary=after_instruction(i16), bindings=[root_binding(value=%32, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i16), bindings=[root_binding(value=%31,
+        trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i15), bindings=[root_binding(value=%31,
+        trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i15),
+        bindings=[root_binding(value=%30, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i14),
+        bindings=[root_binding(value=%30, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i14), bindings=[root_binding(value=%28, trace=scope_inventory),
+        root_binding(value=%29, trace=failure_graph)]), root_requirement(boundary=entry(^b6),
+        bindings=[root_binding(value=%28, trace=scope_inventory), root_binding(value=%29, trace=failure_graph)]),
+        root_requirement(boundary=terminator(^b7), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%34, trace=pending_value_reserve_deps)]), root_requirement(boundary=entry(^b7),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%34, trace=pending_value_reserve_deps)]),
+        root_requirement(boundary=terminator(^b8), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%37, trace=failure_graph), root_binding(value=%38, trace=exit_reserve)]),
+        root_requirement(boundary=after_instruction(i17), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%37, trace=failure_graph), root_binding(value=%38, trace=exit_reserve)]),
+        root_requirement(boundary=before_instruction(i17), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%35, trace=cleanup_activation)]), root_requirement(boundary=entry(^b8),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%35, trace=cleanup_activation)]),
+        root_requirement(boundary=terminator(^b9), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%40, trace=cleanup_activation), root_binding(value=%41, trace=failure_graph)]),
+        root_requirement(boundary=after_instruction(i18), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%40, trace=cleanup_activation), root_binding(value=%41, trace=failure_graph)]),
+        root_requirement(boundary=before_instruction(i18), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)), root_binding(value=%39,
+        trace=cleanup_activation)]), root_requirement(boundary=entry(^b9), bindings=[root_binding(value=%0,
+        trace=value(Res)), root_binding(value=%2, trace=value(type)), root_binding(value=%4, trace=value(Res)),
+        root_binding(value=%39, trace=cleanup_activation)]), root_requirement(boundary=terminator(^b10),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%44, trace=cleanup_activation)]),
+        root_requirement(boundary=after_instruction(i19), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%44, trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i19),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%42, trace=cleanup_activation),
+        root_binding(value=%43, trace=failure_graph)]), root_requirement(boundary=entry(^b10),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%42, trace=cleanup_activation),
+        root_binding(value=%43, trace=failure_graph)]), root_requirement(boundary=terminator(^b11),
+        bindings=[root_binding(value=%0, trace=value(Res)), root_binding(value=%45, trace=cleanup_activation)]),
+        root_requirement(boundary=entry(^b11), bindings=[root_binding(value=%0, trace=value(Res)),
+        root_binding(value=%45, trace=cleanup_activation)]), root_requirement(boundary=terminator(^b12),
+        bindings=[root_binding(value=%46, trace=failure_graph)]), root_requirement(boundary=entry(^b12),
+        bindings=[root_binding(value=%46, trace=failure_graph)]), root_requirement(boundary=terminator(^b13),
+        bindings=[root_binding(value=%47, trace=cleanup_activation)]), root_requirement(boundary=entry(^b13),
+        bindings=[root_binding(value=%47, trace=cleanup_activation)]), root_requirement(boundary=terminator(^b14),
+        bindings=[root_binding(value=%50, trace=cleanup_activation), root_binding(value=%51, trace=failure_graph)]),
+        root_requirement(boundary=after_instruction(i20), bindings=[root_binding(value=%50, trace=cleanup_activation),
+        root_binding(value=%51, trace=failure_graph)]), root_requirement(boundary=before_instruction(i20),
+        bindings=[root_binding(value=%48, trace=cleanup_activation)]), root_requirement(boundary=entry(^b14),
+        bindings=[root_binding(value=%48, trace=cleanup_activation)]), root_requirement(boundary=terminator(^b15),
+        bindings=[root_binding(value=%54, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i21),
+        bindings=[root_binding(value=%54, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i21), bindings=[root_binding(value=%52, trace=cleanup_activation),
+        root_binding(value=%53, trace=failure_graph)]), root_requirement(boundary=entry(^b15),
+        bindings=[root_binding(value=%52, trace=cleanup_activation), root_binding(value=%53, trace=failure_graph)]),
+        root_requirement(boundary=terminator(^b16), bindings=[root_binding(value=%57, trace=failure_graph),
+        root_binding(value=%58, trace=exit_reserve)]), root_requirement(boundary=after_instruction(i22),
+        bindings=[root_binding(value=%57, trace=failure_graph), root_binding(value=%58, trace=exit_reserve)]),
+        root_requirement(boundary=before_instruction(i22), bindings=[root_binding(value=%55,
+        trace=cleanup_activation)]), root_requirement(boundary=entry(^b16), bindings=[root_binding(value=%55,
+        trace=cleanup_activation)]), root_requirement(boundary=terminator(^b17), bindings=[root_binding(value=%59,
+        trace=failure_graph)]), root_requirement(boundary=entry(^b17), bindings=[root_binding(value=%59,
+        trace=failure_graph)]), root_requirement(boundary=terminator(^b18), bindings=[root_binding(value=%60,
+        trace=cleanup_activation)]), root_requirement(boundary=entry(^b18), bindings=[root_binding(value=%60,
+        trace=cleanup_activation)]), root_requirement(boundary=terminator(^b19), bindings=[root_binding(value=%63,
+        trace=cleanup_activation), root_binding(value=%64, trace=failure_graph)]),
+        root_requirement(boundary=after_instruction(i23), bindings=[root_binding(value=%63, trace=cleanup_activation),
+        root_binding(value=%64, trace=failure_graph)]), root_requirement(boundary=before_instruction(i23),
+        bindings=[root_binding(value=%61, trace=cleanup_activation)]), root_requirement(boundary=entry(^b19),
+        bindings=[root_binding(value=%61, trace=cleanup_activation)]), root_requirement(boundary=terminator(^b20),
+        bindings=[root_binding(value=%67, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i24),
+        bindings=[root_binding(value=%67, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i24), bindings=[root_binding(value=%65, trace=cleanup_activation),
+        root_binding(value=%66, trace=failure_graph)]), root_requirement(boundary=entry(^b20),
+        bindings=[root_binding(value=%65, trace=cleanup_activation), root_binding(value=%66, trace=failure_graph)]),
+        root_requirement(boundary=terminator(^b21), bindings=[root_binding(value=%70, trace=failure_graph),
+        root_binding(value=%71, trace=exit_reserve)]), root_requirement(boundary=after_instruction(i25),
+        bindings=[root_binding(value=%70, trace=failure_graph), root_binding(value=%71, trace=exit_reserve)]),
+        root_requirement(boundary=before_instruction(i25), bindings=[root_binding(value=%68,
+        trace=cleanup_activation)]), root_requirement(boundary=entry(^b21), bindings=[root_binding(value=%68,
+        trace=cleanup_activation)]), ], proofs=[order_proof(state=%13, slots=[direct_slot(identity=%4, descriptor=%2,
+        destroy=@destroy, origin=create(site=terminator(^b0)), active_at=^b3)], preserves=[preserve(from=%1, to=%6),
+        preserve(from=%6, to=%7), preserve(from=%3, to=%5), preserve(from=%5, to=%7), preserve(from=%7, to=%11),
+        preserve(from=%11, to=%12), preserve(from=%8, to=%10), preserve(from=%10, to=%12), preserve(from=%12, to=%13)],
+        suffixes=[suffix(completed=1)]), ])
+    boundary B0 lexical in S0
+    dependency d0: dependency = retention(value=%0, selection=selection(%0))
+    dependency d1: dependency = retention(value=%4, selection=selection(%4))
+    dependency d2: dependency = retention(value=%9, selection=selection(%9))
+    ^b0 in S0:
+    [i0] %1: scope<S0> = scope.begin S0
+    [i1] %2: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, summary=M0)
+    [i2] %3: own = own.empty
+    invoke.own obj.new Res {; %3 }
+        normal ^b1($value, $packet, %1)
+        unwind ^b4($packet, $failure, %1)
+    ^b1(%4: Res facts(managed(deps=d1)), %5: own, %6: scope<S0>) in S0:
+    [i3] %7: scope<S0> = own.admit %6, %5
+    [i4] %8: own = own.empty
+    invoke.own obj.new Res {; %8 }
+        normal ^b2($value, $packet, %7)
+        unwind ^b4($packet, $failure, %7)
+    ^b2(%9: Res facts(managed(deps=d2)), %10: own, %11: scope<S0>) in S0:
+    [i5] %12: scope<S0> = own.admit %11, %10
+    invoke.own scope.split %12, selection(%9)
+        normal ^b3($state, $selected)
+        unwind ^b6($state, $failure)
+    ^b3(%13: scope<S0>, %14: own) in S0:
+    [i6] %15: pending = exit.prepare return %9, %14 at B0
+    [i7] %16: cleanup-state = cleanup.begin %13, pending %15, close 0, effects scope_effects(failures=[],
+        suspends=false, cancel=false)
+    [i8] %17: cleanup-state = cleanup.settle.empty %16, schedule 0
+    [i9] %18: cleanup-state = cleanup.plan %17, plan 0
+    br ^b9(%18)
+    ^b4(%19: own, %20: failure, %21: scope<S0>) in S0:
+    [i10] %22: scope<S0> = own.admit %21, %19
+    [i11] %23: cleanup-state = cleanup.begin %22, failure %20, close 1, effects scope_effects(failures=[thrown],
+        suspends=false, cancel=false)
+    [i12] %24: cleanup-state = cleanup.settle.empty %23, schedule 1
+    [i13] %25: cleanup-state = cleanup.plan %24, plan 1
+    br ^b13(%25)
+    ^b5(%26: closed, %27: pending) in S0:
+    ret %0, %27
+    ^b6(%28: scope<S0>, %29: failure) in S0:
+    [i14] %30: cleanup-state = cleanup.begin %28, failure %29, close 2, effects scope_effects(failures=[thrown],
+        suspends=false, cancel=false)
+    [i15] %31: cleanup-state = cleanup.settle.empty %30, schedule 2
+    [i16] %32: cleanup-state = cleanup.plan %31, plan 2
+    br ^b18(%32)
+    ^b7(%33: closed, %34: pending) in S0:
+    br ^b5(%33, %34)
+    ^b8(%35: cleanup-state) in S0:
+    [i17] (%36: closed, %37: failure-state, %38: exit-state) = cleanup.finish %35
+    exit.dispatch 0 %36 %37 %38 pending ^b7($closed, $pending)
+    ^b9(%39: cleanup-state) in S0:
+    [i18] (%40: cleanup-state, %41: failure-state) = destroy.direct %39, %4, %2, destroy @destroy
+    failure.dispatch %41 none ^b11(%40) some ^b10(%40, $failure)
+    ^b10(%42: cleanup-state, %43: failure) in S0:
+    [i19] %44: cleanup-state = cleanup.failure %42, %43
+    br ^b11(%44)
+    ^b11(%45: cleanup-state) in S0:
+    br ^b8(%45)
+    ^b12(%46: failure) in S0:
+    raise %46
+    ^b13(%47: cleanup-state) in S0:
+    cleanup.next %47 selected ^b14($state, $selected) done ^b16($state)
+    ^b14(%48: cleanup-state, %49: stable-key) in S0:
+    [i20] (%50: cleanup-state, %51: failure-state) = cleanup.destroy %48, %49
+    failure.dispatch %51 none ^b13(%50) some ^b15(%50, $failure)
+    ^b15(%52: cleanup-state, %53: failure) in S0:
+    [i21] %54: cleanup-state = cleanup.failure %52, %53
+    br ^b13(%54)
+    ^b16(%55: cleanup-state) in S0:
+    [i22] (%56: closed, %57: failure-state, %58: exit-state) = cleanup.finish %55
+    exit.dispatch 1 %56 %57 %58 failure ^b12($failure)
+    ^b17(%59: failure) in S0:
+    raise %59
+    ^b18(%60: cleanup-state) in S0:
+    cleanup.next %60 selected ^b19($state, $selected) done ^b21($state)
+    ^b19(%61: cleanup-state, %62: stable-key) in S0:
+    [i23] (%63: cleanup-state, %64: failure-state) = cleanup.destroy %61, %62
+    failure.dispatch %64 none ^b18(%63) some ^b20(%63, $failure)
+    ^b20(%65: cleanup-state, %66: failure) in S0:
+    [i24] %67: cleanup-state = cleanup.failure %65, %66
+    br ^b18(%67)
+    ^b21(%68: cleanup-state) in S0:
+    [i25] (%69: closed, %70: failure-state, %71: exit-state) = cleanup.finish %68
+    exit.dispatch 2 %69 %70 %71 failure ^b17($failure)
+}

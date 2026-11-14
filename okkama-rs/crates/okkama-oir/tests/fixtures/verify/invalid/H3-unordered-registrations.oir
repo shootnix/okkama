@@ -1,0 +1,22 @@
+oir 2 high
+// expect OIR2-H3 instruction:1:1
+module verify
+requires core
+scope SD action in @d
+func @d() -> void {
+^entry in SD:
+    ret
+}
+scope S action in @f
+func @f(%c: bool) -> void {
+^entry in S:
+    cond %c, ^left, ^right
+^left in S:
+    defer.register S, action defer_action(function=@d)
+    br ^merge
+^right in S:
+    defer.register S, action defer_action(function=@d)
+    br ^merge
+^merge in S:
+    ret
+}

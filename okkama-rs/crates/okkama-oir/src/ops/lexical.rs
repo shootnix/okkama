@@ -3,7 +3,8 @@ use super::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResultDemand { Want, Discard }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeferAction { pub function: FuncId, pub captures: Vec<ValueId>, pub bindings: Vec<BindingId> }
+pub struct DeferAction { pub function: FuncId, pub captures: Vec<ValueId>, pub bindings: Vec<BindingId>,
+    pub replacements: Vec<DeferRegistration> }
 impl OperandSource for DeferAction {
     fn append(&self, mode: OperandMode, out: &mut Vec<ReferencedOperand>) { self.captures.append(mode, out); }
 }

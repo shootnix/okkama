@@ -1,0 +1,15 @@
+oir 2 own
+// expect OIR2-T4 function:0
+module generic_path
+object Leaf {
+    field x: int
+}
+object Box<T> {
+    field item: T
+}
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[path(parameter=0, fields=[field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0)])], provenance=bound)] contract call_contract(results=[int], publication=atomic)
+func @f(%box: Box<Leaf> facts(plain(certificate=closed_graph(ty=Box<Leaf>)))) -> int summary(M0) {
+^entry in S:
+    ret 0
+}

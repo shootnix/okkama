@@ -1,0 +1,16 @@
+oir 2 high
+// expect OIR2-H1 scope:1
+module verify
+requires core
+scope S action in @f
+scope S1 block in @f parent S
+func @f(%c: bool) -> void {
+^entry in S:
+    cond %c, ^one, ^two
+^one in S1:
+    br ^out
+^two in S1:
+    br ^out
+^out in S:
+    ret
+}

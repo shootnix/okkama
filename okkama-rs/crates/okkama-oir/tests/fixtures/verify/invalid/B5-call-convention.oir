@@ -1,0 +1,15 @@
+oir 2 high
+// expect OIR2-B5.1 instruction:1:0
+module summaries
+scope SD action in @callee
+scope S action in @f
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+func @callee(%x: int) -> void summary(M0) {
+^entry in SD:
+    ret
+}
+func @f(%x: int) -> void {
+^entry in S:
+    call @callee(consume %x)
+    ret
+}

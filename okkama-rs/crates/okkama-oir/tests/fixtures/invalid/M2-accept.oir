@@ -1,66 +1,57 @@
 oir 2 own
-// spec: 3.3;12;15.1; status: accept; expected-rule: -
-module M2-accept
-requires core
-file 7 "annotations.ok"
-object Res {
-    field label: str
+// spec: A.2.M2; status: accept; expected-rule: -
+module provenance_table
+object R {
     destroy @destroy
 }
-object Holder {
-    field res: Res
-    field label: str
-}
-enum Stop is Error = (stop)
-enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
-summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
 scope S action in @main
-scope Sblock block in @main parent S
-scope Sbranch branch in @main parent Sblock
-scope Siteration iteration in @main parent Sblock
-scope Stry try in @main parent S
-scope Scatch catch in @main parent S
-scope Sdefer defer in @main parent S
-func @main(%a: Res facts(managed(deps=d0)), %b: Res, %descriptor: type, %deps: deps, %i: int facts(plain(certificate=scalar)), %closed_graph: int facts(plain(certificate=closed_graph(ty=int))), %generic: any facts(plain(certificate=descriptor(%descriptor))), %high: int facts(unelaborated); %p0: own, %p1: own, %p2: own, %p3: own, %p4: own, %p5: own) -> (own, own, own, own, own, own) {
+summary Mvoid call-boundary contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mdestroy call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+func @destroy(%self: R) -> void [extern "fixture.destroy", destroy R] summary(Mdestroy);
+summary Mp0 call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+func @p0(%input: own) -> (R, own, deps) [extern "fixture.p0"] summary(Mp0);
+summary Mp1 call-boundary results [result_relation(fresh=[0], provenance=bound)] contract call_contract(results=[R], publication=atomic)
+func @p1(%input: own) -> (R, own, deps) [extern "fixture.p1"] summary(Mp1);
+summary Mp2 call-boundary results [result_relation(fresh=[0], provenance=staged_or_carrier_owned)] contract call_contract(results=[R], publication=atomic)
+func @p2(%input: own) -> (R, own, deps) [extern "fixture.p2"] summary(Mp2);
+summary Mp3 call-boundary results [result_relation(fresh=[0], provenance=cache_owned)] contract call_contract(results=[R], publication=atomic)
+func @p3(%input: own) -> (R, own, deps) [extern "fixture.p3"] summary(Mp3);
+summary Mp4 call-boundary results [result_relation(fresh=[0], provenance=extracted_at_existing_boundary)] contract call_contract(results=[R], publication=atomic)
+func @p4(%input: own) -> (R, own, deps) [extern "fixture.p4"] summary(Mp4);
+summary Mp5 call-boundary results [result_relation(fresh=[0], provenance=temporary_await_result)] contract call_contract(results=[R], publication=atomic)
+func @p5(%input: own) -> (R, own, deps) [extern "fixture.p5"] summary(Mp5);
+func @main() -> void summary(Mvoid) {
     boundary B0 lexical in S
-    boundary B1 call in S
-    boundary B2 loop in Siteration
-    boundary B3 abort_before_destroy in S
-    boundary B4 abort_after_prefix in S
-    key k0: key = created(site=0, instance=%a)
-    key k1: key = runtime(%b)
-    key k2: key = service_of(value=%a, kind=cache)
-    key k3: key = service_of(value=%a, kind=frame)
-    key k4: key = service_of(value=%a, kind=channel)
-    key k5: key = service_of(value=%a, kind=carrier)
-    key k6: key = service_of(value=%a, kind=pin)
-    key k7: key = service_of(value=%a, kind=group)
-    dependency d0: dependency = key(k0)
-    dependency d1: dependency = empty
-    dependency d2: dependency = union([d0, d1])
-    dependency d3: dependency = from_ssa(%deps)
-    dependency d4: dependency = retention(value=%a, selection=s0)
-    selection s0: selection = union([selection(%a), selection(%b)])
-    selection s1: selection = admissible(s0)
-    selection s2: selection = owner_graph(%a)
-    selection s3: selection = view_owner(%a)
-    selection s4: selection = descriptor(descriptor=%descriptor, value=%a)
-    selection s5: selection = projection(field(value=%a, field=field_ref(declaration=Res, index=0)))
-    selection s6: selection = projection(index(value=%a, index=%i))
-    selection s7: selection = projection(slice(value=%a, start=%i, end=%i))
-    selection s8: selection = projection(map(value=%a, keys=%b))
+    dependency d0: dependency = retention(value=%v0, selection=selection(%v0))
+    selection s0: selection = value(%v0)
+    dependency d1: dependency = retention(value=%v1, selection=selection(%v1))
+    selection s1: selection = value(%v1)
+    dependency d2: dependency = retention(value=%v2, selection=selection(%v2))
+    selection s2: selection = value(%v2)
+    dependency d3: dependency = retention(value=%v3, selection=selection(%v3))
+    selection s3: selection = value(%v3)
+    dependency d4: dependency = retention(value=%v4, selection=selection(%v4))
+    selection s4: selection = value(%v4)
+    dependency d5: dependency = retention(value=%v5, selection=selection(%v5))
+    selection s5: selection = value(%v5)
+    selection sall: selection = union([s0, s1, s2, s3, s4, s5])
+    selection sfresh: selection = admissible(sall)
 ^entry in S:
-    %r0: own = own.move %p0 facts(result_deps=[(0, d4)], retention=[s1, s2, s3, s4, s5, s6, s7, s8], provenance=[provenance_fact(obligations=s0, state=unbound_result)]) !7:10:2
-    %r1: own = own.move %p1 facts(provenance=[provenance_fact(obligations=s0, state=bound)])
-    %r2: own = own.move %p2 facts(provenance=[provenance_fact(obligations=s0, state=staged_or_carrier_owned)])
-    %r3: own = own.move %p3 facts(provenance=[provenance_fact(obligations=s0, state=cache_owned)])
-    %r4: own = own.move %p4 facts(provenance=[provenance_fact(obligations=s0, state=extracted_at_existing_boundary)])
-    %r5: own = own.move %p5 facts(provenance=[provenance_fact(obligations=s0, state=temporary_await_result)])
-    ret %r0, %r1, %r2, %r3, %r4, %r5
+    (%v0: R facts(managed(deps=d0)), %p0: own, %d0: deps) = call @p0(; own.empty)
+    %alias0: R facts(managed(deps=d0)) = retag %v0, ty R facts(provenance=[provenance_fact(obligations=s0, state=unbound_result)])
+    (%v1: R facts(managed(deps=d1)), %p1: own, %d1: deps) = call @p1(; own.empty)
+    %alias1: R facts(managed(deps=d1)) = retag %v1, ty R facts(provenance=[provenance_fact(obligations=s1, state=bound)])
+    (%v2: R facts(managed(deps=d2)), %p2: own, %d2: deps) = call @p2(; own.empty)
+    %alias2: R facts(managed(deps=d2)) = retag %v2, ty R facts(provenance=[provenance_fact(obligations=s2, state=staged_or_carrier_owned)])
+    (%v3: R facts(managed(deps=d3)), %p3: own, %d3: deps) = call @p3(; own.empty)
+    %alias3: R facts(managed(deps=d3)) = retag %v3, ty R facts(provenance=[provenance_fact(obligations=s3, state=cache_owned)])
+    (%v4: R facts(managed(deps=d4)), %p4: own, %d4: deps) = call @p4(; own.empty)
+    %alias4: R facts(managed(deps=d4)) = retag %v4, ty R facts(provenance=[provenance_fact(obligations=s4, state=extracted_at_existing_boundary)])
+    (%v5: R facts(managed(deps=d5)), %p5: own, %d5: deps) = call @p5(; own.empty)
+    %alias5: R facts(managed(deps=d5)) = retag %v5, ty R facts(provenance=[provenance_fact(obligations=s5, state=temporary_await_result)])
+    %all: own = own.join [%p0, %p1, %p2, %p3, %p4, %p5]
+    (%rest: own, %selected: own, %external: deps) = own.split %all, sfresh
+    %joined: own = own.join [%rest, %selected]
+    %closed: closed = end %joined, boundary B0
+    ret
 }

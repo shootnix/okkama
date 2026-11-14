@@ -1,0 +1,14 @@
+oir 2 high
+// expect OIR2-H4 terminator:0:1
+module explicit_high_result
+scope S action in @f
+scope SB block in @f parent S
+func @f(%value: int) -> int {
+    boundary B0 lexical in S
+^entry in S:
+    [i0] exit.prepare return %value at B0
+    br ^finish
+^finish in SB:
+    result.exit edge normal(1), value %value, demand want, prepare #0
+    ret %value
+}

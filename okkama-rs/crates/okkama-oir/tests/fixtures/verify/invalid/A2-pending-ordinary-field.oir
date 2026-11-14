@@ -1,0 +1,12 @@
+oir 2 high
+// expect OIR2-A2 instruction:0:0
+module authority
+object C {
+    field x: bool
+}
+scope S action in @f
+func @f(%o: C) -> void {
+^entry in S:
+    %x: bool = obj.pending %o, x
+    ret
+}

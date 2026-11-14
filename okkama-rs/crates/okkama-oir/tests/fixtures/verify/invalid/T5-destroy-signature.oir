@@ -1,0 +1,13 @@
+oir 2 high
+// expect OIR2-T5 Declaration(DeclId(0))
+module verify
+object Box {
+    field x: int
+    destroy @f
+}
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.add %x, %x
+    ret
+}

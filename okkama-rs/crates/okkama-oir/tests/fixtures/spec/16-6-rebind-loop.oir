@@ -12,18 +12,18 @@ object Holder {
 }
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
-summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res];
+func @deferred(%latest: Res) -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 scope Siteration iteration in @main parent S
 func @main(%again: bool) -> void {
     binding b0 "r": Res in S
-^entry in S unwind ^failed:
+^entry in S unwind ^create_failed:
     %a: Res = call @new("A")
     bind %a, binding b0
     defer.register S, action defer_action(function=@deferred, bindings=[b0])
@@ -31,9 +31,13 @@ func @main(%again: bool) -> void {
 ^loop(%current: Res) in Siteration unwind ^failed:
     %next: Res = call @new("B")
     rebind %next, binding b0, target S
-    cond %again, ^loop(%next), ^done
+    cond %again, ^step(%next), ^done
+^step(%carried: Res) in S:
+    br ^loop(%carried)
 ^done in S:
     ret
+^create_failed(%creation_failure: failure) in S:
+    raise %creation_failure
 ^failed(%failure: failure) in S:
     raise %failure
 }

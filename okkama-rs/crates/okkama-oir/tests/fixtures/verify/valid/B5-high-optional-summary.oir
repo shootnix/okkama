@@ -1,0 +1,16 @@
+oir 2 high
+module optional_call_summary
+scope Sc action in @callee
+scope S action in @f
+summary M0 call-boundary contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @callee() -> void summary(M0) {
+^entry in Sc:
+    ret
+}
+func @f() -> void summary(M0) {
+^entry in S unwind ^failed:
+    call @callee() summary(none)
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

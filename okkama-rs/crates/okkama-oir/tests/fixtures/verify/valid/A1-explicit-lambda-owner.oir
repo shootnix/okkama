@@ -1,0 +1,11 @@
+oir 2 high
+module authority
+object C {
+    field x: int
+}
+scope S action in @f
+func @f(%o: C) -> void [lambda owner C] {
+^entry in S:
+    %x: int = obj.get %o, x
+    ret
+}

@@ -1,0 +1,12 @@
+oir 2 own
+module metadata
+scope S action in @f
+summary M0 internal contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f() -> void summary(M0) {
+    key k0: key = created(site=0, instance=%v)
+    dependency d0: dependency = key(k0)
+    selection s0: selection = value(%v)
+^entry in S:
+    %v: int facts(managed(deps=d0)) = const 1 facts(result_deps=[(0, d0)], retention=[s0])
+    ret
+}

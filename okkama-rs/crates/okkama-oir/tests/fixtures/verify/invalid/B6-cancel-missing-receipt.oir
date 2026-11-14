@@ -1,0 +1,15 @@
+oir 2 own
+// expect OIR2-B6.2 edge:0:1
+module cancellation
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%future: future<int>, %external: receipt) -> void [async] summary(M0) {
+^entry in S:
+    invoke.own await %future, result int
+        normal ^ok($value, $deps)
+        unwind ^failed($failure, $task, %external)
+^ok(%v: int, %d: deps) in S:
+    ret
+^failed(%e: failure, %t: task-state, %r: receipt) in S:
+    raise %e
+}

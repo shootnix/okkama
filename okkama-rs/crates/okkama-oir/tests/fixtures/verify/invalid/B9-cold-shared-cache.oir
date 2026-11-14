@@ -1,0 +1,46 @@
+oir 2 own
+// expect OIR2-B9.1 terminator:3:0
+module cache_domain
+object R {
+    field x: int
+    destroy @destroy
+}
+scope SD action in @destroy
+scope ST action in @task
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mt internal contract call_contract(publication=atomic)
+summary Mv observation parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=cache_owned)] contract call_contract(results=[R], publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @task() -> void summary(Mt) {
+^entry in ST:
+    ret
+}
+func @view(%future: future<void>) -> R [extern "fixture.cache_view"] abi observation summary(Mv);
+func @f() -> void [async] summary(Mf) {
+    key k0: key = service_of(value=%future, kind=cache)
+    dependency d0: dependency = key(k0)
+    dependency dv: dependency = retention(value=%view, selection=selection(%view))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %empty: own = own.empty
+    (%l: own, %r: own, %deps: deps) = own.split %empty, selection(0)
+    %inputs: own = own.join [%l, %r]
+    (%future: future<void> facts(managed(deps=d0)), %owner: scope<S>) = fut.new %inputs, %deps, %q, environment deferred(function=@task, arguments=[], descriptors=[]), owner S
+    %view: R facts(managed(deps=dv)) = call @view(%future) summary(Mv)
+    invoke.own scope.split %owner, selection(%view)
+        normal ^ok($state, $selected, $external_deps)
+        unwind ^bad($state, $failure)
+^ok(%rest: scope<S>, %packet: own, %external: deps) in S:
+    %accepted: scope<S> = own.accept %rest, %packet
+    %closed: closed = scope.end %accepted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    ret
+^bad(%failed: scope<S>, %failure: failure) in S:
+    %combined: failure = scope.unwind %failed, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %combined
+}

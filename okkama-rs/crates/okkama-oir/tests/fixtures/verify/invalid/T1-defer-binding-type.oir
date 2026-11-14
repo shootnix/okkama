@@ -1,0 +1,16 @@
+oir 2 high
+// expect OIR2-T1 operand:1:1:[3]
+module defer_bindings
+scope SD action in @d
+scope S action in @f
+func @d(%snapshot: bool, %latest: bool) -> void {
+^entry in SD:
+    ret
+}
+func @f(%snapshot: bool, %value: int) -> void {
+    binding b0 "n": int in S
+^entry in S:
+    bind %value, binding b0
+    defer.register S, action defer_action(function=@d, captures=[%snapshot], bindings=[b0])
+    ret
+}

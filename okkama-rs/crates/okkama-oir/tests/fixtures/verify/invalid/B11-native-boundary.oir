@@ -1,0 +1,15 @@
+oir 2 own
+// expect OIR2-B11.3 instruction:1:0
+module native_boundary
+object R {
+    field x: int
+}
+scope S action in @f
+summary Mn internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+func @native(%arg: array<R>) -> void [extern "fixture.scalar"] summary(Mn);
+func @f(%arg: array<R> facts(managed(deps=dd))) -> void summary(Mn) {
+    dependency dd: dependency = retention(value=%arg, selection=selection(%arg))
+^entry in S:
+    call.native @native(%arg) summary(Mn)
+    ret
+}

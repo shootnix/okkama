@@ -1,0 +1,21 @@
+oir 2 own
+// expect OIR2-B7.1 terminator:0:0
+module dynamic_family
+protocol P kind storage holders [scope, packet, group, frame, cache, pin] rules [protocol_rule(transition=publish, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=cancel, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=save, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=resume, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=dynamic, from=packet, to=scope, checks=[owner, live_dependencies, snapshot, transferable], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=packet, state=unaccepted)))] roots [operands, cache, pins, frame_slots]
+scope S action in @f
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @f() -> void summary(Mf) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %p: own = own.empty
+    invoke.own own.dynamic %q, %p, target S, reason group, protocol P
+        normal ^ok($state)
+        unwind ^bad($state, $packet, $failure)
+^ok(%state: scope<S>) in S:
+    %closed: closed = scope.end %state, effects scope_effects(failures=[], suspends=false, cancel=false)
+    ret
+^bad(%rest: scope<S>, %packet: own, %failure: failure) in S:
+    %accepted: scope<S> = own.accept %rest, %packet
+    %combined: failure = scope.unwind %accepted, %failure, effects scope_effects(failures=[], suspends=false, cancel=false)
+    raise %combined
+}

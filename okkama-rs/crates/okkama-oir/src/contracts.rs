@@ -10,7 +10,7 @@ pub enum OperandMode { Borrow, Consume, Observe, DestroyBorrow, Forward }
 pub enum OperandConvention { Borrow, Consume }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperandUse { pub value: ValueId, pub mode: OperandMode }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperandRef { Value(ValueId), Selection(SelectionId), Dependency(DepExprId), Key(KeyExprId) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReferencedOperand { pub reference: OperandRef, pub mode: OperandMode }
@@ -143,18 +143,18 @@ pub enum TransferRule {
     Publish { input: ValueId, holder: HolderKind, provenance: AdmissionProvenance },
     Extract { future: ValueId, capability: ValueId, boundary: TakeBoundary },
     Reserve { packet: ValueId, boundary: BoundaryId },
-    /// Normal close forwards the reserve. On failure, only the closing scope's
-    /// part joins the unprocessed serial plan; the outer scopes' reserve returns.
-    CloseReserve { scope: ValueId, reserve: ValueId, output: SlotName, merge_scope_part: bool },
+    /// Successful close forwards the reserve; exceptional close settles it in full.
+    CloseReserve { scope: ValueId, reserve: ValueId, output: Option<SlotName> },
+    ExtendReservation { pending: ValueId, packet: ValueId },
     ReplaceReservation { pending: ValueId, packet: Option<ValueId> },
-    AbortReservation { pending: ValueId, cleanup: ValueId, phase: AbortPhase },
+    AbortReservation { pending: ValueId, cleanup: ValueId },
     FrameSave { frame: ValueId, values: Vec<ValueId> },
     FrameResume { frame: ValueId, slots: Vec<u32> },
     CompleteIdentity { identity: ValueId, state: ValueId, output: SlotName },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Postcondition {
-    ReserveRemainder { scope: ValueId, reserve: ValueId, merged: bool },
+    OwnerServiceDuty { value: SlotName, owner: ValueId, kind: ServiceKeyKind },
     Closed(ValueId), CacheConsumed(ValueId), AdmissionStaysCaller,
     PreserveFullDependencies, TransferableScopeDomainOnly,
     FreshAdmission(AdmissionProvenance), EpochOnRealTransfer,
@@ -162,6 +162,8 @@ pub enum Postcondition {
     CleanupCompleteBeforeCommit, CancellationDeliveredBeforeCommit, ResultRelation(ResultRelation),
     NoPublication, CalleeInputsSettled, UniqueCacheRecheckAfterCoro,
     DestroyingBeforeCall, DeadAfterCall(ValueId), ContinueCleanup, Shielded,
+    CleanupOwnsReserve, FirstFailureAbortsWholeReserveIntoSuffix, FailurePriorityPreserved,
+    CleanupDrained, FailedExitHasNoPending,
     ServiceSettleBeforeSerialPlan, SerialOrder, NoFreshAdmission,
     ReceiptDeterminesHolder, TaskDeterminesHolder,
     PreserveProvenance, CacheConsumedIfSettled(ValueId), NonLinearSlotOnly,
@@ -175,6 +177,24 @@ pub enum Postcondition {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FailureKind { Thrown, Program, Panic, Native, Cancelled }
+pub type FailureKindSet = Vec<FailureKind>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScopeEffectEnvelope {
+    pub failures: FailureKindSet,
+    pub suspends: bool,
+    pub cancel: bool,
+}
+impl ScopeEffectEnvelope {
+    /// Conservative envelope for producers before cleanup-effect inference narrows the site.
+    pub fn conservative() -> Self {
+        Self {
+            failures: vec![FailureKind::Thrown, FailureKind::Program, FailureKind::Panic, FailureKind::Native],
+            suspends: true,
+            cancel: false,
+        }
+    }
+}
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Effects {
     pub failures: Vec<FailureKind>,
@@ -211,6 +231,8 @@ impl OpContract {
         match outcome {
             Outcome::Normal => Some(&self.normal), Outcome::Unwind => self.unwind.as_ref(),
             Outcome::Cancel => self.cancellation.as_ref().map(|cancel| &cancel.outcome),
+            Outcome::DeferContinue | Outcome::DeferReplace(_) | Outcome::ExitSuccess | Outcome::ExitPending
+            | Outcome::ExitFailure | Outcome::FailureSome | Outcome::CleanupSelected | Outcome::CleanupDone => None,
         }
     }
     pub fn edge_result(&self, result: EdgeResult) -> Option<&ResultSlot> {
@@ -229,7 +251,8 @@ pub struct ParameterEffect {
     pub destination: TransferDestination,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SummarySelection { Parameter(u16), Field { parameter: u16, field: FieldRef }, OwnerGraph(u16), Descriptor(u16), Union(Vec<SummarySelection>) }
+pub enum SummarySelection { Parameter(u16), Field { parameter: u16, field: FieldRef },
+    Path { parameter: u16, fields: Vec<FieldRef> }, OwnerGraph(u16), Descriptor(u16), Union(Vec<SummarySelection>) }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransferDestination { None, Result, Scope(ScopeId), Protocol(ProtocolId), Cache, FailureContext }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -278,7 +301,11 @@ pub struct ProtocolRule {
     pub cancel: Option<ProtocolPoststate>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProtocolKind { Storage, Callable, Atomic, Cell, Channel, Group, Any, Closure, Services }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProtocolDecl {
+    pub kind: ProtocolKind,
     pub holders: Vec<HolderKind>,
     pub rules: Vec<ProtocolRule>,
     pub roots: Vec<RootKind>,
@@ -313,12 +340,12 @@ pub(crate) enum Rule {
     Split { input: ValueId, selection: SelectionId, scope: bool, checked: bool },
     ScopeBegin(ScopeId), ScopeTransfer { states: TransferStates, selection: SelectionId },
     Dynamic { state: ValueId, packet: ValueId, target: ScopeId, reason: DynamicReason, protocol: ProtocolId },
-    Close { input: ValueId, failure: Option<ValueId>, reserve: Option<ValueId> },
+    Close { input: ValueId, failure: Option<ValueId>, reserve: Option<ValueId>, effects: ScopeEffectEnvelope },
     Call(CallSite), Resume { frame: ValueId, call: CallSite },
     Await { future: ValueId, result: Option<TypeId>, take: Option<(ValueId, TakeBoundary)>, shielded: bool },
     UniqueProof(UniqueCacheProof),
     Protocol { state: ValueId, owner: Option<ValueId>, packet: Option<ValueId>, protocol: ProtocolId, transition: ProtocolTransition },
-    FutureNew { frame: ValueId, packet: ValueId, owner: ValueId, result: Option<TypeId> },
+    FutureNew { environment: FutureEnvironment, packet: ValueId, owner: ValueId, result: Option<TypeId> },
     Publish { task: ValueId, cache: ValueId, packet: ValueId, protocol: ProtocolId },
     TaskSettle { task: ValueId, protocol: ProtocolId },
     FrameSave { frame: ValueId, slots: Vec<FrameSlot> },
@@ -328,9 +355,11 @@ pub(crate) enum Rule {
     CarrierAttach { failure: ValueId, packet: ValueId, owner: ValueId, protocol: ProtocolId },
     CarrierTransfer { state: ValueId, target: CarrierDestination, protocol: ProtocolId },
     Prepare(PreparedExit), Replace { pending: ValueId, replacement: PreparedExit },
-    Commit { pending: ValueId, result: Option<TypeId> }, Abort { pending: ValueId, cleanup: ValueId, phase: AbortPhase },
-    CleanupBegin { state: ValueId, pending: Option<ValueId> },
-    CleanupStep { cleanup: ValueId, finishing: bool }, CleanupNext(ValueId),
+    ExtendReservation { pending: ValueId, packet: ValueId },
+    Commit { pending: ValueId, result: Option<TypeId> }, Abort { pending: ValueId, cleanup: ValueId },
+    CleanupBegin { state: ValueId, pending: Option<ValueId>, failure: Option<ValueId> },
+    CleanupFailure { cleanup: ValueId },
+    CleanupStep { cleanup: ValueId, finishing: bool },
     CleanupSettle { cleanup: ValueId, holder: ValueId, protocol: ProtocolId },
     Destroy { cleanup: ValueId, identity: ValueId },
 }
@@ -342,6 +371,8 @@ impl Rule {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContractError {
+    NotDeferEntry,
+    UnknownDeferLabel,
     InvalidId(ArenaError),
     MissingTransition { protocol: ProtocolId, transition: ProtocolTransition },
     CallArity { expected: usize, actual: usize },
@@ -377,6 +408,25 @@ impl<'a> ContractRegistry<'a> {
         if self.module.profile == Profile::High {
             self.lookup_mode(op, true, Some(body))
         } else { self.lookup(op) }
+    }
+    /// Site metadata is available to verification before ownership summary inference.
+    pub fn high_site_schema(
+        &self, op: &Operation, body: &Body, site: HighOperationSite,
+    ) -> Result<OpContract, ContractError> {
+        let mut contract = self.construction_schema(op, body)?;
+        if self.module.profile == Profile::High
+            && let Some(record) = body.high_effects.iter().find(|record| record.site == site) {
+            contract.effects.failures = record.effects.failures.clone();
+            contract.effects.suspends = record.effects.may_suspend;
+            contract.roots.through_suspend = record.effects.may_suspend;
+            if record.effects.failures.is_empty() {
+                contract.unwind = None;
+            }
+            if !record.effects.failures.contains(&FailureKind::Cancelled) {
+                contract.cancellation = None;
+            }
+        }
+        Ok(contract)
     }
     fn lookup_mode(&self, op: &Operation, validate: bool, body: Option<&Body>) -> Result<OpContract, ContractError> {
         let spec = op.spec();
@@ -574,33 +624,47 @@ impl<'a> ContractRegistry<'a> {
                 fails(c, [preserve(Some(state), N::State), preserve(Some(packet), N::Packet)].concat(), false);
                 self.protocol(protocol, ProtocolTransition::Dynamic, c, validate)?;
             }
-            Rule::Close { input, failure, reserve } => {
+            Rule::Close { input, failure, reserve, effects } => {
                 cleanup(c);
+                c.effects.failures = effects.failures.clone();
+                c.effects.suspends = effects.suspends;
+                if effects.cancel {
+                    c.effects.failures.push(FailureKind::Cancelled);
+                }
                 c.normal.transfers.push(TransferRule::Close { input });
                 c.normal.postconditions.push(Postcondition::Closed(input));
-                if let Some(reserve) = reserve {
-                    c.normal.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: N::Pending, merge_scope_part: failure.is_some() });
-                    c.normal.postconditions.push(Postcondition::ReserveRemainder { scope: input, reserve, merged: failure.is_some() });
+                if reserve.is_some() {
                     c.roots.roots.push(RootKind::PendingExit);
                 }
                 if failure.is_some() {
                     c.normal.results.push(ResultSlot::service(N::Failure, S::Failure));
-                    // Active failure absorbs every cleanup failure; no second
-                    // exceptional exit and no extra closed SSA result (§16.4).
+                    if let Some(reserve) = reserve {
+                        c.normal.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: None });
+                    }
                 } else {
                     c.normal.results.push(ResultSlot::service(N::Closed, S::Closed));
-                    let mut unwind = outcome(vec![ResultSlot::service(N::Closed, S::Closed), ResultSlot::service(N::Failure, S::Failure)]);
+                    let mut unwind = outcome(vec![
+                        ResultSlot::service(N::Closed, S::Closed),
+                        ResultSlot::service(N::Failure, S::Failure),
+                    ]);
                     unwind.transfers.push(TransferRule::Close { input });
-                    unwind.postconditions.extend(c.normal.postconditions.iter().filter(|p| !matches!(p, Postcondition::ReserveRemainder { .. })).cloned());
+                    unwind.postconditions = c.normal.postconditions.clone();
                     if let Some(reserve) = reserve {
-                        unwind.results.push(ResultSlot::service(N::Pending, S::Pending));
-                        unwind.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: N::Pending, merge_scope_part: true });
-                        unwind.postconditions.push(Postcondition::ReserveRemainder { scope: input, reserve, merged: true });
+                        c.normal.results.push(ResultSlot::service(N::Pending, S::Pending));
+                        c.normal.transfers.push(TransferRule::CloseReserve {
+                            scope: input, reserve, output: Some(N::Pending),
+                        });
+                        unwind.transfers.push(TransferRule::CloseReserve { scope: input, reserve, output: None });
                     }
-                    c.unwind = Some(unwind.clone());
-                    c.cancellation = Some(CancellationContract { outcome: unwind, delivery: CancellationDelivery::AfterShieldedCleanup });
+                    if !effects.failures.is_empty() || effects.cancel {
+                        c.unwind = Some(unwind.clone());
+                    }
+                    if effects.cancel {
+                        c.cancellation = Some(CancellationContract {
+                            outcome: unwind, delivery: CancellationDelivery::AfterShieldedCleanup,
+                        });
+                    }
                 }
-                if reserve.is_some() { c.normal.results.push(ResultSlot::service(N::Pending, S::Pending)); }
             }
             Rule::Call(call) => { self.call(&call, c, validate)?; }
             Rule::Resume { frame, call } => {
@@ -625,12 +689,23 @@ impl<'a> ContractRegistry<'a> {
                 } else {
                     c.normal.postconditions.extend([Postcondition::NoFreshAdmission, Postcondition::PreserveFullDependencies]);
                 }
-                c.normal.results.push(ResultSlot::service(N::Deps, S::Deps));
+                if self.module.profile != Profile::High {
+                    c.normal.results.push(ResultSlot::service(N::Deps, S::Deps));
+                }
                 if result.is_some() { c.normal.retention.push(RetentionRule { result: N::Value, selection: match take {
                     Some((_, boundary)) => Retention::TakenOutcome { future, boundary }, None => Retention::Cache(future),
                 } }); }
-                let mut unwind = outcome(vec![ResultSlot::service(N::Failure, S::Failure), ResultSlot::service(N::Task, S::TaskState), ResultSlot::service(N::Receipt, S::Receipt)]);
-                unwind.postconditions.extend([Postcondition::TaskDeterminesHolder, Postcondition::ReceiptDeterminesHolder, Postcondition::NoPublication]);
+                let mut unwind = outcome(vec![ResultSlot::service(N::Failure, S::Failure)]);
+                unwind.postconditions.push(Postcondition::NoPublication);
+                if self.module.profile != Profile::High {
+                    unwind.results.extend([
+                        ResultSlot::service(N::Task, S::TaskState),
+                        ResultSlot::service(N::Receipt, S::Receipt),
+                    ]);
+                    unwind.postconditions.extend([
+                        Postcondition::TaskDeterminesHolder, Postcondition::ReceiptDeterminesHolder,
+                    ]);
+                }
                 unwind.retention.push(RetentionRule { result: N::Failure, selection: Retention::AwaitFailure { future, take: take.map(|(_, boundary)| boundary) } });
                 if let Some((unique, _)) = take {
                     unwind.transfers.push(TransferRule::Settle { inputs: vec![unique] });
@@ -655,9 +730,25 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.postconditions.push(Postcondition::NoFreshAdmission);
                 self.protocol(protocol, transition, c, validate)?;
             }
-            Rule::FutureNew { frame, packet, owner, result } => {
-                c.normal.results = vec![ResultSlot::new(N::Value, ResultType::FutureOf(result)), ResultSlot::service(N::State, S::CacheState), ResultSlot::new(N::To, ResultType::SameAs(owner))];
-                c.normal.transfers.push(TransferRule::Move { inputs: vec![frame, packet, owner], outputs: vec![N::State, N::To] });
+            Rule::FutureNew { environment, packet, owner, result } => {
+                c.normal.results = vec![
+                    ResultSlot::new(N::Value, ResultType::FutureOf(result)),
+                    ResultSlot::new(N::To, ResultType::SameAs(owner)),
+                ];
+                let mut inputs = vec![packet, owner];
+                let mut outputs = vec![N::To];
+                if let FutureEnvironment::Frame(frame) = environment {
+                    inputs.push(frame);
+                    if self.module.profile != Profile::Own {
+                        c.normal.results.insert(1, ResultSlot::service(N::State, S::CacheState));
+                        outputs.insert(0, N::State);
+                    }
+                }
+                c.normal.transfers.push(TransferRule::Move { inputs, outputs });
+                c.normal.postconditions.push(Postcondition::OwnerServiceDuty {
+                    value: N::Value, owner, kind: ServiceKeyKind::Cache,
+                });
+                c.roots.roots.push(RootKind::Cache);
                 c.effects.allocates = true;
             }
             Rule::Publish { task, cache, packet, protocol } => {
@@ -722,7 +813,9 @@ impl<'a> ContractRegistry<'a> {
                 self.protocol(protocol, ProtocolTransition::Transfer, c, validate)?;
             }
             Rule::Prepare(exit) => {
-                c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                if self.module.profile != Profile::High {
+                    c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                }
                 if let Some(packet) = exit.packet { c.normal.transfers.push(TransferRule::Reserve { packet, boundary: exit.boundary }); }
                 c.normal.postconditions.push(Postcondition::LexicalExit { kind: exit.kind, boundary: exit.boundary, selection: exit.selection });
                 c.roots.roots.push(RootKind::PendingExit);
@@ -736,6 +829,12 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.postconditions.push(Postcondition::PreserveFullDependencies);
                 c.roots.roots.push(RootKind::PendingExit);
             }
+            Rule::ExtendReservation { pending, packet } => {
+                c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                c.normal.transfers.push(TransferRule::ExtendReservation { pending, packet });
+                c.normal.postconditions.push(Postcondition::PreserveFullDependencies);
+                c.roots.roots.push(RootKind::PendingExit);
+            }
             Rule::Commit { pending, result } => {
                 if let Some(ty) = result { c.normal.results.push(ResultSlot::new(N::Value, ResultType::Exact(ty))); }
                 c.normal.results.extend([ResultSlot::service(N::Packet, S::Own), ResultSlot::service(N::Deps, S::Deps)]);
@@ -743,32 +842,54 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.postconditions.extend([Postcondition::CleanupCompleteBeforeCommit, Postcondition::CancellationDeliveredBeforeCommit, Postcondition::FreshAdmission(AdmissionProvenance::UnboundResult)]);
                 c.effects.publishes = true; c.roots.roots.push(RootKind::PendingExit);
             }
-            Rule::Abort { pending, cleanup: plan, phase } => {
+            Rule::Abort { pending, cleanup: plan } => {
                 c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(plan)));
-                c.normal.transfers.push(TransferRule::AbortReservation { pending, cleanup: plan, phase });
+                c.normal.transfers.push(TransferRule::AbortReservation { pending, cleanup: plan });
                 c.normal.postconditions.push(Postcondition::SerialOrder);
                 c.roots.roots.extend([RootKind::PendingExit, RootKind::CleanupRemainder]);
             }
-            Rule::CleanupBegin { state, pending } => {
-                cleanup(c);
+            Rule::CleanupBegin { state, pending, failure } => {
+                if self.module.profile == Profile::Low {
+                    captured_cleanup(c);
+                } else {
+                    cleanup(c);
+                }
+                if pending.is_some() {
+                    c.normal.postconditions.push(Postcondition::CleanupOwnsReserve);
+                }
+                if failure.is_some() {
+                    c.normal.postconditions.push(Postcondition::FirstFailureAbortsWholeReserveIntoSuffix);
+                }
+                c.normal.postconditions.push(Postcondition::FailurePriorityPreserved);
                 c.normal.results.push(ResultSlot::service(N::State, S::CleanupState));
                 c.normal.transfers.push(TransferRule::Move { inputs: std::iter::once(state).chain(pending).collect(), outputs: vec![N::State] });
             }
+            Rule::CleanupFailure { cleanup: plan } => {
+                if self.module.profile == Profile::Low {
+                    captured_cleanup(c);
+                } else {
+                    cleanup(c);
+                }
+                c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(plan)));
+                c.normal.transfers.push(TransferRule::Move { inputs: vec![plan], outputs: vec![N::State] });
+                c.normal.postconditions.extend([Postcondition::FirstFailureAbortsWholeReserveIntoSuffix,
+                    Postcondition::FailurePriorityPreserved]);
+            }
             Rule::CleanupStep { cleanup: plan, finishing } => {
-                cleanup(c);
+                if self.module.profile == Profile::Low {
+                    captured_cleanup(c);
+                } else {
+                    cleanup(c);
+                }
                 if finishing {
                     c.normal.results = vec![ResultSlot::service(N::Closed, S::Closed), ResultSlot::service(N::Failure, S::FailureState), ResultSlot::service(N::State, S::ExitState)];
                     c.normal.transfers.push(TransferRule::Close { input: plan });
-                    c.normal.postconditions.push(Postcondition::Closed(plan));
+                    c.normal.postconditions.extend([Postcondition::Closed(plan), Postcondition::CleanupDrained,
+                        Postcondition::FailedExitHasNoPending]);
                 } else {
                     c.normal.results.push(ResultSlot::new(N::State, ResultType::SameAs(plan)));
                     c.normal.transfers.push(TransferRule::Move { inputs: vec![plan], outputs: vec![N::State] });
                 }
-            }
-            Rule::CleanupNext(plan) => {
-                cleanup(c);
-                c.normal.results = vec![ResultSlot::new(N::State, ResultType::SameAs(plan)), ResultSlot::service(N::Selected, S::StableKey), ResultSlot::new(N::Value, ResultType::Scalar(ScalarType::Bool))];
-                c.normal.transfers.push(TransferRule::Move { inputs: vec![plan], outputs: vec![N::State] });
             }
             Rule::CleanupSettle { cleanup: plan, holder, protocol } => {
                 cleanup(c);
@@ -777,13 +898,40 @@ impl<'a> ContractRegistry<'a> {
                 self.protocol(protocol, ProtocolTransition::Settle, c, validate)?;
             }
             Rule::Destroy { cleanup: plan, identity } => {
-                cleanup(c);
+                if self.module.profile == Profile::Low {
+                    captured_cleanup(c);
+                } else {
+                    cleanup(c);
+                }
                 c.normal.results = vec![ResultSlot::new(N::State, ResultType::SameAs(plan)), ResultSlot::service(N::Failure, S::FailureState)];
                 c.normal.transfers.push(TransferRule::Move { inputs: vec![plan], outputs: vec![N::State] });
                 c.normal.postconditions.extend([Postcondition::DestroyingBeforeCall, Postcondition::DeadAfterCall(identity), Postcondition::ContinueCleanup]);
             }
         }
         Ok(())
+    }
+
+    /// Per-edge schemas for the tagged defer ABI. Replacement indices are declaration ordered.
+    pub fn defer_results(&self, function: FuncId, outcome: Outcome) -> Result<Vec<ResultSlot>, ContractError> {
+        let declaration = self.module.functions.get(function)?;
+        let labels = declaration.attrs.iter().find_map(|attr| {
+            if let FunctionAttr::DeferEntry { replacements } = attr { Some(replacements) } else { None }
+        }).ok_or(ContractError::NotDeferEntry)?;
+        match outcome {
+            Outcome::DeferContinue => Ok(vec![]),
+            Outcome::DeferReplace(index) => {
+                let label = labels.get(usize::from(index)).ok_or(ContractError::UnknownDeferLabel)?;
+                let mut results = vec![];
+                if let Some(ty) = label.result {
+                    results.push(ResultSlot::new(SlotName::Value, ResultType::Exact(ty)));
+                }
+                results.push(ResultSlot::service(SlotName::Packet, ServiceType::Own));
+                results.push(ResultSlot::service(SlotName::Deps, ServiceType::Deps));
+                Ok(results)
+            }
+            Outcome::Unwind => Ok(vec![ResultSlot::service(SlotName::Failure, ServiceType::Failure)]),
+            _ => Err(ContractError::UnknownDeferLabel),
+        }
     }
 
     fn call(&self, call: &CallSite, c: &mut OpContract, validate: bool) -> Result<(), ContractError> {
@@ -831,6 +979,14 @@ impl<'a> ContractRegistry<'a> {
         for relation in &summary.results {
             c.normal.postconditions.push(Postcondition::ResultRelation(relation.clone()));
         }
+        if call.cleanup == CallCleanupMode::Shielded {
+            c.cancellation = None;
+            c.effects.failures.retain(|kind| *kind != FailureKind::Cancelled);
+            if c.effects.failures.is_empty() {
+                c.unwind = None;
+            }
+            c.normal.postconditions.push(Postcondition::Shielded);
+        }
         Ok(())
     }
 }
@@ -852,8 +1008,15 @@ fn observation(c: &mut OpContract) {
     c.normal.postconditions.extend([Postcondition::AdmissionStaysCaller, Postcondition::PreserveFullDependencies]);
 }
 fn all_failures() -> Vec<FailureKind> { vec![FailureKind::Thrown, FailureKind::Program, FailureKind::Panic, FailureKind::Native, FailureKind::Cancelled] }
+fn captured_cleanup(c: &mut OpContract) {
+    cleanup(c);
+    c.effects.suspends = false;
+    c.effects.failures.clear();
+}
 fn cleanup(c: &mut OpContract) {
-    c.effects.cleanup = true; c.effects.suspends = true; c.effects.failures = all_failures();
+    c.effects.cleanup = true;
+    c.effects.suspends = true;
+    c.effects.failures = all_failures();
     c.roots.roots = vec![RootKind::Operands, RootKind::ActiveSelf, RootKind::CleanupRemainder, RootKind::PendingExit, RootKind::CarrierGraph, RootKind::Pins, RootKind::FrameSlots, RootKind::Cache, RootKind::ServiceSchedule];
     c.normal.postconditions.extend([Postcondition::Shielded, Postcondition::ContinueCleanup, Postcondition::ServiceSettleBeforeSerialPlan, Postcondition::SerialOrder]);
 }

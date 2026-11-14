@@ -1,0 +1,12 @@
+oir 2 high
+module verify
+object Box {
+    field x: int
+    destroy @f
+}
+scope S action in @f
+func @f(%self: Box) -> void [destroy Box] {
+^entry in S:
+    %v: int = const 1
+    ret
+}

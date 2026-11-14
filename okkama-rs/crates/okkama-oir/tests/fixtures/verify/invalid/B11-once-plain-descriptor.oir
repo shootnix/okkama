@@ -1,0 +1,23 @@
+oir 2 own
+// expect OIR2-B11.1 Declaration(DeclId(1))
+module once_graph
+object R {
+    field x: int
+    destroy @destroy
+}
+object O {
+    field slot: array<R> once
+}
+scope S action in @f
+scope SD action in @destroy
+summary Mf internal contract call_contract(publication=atomic)
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @f() -> void summary(Mf) {
+^entry in S:
+    ret
+}

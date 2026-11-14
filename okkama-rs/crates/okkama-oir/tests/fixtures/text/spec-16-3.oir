@@ -17,6 +17,6 @@ func @main() -> void {
     %q2: scope<S> = own.admit %q1, %pb
     (%h: Holder, %ph: own) = obj.new Holder { res: %a; own.empty }
     %q3: scope<S> = own.admit %q2, %ph
-    scope.end %q3                         // a=1, b=2, h=3 → h b a
+    scope.end %q3, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false) // a=1, b=2, h=3 → h b a
     ret
 }

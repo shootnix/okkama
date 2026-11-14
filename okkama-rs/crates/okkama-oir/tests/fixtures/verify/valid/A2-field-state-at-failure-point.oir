@@ -1,0 +1,26 @@
+oir 2 high
+module constructor
+object C {
+    field x: int
+    field $pending: bool
+}
+scope S action in @f
+func @f(%x: int) -> C [ctor C] {
+    boundary B0 lexical in S
+^entry in S unwind ^failed:
+    %u: int = undef ty int
+    %p: bool = undef ty bool
+    %o: C = obj.new C { x: %u, $pending: %p } construction incomplete
+    br ^body(%o, %x)
+^body(%self: C, %input: int) in S unwind ^repair(%self):
+    obj.init %self, 1, field field_ref(declaration=C, index=0)
+    obj.init %self, false, field field_ref(declaration=C, index=1)
+    %risk: int = int.mod %input, %input
+    [iprep0] exit.prepare return %self at B0
+    result.exit edge normal(0), value %self, demand want, prepare iprep0
+    ret %self
+^repair(%early: C, %failure: failure) in S:
+    raise %failure
+^failed(%e: failure) in S:
+    raise %e
+}

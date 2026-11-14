@@ -1,0 +1,50 @@
+oir 2 own
+module replacement_rest
+object R {
+    field x: int
+    destroy @destroy
+}
+scope SD action in @destroy
+scope S action in @f
+scope SI block in @f parent S
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+func @create(%input: own) -> (R, own, deps) [extern "fixture.D2"] summary(Mc);
+func @f(%failure: failure) -> failure summary(Mf) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+    boundary B0 lexical in S
+^entry in S:
+    %outer: scope<S> = scope.begin S
+    %inner: scope<SI> = scope.begin SI
+    (%r: R facts(managed(deps=dr)), %input: own, %initial_deps: deps) = call @create(; own.empty)
+    %bound: scope<SI> = own.admit %inner, %input
+    invoke.own scope.split %bound, selection(%r)
+        normal ^prepare($state, $selected, $external_deps, %outer)
+        unwind ^split_failed($state, $failure, %outer)
+^prepare(%qi: scope<SI>, %part: own, %full: deps, %qo: scope<S>) in SI:
+    %pending: pending = exit.prepare return %r, %part, deps(%full) at B0
+    invoke.own scope.end %qi, reserve %pending, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+        normal ^replace($pending, %qo)
+        unwind ^failed($failure, %qo)
+^replace(%reserved: pending, %open: scope<S>) in S:
+    %zero: int = const 0
+    %empty: own = own.empty
+    (%left: own, %right: own, %deps: deps) = own.split %empty, selection(%zero)
+    %joined: own = own.join [%left, %right]
+    (%next: pending, %rest: own) = exit.replace %reserved, replacement prepared_exit(kind=return, value=some(%zero), packet=some(%joined), deps=some(%deps), selection=selection(%zero), boundary=B0)
+    %restored: scope<S> = own.accept %open, %rest
+    %final: failure = scope.unwind %restored, %failure, reserve %next, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+    ret %final
+^split_failed(%qi_error: scope<SI>, %split_error: failure, %qo_error: scope<S>) in S:
+    %inner_failure: failure = scope.unwind %qi_error, %split_error, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+    br ^failed(%inner_failure, %qo_error)
+^failed(%error: failure, %root: scope<S>) in S:
+    %propagated: failure = scope.unwind %root, %error, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+    ret %propagated
+}

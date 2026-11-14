@@ -1,0 +1,19 @@
+oir 2 high
+// expect OIR2-H2 function:0
+module accept
+scope S action in @f
+summary M0 call-boundary contract call_contract(publication=atomic)
+func @f(%input: own) -> own abi explicit(input_packet=0, output_packet=0) summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %accepted: scope<S> = own.accept %q, %input
+    invoke.own scope.end %accepted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^done(%c: closed) in S:
+    %empty: own = own.empty
+    result.exit edge normal(0), value %empty, demand want, prepare none
+    ret %empty
+^failed(%cf: closed, %failure: failure) in S:
+    raise %failure
+}

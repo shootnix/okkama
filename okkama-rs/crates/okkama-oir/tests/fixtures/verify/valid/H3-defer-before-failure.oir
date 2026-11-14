@@ -1,0 +1,16 @@
+oir 2 high
+module reached_defers
+scope SD action in @d
+scope S action in @f
+func @d() -> void {
+^entry in SD:
+    ret
+}
+func @f(%x: int) -> void {
+^entry in S unwind ^failed:
+    defer.register S, action defer_action(function=@d)
+    %after: int = int.mod %x, %x
+    ret
+^failed(%e: failure) in S:
+    raise %e
+}

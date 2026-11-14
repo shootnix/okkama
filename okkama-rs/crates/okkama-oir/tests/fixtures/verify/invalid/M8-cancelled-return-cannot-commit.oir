@@ -1,0 +1,18 @@
+oir 2 own
+// expect OIR2-B10.1 instruction:0:7
+module cancelled_pending
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f(%failure: failure) -> failure summary(Mf) {
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %value: int = const 1
+    %empty: own = own.empty
+    (%left: own, %right: own, %deps: deps) = own.split %empty, selection(%value)
+    %all: own = own.join [%left, %right]
+    %pending: pending = exit.prepare return %value, %all, deps(%deps) at B0
+    %final: failure = scope.unwind %q, %failure, reserve %pending, effects scope_effects(failures=[], suspends=false, cancel=false)
+    (%result: int, %packet: own, %full: deps) = exit.commit %pending, destination caller, result int
+    ret %final
+}

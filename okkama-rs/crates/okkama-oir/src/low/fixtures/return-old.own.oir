@@ -1,0 +1,87 @@
+oir 2 own
+// Older a is accepted before b; the later call returns a unchanged. Direct [a,b] is forbidden.
+module return_old
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @main(%out: Res facts(managed(deps=dout))) -> Res [ctor Res] summary(M0) {
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    dependency dold: dependency = retention(value=%old, selection=selection(%old))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    dependency db: dependency = retention(value=%b, selection=selection(%b))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %descriptor: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, async_destroy=false, summary=Md)
+    %ea: own = own.empty
+    invoke.own obj.new Res {; %ea} construction complete
+        normal ^a($value, $packet, %q0)
+        unwind ^create_failed($packet, $failure, %q0)
+^a(%a: Res facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %q1: scope<S> = own.accept %qa, %pa
+    %eb: own = own.empty
+    invoke.own obj.new Res {; %eb} construction complete
+        normal ^b($value, $packet, %q1)
+        unwind ^create_failed($packet, $failure, %q1)
+^b(%b: Res facts(managed(deps=db)), %pb: own, %qb: scope<S>) in S:
+    %q2: scope<S> = own.admit %qb, %pb
+    %offer: own = own.empty
+    invoke.own call @old(consume %a; %offer)
+        normal ^returned($value, $packet, $deps, %q2)
+        unwind ^split_failed(%q2, $failure)
+^returned(%old: Res facts(managed(deps=dold)), %returned_packet: own, %returned_deps: deps,
+    %remaining2: scope<S>) in S:
+    %q3: scope<S> = own.admit %remaining2, %returned_packet
+    invoke.own scope.end %q3, effects scope_effects(failures=[thrown])
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^split_failed(%split_state: scope<S>, %split_error: failure) in S:
+    %split_combined: failure = scope.unwind %split_state, %split_error, effects scope_effects(failures=[thrown])
+    raise %split_combined
+^create_failed(%rest: own, %error: failure, %open: scope<S>) in S:
+    %restored: scope<S> = own.admit %open, %rest
+    %combined: failure = scope.unwind %restored, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed) in S:
+    ret %out
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+}
+
+scope ST action in @old
+summary Mo call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)),
+    destination=result)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @old(%old: Res facts(managed(deps=dold)); %input: own) -> (Res, own, deps) summary(Mo) {
+    dependency dold: dependency = retention(value=%old, selection=selection(%old))
+    dependency dresult: dependency = retention(value=%result, selection=selection(%result))
+    boundary B0 lexical in ST
+^entry in ST:
+    %q0: scope<ST> = scope.begin ST
+    %q1: scope<ST> = own.accept %q0, %input
+    invoke.own scope.split %q1, selection(%old)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^split_failed($state, $failure)
+^prepare(%q2: scope<ST>, %selected: own, %deps: deps) in ST:
+    %p: pending = exit.prepare return %old, %selected, deps(%deps) at B0
+    invoke.own scope.end %q2, reserve %p, effects scope_effects(failures=[thrown])
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure)
+^split_failed(%open: scope<ST>, %error: failure) in ST:
+    %combined: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed, %forwarded: pending) in ST:
+    (%result: Res facts(managed(deps=dresult)), %packet: own, %result_deps: deps) =
+        exit.commit %forwarded, destination caller, result Res
+    ret %result, %packet, %result_deps
+^failed(%closed_failed: closed, %failure: failure) in ST:
+    raise %failure
+}

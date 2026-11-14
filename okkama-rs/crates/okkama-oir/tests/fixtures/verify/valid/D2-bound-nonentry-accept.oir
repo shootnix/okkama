@@ -1,0 +1,12 @@
+oir 2 own
+module generalized_accept
+scope S action in @f
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @f(%input: own, %failure: failure) -> failure [async] summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %moved: own = own.move %input
+    %bound: scope<S> = own.accept %q, %moved
+    %f: failure = scope.unwind %bound, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    ret %f
+}

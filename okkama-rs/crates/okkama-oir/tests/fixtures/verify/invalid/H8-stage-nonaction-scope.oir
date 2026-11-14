@@ -1,0 +1,26 @@
+oir 2 high
+// expect OIR2-H8 instruction:0:2
+module constructor
+object C {
+    field x: int
+    field $pending: bool
+}
+scope S action in @f
+scope S1 block in @f parent S
+func @f() -> C [ctor C] {
+    boundary B0 lexical in S
+^entry in S:
+    br ^inner
+^inner in S1 unwind ^failed:
+    %u: int = undef ty int
+    %p: bool = undef ty bool
+    stage 1, action S1, field field_ref(declaration=C, index=0)
+    %o: C = obj.new C { x: %u, $pending: %p } construction incomplete
+    obj.init %o, 1, field field_ref(declaration=C, index=0)
+    obj.init %o, false, field field_ref(declaration=C, index=1)
+    [iprep0] exit.prepare return %o at B0
+    result.exit edge normal(0), value %o, demand want, prepare iprep0
+    ret %o
+^failed(%e: failure) in S:
+    raise %e
+}

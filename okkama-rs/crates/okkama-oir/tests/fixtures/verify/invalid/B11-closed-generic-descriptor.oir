@@ -1,0 +1,31 @@
+oir 2 own
+// expect OIR2-B11.1 instruction:2:0
+module descriptor_substitution
+object R {
+    field x: int
+    destroy @destroy
+}
+object Box<T> {
+    field value: T
+}
+scope S action in @f
+scope SD action in @destroy
+scope SN action in @noop
+summary Mf internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mn internal contract call_contract(publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @noop() -> void summary(Mn) {
+^entry in SN:
+    ret
+}
+func @f(%box: Box<R> facts(managed(deps=db))) -> void summary(Mf) {
+    dependency db: dependency = retention(value=%box, selection=selection(%box))
+^entry in S:
+    %dictionary: type = type.of ty Box<R>, descriptor descriptor_contract(managed=plain, retention=descriptor(0), cleanup=@noop, async_destroy=false, summary=Mn)
+    ret
+}

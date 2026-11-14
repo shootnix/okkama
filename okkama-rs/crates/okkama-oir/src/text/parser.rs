@@ -436,6 +436,8 @@ impl<'a> Reader<'a> {
         };
         let entry = explicit_entry.unwrap_or(BlockId::from_u32(0));
         let mut body = Body {
+            cleanup: CleanupMetadata::default(),
+            high_results: vec![], high_effects: vec![], descriptor_bindings: vec![], service_schedules: vec![],
             entry, values: Arena::new(), blocks: Arena::new(), insts: Arena::new(), bindings: Arena::new(),
             boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(), selections: Arena::new(),
         };
@@ -454,7 +456,41 @@ impl<'a> Reader<'a> {
                     }
                 };
             }
-            if self.is("binding") {
+            if self.is("descriptor.binding") {
+                self.expect("descriptor.binding")?;
+                let dictionary = ValueId::read(self)?;
+                self.expect("contract")?;
+                let contract = DescriptorContract::read(self)?;
+                body.descriptor_bindings.push(DescriptorBinding { dictionary, contract });
+                self.line()?;
+            } else if self.is("low.metadata") {
+                self.expect("low.metadata")?;
+                body.cleanup = CleanupMetadata::read(self)?;
+                self.line()?;
+            } else if self.is("service.schedule") {
+                self.expect("service.schedule")?;
+                let name = self.word()?;
+                self.expect("owner")?;
+                let owner = ScopeId::read(self)?;
+                self.expect(",")?;
+                self.expect("protocol")?;
+                let protocol = ProtocolId::read(self)?;
+                let dictionary = if self.operand_keyword("dictionary") {
+                    self.expect(",")?;
+                    self.expect("dictionary")?;
+                    Some(ValueId::read(self)?)
+                } else { None };
+                let duties = if self.operand_keyword("duties") {
+                    self.expect(",")?;
+                    self.expect("duties")?;
+                    Vec::read(self)?
+                } else { vec![] };
+                body.service_schedules.push(ServiceSchedule { name, owner, protocol, dictionary, duties });
+                self.line()?;
+            } else if self.is("high.effects") {
+                body.high_effects.push(self.high_effect()?);
+                self.line()?;
+            } else if self.is("binding") {
                 let item = self.binding()?;
                 body.bindings.alloc(item).map_err(|e| self.arena_error(e))?;
             } else if self.is("boundary") {
@@ -514,6 +550,16 @@ impl<'a> Reader<'a> {
                 self.line()?;
                 let mut insts = vec![];
                 while !self.is_terminator() {
+                    if self.is("result.exit") {
+                        body.high_results.push(self.high_result(id)?);
+                        self.line()?;
+                        continue;
+                    }
+                    if self.is("high.effects") {
+                        body.high_effects.push(self.high_effect()?);
+                        self.line()?;
+                        continue;
+                    }
                     let index = self.insts.len() as u32;
                     let inst = InstId::from_u32(index);
                     if self.eat("[") {
@@ -628,7 +674,8 @@ impl<'a> Reader<'a> {
     }
 
     fn is_terminator(&self) -> bool {
-        matches!(self.peek().text.as_str(), "br" | "cond" | "switch" | "invoke.own" | "ret"
+        matches!(self.peek().text.as_str(), "br" | "cond" | "switch" | "invoke.own" | "invoke.defer" | "ret"
+            | "exit.dispatch" | "failure.dispatch" | "cleanup.next"
             | "throw" | "raise" | "panic" | "trap" | "catch" | "array.lookup" | "map.lookup"
             | "unreachable" | "}" | "<eof>")
     }
@@ -655,6 +702,32 @@ impl<'a> Reader<'a> {
     fn terminator(&mut self) -> Result<Terminator, Diagnostic> {
         let tag = self.next()?;
         let kind = match tag.text.as_str() {
+            "cleanup.next" if !tag.quoted => {
+                let cleanup = ValueId::read(self)?;
+                self.expect("selected")?;
+                let selected = self.invoke_edge(Outcome::CleanupSelected)?;
+                self.expect("done")?;
+                let done = self.invoke_edge(Outcome::CleanupDone)?;
+                TermKind::CleanupNext { cleanup, selected, done }
+            }
+            "exit.dispatch" if !tag.quoted => {
+                let close = CleanupCloseId::read(self)?;
+                let closed = ValueId::read(self)?;
+                let failure = ValueId::read(self)?;
+                let exit = ValueId::read(self)?;
+                let success = if self.eat("success") { Some(self.invoke_edge(Outcome::ExitSuccess)?) } else { None };
+                let pending = if self.eat("pending") { Some(self.invoke_edge(Outcome::ExitPending)?) } else { None };
+                let failed = if self.eat("failure") { Some(self.invoke_edge(Outcome::ExitFailure)?) } else { None };
+                TermKind::ExitDispatch { close, closed, failure, exit, success, pending, failed }
+            }
+            "failure.dispatch" if !tag.quoted => {
+                let failure = ValueId::read(self)?;
+                self.expect("none")?;
+                let none = Target::read(self)?;
+                self.expect("some")?;
+                let some = self.invoke_edge(Outcome::FailureSome)?;
+                TermKind::FailureDispatch { failure, none, some }
+            }
             "br" if !tag.quoted => TermKind::Br(Target::read(self)?),
             "cond" if !tag.quoted => {
                 let condition = ValueId::read(self)?;
@@ -682,6 +755,47 @@ impl<'a> Reader<'a> {
                 self.expect("unwind")?;
                 let unwind = self.invoke_edge(Outcome::Unwind)?;
                 TermKind::InvokeOwn { op, normal, unwind }
+            }
+            "invoke.defer" if !tag.quoted => {
+                let function = FuncId::read(self)?;
+                let default = self.names.get(&(0, "function-summary", function.as_u32().to_string()))
+                    .copied().map(SummaryId::from_u32);
+                let call = surface::read_call(self, default)?;
+                self.line()?;
+                self.expect("continue")?;
+                let continue_edge = self.invoke_edge(Outcome::DeferContinue)?;
+                let mut replacements = vec![];
+                let mut unwind = None;
+                loop {
+                    self.line()?;
+                    if self.eat("replace") {
+                        let label = self.word()?;
+                        let index = u16::try_from(replacements.len())
+                            .map_err(|_| self.error(DiagnosticKind::Limit, "too many replacement edges"))?;
+                        let edge = self.invoke_edge(Outcome::DeferReplace(index))?;
+                        replacements.push(DeferReplaceEdge { label, edge });
+                    } else if self.eat("unwind") {
+                        unwind = Some(self.invoke_edge(Outcome::Unwind)?);
+                        break;
+                    } else {
+                        self.pos -= 1;
+                        break;
+                    }
+                }
+                TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind }
+            }
+            "ret" if !tag.quoted && self.eat("defer") => {
+                let tag = if self.eat("continue") {
+                    DeferReturnTag::Continue
+                } else {
+                    self.expect("replace")?;
+                    DeferReturnTag::Replace(self.word()?)
+                };
+                let mut values = vec![];
+                while self.eat(",") {
+                    values.push(ValueId::read(self)?);
+                }
+                TermKind::RetDefer { tag, values }
             }
             "ret" if !tag.quoted => {
                 let mut values = vec![];
@@ -758,6 +872,22 @@ impl<'a> Reader<'a> {
                 } else {
                     unwind
                 },
+                TermKind::InvokeDefer { continue_edge, replacements, unwind, .. } => match pending.outcome {
+                    Outcome::DeferContinue => continue_edge,
+                    Outcome::DeferReplace(index) => &mut replacements[usize::from(index)].edge,
+                    _ => unwind.as_mut().ok_or_else(|| self.at(&pending.token,
+                        DiagnosticKind::Structure, "missing defer unwind"))?,
+                },
+                TermKind::CleanupNext { selected, done, .. } => {
+                    if pending.outcome == Outcome::CleanupSelected { selected } else { done }
+                }
+                TermKind::ExitDispatch { success, pending: pending_edge, failed, .. } => match pending.outcome {
+                    Outcome::ExitSuccess => success.as_mut().unwrap(),
+                    Outcome::ExitPending => pending_edge.as_mut().unwrap(),
+                    Outcome::ExitFailure => failed.as_mut().unwrap(),
+                    _ => unreachable!(),
+                },
+                TermKind::FailureDispatch { some, .. } => some,
                 TermKind::Catch { handler, .. } => handler, TermKind::Lookup {
                     found, ..
                 } => found,
@@ -804,12 +934,20 @@ impl Codec for Target {
 }
 
 pub(crate) fn edge_slots(module: &Module, body: &Body, term: &TermKind, outcome: Outcome) -> Result<Vec<SlotName>, PrintError> {
+    if dispatch_edges(term).iter().any(|(tag, _)| *tag == outcome) {
+        return Ok(dispatch_slots(outcome).iter().map(|slot| slot.name).collect());
+    }
     match term {
         TermKind::InvokeOwn { op, .. } => {
             let contract = ContractRegistry::new(module).text_schema(op, body).map_err(|e| PrintError::new(e.to_string()))?;
             let outcome = contract.outcome(outcome)
                 .ok_or_else(|| PrintError::new("operation has no requested outcome"))?;
             Ok(outcome.results.iter().map(|s| s.name).collect())
+        }
+        TermKind::InvokeDefer { function, .. } => {
+            let results = ContractRegistry::new(module).defer_results(*function, outcome)
+                .map_err(|error| PrintError::new(error.to_string()))?;
+            Ok(results.into_iter().map(|slot| slot.name).collect())
         }
         TermKind::Catch { .. } | TermKind::Lookup { .. } if outcome == Outcome::Normal => Ok(vec![SlotName::Value]),
         _ => Err(PrintError::new("edge result outside an outcome schema")),

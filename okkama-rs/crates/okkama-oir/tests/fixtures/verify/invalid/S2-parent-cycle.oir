@@ -1,0 +1,9 @@
+oir 2 high
+// expect OIR2-S2 scope:0
+module verify
+scope S action in @f parent S
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.add %x, %x
+    ret
+}
