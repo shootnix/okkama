@@ -80,8 +80,8 @@ fn gc_layout_retained_arguments_survive_reused_async_registers() {
     let text = runtime.heap.allocate_text("retained argument");
     let frame = runtime.future_new(0, &[integer, text]);
     // The register copies die; the retained inputs must remain independently live.
-    runtime.heap.set_field(frame, 7, UNBOUND);
-    runtime.heap.set_field(frame, 9, UNBOUND);
+    runtime.heap.set_field(frame, 8, UNBOUND);
+    runtime.heap.set_field(frame, 10, UNBOUND);
     let result = runtime.heap.int(i64::MAX);
     runtime.heap.set_field(frame, 1, result);
     let edges = ["failure", "waiter", "awaiting"].map(|s| runtime.heap.allocate_text(s));
@@ -90,8 +90,8 @@ fn gc_layout_retained_arguments_survive_reused_async_registers() {
     }
     for _ in 0..3 {
         runtime.heap.collect(|visit| visit(frame, Repr::Ref));
-        assert_eq!(runtime.heap.integer(runtime.heap.field(frame, 11)).to_string(), i64::MIN.to_string());
-        assert_eq!(runtime.heap.text(runtime.heap.field(frame, 12)), "retained argument");
+        assert_eq!(runtime.heap.integer(runtime.heap.field(frame, 12)).to_string(), i64::MIN.to_string());
+        assert_eq!(runtime.heap.text(runtime.heap.field(frame, 13)), "retained argument");
         assert_eq!(runtime.heap.integer(runtime.heap.field(frame, 1)).to_string(), i64::MAX.to_string());
         for (index, expected) in ["failure", "waiter", "awaiting"].into_iter().enumerate() {
             assert_eq!(runtime.heap.text(runtime.heap.field(frame, 2 + index)), expected);
@@ -109,19 +109,20 @@ fn gc_layout_driver_state_and_runtime_object_overrides() {
     assert_eq!(layouts.objects[6], [Repr::Raw, Repr::Raw, Repr::Ref]); // Event
     let driver = loaded.program.functions.iter().position(|f| f.symbol == "Event.wait").unwrap();
     assert!(loaded.functions[driver].driver);
-    assert_eq!(&layouts.frames[driver][7..], &[Repr::Ref, Repr::Ref, Repr::Ref]);
+    // Fixed words: state … flags, owned (#581); then registers.
+    assert_eq!(&layouts.frames[driver][8..], &[Repr::Ref, Repr::Ref, Repr::Ref]);
     let mut runtime = sparrow_core::runtime::Runtime::new(loaded).unwrap();
     runtime.heap.set_stress(true);
     let waiter = runtime.heap.allocate_text("event waiter");
     let event = runtime.heap.object_new(6, &[0, 0, waiter]);
     let frame = runtime.future_new(driver, &[event]);
     let state = runtime.heap.allocate_text("driver state");
-    runtime.heap.set_field(frame, 7, UNBOUND); // register reused
-    runtime.heap.set_field(frame, 8, state); // driver slot, before retained inputs
+    runtime.heap.set_field(frame, 8, UNBOUND); // register reused
+    runtime.heap.set_field(frame, 9, state); // driver slot, before retained inputs
     for _ in 0..3 {
         runtime.heap.collect(|visit| visit(frame, Repr::Ref));
-        assert_eq!(runtime.heap.text(runtime.heap.field(frame, 8)), "driver state");
-        assert_eq!(runtime.heap.field(frame, 9), event);
+        assert_eq!(runtime.heap.text(runtime.heap.field(frame, 9)), "driver state");
+        assert_eq!(runtime.heap.field(frame, 10), event);
         assert_eq!(runtime.heap.text(runtime.heap.field(event, 2)), "event waiter");
     }
 
