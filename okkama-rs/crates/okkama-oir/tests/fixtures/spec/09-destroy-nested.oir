@@ -1,0 +1,40 @@
+oir 2 high
+// spec: 9.5; status: v2; expected-rule: -
+module 09-destroy-nested
+requires core
+object Leaf {
+    field label: str
+    destroy @destroy_leaf
+}
+object Outer {
+    field label: str
+    destroy @destroy_outer
+}
+scope S action in @main
+scope Sdestroy action in @destroy_outer
+scope Sleaf action in @destroy_leaf
+summary Mleaf call-boundary results [result_relation(provenance=unbound_result)] contract call_contract(results=[Leaf], publication=atomic)
+summary Mouter call-boundary results [result_relation(provenance=unbound_result)] contract call_contract(results=[Outer], publication=atomic)
+func @leaf() -> Leaf summary(Mleaf);
+func @outer() -> Outer summary(Mouter);
+func @destroy_leaf(%self: Leaf) -> void [destroy Leaf] {
+^entry in Sleaf:
+    %text: str = obj.get %self, label
+    ret
+}
+func @destroy_outer(%self: Outer) -> void [destroy Outer] {
+^entry in Sdestroy unwind ^failed:
+    %alias: Outer = retag %self, ty Outer
+    %text: str = obj.get %alias, label
+    %nested: Leaf = call @leaf()
+    temp %nested, Sdestroy
+    ret
+^failed(%failure: failure) in Sdestroy:
+    raise %failure
+}
+func @main() -> void {
+^entry in S:
+    %outer: Outer = call @outer()
+    temp %outer, S
+    ret
+}

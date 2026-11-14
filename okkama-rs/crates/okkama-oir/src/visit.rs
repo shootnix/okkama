@@ -135,6 +135,11 @@ impl Rewrite for TransferStates {
         match self { Self::Same(value) => value.rewrite(visitor), Self::Between { from, to } => { from.rewrite(visitor); to.rewrite(visitor); } }
     }
 }
+impl Rewrite for CreationOrigin {
+    fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
+        match self { Self::Instruction(inst) => inst.rewrite(visitor), Self::Invoke { block, .. } => block.rewrite(visitor) }
+    }
+}
 impl Rewrite for TakeBoundary {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
         match self { Self::Existing { owner } => owner.rewrite(visitor), Self::Temporary { awaiting } => awaiting.rewrite(visitor) }
@@ -182,6 +187,7 @@ impl Rewrite for DepExpr {
 impl Rewrite for SelectionExpr {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
         match self { Self::Value(value) | Self::OwnerGraph(value) | Self::ViewOwner(value) => value.rewrite(visitor),
+            Self::Admissible(selection) => selection.rewrite(visitor),
             Self::Projection(projection) => projection.rewrite(visitor), Self::Union(items) => items.rewrite(visitor),
             Self::Descriptor { descriptor, value } => { descriptor.rewrite(visitor); value.rewrite(visitor); } }
     }

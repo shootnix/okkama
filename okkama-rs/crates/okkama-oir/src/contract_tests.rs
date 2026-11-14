@@ -27,6 +27,7 @@ sample_expr!(ElaboratedStage, ElaboratedStage { action: sample(), field: sample(
 sample_expr!(AccessContext, AccessContext { owner: sample(), holder: sample(), authority: sample() });
 sample_expr!(DynamicReason, DynamicReason::Any);
 sample_expr!(TakeBoundary, TakeBoundary::Temporary { awaiting: sample() });
+sample_expr!(CreationOrigin, CreationOrigin::Instruction(sample()));
 sample_expr!(UniqueCacheProof, UniqueCacheProof { future: sample(), scope: sample(), region: sample(), evidence: UniqueCacheEvidence {
     creation: sample(), aliases: vec![], frame_slots: vec![], no_external_storage: true, no_other_waiters: true, no_live_views: true, no_collector_retention: true, scheduler_cannot_publish: true,
 } });
@@ -125,11 +126,11 @@ fn representative_group_contracts() {
     assert_eq!(names(&split.normal), [N::Rest, N::Selected, N::ExternalDeps]);
     assert_eq!(names(split.unwind.as_ref().unwrap()), [N::Packet, N::Failure]);
     assert_eq!(split.unwind.as_ref().unwrap().transfers, [TransferRule::Preserve { input: v(1), output: N::Packet }]);
-    let end = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeEnd { state: v(1) })).unwrap();
+    let end = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeEnd { state: v(1), reserve: None })).unwrap();
     assert_eq!(names(&end.normal), [N::Closed]);
     assert_eq!(names(end.unwind.as_ref().unwrap()), [N::Closed, N::Failure]);
     assert_eq!(names(&end.cancellation.as_ref().unwrap().outcome), [N::Closed, N::Failure]);
-    let unwind = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeUnwind { state: v(1), failure: v(2) })).unwrap();
+    let unwind = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeUnwind { state: v(1), failure: v(2), reserve: None })).unwrap();
     assert_eq!(names(&unwind.normal), [N::Failure]); assert!(unwind.unwind.is_none());
     assert!(unwind.normal.postconditions.contains(&Postcondition::Closed(v(1))));
     for reason in [DynamicReason::Atomic, DynamicReason::Cell, DynamicReason::Channel, DynamicReason::Group, DynamicReason::Any, DynamicReason::Closure, DynamicReason::Merge] {
@@ -195,7 +196,7 @@ fn cfg_visits_all_operands_edges_and_definitions_of_hand_built_function() {
     body.blocks.alloc(Block {
         lexical_scope: sample(), params: vec![v(0), v(1)], unwind: Some(BlockUnwind { target: target(2, vec![v(1)]) }), insts: vec![inst],
         term: Terminator { loc: None, kind: TermKind::InvokeOwn {
-            op: Box::new(Operation::Ownership(OwnershipOp::ScopeEnd { state: v(2) })),
+            op: Box::new(Operation::Ownership(OwnershipOp::ScopeEnd { state: v(2), reserve: None })),
             normal: invoke_target(1, vec![EdgeArg::Value(v(8)), EdgeArg::Produced(EdgeResult { outcome: Outcome::Normal, slot: 0 })]),
             unwind: invoke_target(2, vec![EdgeArg::Value(v(9)), EdgeArg::Produced(EdgeResult { outcome: Outcome::Unwind, slot: 0 }), EdgeArg::Produced(EdgeResult { outcome: Outcome::Unwind, slot: 1 })]),
         } },
@@ -246,7 +247,7 @@ fn provenance_retention_and_high_buffer_shapes() {
 #[test]
 fn missing_declarations_and_protocol_poststates_are_explicit() {
     let mut module = module();
-    let missing = Operation::Call(CallOp::Intrinsic { function: sample(), call: CallSite { summary: SummaryId::from_u32(100), ..sample() } });
+    let missing = Operation::Call(CallOp::Intrinsic { function: sample(), call: CallSite { summary: Some(SummaryId::from_u32(100)), ..sample() } });
     assert!(matches!(ContractRegistry::new(&module).lookup(&missing), Err(ContractError::InvalidId(_))));
     let dynamic = Operation::Ownership(OwnershipOp::Dynamic { state: v(1), packet: v(2), target: sample(), reason: DynamicReason::Channel, protocol: ProtocolId::from_u32(100) });
     assert!(matches!(ContractRegistry::new(&module).lookup(&dynamic), Err(ContractError::InvalidId(_))));
@@ -351,4 +352,68 @@ fn construction_high_exit_and_taken_outcome_keep_distinct_contracts() {
     let shielded = registry.lookup(&Operation::Async(AsyncOp::AwaitShielded { future: v(1), result: None })).unwrap();
     assert!(shielded.cancellation.is_none());
     assert!(!shielded.effects.failures.contains(&FailureKind::Cancelled));
+}
+
+#[test]
+fn call_entry_accept_and_reserved_scope_close_have_distinct_transitions() {
+    let module = module(); let registry = ContractRegistry::new(&module);
+    let accept = registry.lookup(&Operation::Ownership(OwnershipOp::Accept { state: v(1), packet: v(2) })).unwrap();
+    assert_eq!(accept.normal.transfers, [TransferRule::Admit { state: v(1), packet: v(2), output: SlotName::State, provenance: ProvenanceTransition::Set(AdmissionProvenance::Bound) }]);
+    assert_eq!(accept.operands.iter().map(|o| o.mode).collect::<Vec<_>>(), [OperandMode::Consume; 2]);
+    for reserve in [None, Some(v(3))] {
+        for active_failure in [false, true] {
+            let op = if active_failure { OwnershipOp::ScopeUnwind { state: v(1), failure: v(2), reserve } }
+                else { OwnershipOp::ScopeEnd { state: v(1), reserve } };
+            let c = registry.lookup(&Operation::Ownership(op)).unwrap();
+            let mut expected = vec![if active_failure { SlotName::Failure } else { SlotName::Closed }];
+            if reserve.is_some() { expected.push(SlotName::Pending); }
+            assert_eq!(names(&c.normal), expected);
+            assert!(c.normal.postconditions.contains(&Postcondition::Closed(v(1))));
+            if let Some(reserve) = reserve {
+                assert!(c.normal.transfers.contains(&TransferRule::CloseReserve { scope: v(1), reserve, output: SlotName::Pending, merge_scope_part: active_failure }));
+                assert!(c.roots.roots.contains(&RootKind::PendingExit));
+            }
+            if let Some(unwind) = &c.unwind {
+                let mut expected = vec![SlotName::Closed, SlotName::Failure];
+                if reserve.is_some() { expected.push(SlotName::Pending); }
+                assert_eq!(names(unwind), expected);
+                assert_eq!(&c.cancellation.as_ref().unwrap().outcome, unwind);
+                if let Some(reserve) = reserve {
+                    assert!(unwind.postconditions.contains(&Postcondition::ReserveRemainder { scope: v(1), reserve, merged: true }));
+                }
+            } else { assert!(active_failure); }
+        }
+    }
+    let missing = Operation::Call(CallOp::Direct { function: sample(), call: CallSite { summary: None, ..sample() } });
+    assert_eq!(registry.lookup(&missing), Err(ContractError::MissingSummary));
+}
+
+#[test]
+fn admissible_selection_preserves_ssa_leaves_and_detects_cycles() {
+    let mut body = body();
+    let admissible = body.selections.alloc(SelectionExpr::Admissible(sample())).unwrap();
+    let op = Operation::Ownership(OwnershipOp::Split { packet: v(1), selection: admissible });
+    assert_eq!(operation_uses(&op, &body).unwrap(), [OperandUse { value: v(1), mode: OperandMode::Consume }, OperandUse { value: v(0), mode: OperandMode::Borrow }]);
+    *body.selections.get_mut(admissible).unwrap() = SelectionExpr::Admissible(admissible);
+    assert_eq!(operation_uses(&op, &body), Err(TraversalError::CyclicExpression(OperandRef::Selection(admissible))));
+}
+
+#[test]
+fn dynamic_census_add_merge_and_zero_counts() {
+    let mut census = DynamicCensus::default(); let mut other = DynamicCensus::default();
+    for reason in [DynamicReason::Atomic, DynamicReason::Cell, DynamicReason::Channel, DynamicReason::Group, DynamicReason::Any, DynamicReason::Closure, DynamicReason::Merge] {
+        census.add(FuncId::from_u32(0), reason, 2);
+        other.add(FuncId::from_u32(0), reason, 3);
+        other.add(FuncId::from_u32(1), reason, 7);
+    }
+    census.merge(&other);
+    for reason in [DynamicReason::Atomic, DynamicReason::Cell, DynamicReason::Channel, DynamicReason::Group, DynamicReason::Any, DynamicReason::Closure, DynamicReason::Merge] {
+        assert_eq!(census.module_count(reason), 12);
+        assert_eq!(census.function_count(FuncId::from_u32(0), reason), 5);
+        assert_eq!(census.function_count(FuncId::from_u32(1), reason), 7);
+        assert_eq!(census.function_count(FuncId::from_u32(2), reason), 0);
+    }
+    census.add(FuncId::from_u32(3), DynamicReason::Any, 0);
+    census.merge(&DynamicCensus::default());
+    assert_eq!(census.functions().count(), 2);
 }

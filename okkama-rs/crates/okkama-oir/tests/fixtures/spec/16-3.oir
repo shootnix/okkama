@@ -1,0 +1,50 @@
+oir 2 own
+// spec: 5.1;16.3; status: v2; expected-rule: -
+module order
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    destroy @destroy_holder
+}
+scope S action in @main
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+func @Res.new(%name: str; %input: own) -> (Res, own, deps) summary(M0);
+func @destroy(%self: Res) -> void;
+func @destroy_holder(%self: Holder) -> void;
+func @main() -> void {
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    invoke.own call @Res.new("a"; own.empty)
+        normal ^a($value, $packet, $deps, %q0)
+        unwind ^failed($failure, %q0)
+^a(%a: Res, %pa: own, %da: deps, %q1: scope<S>) in S:
+    %q2: scope<S> = own.admit %q1, %pa
+    invoke.own call @Res.new("b"; own.empty)
+        normal ^b($value, $packet, $deps, %q2)
+        unwind ^failed($failure, %q2)
+^b(%b: Res, %pb: own, %db: deps, %q3: scope<S>) in S:
+    %q4: scope<S> = own.admit %q3, %pb
+    invoke.own obj.new Holder { res: %a; own.empty }
+        normal ^h($value, $packet, %q4)
+        unwind ^construction_failed($packet, $failure, %q4)
+^h(%h: Holder, %ph: own, %q5: scope<S>) in S:
+    %q6: scope<S> = own.admit %q5, %ph
+    invoke.own scope.end %q6
+        normal ^done($closed)
+        unwind ^closed_failed($closed, $failure)
+^construction_failed(%offered: own, %failure0: failure, %open0: scope<S>) in S:
+    %admitted: scope<S> = own.admit %open0, %offered
+    %final0: failure = scope.unwind %admitted, %failure0
+    raise %final0
+^failed(%failure: failure, %open: scope<S>) in S:
+    %final: failure = scope.unwind %open, %failure
+    raise %final
+^closed_failed(%closed: closed, %cleanup_failure: failure) in S:
+    raise %cleanup_failure
+^done(%closed2: closed) in S:
+    ret
+}

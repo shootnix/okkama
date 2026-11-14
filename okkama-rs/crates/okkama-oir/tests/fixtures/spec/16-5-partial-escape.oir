@@ -1,0 +1,32 @@
+oir 2 own
+// spec: 4.2;16.5; status: v2; expected-rule: -
+module partial_escape
+requires core
+native object Connection
+object Session {
+    field connection: Connection
+}
+scope S action in @main
+func @main(%session: Session, %full: deps; %q: scope<S>) -> (Connection, own, deps) {
+    boundary B0 lexical in S
+    key k0: key = runtime(%session)
+    dependency d0: dependency = key(k0)
+^entry in S:
+    %child: Connection facts(managed(deps=d0)) = obj.get %session, connection
+    invoke.own scope.split %q, selection(%child)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^split_failed($state, $failure)
+^split_failed(%original: scope<S>, %split_error: failure) in S:
+    %final: failure = scope.unwind %original, %split_error
+    raise %final
+^prepare(%rest: scope<S>, %selected: own, %external: deps) in S:
+    %pending: pending = exit.prepare return %child, %selected, deps(%full) at B0
+    invoke.own scope.end %rest, reserve %pending
+        normal ^commit($closed, $pending)
+        unwind ^failed($closed, $failure, $pending)
+^commit(%closed: closed, %reservation: pending) in S:
+    (%result: Connection, %out: own, %deps: deps) = exit.commit %reservation, destination caller, result Connection
+    ret %result, %out, %deps
+^failed(%closed2: closed, %failure: failure, %outer_reserve: pending) in S:
+    raise %failure
+}

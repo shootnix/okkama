@@ -150,7 +150,7 @@ impl<'a> FunctionBuilder<'a> {
     }
     pub fn result_schema(&mut self, op: &Operation, outcome: Outcome) -> Result<Vec<ResultSpec>, BuildError> {
         check_operation(op, self.module, &self.body)?;
-        let contract = ContractRegistry::new(self.module).lookup(op)?;
+        let contract = ContractRegistry::new(self.module).construction_schema(op, &self.body)?;
         let schema = contract.outcome(outcome).ok_or(BuildError::NoUnwindOutcome)?;
         result_specs(self.module, &self.body, &schema.results)
     }
@@ -257,6 +257,9 @@ impl<'b, 'm> LoweringBuilder<'b, 'm> {
     }
     pub fn own_admit(&mut self, state: ValueId, packet: ValueId) -> Result<ValueId, BuildError> {
         Ok(self.builder.emit_schema(Operation::Ownership(OwnershipOp::Admit { state, packet }))?[0])
+    }
+    pub fn own_accept(&mut self, state: ValueId, packet: ValueId) -> Result<ValueId, BuildError> {
+        Ok(self.builder.emit_schema(Operation::Ownership(OwnershipOp::Accept { state, packet }))?[0])
     }
     pub fn own_split(&mut self, packet: ValueId, selection: SelectionId) -> Result<SplitResults, BuildError> {
         let values = self.builder.emit_schema(Operation::Ownership(OwnershipOp::Split { packet, selection }))?;
@@ -365,7 +368,7 @@ fn check_operation(op: &Operation, module: &Module, body: &Body) -> Result<(), B
 fn validate_instruction(module: &mut Module, body: &Body, op: &Operation, results: &[ResultSpec], facts: &InstructionFacts) -> Result<OpContract, BuildError> {
     check_operation(op, module, body)?;
     check_references(facts, module, body)?;
-    let contract = ContractRegistry::new(module).lookup(op)?;
+    let contract = ContractRegistry::new(module).construction_schema(op, body)?;
     let expected = result_specs(module, body, &contract.normal.results)?;
     check_result_types(&expected.iter().map(|result| result.ty).collect::<Vec<_>>(), &results.iter().map(|result| result.ty).collect::<Vec<_>>())?;
     for result in results { check_references(&result.facts, module, body)?; }
@@ -414,7 +417,7 @@ fn validate_term(module: &mut Module, body: &Body, term: &TermKind, signature: O
         TermKind::Switch { cases, default, .. } => { for case in cases { validate_target(body, &case.target)?; } validate_target(body, default)?; }
         TermKind::InvokeOwn { op, normal, unwind } => {
             check_operation(op, module, body)?;
-            let contract = ContractRegistry::new(module).lookup(op)?;
+            let contract = ContractRegistry::new(module).construction_schema(op, body)?;
             let failure = contract.unwind.as_ref().ok_or(BuildError::NoUnwindOutcome)?;
             validate_invoke_edge(module, body, normal, Outcome::Normal, &contract.normal.results)?;
             validate_invoke_edge(module, body, unwind, Outcome::Unwind, &failure.results)?;
@@ -465,7 +468,7 @@ impl<'a> FunctionEditor<'a> {
         validate_instruction(self.module, self.body, &op, results, &facts)?;
         let mut ops = data.insts.iter().map(|&id| Ok(&self.body.insts.get(id)?.op)).collect::<Result<Vec<_>, BuildError>>()?;
         ops.insert(position, &op);
-        validate_flow(self.module, &ops, data.unwind.is_some(), block)?;
+        validate_flow(self.module, self.body, &ops, data.unwind.is_some(), block)?;
         let (inst, values) = append_instruction(self.body, op, results, facts, loc)?;
         self.body.blocks.get_mut(block)?.insts.insert(position, inst);
         Ok((inst, values))
@@ -482,7 +485,7 @@ impl<'a> FunctionEditor<'a> {
         for (block, data) in self.body.blocks.iter() {
             if data.insts.contains(&inst) {
                 let ops = data.insts.iter().map(|&id| if id == inst { Ok(&op) } else { Ok(&self.body.insts.get(id)?.op) }).collect::<Result<Vec<_>, BuildError>>()?;
-                validate_flow(self.module, &ops, data.unwind.is_some(), block)?;
+                validate_flow(self.module, self.body, &ops, data.unwind.is_some(), block)?;
             }
         }
         self.body.insts.get_mut(inst)?.op = op; Ok(())
@@ -568,10 +571,10 @@ impl<'a> FunctionEditor<'a> {
 fn ordinary_args(args: Vec<EdgeArg>) -> Result<Vec<ValueId>, BuildError> {
     args.into_iter().map(|arg| match arg { EdgeArg::Value(value) => Ok(value), EdgeArg::Produced(result) => Err(BuildError::InvalidEdgeResult(result)) }).collect()
 }
-fn validate_flow(module: &Module, ops: &[&Operation], has_unwind: bool, block: BlockId) -> Result<(), BuildError> {
+fn validate_flow(module: &Module, body: &Body, ops: &[&Operation], has_unwind: bool, block: BlockId) -> Result<(), BuildError> {
     let mut transitioned = false;
     for op in ops {
-        let contract = ContractRegistry::new(module).lookup(op)?;
+        let contract = ContractRegistry::new(module).construction_schema(op, body)?;
         if let Some(unwind) = &contract.unwind {
             if transitioned { return Err(BuildError::NeedsNewBlock(block)); }
             if unwind.results.iter().any(|slot| !matches!(slot.ty, ResultType::SameAs(_) | ResultType::Service(ServiceType::Failure))) { return Err(BuildError::NeedsInvoke); }

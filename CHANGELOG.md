@@ -74,6 +74,20 @@ fake fields; role fakes and their ordinary typed fields remain available.
 
 ### Added
 
+- **OIR-2 core (#563).** A new crate, `okkama-oir` (std only, re-exported by
+  the compiler as `oir2`), holds the 0.6.0 intermediate representation with
+  ownership in SSA:
+  - a data model with typed arenas and four profiles (`high`, `own`, `coro`, `low`);
+  - 268 operations, each with an ownership contract and normal/unwind outcome schemas;
+  - builders and an editing API;
+  - a canonical text codec (`oir 2 <profile>`) on the OIR-1 grammar, with
+    `oir 1` rejected.
+
+  It is backed by 113 fixtures covering every example of the specification,
+  the M1–M9 pairs and negative cases, plus round-trip and property tests.
+  Nothing in the pipeline uses it yet: the verifier (#564) and ownership
+  elaboration (#565) build on it.
+
 - **Register-colouring diagnostics (#540).** `OKKAMA_PROFILE_REGISTERS=1`
   reports compiler phase times, busy-set cloning work, conflict-list capacity,
   edge moves and assigned registers. Bounded, opt-in large-function fixtures

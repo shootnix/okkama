@@ -1,0 +1,34 @@
+oir 2 high
+// spec: 10.5; status: v2; expected-rule: -
+module 10-completion-positions
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+func @new(%label: str) -> Res summary(Mnew);
+func @label(%r: Res) -> str summary(Mlabel);
+func @destroy(%self: Res) -> void;
+func @deferred() -> void summary(Mvoid);
+scope S action in @main
+native object Collector
+summary Mcollect call-boundary parameters [parameter_effect(convention=borrow, destination=result)] contract call_contract(results=[future<array<Res>>], failures=[thrown, cancelled], suspends=true, publication=task-state, protocol=some(group))
+protocol group holders [frame, cache, scope] rules [protocol_rule(transition=publish, from=frame, to=cache, normal=protocol_poststate(holder=cache, state=settled), unwind=some(protocol_poststate(holder=frame, state=running)), cancel=some(protocol_poststate(holder=frame, state=running)))] roots [cache, frame_slots]
+func @completions(%positions: array<future<Res>>) -> future<array<Res>> summary(Mcollect);
+func @main(%a: future<Res>, %b: future<Res>) -> future<array<Res>> {
+^entry in S unwind ^failed:
+    %positions: array<future<Res>> = array.new [%a, %a], ty array<future<Res>>
+    %result: future<array<Res>> = call @completions(%positions)
+    ret %result
+^failed(%failure: failure) in S:
+    raise %failure
+}

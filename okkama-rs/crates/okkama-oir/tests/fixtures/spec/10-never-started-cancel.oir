@@ -1,0 +1,15 @@
+oir 2 high
+// spec: 10.1; status: v2; expected-rule: -
+module never_started
+requires core
+scope S action in @main
+summary Mcreate call-boundary contract call_contract(results=[future<str>], publication=atomic)
+summary Mbody call-boundary contract call_contract(results=[str], failures=[cancelled], publication=atomic)
+func @make() -> future<str> summary(Mcreate) async-creation(Mcreate) async-body(Mbody);
+func @main() -> void {
+^entry in S:
+    %future: future<str> = call @make()
+    fut.cancel %future
+    %cancelled: bool = fut.cancelled %future
+    ret
+}

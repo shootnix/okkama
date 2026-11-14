@@ -80,7 +80,7 @@ fn every_opcode_builder_roundtrips_and_every_invoke_slot_is_preserved() {
         roundtrip(&module);
     }
     assert_eq!(seen, Operation::opcode_inventory().into_iter().collect(), "opcode missing a builder round-trip case");
-    assert_eq!(seen.len(), 267);
+    assert_eq!(seen.len(), 268);
 }
 
 #[test]
@@ -296,7 +296,7 @@ codec_samples!(FieldValue => FieldValue { field: cs::<FieldRef>(), value: cs::<V
 codec_samples!(ConstructionStatus => ConstructionStatus::Complete);
 codec_samples!(ConstructionCompletion => ConstructionCompletion { state: cs::<ValueId>() });
 codec_samples!(CallArgument => CallArgument { value: cs::<ValueId>(), convention: cs::<OperandConvention>() });
-codec_samples!(CallSite => CallSite { args: cs::<Vec<CallArgument>>(), packet: cs::<Option<ValueId>>(), deps: cs::<Vec<ValueId>>(), descriptors: cs::<Vec<ValueId>>(), type_args: cs::<Vec<TypeId>>(), summary: cs::<SummaryId>() });
+codec_samples!(CallSite => CallSite { args: cs::<Vec<CallArgument>>(), packet: cs::<Option<ValueId>>(), deps: cs::<Vec<ValueId>>(), descriptors: cs::<Vec<ValueId>>(), type_args: cs::<Vec<TypeId>>(), summary: cs::<Option<SummaryId>>() });
 codec_samples!(ResultDemand => ResultDemand::Want);
 codec_samples!(DeferAction => DeferAction { function: cs::<FuncId>(), captures: cs::<Vec<ValueId>>(), bindings: cs::<Vec<BindingId>>() });
 codec_samples!(TransferStates => TransferStates::Same(cs::<ValueId>()));
@@ -306,7 +306,8 @@ codec_samples!(ElaboratedBinding => ElaboratedBinding { binding: cs::<BindingId>
 codec_samples!(ElaboratedStage => ElaboratedStage { action: cs::<ScopeId>(), field: cs::<FieldRef>(), resource: cs::<ResourceValue>(), states: cs::<TransferStates>() });
 codec_samples!(TakeBoundary => TakeBoundary::Existing { owner: cs::<ScopeId>() });
 codec_samples!(UniqueCacheProof => UniqueCacheProof { future: cs::<ValueId>(), scope: cs::<ScopeId>(), region: cs::<Vec<BlockId>>(), evidence: cs::<UniqueCacheEvidence>() });
-codec_samples!(UniqueCacheEvidence => UniqueCacheEvidence { creation: cs::<InstId>(), aliases: cs::<Vec<ValueId>>(), frame_slots: cs::<Vec<u32>>(), no_external_storage: cs::<bool>(), no_other_waiters: cs::<bool>(), no_live_views: cs::<bool>(), no_collector_retention: cs::<bool>(), scheduler_cannot_publish: cs::<bool>() });
+codec_samples!(CreationOrigin => CreationOrigin::Instruction(cs()));
+codec_samples!(UniqueCacheEvidence => UniqueCacheEvidence { creation: cs::<CreationOrigin>(), aliases: cs::<Vec<ValueId>>(), frame_slots: cs::<Vec<u32>>(), no_external_storage: cs::<bool>(), no_other_waiters: cs::<bool>(), no_live_views: cs::<bool>(), no_collector_retention: cs::<bool>(), scheduler_cannot_publish: cs::<bool>() });
 codec_samples!(FrameSlot => FrameSlot { slot: cs::<u32>(), value: cs::<ValueId>(), mode: cs::<OperandMode>() });
 codec_samples!(SavedSlot => SavedSlot { slot: cs::<u32>(), ty: cs::<TypeId>(), linear: cs::<bool>() });
 codec_samples!(CarrierDestination => CarrierDestination::FailureContext(cs::<ScopeId>()));
@@ -528,6 +529,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
     assert_eq!(cases.len(), DepExpr::TEXT_VARIANTS.len(), "DepExpr branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }
     let cases = vec![
+        SelectionExpr::Admissible(cs()),
         SelectionExpr::Value(cs::<ValueId>()),
         SelectionExpr::Projection(cs::<Projection>()),
         SelectionExpr::OwnerGraph(cs::<ValueId>()),
@@ -603,6 +605,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
         SlotName::From,
         SlotName::To,
         SlotName::Failure,
+        SlotName::Pending,
         SlotName::Closed,
         SlotName::Buffer,
         SlotName::Unique,
@@ -648,6 +651,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
     assert_eq!(cases.len(), ProvenanceTransition::TEXT_VARIANTS.len(), "ProvenanceTransition branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }
     let cases = vec![
+        TransferRule::CloseReserve { scope: cs(), reserve: cs(), output: cs(), merge_scope_part: cs() },
         TransferRule::Preserve { input: cs::<ValueId>(), output: cs::<SlotName>() },
         TransferRule::Move { inputs: cs::<Vec<ValueId>>(), outputs: cs::<Vec<SlotName>>() },
         TransferRule::Partition { input: cs::<ValueId>(), selection: cs::<SelectionId>(), rest: cs::<SlotName>(), selected: cs::<SlotName>() },
@@ -668,6 +672,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
     assert_eq!(cases.len(), TransferRule::TEXT_VARIANTS.len(), "TransferRule branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }
     let cases = vec![
+        Postcondition::ReserveRemainder { scope: cs(), reserve: cs(), merged: cs() },
         Postcondition::Closed(cs::<ValueId>()),
         Postcondition::CacheConsumed(cs::<ValueId>()),
         Postcondition::AdmissionStaysCaller,
@@ -1106,14 +1111,14 @@ fn call_argument_lists_and_proof_evidence_preserve_order_and_holder_details() {
     for n in [0,1,3] {
         let v = ValueId::from_u32(0);
         let call = CallSite { args: vec![CallArgument { value: v, convention: OperandConvention::Borrow }; n],
-            packet: Some(v), deps: vec![v; n], descriptors: vec![v; n], type_args: vec![TypeId::from_u32(0); n], summary: SummaryId::from_u32(0) };
+            packet: Some(v), deps: vec![v; n], descriptors: vec![v; n], type_args: vec![TypeId::from_u32(0); n], summary: Some(SummaryId::from_u32(0)) };
         roundtrip(&build_op_config(Operation::Call(CallOp::Direct { function: FuncId::from_u32(0), call }), Profile::Own, |b| {
             let summary = b.raw_mut().summaries.get_mut(SummaryId::from_u32(0)).unwrap();
             summary.parameters = vec![ParameterEffect { convention: FreshConvention::Borrow, retention: None, deps: vec![], destination: TransferDestination::None }; n];
         }));
     }
     let proof = UniqueCacheProof { future: ValueId::from_u32(0), scope: ScopeId::from_u32(0), region: vec![BlockId::from_u32(0)],
-        evidence: UniqueCacheEvidence { creation: InstId::from_u32(0), aliases: vec![ValueId::from_u32(0); 3], frame_slots: vec![7,4],
+        evidence: UniqueCacheEvidence { creation: CreationOrigin::Instruction(InstId::from_u32(0)), aliases: vec![ValueId::from_u32(0); 3], frame_slots: vec![7,4],
             no_external_storage: true, no_other_waiters: false, no_live_views: true, no_collector_retention: false, scheduler_cannot_publish: true } };
     let printed = roundtrip(&build_op(Operation::Async(AsyncOp::UniqueCacheProof { proof }), Profile::Coro));
     assert!(printed.contains("frame_slots=[7, 4]"));
@@ -1336,4 +1341,248 @@ func @main() -> void {
 "#;
     // The SSA use is intentionally non-dominating; #564 diagnoses it later.
     roundtrip(&text::parse(source).unwrap());
+}
+
+#[test]
+fn creation_origins_and_reserve_schemas_roundtrip() {
+    let origins = [CreationOrigin::Instruction(cs()), CreationOrigin::Invoke { block: cs(), outcome: Outcome::Normal, slot: 2 }, CreationOrigin::Invoke { block: cs(), outcome: Outcome::Unwind, slot: 1 }];
+    assert_eq!(CreationOrigin::TEXT_VARIANTS.len(), 2);
+    for creation in origins {
+        crate::text::payload_roundtrip(creation);
+        let proof = UniqueCacheProof { evidence: UniqueCacheEvidence { creation, ..crate::contract_tests::sample::<UniqueCacheProof>().evidence }, ..crate::contract_tests::sample() };
+        roundtrip(&build_op(Operation::Async(AsyncOp::UniqueCacheProof { proof }), Profile::Coro));
+    }
+    for reserve in [None, Some(ValueId::from_u32(0))] {
+        roundtrip(&build_op(Operation::Ownership(OwnershipOp::ScopeEnd { state: cs(), reserve }), Profile::Own));
+        roundtrip(&build_op(Operation::Ownership(OwnershipOp::ScopeUnwind { state: cs(), failure: cs(), reserve }), Profile::Own));
+    }
+}
+
+#[test]
+fn missing_summaries_and_explicit_none_are_preserved_without_arena_defaults() {
+    for declared in [None, Some(SummaryId::from_u32(0))] {
+        for call_summary in [None, Some(SummaryId::from_u32(0)), Some(SummaryId::from_u32(1))] {
+            let mut m = build_op(Operation::Const(Literal::Int("0".into())), Profile::High);
+            let summary = m.summaries.get(SummaryId::from_u32(0)).unwrap().clone();
+            m.summaries.alloc(summary).unwrap();
+            m.functions.get_mut(FuncId::from_u32(0)).unwrap().summary = declared;
+            let body = m.functions.get_mut(FuncId::from_u32(0)).unwrap().body.as_mut().unwrap();
+            body.insts.get_mut(InstId::from_u32(1)).unwrap().op = Operation::Call(CallOp::Direct { function: cs(), call: CallSite { summary: call_summary, args: vec![], packet: None, deps: vec![], descriptors: vec![], type_args: vec![] } });
+            let printed = roundtrip(&m);
+            let call = printed.lines().find(|line| line.contains("= call ")).unwrap();
+            assert_eq!(call.contains("summary("), declared != call_summary);
+            if call_summary.is_none() && declared.is_some() { assert!(call.contains("summary(none)")); }
+        }
+    }
+    let source = "oir 2 high\nmodule absent\nscope S action in @f\nfunc @f(%fn: fn() -> int) -> int {\n^entry:\n%v: int = fn.call %fn()\nret %v\n}\n";
+    let m = text::parse(source).unwrap();
+    let printed = roundtrip(&m);
+    assert!(!printed.contains("summary("));
+    assert!(matches!(&m.functions.get(cs()).unwrap().body.as_ref().unwrap().insts.get(cs()).unwrap().op, Operation::Call(CallOp::Closure { call: CallSite { summary: None, .. }, .. })));
+}
+
+#[test]
+fn field_and_exit_context_never_default_to_first_arena_entity() {
+    let explicit = "oir 2 high\nmodule fields\nobject First {\nfield x: int\n}\nscope S action in @f\nfunc @f(%x: int) -> void {\nboundary Bx lexical in S\n^entry:\n%v: int = obj.get %x, field_ref(declaration=First, index=0)\n%p: pending = exit.prepare return %v at Bx\nret\n}\n";
+    let m = text::parse(explicit).unwrap();
+    let printed = roundtrip(&m);
+    assert!(printed.contains("field_ref(declaration=First"));
+    assert!(printed.contains(" at B0"));
+    assert_eq!(text::parse(&explicit.replace("field_ref(declaration=First, index=0)", "x")).unwrap_err().kind, K::Syntax);
+    assert_eq!(text::parse(&explicit.replace(" at Bx", "")).unwrap_err().kind, K::Syntax);
+}
+
+fn coverage_modules() -> Vec<Module> {
+    let mut modules: Vec<_> = crate::contract_tests::representatives().into_iter().map(|op| build_op(op, Profile::Own)).collect();
+    let v = ValueId::from_u32(0);
+    for reserve in [None, Some(v)] {
+        modules.push(build_op(Operation::Ownership(OwnershipOp::ScopeEnd { state: v, reserve }), Profile::Own));
+        modules.push(build_op(Operation::Ownership(OwnershipOp::ScopeUnwind { state: v, failure: v, reserve }), Profile::Own));
+    }
+    for result in [None, Some(TypeId::from_u32(0))] {
+        modules.push(build_op(Operation::Async(AsyncOp::Await { future: v, result }), Profile::Coro));
+        for boundary in [TakeBoundary::Existing { owner: cs() }, TakeBoundary::Temporary { awaiting: cs() }] {
+            modules.push(build_op(Operation::Async(AsyncOp::AwaitTake { future: v, result, unique: v, boundary }), Profile::Coro));
+        }
+    }
+    for packet in [None, Some(v)] {
+        for op in [CollectionOp::BuilderFinish { buffer: v, packet }, CollectionOp::BuilderAbandon { buffer: v, packet }, CollectionOp::BuilderPush { buffer: v, value: v, packet }] {
+            modules.push(build_op(Operation::Collection(op), Profile::Own));
+        }
+        modules.push(build_op(Operation::Core(CoreOp::ObjNew { declaration: cs(), type_args: vec![], fields: vec![v], packet, construction: ConstructionStatus::Incomplete }), Profile::Own));
+        for results in [0, 1, 3] {
+            modules.push(build_op_config(Operation::Call(CallOp::Direct { function: cs(), call: CallSite { packet, ..crate::contract_tests::sample() } }), Profile::Own, |b| {
+                b.raw_mut().summaries.get_mut(SummaryId::from_u32(0)).unwrap().contract.results = vec![TypeId::from_u32(0); results];
+            }));
+        }
+    }
+    modules.push(build_op(Operation::Ownership(OwnershipOp::ScopeTransfer { states: TransferStates::Between { from: v, to: v }, selection: cs() }), Profile::Own));
+    modules.push(build_op(Operation::Carrier(CarrierOp::Transfer { state: v, target: CarrierDestination::FailureContext(cs()), protocol: cs() }), Profile::Own));
+    for n in [0, 1, 3] {
+        modules.push(build_op(Operation::Async(AsyncOp::FrameResume { frame: v, slots: vec![SavedSlot { slot: 7, ty: cs(), linear: true }; n] }), Profile::Coro));
+    }
+    for publication in [Publication::ChannelReceipt, Publication::TaskState] {
+        modules.push(build_op_config(Operation::Call(CallOp::Direct { function: cs(), call: crate::contract_tests::sample() }), Profile::Own, |b| {
+            let contract = &mut b.raw_mut().summaries.get_mut(SummaryId::from_u32(0)).unwrap().contract;
+            contract.publication = publication; contract.protocol = Some(ProtocolId::from_u32(0));
+        }));
+    }
+    modules
+}
+
+#[test]
+fn coverage_inventory_requires_opcode_fixtures_and_every_schema_slot_set() {
+    use std::collections::BTreeSet;
+    let expected: BTreeSet<_> = include_str!("../tests/fixtures/opcodes.txt").lines().collect();
+    assert_eq!(expected, Operation::opcode_inventory().into_iter().collect(), "opcode fixture inventory must be reviewed");
+    let mut seen = BTreeSet::new(); let mut shapes = BTreeSet::new();
+    let modules = coverage_modules();
+    for module in &modules {
+        roundtrip(module);
+        let registry = ContractRegistry::new(module);
+        for (_, function) in module.functions.iter() {
+            let Some(body) = &function.body else { continue };
+            for (_, block) in body.blocks.iter() {
+                for &id in &block.insts { seen.insert(body.insts.get(id).unwrap().op.opcode()); }
+                if let TermKind::InvokeOwn { op, normal, unwind } = &block.term.kind {
+                    seen.insert(op.opcode());
+                    let contract = registry.lookup(op).unwrap();
+                    for (schema, edge) in [(&contract.normal, normal), (contract.unwind.as_ref().unwrap(), unwind)] {
+                        // This fixture forwards every produced slot, in order.
+                        assert_eq!(edge.args.len(), schema.results.len());
+                        for (index, arg) in edge.args.iter().enumerate() { assert!(matches!(arg, EdgeArg::Produced(r) if usize::from(r.slot) == index)); }
+                    }
+                }
+            }
+            let ops = body.insts.iter().map(|(_, i)| &i.op).chain(body.blocks.iter().filter_map(|(_, b)| if let TermKind::InvokeOwn { op, .. } = &b.term.kind { Some(op.as_ref()) } else { None }));
+            for op in ops {
+                let c = registry.lookup(op).unwrap();
+                for schema in [Some(&c.normal), c.unwind.as_ref(), c.cancellation.as_ref().map(|c| &c.outcome)].into_iter().flatten() {
+                    shapes.insert(schema.results.iter().map(|s| crate::text::slot_name(s.name)).collect::<Vec<_>>().join(","));
+                }
+            }
+        }
+    }
+    assert_eq!(seen, expected);
+    let expected_shapes: BTreeSet<String> = include_str!("../tests/fixtures/outcomes.txt").lines().map(|s| if s == "void" { String::new() } else { s.into() }).collect();
+    assert_eq!(shapes, expected_shapes, "outcome slot-set inventory must be reviewed");
+}
+
+#[test]
+fn fixture_annotation_profile_and_dynamic_reason_inventory_is_exhaustive() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut modules = coverage_modules();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    for dir in ["spec", "invalid"] {
+        for entry in std::fs::read_dir(root.join(dir)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "oir") { modules.push(text::parse(&std::fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", path.display()))); }
+        }
+    }
+    let mut seen: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    macro_rules! mark { ($group:literal, $value:expr) => { seen.entry($group).or_default().insert($value); }; }
+    for module in &modules {
+        mark!("profile", match module.profile { Profile::High => "high", Profile::Own => "own", Profile::Coro => "coro", Profile::Low => "low" });
+        for (_, scope) in module.scopes.iter() { mark!("scope", match scope.kind { ScopeKind::Action => "action", ScopeKind::Block => "block", ScopeKind::Branch => "branch", ScopeKind::Iteration => "iteration", ScopeKind::Try => "try", ScopeKind::Catch => "catch", ScopeKind::Defer => "defer" }); }
+        for (_, function) in module.functions.iter() {
+            let Some(body) = &function.body else { continue };
+            for (_, value) in body.values.iter() {
+                mark!("value_facts", match &value.facts { ValueFacts::Unelaborated => "unelaborated", ValueFacts::Service => "service", ValueFacts::Managed { .. } => "managed", ValueFacts::Plain { .. } => "plain" });
+                if let ValueFacts::Plain { certificate } = &value.facts { mark!("plain", match certificate { PlainCertificate::Scalar => "scalar", PlainCertificate::ClosedGraph { .. } => "closed_graph", PlainCertificate::Descriptor(_) => "descriptor" }); }
+            }
+            for (_, boundary) in body.boundaries.iter() { mark!("boundary", match boundary.kind { BoundaryKind::Lexical => "lexical", BoundaryKind::Call => "call", BoundaryKind::Loop => "loop", BoundaryKind::AbortBeforeDestroy => "abort_before_destroy", BoundaryKind::AbortAfterPrefix => "abort_after_prefix" }); }
+            for (_, key) in body.keys.iter() {
+                mark!("key", match key { KeyExpr::Created { .. } => "created", KeyExpr::Runtime(_) => "runtime", KeyExpr::ServiceOf { .. } => "service_of" });
+                if let KeyExpr::ServiceOf { kind, .. } = key { mark!("service_key", match kind { ServiceKeyKind::Cache => "cache", ServiceKeyKind::Frame => "frame", ServiceKeyKind::Channel => "channel", ServiceKeyKind::Carrier => "carrier", ServiceKeyKind::Pin => "pin", ServiceKeyKind::Group => "group" }); }
+            }
+            for (_, dep) in body.deps.iter() { mark!("dependency", match dep { DepExpr::Empty => "empty", DepExpr::Key(_) => "key", DepExpr::Union(_) => "union", DepExpr::FromSsa(_) => "from_ssa", DepExpr::Retention { .. } => "retention" }); }
+            for (_, selection) in body.selections.iter() {
+                mark!("selection", match selection { SelectionExpr::Value(_) => "value", SelectionExpr::Admissible(_) => "admissible", SelectionExpr::Projection(_) => "projection", SelectionExpr::OwnerGraph(_) => "owner_graph", SelectionExpr::ViewOwner(_) => "view_owner", SelectionExpr::Union(_) => "union", SelectionExpr::Descriptor { .. } => "descriptor" });
+                if let SelectionExpr::Projection(p) = selection { mark!("projection", match p { Projection::Field { .. } => "field", Projection::Index { .. } => "index", Projection::Slice { .. } => "slice", Projection::Map { .. } => "map" }); }
+            }
+            for (_, inst) in body.insts.iter() {
+                if !inst.facts.result_deps.is_empty() { mark!("instruction_facts", "result_deps"); }
+                if !inst.facts.retention.is_empty() { mark!("instruction_facts", "retention"); }
+                if !inst.facts.provenance.is_empty() { mark!("instruction_facts", "provenance"); }
+                for fact in &inst.facts.provenance { mark!("provenance", match fact.state { AdmissionProvenance::UnboundResult => "unbound_result", AdmissionProvenance::Bound => "bound", AdmissionProvenance::StagedOrCarrierOwned => "staged_or_carrier_owned", AdmissionProvenance::CacheOwned => "cache_owned", AdmissionProvenance::ExtractedAtExistingBoundary => "extracted_at_existing_boundary", AdmissionProvenance::TemporaryAwaitResult => "temporary_await_result" }); }
+            }
+            for op in body.insts.iter().map(|(_, i)| &i.op).chain(body.blocks.iter().filter_map(|(_, b)| if let TermKind::InvokeOwn { op, .. } = &b.term.kind { Some(op.as_ref()) } else { None })) {
+                if let Operation::Ownership(OwnershipOp::Dynamic { reason, .. }) = op { mark!("reason", match reason { DynamicReason::Atomic => "atomic", DynamicReason::Cell => "cell", DynamicReason::Channel => "channel", DynamicReason::Group => "group", DynamicReason::Any => "any", DynamicReason::Closure => "closure", DynamicReason::Merge => "merge" }); }
+                if let Operation::Async(AsyncOp::UniqueCacheProof { proof }) = op { mark!("creation", match proof.evidence.creation { CreationOrigin::Instruction(_) => "instruction", CreationOrigin::Invoke { .. } => "invoke" }); }
+            }
+        }
+    }
+    let groups = [
+        ("profile", &["high", "own", "coro", "low"][..]), ("reason", DynamicReason::TEXT_VARIANTS),
+        ("scope", ScopeKind::TEXT_VARIANTS), ("boundary", BoundaryKind::TEXT_VARIANTS),
+        ("value_facts", ValueFacts::TEXT_VARIANTS), ("plain", PlainCertificate::TEXT_VARIANTS),
+        ("key", KeyExpr::TEXT_VARIANTS), ("service_key", ServiceKeyKind::TEXT_VARIANTS),
+        ("dependency", DepExpr::TEXT_VARIANTS), ("selection", SelectionExpr::TEXT_VARIANTS),
+        ("projection", Projection::TEXT_VARIANTS), ("provenance", AdmissionProvenance::TEXT_VARIANTS),
+        ("creation", CreationOrigin::TEXT_VARIANTS), ("instruction_facts", &["result_deps", "retention", "provenance"][..]),
+    ];
+    for (name, required) in groups { assert_eq!(seen.get(name).unwrap(), &required.iter().copied().collect(), "missing {name} fixture"); }
+}
+
+#[test]
+fn block_scope_is_derived_only_from_its_own_function_action_scope() {
+    let source = "oir 2 high\nmodule scopes\nscope S0 action in @other\nfunc @other() -> void;\nfunc @f() -> void {\n^entry:\nret\n}\n";
+    assert_eq!(text::parse(source).unwrap_err().kind, K::Syntax);
+    let explicit = source.replace("^entry:", "^entry in S0:");
+    roundtrip(&text::parse(&explicit).unwrap()); // wrong owner belongs to #564
+    let own = source.replace("action in @other", "action in @f");
+    roundtrip(&text::parse(&own).unwrap());
+}
+
+#[test]
+fn hand_checked_optional_summary_golden() {
+    let golden = include_str!("../tests/fixtures/text/d7-summary-none.oir");
+    assert_eq!(roundtrip(&text::parse(golden).unwrap()), golden);
+}
+
+#[test]
+fn every_call_form_keeps_optional_summary_and_indirect_forms_print_present_summary() {
+    let source = r#"oir 2 high
+module calls
+object Owner {
+    field value: int
+}
+role Read {
+    read() -> int
+}
+cap Owner :: View {
+    field value = @computed
+}
+scope S action in @main
+summary M0 call-boundary contract call_contract(results=[int], publication=atomic)
+func @callee() -> int summary(M0);
+func @computed(%owner: Owner) -> int summary(M0);
+func @main(%fn: fn() -> int, %role: Read, %cap: View, %frame: frame<@callee>) -> void {
+^entry in S:
+    %a: int = call @callee() summary(none)
+    %b: int = call.native @callee() summary(none)
+    %c: int = call.intrinsic @callee() summary(none)
+    %d: int = fn.call %fn()
+    %e: int = call.role %role, Read slot 0()
+    %f: int = call.cap %cap, field_ref(declaration=View, index=0)()
+    %g: int = call.resume %frame, @callee()
+    %h: int = fn.call %fn() summary(M0)
+    %i: int = call.role %role, Read slot 0() summary(M0)
+    %j: int = call.cap %cap, field_ref(declaration=View, index=0)() summary(M0)
+    %k: int = call.resume %frame, @callee() summary(M0)
+    ret
+}
+"#;
+    let module = text::parse(source).unwrap(); let printed = roundtrip(&module);
+    let mut summaries = Vec::new();
+    let body = module.functions.iter().find(|(_, f)| f.symbol == "main").unwrap().1.body.as_ref().unwrap();
+    for (_, inst) in body.insts.iter() {
+        if let Operation::Call(op) = &inst.op {
+            let call = match op { CallOp::Direct { call, .. } | CallOp::Native { call, .. } | CallOp::Intrinsic { call, .. } | CallOp::Role { call, .. } | CallOp::Closure { call, .. } | CallOp::Cap { call, .. } | CallOp::Resume { call, .. } => call };
+            summaries.push(call.summary);
+        }
+    }
+    assert_eq!(&summaries[..7], &[None; 7]);
+    assert_eq!(&summaries[7..], &[Some(SummaryId::from_u32(0)); 4]);
+    assert_eq!(printed.lines().filter(|l| l.contains("= ") && l.contains("summary(M0)")).count(), 4);
 }

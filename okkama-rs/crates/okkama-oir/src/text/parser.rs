@@ -97,7 +97,7 @@ pub(crate) struct Reader<'a> {
     pub(super) selections: Arena<SelectionId, SelectionExpr>,
     pub(super) deps: Arena<DepExprId, DepExpr>,
     pub(super) implicit: Vec<InstId>,
-    pub(super) default_scope: ScopeId,
+    pub(super) default_scope: Option<ScopeId>,
     pub(super) literal_type: Option<TypeId>,
     pub(super) type_depth: usize,
 }
@@ -109,7 +109,7 @@ impl<'a> Reader<'a> {
         Self { tokens, pos: 0, names, annotations, counts: HashMap::new(), first, scope: 0, limits, entities: 0,
             profile, pending: vec![], current_block: BlockId::from_u32(0), types: TypeTable::new(),
             generic_owner: None, values: Arena::new(), insts: Arena::new(), selections: Arena::new(),
-            deps: Arena::new(), implicit: vec![], default_scope: ScopeId::from_u32(0), literal_type: None,
+            deps: Arena::new(), implicit: vec![], default_scope: None, literal_type: None,
             type_depth: 0 }
     }
     pub(crate) fn peek(&self) -> &Token {
@@ -330,8 +330,6 @@ impl<'a> Reader<'a> {
                         let key = (0, "function-scope", symbol);
                         if kind == ScopeKind::Action {
                             self.names.insert(key, id);
-                        } else {
-                            self.names.entry(key).or_insert(id);
                         }
                     }
                     let parent = if self.eat("parent") {
@@ -415,8 +413,8 @@ impl<'a> Reader<'a> {
         } else {
             self.expect("{")?;
             self.line()?;
-            self.default_scope = ScopeId::from_u32(self.names.get(&(0, "function-scope", format!("@{symbol}")))
-                .copied().unwrap_or(0));
+            self.default_scope = self.names.get(&(0, "function-scope", format!("@{symbol}")))
+                .copied().map(ScopeId::from_u32);
             Some(self.body(params)?)
         };
         self.scope = 0;
@@ -504,7 +502,8 @@ impl<'a> Reader<'a> {
                 let lexical_scope = if self.eat("in") {
                     ScopeId::read(self)?
                 } else {
-                    self.default_scope
+                    self.default_scope.or_else(|| self.first.then_some(ScopeId::from_u32(u32::MAX)))
+                        .ok_or_else(|| self.error(DiagnosticKind::Syntax, "block requires in Sx when the function has no action scope"))?
                 };
                 let unwind = if self.eat("unwind") {
                     Some(BlockUnwind { target: Target::read(self)? })
@@ -742,7 +741,7 @@ impl<'a> Reader<'a> {
                 .ok_or_else(|| self.at(&pending.token, DiagnosticKind::Structure, "missing invoke body"))?;
             let term = &body.blocks.get(pending.block).map_err(|e| self.at(&pending.token, DiagnosticKind::Structure,
                 e.to_string()))?.term.kind;
-            let names = edge_slots(module, term, pending.outcome).map_err(|e| self.at(&pending.token,
+            let names = edge_slots(module, body, term, pending.outcome).map_err(|e| self.at(&pending.token,
                 DiagnosticKind::OutcomeSlot, e.message))?;
             let slot = names.iter().position(|name| format!("${}", slot_name(*name)) == pending.token.text)
                 .and_then(|i| u16::try_from(i).ok()).ok_or_else(|| self.at(&pending.token,
@@ -804,10 +803,10 @@ impl Codec for Target {
     }
 }
 
-pub(crate) fn edge_slots(module: &Module, term: &TermKind, outcome: Outcome) -> Result<Vec<SlotName>, PrintError> {
+pub(crate) fn edge_slots(module: &Module, body: &Body, term: &TermKind, outcome: Outcome) -> Result<Vec<SlotName>, PrintError> {
     match term {
         TermKind::InvokeOwn { op, .. } => {
-            let contract = ContractRegistry::new(module).text_schema(op).map_err(|e| PrintError::new(e.to_string()))?;
+            let contract = ContractRegistry::new(module).text_schema(op, body).map_err(|e| PrintError::new(e.to_string()))?;
             let outcome = contract.outcome(outcome)
                 .ok_or_else(|| PrintError::new("operation has no requested outcome"))?;
             Ok(outcome.results.iter().map(|s| s.name).collect())

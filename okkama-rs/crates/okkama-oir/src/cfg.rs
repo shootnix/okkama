@@ -47,6 +47,7 @@ fn expand(operand: ReferencedOperand, body: &Body, stack: &mut Vec<OperandRef>, 
                 Projection::Slice { value: v, start, end } => { value(*v); value(*start); value(*end); }
                 Projection::Map { value: v, keys } => { value(*v); value(*keys); }
             },
+            SelectionExpr::Admissible(id) => refs.push(OperandRef::Selection(*id)),
             SelectionExpr::Union(items) => refs.extend(items.iter().copied().map(OperandRef::Selection)),
             SelectionExpr::Descriptor { descriptor, value: v } => { value(*descriptor); value(*v); }
         },
@@ -108,7 +109,7 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
         }
         TermKind::InvokeOwn { op, normal, unwind } => {
             operands.extend(op.operand_refs());
-            let contract = registry.lookup(op)?;
+            let contract = registry.construction_schema(op, body)?;
             edge_definitions(block, EdgeKind::InvokeNormal, Outcome::Normal, &contract.normal.results, visit)?;
             if let Some(outcome) = &contract.unwind { edge_definitions(block, EdgeKind::InvokeUnwind, Outcome::Unwind, &outcome.results, visit)?; }
             invoke_edge(block, normal, EdgeKind::InvokeNormal, site, visit); invoke_edge(block, unwind, EdgeKind::InvokeUnwind, site, visit);
