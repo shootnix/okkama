@@ -1,0 +1,91 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object app.Res {
+    field name: str
+    destroy @app.Res.destroy
+}
+
+object app.Work {
+}
+
+enum app.Stop is Error = (now)
+scope S0 action in @app.Res.destroy
+scope S1 action in @app.Work.make#0
+scope S2 block in @app.Work.make#0 parent S1
+scope S3 action in @main
+scope S4 action in @app.Res.new#0
+scope S5 action in @app.Work.new#0
+
+func @app.Res.new#0(%0: str) -> app.Res [ctor app.Res] {
+    binding b0 "s": str in S4
+    boundary B0 lexical in S4
+    ^b0 in S4 unwind ^b1:
+    %1: str = undef ty str
+    bind %0, binding b0
+    stage %0, action S4, field field_ref(declaration=app.Res, index=0)
+    %2: app.Res = obj.new app.Res { name: %0 }
+    want %2
+    exit.prepare return %2 at B0
+    ret %2
+    ^b1(%3: failure) in S4:
+    raise %3
+}
+
+func @app.Res.destroy(%0: app.Res) -> void [destroy app.Res] {
+    boundary B0 lexical in S0
+    selection s0: selection = union([])
+    ^b0 in S0 unwind ^b1:
+    %1: str = obj.get %0, name
+    discard %1
+    exit.prepare return select s0 at B0
+    ret
+    ^b1(%2: failure) in S0:
+    raise %2
+}
+
+func @app.Work.new#0() -> app.Work [ctor app.Work] {
+    boundary B0 lexical in S5
+    ^b0 in S5 unwind ^b1:
+    %0: app.Work = obj.new app.Work { }
+    want %0
+    exit.prepare return %0 at B0
+    ret %0
+    ^b1(%1: failure) in S5:
+    raise %1
+}
+
+func @app.Work.make#0(%0: app.Work) -> app.Res [method app.Work] {
+    binding b0 "r": app.Res in S2
+    boundary B0 lexical in S1
+    ^b0 in S1 unwind ^b1:
+    br ^b3
+    ^b1(%1: failure) in S1:
+    raise %1
+    ^b2 in S1:
+    unreachable
+    ^b3 in S2 unwind ^b1:
+    %2: str = const "nested"
+    %3: app.Res = call @app.Res.new#0(%2)
+    bind %3, binding b0
+    want %3
+    exit.prepare return %3 at B0
+    ret %3
+}
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S3
+    ^b0 in S3 unwind ^b1:
+    %0: app.Work = call @app.Work.new#0()
+    %1: app.Res = call @app.Work.make#0(%0)
+    temp %1, S3
+    discard %1
+    %2: int = const 0
+    want %2
+    exit.prepare return %2 at B0
+    ret %2
+    ^b1(%3: failure) in S3:
+    raise %3
+}

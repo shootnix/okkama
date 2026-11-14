@@ -63,7 +63,11 @@ impl Flow<'_> {
 }
 
 pub(super) fn check(module: &ir::Module, body: &ir::Body) -> Result<()> {
-    let root = body.blocks.get(body.entry)?.lexical_scope;
+    let entry = body.blocks.get(body.entry)?;
+    if matches!(entry.term.kind, ir::TermKind::Catch { .. }) {
+        return Err(invalid("H5: function entry cannot be catch dispatch without unwind"));
+    }
+    let root = entry.lexical_scope;
     let declaration = module.scopes.get(root)?;
     if declaration.kind != ir::ScopeKind::Action || declaration.parent.is_some() {
         return Err(invalid("H1: function entry requires a root Action scope"));
@@ -128,18 +132,30 @@ pub(super) fn check(module: &ir::Module, body: &ir::Body) -> Result<()> {
             if !unwind.target.args.iter().all(|arg| block.params.contains(arg)) {
                 return Err(invalid("H5: unwind argument is not an entry parameter"));
             }
-            if !matches!(body.blocks.get(unwind.target.block)?.term.kind,
-                ir::TermKind::Raise(_) | ir::TermKind::Catch { .. }) {
+            let destination = body.blocks.get(unwind.target.block)?;
+            if matches!(destination.term.kind, ir::TermKind::Catch { .. }) {
+                let source_path = ancestors(module, block.lexical_scope)?;
+                let exited_try = source_path.iter().take_while(|&&scope| scope != destination.lexical_scope)
+                    .any(|&scope| module.scopes.get(scope).is_ok_and(|scope| scope.kind == ir::ScopeKind::Try));
+                if !source_path.contains(&destination.lexical_scope) || !exited_try {
+                    return Err(invalid("H5: catch selection must follow exit from the Try scope"));
+                }
+            }
+            if !matches!(destination.term.kind, ir::TermKind::Raise(_) | ir::TermKind::Catch { .. }) {
                 return Err(invalid("H5: unwind does not lead to failure dispatch"));
             }
         }
         let mut targets = vec![];
         ir::cfg::walk_terminator(id, &block.term, body, registry, &mut |event| {
-            if let ir::cfg::CfgEvent::Edge { target, .. } = event {
-                targets.push(target);
+            if let ir::cfg::CfgEvent::Edge { target, kind, .. } = event {
+                targets.push((target, kind));
             }
         }).map_err(ir::BuildError::from)?;
-        for target in targets {
+        for (target, kind) in targets {
+            if matches!(body.blocks.get(target)?.term.kind, ir::TermKind::Catch { .. })
+                && kind != ir::cfg::EdgeKind::CatchNext {
+                return Err(invalid("H5: catch dispatch is reachable without unwind"));
+            }
             flow.edge(Some(id), target, &prefix)?;
         }
     }
@@ -157,7 +173,8 @@ pub(super) fn check(module: &ir::Module, body: &ir::Body) -> Result<()> {
             }
         }
     }
-    check_bindings(module, body)
+    check_bindings(module, body)?;
+    check_catch_values(module, body)
 }
 
 fn check_bindings(module: &ir::Module, body: &ir::Body) -> Result<()> {
@@ -229,6 +246,80 @@ fn check_bindings(module: &ir::Module, body: &ir::Body) -> Result<()> {
                     return Err(invalid("H7: initial bind does not dominate the binding use"));
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Catch payloads are edge-produced SSA values, available only below the handler.
+fn check_catch_values(module: &ir::Module, body: &ir::Body) -> Result<()> {
+    let mut payloads = HashSet::new();
+    let registry = ir::ContractRegistry::new(module);
+    ir::cfg::walk_body(body, registry, |event| {
+        if let ir::cfg::CfgEvent::Edge { source, target, kind } = event
+            && kind != ir::cfg::EdgeKind::BlockUnwind {
+            let destination = body.blocks.get(target).expect("allocated catch target");
+            let scope = destination.lexical_scope;
+            if module.scopes.get(scope).expect("allocated scope").kind == ir::ScopeKind::Catch
+                && ancestors(module, body.blocks.get(source).expect("allocated source").lexical_scope)
+                    .is_ok_and(|path| !path.contains(&scope))
+                && let Some(&value) = destination.params.last() {
+                payloads.insert(value);
+            }
+        }
+    }).map_err(ir::BuildError::from)?;
+    let mut caught = HashMap::new();
+    for (_, data) in body.blocks.iter() {
+        for &id in &data.insts {
+            if let ir::Operation::Lexical(ir::LexicalOp::Bind { binding, value }) = body.insts.get(id)?.op
+                && payloads.contains(&value) {
+                let ir::Definition::BlockParam { block: entry, .. } = body.values.get(value)?.def else {
+                    return Err(invalid("catch binding must bind the handler payload parameter"));
+                };
+                if body.blocks.get(entry)?.lexical_scope != body.bindings.get(binding)?.scope
+                    || data.lexical_scope != body.bindings.get(binding)?.scope {
+                    return Err(invalid("catch binding must be local to its Catch scope"));
+                }
+                caught.insert(value, entry);
+            }
+        }
+    }
+    if caught.len() != payloads.len() {
+        return Err(invalid("catch payload requires a lexical binding"));
+    }
+    if caught.is_empty() {
+        return Ok(());
+    }
+    let registry = ir::ContractRegistry::new(module);
+    // Removing the definition block must make every payload use unreachable.
+    for (&value, &definition) in &caught {
+        let mut bypass = HashSet::new();
+        let mut pending = vec![body.entry];
+        while let Some(block) = pending.pop() {
+            if block == definition || !bypass.insert(block) {
+                continue;
+            }
+            pending.extend(ir::cfg::successors(block, body, registry).map_err(ir::BuildError::from)?);
+        }
+        let mut violation = false;
+        ir::cfg::walk_body(body, registry, |event| {
+            let ir::cfg::CfgEvent::Use { site, operand } = event else {
+                return;
+            };
+            if operand.value != value {
+                return;
+            }
+            let block = match site {
+                ir::cfg::UseSite::Instruction(id) => body.blocks.iter().find_map(|(block, data)| {
+                    data.insts.contains(&id).then_some(block)
+                }),
+                ir::cfg::UseSite::Terminator(block) | ir::cfg::UseSite::BlockUnwind(block) => Some(block),
+                _ => None,
+            };
+            violation |= block.is_some_and(|block| bypass.contains(&block));
+        }).map_err(ir::BuildError::from)?;
+        if violation {
+            return Err(invalid("catch binding payload does not dominate its use"));
         }
     }
     Ok(())

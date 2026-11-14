@@ -22,7 +22,8 @@ impl BodyLowerer<'_, '_> {
 
     fn declaration(&self) -> Result<ir::DeclId> {
         let object = match self.source.owner {
-            thir::BodyOwner::Ctor { object, .. } | thir::BodyOwner::Method { object, .. } => object,
+            thir::BodyOwner::Ctor { object, .. } | thir::BodyOwner::Method { object, .. }
+            | thir::BodyOwner::Destroy { object } => object,
             _ => return Err(LowerError::invalid(self.source.span, "object operation without an owner")),
         };
         Ok(self.context.objects[&object])
@@ -126,7 +127,8 @@ impl BodyLowerer<'_, '_> {
         if let Some(value) = self.early_self {
             return Ok(value);
         }
-        let mut fields: Vec<_> = self.env[self.field_base..].iter().map(|value| value.expect("field slot")).collect();
+        let mut fields: Vec<_> = self.env[self.field_base..self.field_end].iter()
+            .map(|value| value.expect("field slot")).collect();
         let layout = self.layout()?;
         let pending = pending_index(&layout).ok_or_else(|| {
             LowerError::invalid(self.source.span, "early self requires a pending field")
@@ -162,7 +164,7 @@ impl BodyLowerer<'_, '_> {
                 }))?;
                 object
             } else {
-                let mut fields: Vec<_> = self.env[self.field_base..].iter()
+                let mut fields: Vec<_> = self.env[self.field_base..self.field_end].iter()
                     .map(|value| value.expect("field slot")).collect();
                 if let Some(no) = no {
                     fields.push(no);
@@ -175,7 +177,7 @@ impl BodyLowerer<'_, '_> {
             self.return_value(Some(value))
         } else if self.is_successor() {
             let mut updates = vec![];
-            for (index, value) in self.env[self.field_base..].iter().enumerate() {
+            for (index, value) in self.env[self.field_base..self.field_end].iter().enumerate() {
                 if let Some(value) = value {
                     updates.push(ir::FieldValue { field: self.field(index)?, value: *value });
                 }
@@ -205,6 +207,7 @@ impl BodyLowerer<'_, '_> {
         let call = ir::CallSite {
             args, packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: None,
         };
+        self.sync_failure()?;
         let values = self.b.emit_schema(ir::Operation::Call(ir::CallOp::Direct { function, call }))?;
         Ok(values.first().copied())
     }

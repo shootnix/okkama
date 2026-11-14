@@ -107,8 +107,7 @@ fn oir2_unsupported_source_constructs_are_diagnostics() {
     for (body, expected) in [
         ("let a = [1]; 0;", "collection"),
         ("defer [1]; 0;", "collection"),
-        ("try { 1; } catch e is Error { 2; }", "try"),
-        ("panic \"stop\";", "panic"),
+        ("let n = try? 1; 0;", "try?"),
         ("1.5; 0;", "constant"),
         ("1 & 2;", "binary"),
         ("1 / 2; 0;", "binary"),
@@ -208,10 +207,10 @@ fn oir2_boundary_edge_cases_roundtrip() {
 #[test]
 fn oir2_declared_unsupported_bodies_name_the_function() {
     for (source, name, construct) in [
-        ("module app; object O { O() { try { 0; } catch e is Error { 0; } } } main() is int { 0; }",
-            "app.O.new#0", "try"),
-        ("module app; object O { O(); destroy { panic \"stop\"; } } main() is int { 0; }",
-            "app.O.destroy", "destroy"),
+        ("module app; object O { O() { try { 1 & 2; } catch e is Error { 0; } } } main() is int { 0; }",
+            "app.O.new#0", "binary"),
+        ("module app; object O { O(); destroy { 1 & 2; } } main() is int { 0; }",
+            "app.O.destroy", "binary"),
         ("module app; object O { has n is int = 1 & 2; O(); } main() is int { 0; }",
             "app.O.default#0", "binary"),
     ] {
@@ -476,12 +475,12 @@ fn oir2_s2_control_flow_and_aliases_roundtrip() {
 #[test]
 fn oir2_s2_unsupported_bodies_name_the_function() {
     for (source, name) in [
-        ("module app; object O { O() { try { 1; } catch e is Error { 2; } } } main() is int { 0; }",
+        ("module app; object O { O() { try { 1 & 2; } catch e is Error { 2; } } } main() is int { 0; }",
             "app.O.new#0"),
-        ("module app; object O { O(); f() is int { panic \"stop\"; } } main() is int { 0; }", "app.O.f#0"),
+        ("module app; object O { O(); f() is int { 1 & 2; } } main() is int { 0; }", "app.O.f#0"),
         ("module app; object O { has n is int = 1 & 2; O(); } main() is int { 0; }",
             "app.O.default#0"),
-        ("module app; object O { O(); destroy { 0; } } main() is int { 0; }", "app.O.destroy"),
+        ("module app; object O { O(); destroy { 1 & 2; } } main() is int { 0; }", "app.O.destroy"),
         (concat!("module app; object O { has n is int = 1; O() { let alias = self; n = 2; } } ",
             "main() is int { 0; }"), "app.O.new#0"),
         (concat!("module app; object O { has n is int; O(b is bool) { ",
@@ -614,16 +613,14 @@ fn oir2_defer_lexical_captures_roundtrip() {
 }
 
 #[test]
-fn oir2_s3_constructs_still_report_unsupported() {
+fn oir2_outside_s3_constructs_report_unsupported() {
     for body in [
-        "throw Stop.now;",
-        "try { throw Stop.now; } catch e is Stop { throw; }",
-        "defer if true { throw Stop.now; } else { 0; }; 0;",
         "defer if true { return 1; } else { 0; }; 0;",
-        "defer try { 0; } catch e is Stop { 0; }; 0;",
+        "let n = try? 1; 0;",
+        "try { throw Stop.now; } catch Stop.now { 0; }",
     ] {
         let source = format!("module app; enum Stop is Error = (now); main() is int {{ {body} }}");
-        let error = print_oir2(&source).expect_err("S3 must remain unsupported");
+        let error = print_oir2(&source).expect_err("outside the slice must remain unsupported");
         assert!(matches!(error, LowerError::Unsupported { .. }), "{error}");
         assert!(error.to_string().contains("unsupported in OIR-2 lowering"), "{error}");
     }
@@ -796,5 +793,218 @@ fn oir2_defer_nonlocal_writes_remain_unsupported() {
         let error = print_oir2(source).expect_err("nonlocal defer writes require later outcome plumbing");
         assert!(matches!(error, LowerError::Unsupported { .. }), "{error}");
         assert!(error.to_string().contains("unsupported in OIR-2 lowering"), "{error}");
+    }
+}
+
+const S3_RES: &str = concat!(
+    "object Res { has name is string; Res(s is string) { name = s; } ",
+    "destroy { name; } } ",
+);
+
+fn s3_sources() -> Vec<(&'static str, String)> {
+    let prelude = format!("module app; enum Stop is Error = (now); {S3_RES}");
+    vec![
+        ("s3-defer-risky", format!(concat!("{}object Work {{ Work(); risky() is void {{ throw Stop.now; }} ",
+            "log() is void {{ }} }} main() is int {{ {{ let r = Res(\"r\"); ",
+            "defer Work().log(); Work().risky(); }} 0; }}"), prelude)),
+        ("s3-catch", "module app; enum Stop is Error = (now); main() is int { \
+            try { throw Stop.now; } catch e is Stop { e; 7; } }".into()),
+        ("s3-unmatched", "module app; enum Stop is Error = (now); enum Other is Error = (bad); \
+            main() is int { try { throw Other.bad; } catch e is Stop { 7; } }".into()),
+        ("s3-rethrow", "module app; enum Stop is Error = (now); main() is int { \
+            try { throw Stop.now; } catch e is Stop { throw e; } }".into()),
+        ("s3-cause", "module app; enum Stop is Error = (now); enum Other is Error = (bad); \
+            main() is int { try { throw Stop.now; } catch e is Stop { throw Other.bad; } }".into()),
+        ("s3-destroy-local", format!(concat!("{}object Owner {{ Owner(); destroy {{ let local = Res(\"local\"); ",
+            "self; throw Stop.now; }} }} main() is int {{ Owner(); 0; }}"), prelude)),
+        ("s3-return-nested", format!(concat!("{}object Work {{ Work(); make() is Res {{ ",
+            "{{ let r = Res(\"nested\"); return r; }} }} }} main() is int {{ Work().make(); 0; }}"), prelude)),
+        ("s3-return-try", format!(concat!("{}object Work {{ Work(); make() is Res {{ ",
+            "try {{ let r = Res(\"try\"); return r; }} catch e is Stop {{ Res(\"catch\"); }} ",
+            "}} }} main() is int {{ Work().make(); 0; }}"), prelude)),
+        ("s3-late-argument", format!(concat!("{}object Work {{ Work(); take(a is Res, b is int) is void {{ }} ",
+            "fail() is int {{ throw Stop.now; }} }} main() is int {{ ",
+            "try {{ Work().take(Res(\"A\"), Work().fail()); }} catch e is Stop {{ e; }} 0; }}"), prelude)),
+        ("s3-traps", "module app; enum Stop is Error = (now); object Work { Work(); \
+            check(b is bool) is void { confirm b; } \
+            expected(b is bool) is void { confirm b else throw Stop.now; } \
+            emergency(b is bool) is void { confirm b else panic \"emergency\"; } } \
+            main() is int { try { panic \"panic\"; } catch e is Stop { 0; } }".into()),
+        ("s3-try-value", format!(concat!("{}main() is int {{ let r = try {{ Res(\"body\"); }} ",
+            "catch e is Stop {{ Res(\"caught\"); }}; r; ",
+            "try {{ Res(\"discard\"); }} catch e is Stop {{ Res(\"discard-catch\"); }} 0; }}"), prelude)),
+    ]
+}
+
+#[test]
+fn oir2_s3_source_goldens() {
+    for (name, source) in s3_sources() {
+        let actual = print_oir2(&source).unwrap_or_else(|error| panic!("{name}: {source}\n{error}"));
+        let expected = match name {
+            "s3-defer-risky" => include_str!("goldens/s3-defer-risky.oir"),
+            "s3-catch" => include_str!("goldens/s3-catch.oir"),
+            "s3-unmatched" => include_str!("goldens/s3-unmatched.oir"),
+            "s3-rethrow" => include_str!("goldens/s3-rethrow.oir"),
+            "s3-cause" => include_str!("goldens/s3-cause.oir"),
+            "s3-destroy-local" => include_str!("goldens/s3-destroy-local.oir"),
+            "s3-return-nested" => include_str!("goldens/s3-return-nested.oir"),
+            "s3-return-try" => include_str!("goldens/s3-return-try.oir"),
+            "s3-late-argument" => include_str!("goldens/s3-late-argument.oir"),
+            "s3-traps" => include_str!("goldens/s3-traps.oir"),
+            "s3-try-value" => include_str!("goldens/s3-try-value.oir"),
+            _ => unreachable!("each S3 source has a reviewed high golden"),
+        };
+        assert_eq!(actual, expected, "{name}");
+    }
+}
+
+#[test]
+fn oir2_s3_nested_handlers_and_lazy_failures_roundtrip() {
+    for body in [
+        "try { throw Stop.now; } catch e is Stop { let n = 2; n; }",
+        "try { throw Stop.now; } catch e is Stop { throw; }",
+        "try { throw Stop.now; } catch e is Stop { let alias = e; { throw alias; } }",
+        "try { try { throw Stop.now; } catch e is Other { 1; } } catch e is Stop { 2; }",
+        "try { throw Stop.now; } catch e is Stop, Other { throw e; }",
+        "try { throw Stop.now; } catch e is Error { throw e; }",
+        "try { throw Stop.now; } catch e is Stop { try { throw Other.bad; } catch x is Other { e; 1; } }",
+        "try { throw Stop.now; } catch e is Stop { defer e; { let x = e; throw x; } }",
+        "defer try { throw Stop.now; } catch e is Stop { e; }; 0;",
+        "defer if true { throw Stop.now; } else { 0; }; 0;",
+        "try { defer 1; throw Stop.now; } catch e is Stop { defer 2; 7; }",
+        "try { 1; } catch e is Stop { 2; } catch e is Other { 3; }",
+        "try { throw Stop.now; } catch e is Stop { let x = if true { e; } else { Stop.now; }; throw x; }",
+        "try { throw Stop.now; } catch e is Stop { if true { throw e; } else { throw; } }",
+        "try { loop { throw Stop.now; } } catch e is Stop { for 0..3 -> i { return i; } 0; }",
+        "try { throw Stop.now; } catch e is Stop { let alias = if true { e; } else { e; }; throw alias; }",
+        "try { throw Stop.now; } catch e is Stop { let alias = e; defer alias; { throw e; } }",
+    ] {
+        let source = format!("module app; enum Stop is Error = (now); enum Other is Error = (bad); \
+            main() is int {{ {body} }}");
+        print_oir2(&source).unwrap_or_else(|error| panic!("{source}\n{error}"));
+    }
+}
+
+#[test]
+fn oir2_s3_self_check_rejects_missing_unwind_and_dispatch_bypass() {
+    let original = ir::text::parse(include_str!("goldens/s3-late-argument.oir")).unwrap();
+    let body = body_for_entry(&original);
+    let failing: Vec<_> = body.blocks.iter().filter_map(|(block, data)| {
+        data.insts.iter().any(|&id| {
+            matches!(body.insts.get(id).unwrap().op, ir::Operation::Call(_))
+        }).then_some(block)
+    }).collect();
+    assert!(!failing.is_empty());
+    for block in failing {
+        let mut broken = original.clone();
+        let body = broken.functions.get_mut(broken.entry.unwrap()).unwrap().body.as_mut().unwrap();
+        body.blocks.get_mut(block).unwrap().unwind = None;
+        let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("call needs unwind");
+        assert!(error.to_string().contains("H5"), "{error}");
+    }
+    let mut broken = ir::text::parse(include_str!("goldens/s3-catch.oir")).unwrap();
+    let body = broken.functions.get_mut(broken.entry.unwrap()).unwrap().body.as_mut().unwrap();
+    let dispatch = body.blocks.iter().find_map(|(id, block)| {
+        matches!(block.term.kind, ir::TermKind::Catch { .. }).then_some(id)
+    }).unwrap();
+    body.blocks.get_mut(body.entry).unwrap().term.kind = ir::TermKind::Br(ir::Target {
+        block: dispatch, args: vec![],
+    });
+    let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("normal entry into dispatch");
+    assert!(error.to_string().contains("without unwind"), "{error}");
+}
+
+#[test]
+fn oir2_s3_self_check_catch_payload_and_binding_dominance() {
+    let original = ir::text::parse(include_str!("goldens/s3-catch.oir")).unwrap();
+    for mutation in 0..3 {
+        let mut broken = original.clone();
+        let body = broken.functions.get_mut(broken.entry.unwrap()).unwrap().body.as_mut().unwrap();
+        let (bind, value) = body.insts.iter().find_map(|(id, inst)| match inst.op {
+            ir::Operation::Lexical(ir::LexicalOp::Bind { value, .. }) => Some((id, value)),
+            _ => None,
+        }).unwrap();
+        let try_block = body.blocks.iter().find_map(|(id, data)| {
+            matches!(data.term.kind, ir::TermKind::Throw(_)).then_some(id)
+        }).unwrap();
+        match mutation {
+            0 => body.blocks.get_mut(try_block).unwrap().term.kind = ir::TermKind::Throw(value),
+            1 => {
+                for (_, block) in body.blocks.iter_mut() {
+                    block.insts.retain(|&id| id != bind);
+                }
+            }
+            _ => {
+                let entry = body.entry;
+                for (_, block) in body.blocks.iter_mut() {
+                    block.insts.retain(|&id| id != bind);
+                }
+                body.blocks.get_mut(entry).unwrap().insts.push(bind);
+            }
+        }
+        let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("invalid catch binding");
+        assert!(error.to_string().contains("catch") || error.to_string().contains("H7"), "{error}");
+    }
+}
+
+#[test]
+fn oir2_s3_self_check_requires_unwind_for_suspension() {
+    let source = "oir 2 high
+module suspend
+requires core
+scope S action in @f
+        func @f(%future: future<int>) -> void {
+^entry in S:
+        %value: int = await %future, result int
+ret
+}
+";
+    let module = ir::text::parse(source).unwrap();
+    let body = module.functions.iter().next().unwrap().1.body.as_ref().unwrap();
+    let error = super::high::check(&module, body).expect_err("suspension needs unwind");
+    assert!(error.to_string().contains("H5"), "{error}");
+}
+
+#[test]
+fn oir2_s3_failure_observes_latest_outer_rebind() {
+    let source = concat!("module app; enum Stop is Error = (now); ",
+        "object Res { Res(); renew() is ^Res { } risky() is void { throw Stop.now; } } ",
+        "main() is int { let r = Res(); try { r = r.renew(); r.risky(); } catch e is Stop { r; } 0; }");
+    with_analysis(source, |analysis| {
+        let module = lower_to_oir2(analysis).unwrap();
+        let body = body_for_entry(&module);
+        let (block, updated) = body.blocks.iter().find_map(|(_, block)| {
+            block.insts.iter().find_map(|&id| match body.insts.get(id).unwrap().op {
+                ir::Operation::Lexical(ir::LexicalOp::Rebind { value, .. }) => Some((block, value)),
+                _ => None,
+            })
+        }).unwrap();
+        let ir::TermKind::Br(target) = &block.term.kind else {
+            panic!("a rebind must split before the next failing call");
+        };
+        assert_eq!(target.args[0], updated);
+        let next = body.blocks.get(target.block).unwrap();
+        assert_eq!(next.unwind.as_ref().unwrap().target.args[0], next.params[0]);
+        let dispatch = body.blocks.get(next.unwind.as_ref().unwrap().target.block).unwrap();
+        let ir::TermKind::Catch { handler, .. } = &dispatch.term.kind else {
+            panic!("rebind failure leaves Try before catch selection");
+        };
+        assert_eq!(handler.args[0], ir::EdgeArg::Value(dispatch.params[0]));
+    });
+}
+
+#[test]
+fn oir2_s3_destroy_normal_locals_and_nested_resource_exits_roundtrip() {
+    let prelude = format!("module app; enum Stop is Error = (now); {S3_RES}");
+    for declarations in [
+        concat!("object Owner { has name is string = \"owner\"; Owner(); destroy { ",
+            "let local = Res(\"local\"); defer self.name; local; } } "),
+        concat!("object Owner { Owner(); make() is Res { try { { let r = Res(\"r\"); ",
+            "defer self; return r; } } catch e is Stop { return Res(\"catch\"); } } } "),
+        concat!("object Owner { has name is string; Owner() { name = \"old\"; ",
+            "try { self.name; throw Stop.now; } catch e is Stop { let alias = self; } } } "),
+    ] {
+        let source = format!("{prelude}{declarations}main() is int {{ Owner(); 0; }}");
+        print_oir2(&source).unwrap_or_else(|error| panic!("{source}\n{error}"));
     }
 }

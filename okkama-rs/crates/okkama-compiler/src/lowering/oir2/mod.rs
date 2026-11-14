@@ -1,9 +1,8 @@
-//! Developer-only THIR -> OIR-2 high producer for #566 and #567 S1/S2.
+//! Developer-only THIR -> OIR-2 high producer for #566 and #567 S1–S3.
 //!
 //! This module is compiled only for library tests. It never enters the OIR-1
 //! pipeline. Every declared source function must have a lowered body.
-//! Unsupported operations and destroy bodies belong to later slices and
-//! produce source diagnostics. Result exits are centralized in `BodyLowerer`
+//! Operations outside the synchronous slice produce source diagnostics. Result exits are centralized in `BodyLowerer`
 //! so D11 can replace the pre-D11 instruction-local encoding in one place.
 
 mod body;
@@ -11,6 +10,7 @@ mod construction;
 mod declarations;
 mod defer;
 mod high;
+mod failures;
 mod objects;
 mod walk;
 mod scalar;
@@ -89,10 +89,6 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
         let function = declarations.functions.get(&body.owner).copied().ok_or_else(|| {
             LowerError::unsupported(body.span, format!("body {:?}", body.owner))
         })?;
-        let symbol = declarations.builder.module().functions.get(function)?.symbol.clone();
-        if matches!(body.owner, thir::BodyOwner::Destroy { .. }) {
-            return Err(LowerError::unsupported(body.span, format!("function {symbol}: destroy body (#567)")));
-        }
         let mut variants = vec![function];
         if let thir::BodyOwner::Ctor { object, ctor } = body.owner {
             variants = declarations.constructors.iter().filter_map(|((o, c, _), &id)| {

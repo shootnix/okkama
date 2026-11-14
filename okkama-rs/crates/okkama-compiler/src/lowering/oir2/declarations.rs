@@ -94,6 +94,28 @@ impl Declarations {
             this.types.insert(ty::Ty::Enum(ty::EnumId(index)), lowered);
             this.types.insert(ty::Ty::Variant(ty::EnumId(index), vec![]), lowered);
         }
+        let error = ty::Ty::role(reg.system.error);
+        let mut uses_error = analysis.bodies.iter().any(|body| body.locals.iter().any(|local| local.ty == error));
+        for body in &analysis.bodies {
+            super::walk::block(&body.block, &mut |expr| uses_error |= expr.ty.as_ref() == Some(&error));
+        }
+        if uses_error {
+            let declaration = this.builder.declare(ir::Declaration {
+                name: "Error".into(), type_params: vec![], loc: None,
+                kind: ir::DeclarationKind::Role {
+                    methods: vec![ir::RoleMethod {
+                        name: "text".into(),
+                        signature: ir::Signature {
+                            params: vec![], results: vec![this.types[&ty::Ty::Str]],
+                            ownership_abi: ir::OwnershipAbi::Unelaborated,
+                        },
+                    }],
+                    builtin: true,
+                },
+            })?;
+            let lowered = this.builder.intern_type(ir::Type::Role { decl: declaration, args: vec![] })?;
+            this.types.insert(error, lowered);
+        }
         // Declare all symbols before bodies: forward references and stable field/default links.
         for body in &analysis.bodies {
             if body.is_async {

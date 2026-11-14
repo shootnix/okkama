@@ -36,6 +36,11 @@ impl super::declarations::Declarations {
                 if let thir::ExprKind::For { binding, .. } = expr.kind {
                     defined.insert(binding);
                 }
+                if let thir::ExprKind::Try(found) = &expr.kind {
+                    for catch in &found.catches {
+                        defined.insert(catch.local);
+                    }
+                }
             });
             let params: Vec<_> = source.locals.iter().enumerate().filter_map(|(index, _)| {
                 let local = thir::LocalId(index);
@@ -52,7 +57,7 @@ impl super::declarations::Declarations {
             if receiver {
                 let object = match source.owner {
                     thir::BodyOwner::Method { object, .. } | thir::BodyOwner::Ctor { object, .. }
-                    | thir::BodyOwner::Default { object, .. } => object,
+                    | thir::BodyOwner::Default { object, .. } | thir::BodyOwner::Destroy { object } => object,
                     _ => return Err(LowerError::unsupported(expr.span, "defer receiver without object owner")),
                 };
                 types.push(self.types[&Ty::object(object)]);
@@ -164,6 +169,12 @@ fn scan_expr(expr: &thir::Expr, visit: &mut impl FnMut(&thir::Stmt)) {
             }
             if let Some(block) = &found.else_block {
                 scan_block(block, visit);
+            }
+        }
+        E::Try(found) => {
+            scan_block(&found.body, visit);
+            for catch in &found.catches {
+                scan_block(&catch.body, visit);
             }
         }
         E::For { source, body, .. } => {

@@ -1,0 +1,42 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+enum app.Stop is Error = (now)
+scope S0 action in @main
+scope S1 try in @main parent S0
+scope S2 catch in @main parent S0
+
+func @main() -> int [entry] {
+    binding b0 "e": app.Stop in S2
+    boundary B0 lexical in S0
+    boundary B1 lexical in S2
+    ^b0 in S0 unwind ^b1:
+    br ^b4
+    ^b1(%0: failure) in S0:
+    raise %0
+    ^b2(%1: int) in S0 unwind ^b1:
+    want %1
+    exit.prepare return %1 at B0
+    ret %1
+    ^b3(%2: failure) in S0 unwind ^b1:
+    catch %2 is app.Stop, ^b5(%2, $value), ^b6(%2)
+    ^b4 in S1 unwind ^b3:
+    %3: app.Stop = enum.case app.Stop, case 0
+    throw %3
+    ^b5(%4: failure, %5: app.Stop) in S2 unwind ^b1:
+    bind %5, binding b0
+    br ^b8(%4)
+    ^b6(%6: failure) in S0 unwind ^b1:
+    raise %6
+    ^b7(%7: failure, %8: failure) in S0 unwind ^b1:
+    %9: failure = fail.caused %8, %7
+    raise %9
+    ^b8(%10: failure) in S2 unwind ^b7(%10):
+    discard %5
+    %11: int = const 7
+    want %11
+    exit.prepare fallthrough %11 at B1
+    br ^b2(%11)
+}

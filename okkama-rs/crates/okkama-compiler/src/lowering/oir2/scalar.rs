@@ -16,7 +16,13 @@ macro_rules! value {
 
 impl BodyLowerer<'_, '_> {
     pub(super) fn core(&mut self, op: ir::CoreOp) -> Result<ir::ValueId> {
-        Ok(self.b.emit_schema(ir::Operation::Core(op))?[0])
+        let operation = ir::Operation::Core(op);
+        let contract = ir::ContractRegistry::new(self.b.module())
+            .lookup(&operation).map_err(ir::BuildError::from)?;
+        if !contract.effects.failures.is_empty() || contract.effects.suspends {
+            self.sync_failure()?;
+        }
+        Ok(self.b.emit_schema(operation)?[0])
     }
 
     pub(super) fn constant(&mut self, value: ir::Literal) -> Result<ir::ValueId> {

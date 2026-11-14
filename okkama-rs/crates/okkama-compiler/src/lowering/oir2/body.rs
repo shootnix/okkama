@@ -24,20 +24,25 @@ pub(super) struct BodyLowerer<'a, 't> {
     pub receiver: Option<ir::ValueId>,
     pub early_self: Option<ir::ValueId>,
     pub field_base: usize,
-    // Locals, then construction/staged field slots, are forwarded at joins/backedges.
+    pub field_end: usize,
+    // Locals, field slots, then active catch failure views are forwarded at joins/backedges.
     // A scope exit restores the outer set; shadowed locals have distinct IDs.
     pub env: Vec<Option<ir::ValueId>>,
     pub bindings: Vec<Option<ir::BindingId>>,
     pub root: ir::ScopeId,
     return_boundary: ir::BoundaryId,
+    pub failure_frames: Vec<super::failures::FailureFrame>,
+    pub caught: Vec<super::failures::Caught>,
+    pub rethrows: HashMap<ir::ValueId, ir::ValueId>,
+    pub rethrow_inputs: HashMap<ir::ValueId, Option<ir::ValueId>>,
     failures: HashMap<Vec<(ir::ScopeId, ir::FuncId)>, ir::BlockId>,
     pub registrations: HashMap<ir::ScopeId, Vec<ir::FuncId>>,
     loops: Vec<LoopFrame>,
 }
 
 #[derive(Clone)]
-struct Join {
-    block: ir::BlockId,
+pub(super) struct Join {
+    pub block: ir::BlockId,
     locals: Vec<usize>,
     value: bool,
 }
@@ -85,7 +90,8 @@ impl<'a, 't> BodyLowerer<'a, 't> {
             b, source, types, current: Some(entry), env: vec![None; count], bindings: vec![None; count],
             root, return_boundary, failures: HashMap::from([(vec![], failure)]),
             registrations: HashMap::new(), loops: vec![], context,
-            receiver: None, early_self: None, field_base,
+            failure_frames: vec![], caught: vec![], rethrows: HashMap::new(), rethrow_inputs: HashMap::new(),
+            receiver: None, early_self: None, field_base, field_end: count,
         };
         let receiver = usize::from(this.context.deferred.unwrap_or(matches!(source.owner,
             thir::BodyOwner::Method { .. } | thir::BodyOwner::Destroy { .. })));
@@ -130,6 +136,12 @@ impl<'a, 't> BodyLowerer<'a, 't> {
     }
 
     pub fn switch(&mut self, block: ir::BlockId) -> Result<()> {
+        if !self.failure_frames.is_empty() {
+            self.b.switch_to(block)?;
+            self.b.set_unwind(None)?;
+            self.current = Some(block);
+            return self.sync_failure();
+        }
         let mut scopes = vec![];
         let mut scope = Some(self.b.body().blocks.get(block)?.lexical_scope);
         while let Some(id) = scope {
@@ -157,7 +169,20 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(())
     }
 
+    pub fn dead_block(&mut self, block: ir::BlockId) -> Result<()> {
+        self.b.switch_to(block)?;
+        self.b.set_unwind(None)?;
+        self.b.terminate(ir::TermKind::Unreachable)?;
+        self.current = None;
+        Ok(())
+    }
+
     pub fn terminate(&mut self, term: ir::TermKind) -> Result<()> {
+        if matches!(term, ir::TermKind::Throw(_) | ir::TermKind::Raise(_)
+            | ir::TermKind::Panic(_) | ir::TermKind::Trap { .. }) {
+            self.sync_failure()?;
+        }
+        self.forward_rethrows(&term)?;
         self.b.terminate(term)?;
         self.current = None;
         Ok(())
@@ -184,7 +209,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         self.switch(block)
     }
 
-    fn join(&mut self, scope: ir::ScopeId, value: Option<ir::TypeId>) -> Result<Join> {
+    pub(super) fn join(&mut self, scope: ir::ScopeId, value: Option<ir::TypeId>) -> Result<Join> {
         let locals = self.locals();
         let mut types: Vec<_> = value.into_iter().collect();
         types.extend(self.local_types(&locals));
@@ -192,12 +217,12 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(Join { block, locals, value: value.is_some() })
     }
 
-    fn finish_join(&mut self, join: &Join) -> Result<Option<ir::ValueId>> {
+    pub(super) fn finish_join(&mut self, join: &Join) -> Result<Option<ir::ValueId>> {
         self.enter(join.block, &join.locals, usize::from(join.value))?;
         Ok(join.value.then(|| self.b.block_params(join.block).expect("allocated join")[0]))
     }
 
-    fn branch_join(&mut self, join: &Join, value: Option<ir::ValueId>, kind: ir::ExitKind) -> Result<()> {
+    pub(super) fn branch_join(&mut self, join: &Join, value: Option<ir::ValueId>, kind: ir::ExitKind) -> Result<()> {
         self.branch_join_at(join, value, kind, None)
     }
 
@@ -293,7 +318,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(())
     }
 
-    fn discard(&mut self, value: Option<ir::ValueId>) -> Result<()> {
+    pub(super) fn discard(&mut self, value: Option<ir::ValueId>) -> Result<()> {
         if let Some(value) = value {
             let ty = self.b.body().values.get(value)?.ty;
             let bound = self.env.contains(&Some(value)) || self.receiver == Some(value);
@@ -305,7 +330,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(())
     }
 
-    fn block(&mut self, block: &thir::Block, want: bool) -> Result<Option<ir::ValueId>> {
+    pub(super) fn block(&mut self, block: &thir::Block, want: bool) -> Result<Option<ir::ValueId>> {
         let mut result = None;
         for (index, stmt) in block.stmts.iter().enumerate() {
             if self.current.is_none() {
@@ -376,6 +401,14 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 }
             }
             S::Defer(expr) => self.register_defer(expr)?,
+            S::Throw(expr) => self.throw_value(expr)?,
+            S::Rethrow => {
+                let failure = self.caught.last().ok_or_else(|| {
+                    LowerError::unsupported(stmt.span, "rethrow outside a lexical catch")
+                })?.failure;
+                self.rethrow(failure)?;
+            }
+            S::Confirm { condition, fallback } => self.confirm(condition, fallback.as_ref())?,
             S::Next => self.loop_exit(None, true)?,
             S::Last(value) => self.loop_exit(value.as_ref(), false)?,
             S::Guarded { condition, stmt: guarded } => {
@@ -386,7 +419,6 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 let out = self.expr(expr, false)?;
                 self.discard(out)?;
             }
-            _ => return Err(LowerError::unsupported(stmt.span, format!("statement {:?}", stmt.kind))),
         }
         Ok(())
     }
@@ -446,8 +478,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                     self.branch_join(&join, value, ir::ExitKind::Fallthrough)?;
                     self.finish_join(&join)
                 } else {
-                    self.switch(join.block)?;
-                    self.terminate(ir::TermKind::Unreachable)?;
+                    self.dead_block(join.block)?;
                     Ok(None)
                 }
             }
@@ -463,6 +494,16 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 let short = arm(constant);
                 let (yes, no) = if *and { (&rhs, &short) } else { (&short, &rhs) };
                 self.if_expr(left, yes, Some(no), Some(&Ty::Bool), want)
+            }
+            E::Try(found) => self.try_expr(found, result_ty.filter(|_| want), want),
+            E::Panic(message) => {
+                if let Some(message) = self.value(message)? {
+                    self.terminate(ir::TermKind::Panic(message))?;
+                }
+                Ok(None)
+            }
+            E::Coerce { coercion: thir::Coercion::RoleWrap, value } => {
+                self.error_wrap(expr, value)
             }
             E::Match(matching) => self.match_expr(matching, result_ty, want),
             E::Loop(block) => self.loop_expr(block, result_ty.filter(|_| want)),
@@ -514,11 +555,11 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 reaches = true;
             }
         }
-        let value = self.finish_join(&join)?;
         if !reaches {
-            self.terminate(ir::TermKind::Unreachable)?;
+            self.dead_block(join.block)?;
+            return Ok(None);
         }
-        Ok(value.filter(|_| reaches))
+        self.finish_join(&join)
     }
 
     fn match_expr(&mut self, matching: &thir::Match, ty: Option<&Ty>, want: bool) -> Result<Option<ir::ValueId>> {
@@ -574,11 +615,11 @@ impl<'a, 't> BodyLowerer<'a, 't> {
             self.branch_join(&join, None, ir::ExitKind::Fallthrough)?;
             reaches = true;
         }
-        let value = self.finish_join(&join)?;
         if !reaches {
-            self.terminate(ir::TermKind::Unreachable)?;
+            self.dead_block(join.block)?;
+            return Ok(None);
         }
-        Ok(value.filter(|_| reaches))
+        self.finish_join(&join)
     }
 
     fn loop_expr(&mut self, block: &thir::Block, ty: Option<&Ty>) -> Result<Option<ir::ValueId>> {
@@ -606,11 +647,11 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         let has_exit = self.b.body().blocks.iter().any(|(_, block)| {
             matches!(&block.term.kind, ir::TermKind::Br(target) if target.block == exit.block)
         });
-        let value = self.finish_join(&exit)?;
         if !has_exit {
-            self.terminate(ir::TermKind::Unreachable)?;
+            self.dead_block(exit.block)?;
+            return Ok(None);
         }
-        Ok(value.filter(|_| has_exit))
+        self.finish_join(&exit)
     }
 
     fn loop_exit(&mut self, expr: Option<&thir::Expr>, next: bool) -> Result<()> {
@@ -764,8 +805,8 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         let has_step = self.b.body().blocks.iter().any(|(_, block)| {
             matches!(&block.term.kind, ir::TermKind::Br(target) if target.block == step)
         });
-        self.enter(step, &exit.locals, state.len())?;
         if has_step {
+            self.enter(step, &exit.locals, state.len())?;
             let step_state = self.b.block_params(step)?[..state.len()].to_vec();
             let one = self.constant(ir::Literal::Int("1".into()))?;
             let advanced = self.core(ir::CoreOp::IntAdd { left: index, right: one })?;
@@ -775,7 +816,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
             self.edge(head, args, ir::ExitKind::Next, None)?;
         } else {
             // No body continuation: an unreachable step has no header value.
-            self.terminate(ir::TermKind::Unreachable)?;
+            self.dead_block(step)?;
         }
         self.finish_join(&exit)
     }
