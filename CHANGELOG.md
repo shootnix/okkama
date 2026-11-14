@@ -106,6 +106,20 @@ fake fields; role fakes and their ordinary typed fields remain available.
   `docs/phases.md`. The verifier never repairs a module and never infers
   ownership.
 
+- **OIR-2 high lowering, first slice (#566, #567).** A new lowering
+  produces OIR-2 `high` directly from the analysed program. It is not
+  derived from OIR-1, and nothing yet routes production builds through it.
+  The slice covers:
+  - declarations, the lexical scope tree, bindings and rebinds;
+  - scalars, control flow and loops;
+  - objects, constructors with early self, calls and successors;
+  - temporaries and discarded results (#308);
+  - defer registration, throw, try/catch, rethrow and destroy bodies;
+  - resource returns.
+
+  Constructs outside the slice get an explicit "unsupported" diagnostic
+  rather than a fallback. Every lowering golden passes `verify_high`.
+
 - **OIR-2 cleanup specialization (#591).** A pass from `own` to `low`
   expands scope closes into an explicit cleanup automaton: one plan in
   serial order across static, journal and protocol entries, the reserve
