@@ -713,6 +713,19 @@ impl Runtime {
             self.heap.payload_mut::<Failure>(fresh).expect("failure").secondary.push(other);
             return fresh;
         }
+        // `throw caught` makes a temporary carrier around the caught payload.
+        // Reuse the original carrier, including its origin and existing causes.
+        let same_payload = match (self.failure(fresh), self.failure(other)) {
+            (Some(new), Some(handled)) => match (&new.kind, &handled.kind) {
+                (FailureKind::Thrown(a), FailureKind::Thrown(b))
+                | (FailureKind::Native(a), FailureKind::Native(b)) => a == b,
+                _ => false,
+            },
+            _ => false,
+        };
+        if same_payload {
+            return other;
+        }
         if !matches!(self.failure(fresh).map(|f| &f.kind), Some(FailureKind::Thrown(_))) || fresh == other {
             return fresh;
         }
@@ -953,8 +966,10 @@ impl Runtime {
             }
         }
         self.roots.pop();
-        self.uncaught = self.uncaught_of(root, &messages);
-        self.report(root, &messages)
+        let mut uncaught = self.uncaught_of(root, &messages);
+        let report = self.report(root, &messages, &mut uncaught);
+        self.uncaught = uncaught;
+        report
     }
 
     /// Category, error type and message of a reported failure.
@@ -979,7 +994,7 @@ impl Runtime {
             }
         };
         let trace = record.trace.iter().map(|&(function, pc)| crate::Site { function, pc }).collect();
-        Some(crate::Uncaught { category, error_type, message, trace })
+        Some(crate::Uncaught { category, error_type, message, trace, trace_offset: 0, cause_traces: Vec::new() })
     }
 
     fn error_text_method(&self, object: Word) -> Option<usize> {
@@ -994,14 +1009,18 @@ impl Runtime {
         Some(witness.slots[slot].0 as usize)
     }
 
-    fn report(&self, root: Word, messages: &HashMap<Word, String>) -> String {
+    fn report(&self, root: Word, messages: &HashMap<Word, String>, uncaught: &mut Option<crate::Uncaught>) -> String {
         const CHAIN_ENTRIES: usize = 64;
         use std::fmt::Write;
         let mut output = String::new();
-        let mut pending = vec![(root, "")];
+        let mut pending = vec![(root, "", false)];
+        let mut root_trace_offset = None;
         let mut shown: HashMap<Word, usize> = HashMap::default();
         let mut next_index = 0;
-        while let Some((failure, label)) = pending.pop() {
+        while let Some((failure, label, root_cause)) = pending.pop() {
+            if root_cause {
+                root_trace_offset = Some(output.len());
+            }
             if !label.is_empty() {
                 let _ = write!(output, "\n{label}\n  ");
             }
@@ -1060,10 +1079,20 @@ impl Runtime {
                     }
                 }
             }
-            if let Some(cause) = record.cause {
-                pending.push((cause, "Caused by:"));
+            // Offsets refer to the plain report. Hosts map these saved stacks
+            // to source or SPB terms; secondaries keep their text-only rendering.
+            if label == "Caused by:" && let Some(uncaught) = uncaught {
+                let trace = record.trace.iter().map(|&(function, pc)| crate::Site { function, pc }).collect();
+                uncaught.cause_traces.push((output.len(), trace));
             }
-            pending.extend(record.secondary.iter().rev().map(|&s| (s, "Secondary cleanup failure:")));
+            if let Some(cause) = record.cause {
+                pending.push((cause, "Caused by:", failure == root));
+            }
+            pending.extend(record.secondary.iter().rev().map(|&s| (s, "Secondary cleanup failure:", false)));
+        }
+        if let Some(uncaught) = uncaught {
+            // Keep secondary reports before the root's stack, as before.
+            uncaught.trace_offset = root_trace_offset.unwrap_or(output.len());
         }
         output
     }
@@ -1263,4 +1292,87 @@ pub extern "C" fn rt_catch(ctx: *mut Ctx, function: u64, pc: u64, failure: Word)
         ctx.scratch = payload;
     }
     u64::from(matches)
+}
+
+#[cfg(test)]
+mod cause_stack_tests {
+    use super::*;
+
+    fn runtime() -> Runtime {
+        let program = okkama_sparrow::assemble(
+            "sparrow 16\nmodule \"cause-stacks\" \"1.0.0\"\ntype t0 int\n\
+             function f0 \"main\" {\n registers [t0]\n params []\n result t0\n\
+             0: const r0, int 0\n 1: ret r0\n}\nentry f0\n",
+        ).unwrap();
+        Runtime::new(crate::program::Loaded::new(program)).unwrap()
+    }
+
+    #[test]
+    fn rethrow_reuses_carrier_with_its_trace_causes_and_secondaries() {
+        let mut runtime = runtime();
+        let payload = runtime.heap.allocate_text("caught");
+        let caught = runtime.failure_new(FailureKind::Thrown(payload));
+        let cause = runtime.failure_new(FailureKind::Panic("origin".into()));
+        let secondary = runtime.failure_new(FailureKind::Panic("cleanup".into()));
+        runtime.failure_link(caught, cause, false);
+        runtime.failure_link(caught, secondary, true);
+        runtime.heap.payload_mut::<Failure>(caught).unwrap().trace.push((1, 2));
+        let fresh = runtime.failure_new(FailureKind::Thrown(payload));
+        runtime.heap.payload_mut::<Failure>(fresh).unwrap().trace.push((3, 4));
+        assert_eq!(runtime.failure_link(fresh, caught, false), caught);
+        let record = runtime.failure(caught).unwrap();
+        assert_eq!(record.trace, [(1, 2)]);
+        assert_eq!(record.cause, Some(cause));
+        assert_eq!(record.secondary, [secondary]);
+        assert_eq!(runtime.failure_link(caught, caught, false), caught);
+    }
+
+    #[test]
+    fn distinct_payloads_link_even_when_their_text_is_equal() {
+        let mut runtime = runtime();
+        let a = runtime.heap.allocate_text("same text");
+        let b = runtime.heap.allocate_text("same text");
+        assert_ne!(a, b);
+        let caught = runtime.failure_new(FailureKind::Thrown(a));
+        let fresh = runtime.failure_new(FailureKind::Thrown(b));
+        assert_eq!(runtime.failure_link(fresh, caught, false), fresh);
+        assert_eq!(runtime.failure(fresh).unwrap().cause, Some(caught));
+        assert_eq!(runtime.failure(caught).unwrap().cause, None);
+    }
+
+    #[test]
+    fn diagnostic_stacks_follow_report_order_and_skip_secondaries() {
+        let mut runtime = runtime();
+        let a = runtime.heap.allocate_text("root");
+        let b = runtime.heap.allocate_text("cause");
+        let c = runtime.heap.allocate_text("cleanup");
+        let root = runtime.failure_new(FailureKind::Thrown(a));
+        let cause = runtime.failure_new(FailureKind::Thrown(b));
+        let cleanup = runtime.failure_new(FailureKind::Thrown(c));
+        let cleanup_cause = runtime.failure_new(FailureKind::Panic("cleanup cause".into()));
+        runtime.failure_link(root, cause, false);
+        runtime.failure_link(root, cleanup, true);
+        runtime.failure_link(cleanup, cleanup_cause, false);
+        for (failure, pc) in [(root, 1), (cause, 2), (cleanup, 3), (cleanup_cause, 4)] {
+            runtime.heap.payload_mut::<Failure>(failure).unwrap().trace.push((0, pc));
+        }
+        let messages = HashMap::default();
+        let mut uncaught = runtime.uncaught_of(root, &messages);
+        let plain = runtime.report(root, &messages, &mut uncaught);
+        let diagnostic = uncaught.unwrap().render_report(&plain, |trace| format!("stack {}\n", trace[0].pc));
+        assert_eq!(diagnostic, "Uncaught value\nSecondary cleanup failure:\n  Uncaught value\n\
+            Caused by:\n  Panic: cleanup cause\n  stack 4\nstack 1\n\
+            Caused by:\n  Uncaught value\n  stack 2");
+    }
+
+    #[test]
+    fn native_rethrow_reuses_carrier_but_secondary_link_does_not() {
+        let mut runtime = runtime();
+        let payload = runtime.heap.allocate_text("native");
+        let caught = runtime.failure_new(FailureKind::Native(payload));
+        let fresh = runtime.failure_new(FailureKind::Native(payload));
+        assert_eq!(runtime.failure_link(fresh, caught, false), caught);
+        assert_eq!(runtime.failure_link(fresh, caught, true), fresh);
+        assert_eq!(runtime.failure(fresh).unwrap().secondary, [caught]);
+    }
 }

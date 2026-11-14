@@ -1,0 +1,15 @@
+module app v1.0.0;
+enum DiskError is Error = (full);
+enum StoreError is Error = (closed);
+object Disk {
+    Disk();
+    write() is int { throw DiskError.full; }
+}
+object Store {
+    Store();
+    failed() is int { throw StoreError.closed; }
+    save() is int {
+        try { Disk().write(); } catch e is DiskError { self.failed(); }
+    }
+}
+main() is int { Store().save(); }

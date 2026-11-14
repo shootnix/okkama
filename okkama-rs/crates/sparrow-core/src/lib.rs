@@ -105,12 +105,14 @@ pub fn run_described(
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
         let mut runtime = configured_runtime(program, arguments, stats, worker_command, limits)?;
-        Ok(execute(&mut runtime))
+        Ok(execute(&mut runtime).map_err(|failure| *failure))
     })
 }
 
 /// CLI execution result. Loading failures remain the outer `Err`; runtime
-/// failures carry the same report and an already rendered Sparrow trace.
+/// failures carry the report prefix and an already rendered Sparrow trace
+/// followed by cause reports with their own stacks. With tracing disabled,
+/// the first field contains the entire plain report and the trace is empty.
 #[derive(Debug)]
 pub enum Execution {
     Main(Result<i64, (Error, String)>),
@@ -167,12 +169,26 @@ pub fn run_executable(
         }
         let original_functions = program.functions.len();
         let mut runtime = configured_runtime(program, arguments, stats, worker_command, limits)?;
-        let result = execute(&mut runtime).map_err(|(error, uncaught)| {
-            let rendered = uncaught.filter(|_| trace).map(|u| {
-                // Loaded appends worker functions; the old CLI only saw SPB functions.
-                render_trace_functions(&runtime.loaded.program.functions[..original_functions], &u.trace)
-            }).unwrap_or_default();
-            (error, rendered)
+        let result = execute(&mut runtime).map_err(|failure| {
+            let (error, uncaught) = *failure;
+            let Some(uncaught) = uncaught.filter(|_| trace) else {
+                return (error, String::new());
+            };
+            // Loaded appends worker functions; the launcher only sees SPB functions.
+            let report = uncaught.render_report(&error.0, |sites| {
+                render_trace_functions(&runtime.loaded.program.functions[..original_functions], sites)
+            });
+            // Launchers print the prefix with a newline, then this suffix. Split
+            // before the first inserted stack (a secondary's cause can precede
+            // the root stack) so each cause stays beside its own stack.
+            let offset = uncaught.cause_traces.iter().map(|(offset, _)| *offset)
+                .fold(uncaught.trace_offset, usize::min);
+            let (prefix, suffix) = report.split_at(offset);
+            let mut rendered = suffix.strip_prefix('\n').unwrap_or(suffix).to_owned();
+            if !rendered.is_empty() {
+                rendered.push('\n');
+            }
+            (Error(prefix.to_owned()), rendered)
         });
         Ok(Ok(Execution::Main(result)))
     }).map_err(ExecutionError::Run)?
@@ -198,14 +214,14 @@ fn configured_runtime(
     Ok(runtime)
 }
 
-fn execute(runtime: &mut Box<runtime::Runtime>) -> Result<i64, (Error, Option<Uncaught>)> {
+fn execute(runtime: &mut Box<runtime::Runtime>) -> Result<i64, Box<(Error, Option<Uncaught>)>> {
     let result = runtime.run_entry(STACK_BYTES);
     if let Some(report) = runtime.stats_report() {
         // The program's buffered output goes first (#132).
         let _ = okkama_runtime_core::stdout::flush();
         eprint!("{report}");
     }
-    result.map_err(|error| (error, runtime.uncaught.take()))
+    result.map_err(|error| Box::new((error, runtime.uncaught.take())))
 }
 
 /// An uncaught failure of `main`: its OCS category (`uncaught-error`,
@@ -219,6 +235,42 @@ pub struct Uncaught {
     /// Function and instruction numbers; they are shared with OIR, so a
     /// compiler can map them to source (`okkama-cli/src/trace.rs`).
     pub trace: Vec<Site>,
+    /// Byte offset after the root and its secondaries in the plain report,
+    /// before its cause entries.
+    pub trace_offset: usize,
+    /// Byte offsets after cause entries and their original unwind stacks.
+    /// Secondary cleanup failures deliberately have no diagnostic stack.
+    pub cause_traces: Vec<(usize, Vec<Site>)>,
+}
+
+impl Uncaught {
+    /// Add source or SPB stacks to the plain report, keeping cause stacks
+    /// indented under their entries. Only called when traces are requested.
+    pub fn render_report(&self, report: &str, render: impl Fn(&[Site]) -> String) -> String {
+        let mut output = String::new();
+        let mut start = 0;
+        let mut traces: Vec<_> = self.cause_traces.iter().map(|(offset, trace)| (*offset, trace.as_slice(), "  "))
+            .chain(std::iter::once((self.trace_offset, self.trace.as_slice(), "")))
+            .collect();
+        traces.sort_by_key(|entry| entry.0);
+        for (offset, trace, indent) in traces {
+            output.push_str(&report[start..offset]);
+            let stack = render(trace);
+            if !stack.is_empty() {
+                output.push('\n');
+                for (index, line) in stack.trim_end_matches('\n').split('\n').enumerate() {
+                    if index != 0 {
+                        output.push('\n');
+                    }
+                    output.push_str(indent);
+                    output.push_str(line);
+                }
+            }
+            start = offset;
+        }
+        output.push_str(&report[start..]);
+        output
+    }
 }
 
 pub use okkama_runtime_core::failure::Site;
