@@ -1,0 +1,44 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 iteration in @main parent S0
+scope S2 branch in @main parent S1
+scope S3 branch in @main parent S1
+
+func @main() -> int [entry] {
+    binding b0 "n": int in S0
+    boundary B0 lexical in S0
+    boundary B1 loop in S1
+    boundary B2 lexical in S3
+    selection s0: selection = union([])
+    selection s1: selection = union([])
+    ^b0 in S0 unwind ^b1:
+    br ^b3
+    ^b1(%0: failure) in S0:
+    raise %0
+    ^b2(%1: int) in S0 unwind ^b1:
+    bind %1, binding b0
+    want %1
+    [i2] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %1, demand want, prepare #2
+    ret %1
+    ^b3 in S0 unwind ^b1:
+    br ^b4
+    ^b4 in S1 unwind ^b1:
+    %2: bool = const false
+    cond %2, ^b6, ^b7
+    ^b5 in S1 unwind ^b1:
+    %3: int = const 7
+    want %3
+    [i6] exit.prepare last %3 at B1
+    result.exit edge normal(0), value %3, demand want, prepare #6
+    br ^b2(%3)
+    ^b6 in S2 unwind ^b1:
+    exit.prepare next select s0 at B1
+    br ^b3
+    ^b7 in S3 unwind ^b1:
+    exit.prepare fallthrough select s1 at B2
+    br ^b5
+}

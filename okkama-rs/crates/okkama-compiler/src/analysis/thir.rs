@@ -1078,3 +1078,12 @@ pub(crate) fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
         ExprKind::CapRead { cap, .. } => visit(cap),
     }
 }
+
+/// Whether any constructor publishes `self` before construction finishes (§11.4).
+/// Both OIR producers use this rule to select the hidden pending field.
+pub(crate) fn escapes_self(bodies: &[Body], object: ObjectId) -> bool {
+    bodies.iter().any(|body| {
+        matches!(body.owner, BodyOwner::Ctor { object: owner, .. } if owner == object)
+            && first_expr(&body.block, &|expr| matches!(expr.kind, ExprKind::SelfValue)).is_some()
+    })
+}

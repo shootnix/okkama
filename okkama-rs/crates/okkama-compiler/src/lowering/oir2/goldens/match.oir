@@ -1,0 +1,43 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 branch in @main parent S0
+scope S2 branch in @main parent S0
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S0
+    boundary B1 lexical in S1
+    boundary B2 lexical in S2
+    ^b0 in S0 unwind ^b1:
+    %0: str = const "b"
+    %1: str = const "a"
+    %2: bool = str.eq %0, %1
+    cond %2, ^b3, ^b4
+    ^b1(%3: failure) in S0:
+    raise %3
+    ^b2(%4: int) in S0 unwind ^b1:
+    want %4
+    [i4] exit.prepare return %4 at B0
+    result.exit edge normal(0), value %4, demand want, prepare #4
+    ret %4
+    ^b3 in S1 unwind ^b1:
+    %5: int = const 2
+    want %5
+    [i7] exit.prepare fallthrough %5 at B1
+    result.exit edge normal(0), value %5, demand want, prepare #7
+    br ^b2(%5)
+    ^b4 in S0 unwind ^b1:
+    %6: str = const "b"
+    %7: bool = str.eq %0, %6
+    cond %7, ^b3, ^b5
+    ^b5 in S0 unwind ^b1:
+    br ^b6
+    ^b6 in S2 unwind ^b1:
+    %8: int = const 0
+    want %8
+    [i12] exit.prepare fallthrough %8 at B2
+    result.exit edge normal(0), value %8, demand want, prepare #12
+    br ^b2(%8)
+}

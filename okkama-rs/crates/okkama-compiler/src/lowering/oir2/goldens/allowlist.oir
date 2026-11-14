@@ -1,0 +1,82 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+
+func @main() -> int [entry] {
+    binding b0 "a": int in S0
+    binding b1 "b": int in S0
+    binding b2 "p": bool in S0
+    binding b3 "q": bool in S0
+    binding b4 "s": str in S0
+    binding b5 "t": str in S0
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 1
+    bind %0, binding b0
+    %1: int = const 2
+    bind %1, binding b1
+    %2: bool = const true
+    bind %2, binding b2
+    %3: bool = const false
+    bind %3, binding b3
+    %4: str = const "a"
+    bind %4, binding b4
+    %5: str = const "b"
+    bind %5, binding b5
+    %6: int = int.neg %0
+    discard %6
+    %7: bool = int.eq %0, %1
+    discard %7
+    %8: bool = int.ne %0, %1
+    discard %8
+    %9: bool = int.lt %0, %1
+    discard %9
+    %10: bool = int.le %0, %1
+    discard %10
+    %11: bool = int.gt %0, %1
+    discard %11
+    %12: bool = int.ge %0, %1
+    discard %12
+    %13: bool = bool.eq %2, %3
+    discard %13
+    %14: bool = bool.ne %2, %3
+    discard %14
+    %15: bool = str.eq %4, %5
+    discard %15
+    %16: bool = str.ne %4, %5
+    discard %16
+    %17: bool = str.lt %4, %5
+    discard %17
+    %18: bool = str.le %4, %5
+    discard %18
+    %19: bool = str.lt %5, %4
+    discard %19
+    %20: bool = str.le %5, %4
+    discard %20
+    discard %0
+    %21: int = const 0
+    want %21
+    [i45] exit.prepare return %21 at B0
+    result.exit edge normal(0), value %6, demand discard, prepare none
+    result.exit edge normal(0), value %7, demand discard, prepare none
+    result.exit edge normal(0), value %8, demand discard, prepare none
+    result.exit edge normal(0), value %9, demand discard, prepare none
+    result.exit edge normal(0), value %10, demand discard, prepare none
+    result.exit edge normal(0), value %11, demand discard, prepare none
+    result.exit edge normal(0), value %12, demand discard, prepare none
+    result.exit edge normal(0), value %13, demand discard, prepare none
+    result.exit edge normal(0), value %14, demand discard, prepare none
+    result.exit edge normal(0), value %15, demand discard, prepare none
+    result.exit edge normal(0), value %16, demand discard, prepare none
+    result.exit edge normal(0), value %17, demand discard, prepare none
+    result.exit edge normal(0), value %18, demand discard, prepare none
+    result.exit edge normal(0), value %19, demand discard, prepare none
+    result.exit edge normal(0), value %20, demand discard, prepare none
+    result.exit edge normal(0), value %0, demand discard, prepare none
+    result.exit edge normal(0), value %21, demand want, prepare #45
+    ret %21
+    ^b1(%22: failure) in S0:
+    raise %22
+}

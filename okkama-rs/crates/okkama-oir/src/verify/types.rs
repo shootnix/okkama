@@ -535,6 +535,18 @@ fn implements(
             }
             Ok(false)
         }
+        Type::Enum(declaration) => {
+            let is_error = matches!(module.declarations.get(*declaration)?.kind,
+                DeclarationKind::Enum { is_error: true, .. });
+            let builtin_error = match module.types.get(bound)? {
+                Type::Role { decl, args } if args.is_empty() => {
+                    let role = module.declarations.get(*decl)?;
+                    role.name == "Error" && matches!(role.kind, DeclarationKind::Role { builtin: true, .. })
+                }
+                _ => false,
+            };
+            Ok(is_error && builtin_error)
+        }
         Type::Parameter(parameter) => {
             let params = match parameter.owner {
                 GenericOwner::Declaration(id) => &module.declarations.get(id)?.type_params,

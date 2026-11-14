@@ -1,0 +1,46 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object app.O {
+    field n: int
+}
+scope S0 action in @main
+scope S1 action in @app.O.new#0
+
+func @app.O.new#0(%0: int) -> app.O [ctor app.O] {
+    binding b0 "n": int in S1
+    boundary B0 lexical in S1
+    ^b0 in S1 unwind ^b1:
+    %1: int = undef ty int
+    bind %0, binding b0
+    %2: int = const 1
+    %3: int = int.add %0, %2
+    stage %3, action S1, field field_ref(declaration=app.O, index=0)
+    %4: app.O = obj.new app.O { n: %3 }
+    want %4
+    [i7] exit.prepare return %4 at B0
+    result.exit edge normal(0), value %4, demand want, prepare #7
+    ret %4
+    ^b1(%5: failure) in S1:
+    raise %5
+}
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 4
+    [i1] %1: app.O = call @app.O.new#0(%0)
+    temp %1, S0
+    discard %1
+    %2: int = const 0
+    want %2
+    [i6] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %1, demand discard, prepare none
+    result.exit edge normal(0), value %2, demand want, prepare #6
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
+    ret %2
+    ^b1(%3: failure) in S0:
+    raise %3
+}

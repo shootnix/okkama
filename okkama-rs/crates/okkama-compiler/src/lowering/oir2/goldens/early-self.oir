@@ -1,0 +1,51 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object app.O {
+    field n: int
+    field $pending: bool
+}
+scope S0 action in @main
+scope S1 action in @app.O.new#0
+
+func @app.O.new#0(%0: int) -> app.O [ctor app.O] {
+    binding b0 "n": int in S1
+    binding b1 "alias": app.O in S1
+    boundary B0 lexical in S1
+    ^b0 in S1 unwind ^b1:
+    %1: int = undef ty int
+    bind %0, binding b0
+    %2: bool = undef ty bool
+    %3: app.O = obj.new app.O { n: %1, $pending: %2 } construction incomplete
+    bind %3, binding b1
+    stage %0, action S1, field field_ref(declaration=app.O, index=0)
+    obj.init %3, %0, field field_ref(declaration=app.O, index=0)
+    %4: bool = const false
+    obj.init %3, %4, field field_ref(declaration=app.O, index=1)
+    want %3
+    [i10] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %3, demand want, prepare #10
+    ret %3
+    ^b1(%5: failure) in S1:
+    raise %5
+}
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 5
+    [i1] %1: app.O = call @app.O.new#0(%0)
+    temp %1, S0
+    discard %1
+    %2: int = const 0
+    want %2
+    [i6] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %1, demand discard, prepare none
+    result.exit edge normal(0), value %2, demand want, prepare #6
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
+    ret %2
+    ^b1(%3: failure) in S0:
+    raise %3
+}

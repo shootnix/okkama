@@ -1,0 +1,85 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 iteration in @main parent S0
+scope S2 branch in @main parent S1
+scope S3 branch in @main parent S1
+scope S4 branch in @main parent S1
+scope S5 branch in @main parent S1
+
+func @main() -> int [entry] {
+    binding b0 "r": range in S0
+    binding b1 "i": int in S1
+    boundary B0 lexical in S0
+    boundary B1 loop in S1
+    boundary B2 lexical in S3
+    boundary B3 lexical in S5
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 1
+    %1: int = const 3
+    %2: range = range.new %0, %1, inclusive true
+    bind %2, binding b0
+    %3: int = const 0
+    %4: int = const 3
+    %5: range = range.new %3, %4
+    br ^b3(%3, %2)
+    ^b1(%6: failure) in S0:
+    raise %6
+    ^b2(%7: range) in S0 unwind ^b1:
+    %8: int = const 0
+    want %8
+    [i9] exit.prepare return %8 at B0
+    result.exit edge normal(0), value %8, demand want, prepare #9
+    ret %8
+    ^b3(%9: int, %10: range) in S0 unwind ^b1:
+    %11: bool = int.lt %9, %4
+    cond %11, ^b4, ^b5
+    ^b4 in S1 unwind ^b1:
+    bind %9, binding b1
+    %12: int = const 1
+    %13: bool = int.eq %9, %12
+    cond %13, ^b8(%10, %9), ^b9(%10, %9)
+    ^b5 in S0 unwind ^b1:
+    br ^b2(%10)
+    ^b6(%14: range) in S0 unwind ^b1:
+    %15: int = const 1
+    %16: int = int.add %9, %15
+    br ^b3(%16, %14)
+    ^b7(%17: range, %18: int) in S1 unwind ^b1:
+    %19: int = const 2
+    %20: bool = int.eq %18, %19
+    cond %20, ^b11(%17, %18), ^b12(%17, %18)
+    ^b8(%21: range, %22: int) in S2 unwind ^b1:
+    want %21
+    [i19] exit.prepare next %21 at B1
+    result.exit edge normal(0), value %21, demand want, prepare #19
+    br ^b6(%21)
+    ^b9(%23: range, %24: int) in S3 unwind ^b1:
+    want %23
+    [i21] exit.prepare fallthrough %23 at B2
+    want %24
+    [i23] exit.prepare fallthrough %24 at B2
+    result.exit edge normal(0), value %23, demand want, prepare #21
+    result.exit edge normal(0), value %24, demand want, prepare #23
+    br ^b7(%23, %24)
+    ^b10(%25: range, %26: int) in S1 unwind ^b1:
+    want %25
+    [i25] exit.prepare fallthrough %25 at B1
+    result.exit edge normal(0), value %25, demand want, prepare #25
+    br ^b6(%25)
+    ^b11(%27: range, %28: int) in S4 unwind ^b1:
+    want %27
+    [i27] exit.prepare last %27 at B1
+    result.exit edge normal(0), value %27, demand want, prepare #27
+    br ^b2(%27)
+    ^b12(%29: range, %30: int) in S5 unwind ^b1:
+    want %29
+    [i29] exit.prepare fallthrough %29 at B3
+    want %30
+    [i31] exit.prepare fallthrough %30 at B3
+    result.exit edge normal(0), value %29, demand want, prepare #29
+    result.exit edge normal(0), value %30, demand want, prepare #31
+    br ^b10(%29, %30)
+}

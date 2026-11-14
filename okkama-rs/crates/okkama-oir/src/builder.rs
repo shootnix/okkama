@@ -101,6 +101,16 @@ impl<'a> FunctionBuilder<'a> {
     pub fn body(&self) -> &Body { &self.body }
     pub fn module(&self) -> &Module { self.module }
     pub fn entry(&self) -> BlockId { self.body.entry }
+    /// Declare a lexical child while traversing a source body.
+    pub fn declare_scope(&mut self, parent: ScopeId, kind: ScopeKind) -> Result<ScopeId, BuildError> {
+        self.check_scope(parent)?;
+        Ok(self.module.scopes.alloc(ScopeDecl {
+            function: self.function,
+            parent: Some(parent),
+            kind,
+            loc: self.location,
+        })?)
+    }
     pub fn current_block(&self) -> Option<BlockId> { self.current }
     pub fn intern_type(&mut self, ty: Type) -> Result<TypeId, BuildError> { Ok(self.module.types.intern(ty)?) }
     pub fn declare_binding(&mut self, binding: BindingDecl) -> Result<BindingId, BuildError> {

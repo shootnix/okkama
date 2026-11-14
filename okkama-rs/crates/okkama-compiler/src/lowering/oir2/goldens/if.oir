@@ -1,0 +1,55 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 branch in @main parent S0
+scope S2 branch in @main parent S0
+scope S3 branch in @main parent S0
+scope S4 branch in @main parent S0
+
+func @main() -> int [entry] {
+    binding b0 "v": int in S0
+    boundary B0 lexical in S0
+    boundary B1 lexical in S1
+    boundary B2 lexical in S2
+    boundary B3 lexical in S3
+    boundary B4 lexical in S4
+    selection s0: selection = union([])
+    selection s1: selection = union([])
+    ^b0 in S0 unwind ^b1:
+    %0: bool = const true
+    cond %0, ^b3, ^b4
+    ^b1(%1: failure) in S0:
+    raise %1
+    ^b2 in S0 unwind ^b1:
+    %2: bool = const false
+    cond %2, ^b6, ^b7
+    ^b3 in S1 unwind ^b1:
+    %3: int = const 8
+    discard %3
+    exit.prepare fallthrough select s0 at B1
+    result.exit edge normal(0), value %3, demand discard, prepare none
+    br ^b2
+    ^b4 in S2 unwind ^b1:
+    exit.prepare fallthrough select s1 at B2
+    br ^b2
+    ^b5(%4: int) in S0 unwind ^b1:
+    bind %4, binding b0
+    want %4
+    [i8] exit.prepare return %4 at B0
+    result.exit edge normal(0), value %4, demand want, prepare #8
+    ret %4
+    ^b6 in S3 unwind ^b1:
+    %5: int = const 1
+    want %5
+    [i11] exit.prepare fallthrough %5 at B3
+    result.exit edge normal(0), value %5, demand want, prepare #11
+    br ^b5(%5)
+    ^b7 in S4 unwind ^b1:
+    %6: int = const 2
+    want %6
+    [i14] exit.prepare fallthrough %6 at B4
+    result.exit edge normal(0), value %6, demand want, prepare #14
+    br ^b5(%6)
+}

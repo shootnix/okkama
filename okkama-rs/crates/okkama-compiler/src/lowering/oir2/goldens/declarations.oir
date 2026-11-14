@@ -1,0 +1,21 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+enum app.Stop is Error = (stop, failed)
+
+enum app.Color = (red, blue)
+scope S0 action in @main
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 0
+    want %0
+    [i2] exit.prepare return %0 at B0
+    result.exit edge normal(0), value %0, demand want, prepare #2
+    ret %0
+    ^b1(%1: failure) in S0:
+    raise %1
+}
