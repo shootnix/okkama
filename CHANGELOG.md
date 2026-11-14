@@ -8,6 +8,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- **Register-colouring diagnostics (#540).** `OKKAMA_PROFILE_REGISTERS=1`
+  reports compiler phase times, busy-set cloning work, conflict-list capacity,
+  edge moves and assigned registers. Bounded, opt-in large-function fixtures
+  support baseline measurement before changing the allocator; no speedup is claimed.
+
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three
   developer-only aids that measure how much of ownership the compiler can
   decide statically and check every later change against today's runtime:
