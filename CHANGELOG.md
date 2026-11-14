@@ -75,6 +75,14 @@ fake fields; role fakes and their ordinary typed fields remain available.
     as Sparrow, numbered the same way, so one program can be compared across
     engines (#561).
 
+### Changed
+
+- **Sparrow payload ownership prototype (#436).** PAYLOAD cells keep the
+  typed owning box inline, removing the extra thin-pointer allocation.
+  Tracing, downcasts, drop, builder reuse and external-memory estimates use
+  the same owner. The 64-bit cell grows from 16 to 24 bytes; performance
+  acceptance awaits the bounded Docker A/B and release gate.
+
 ### Fixed
 
 - **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size
