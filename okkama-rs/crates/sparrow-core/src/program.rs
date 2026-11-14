@@ -111,6 +111,7 @@ impl Loaded {
         // One switch for both JIT roots and suspended-frame layouts. Read it
         // once at load time; never change a live runtime's tracing contract.
         let pointer_free = std::env::var_os("SPARROW_CORE_POINTER_FREE").is_none_or(|value| value != "0");
+        let int_ranges = std::env::var_os("SPARROW_CORE_INT_RANGE").is_none_or(|value| value != "0");
         let profile = std::env::var("SPARROW_CORE_PROFILE_COMPILE").is_ok_and(|value| !value.is_empty() && value != "0");
         let functions = program
             .functions
@@ -119,7 +120,13 @@ impl Loaded {
                 let kinds: Vec<Kind> = f.registers.iter().map(|t| Kind::of(&program, *t)).collect();
                 // This work happens at load time, outside jit::compile's timer.
                 let started = profile.then(std::time::Instant::now);
-                let pointer_free = if pointer_free { crate::pointer_free::analyze(f, &kinds) } else { vec![false; kinds.len()] };
+                let pointer_free = if !pointer_free {
+                    vec![false; kinds.len()]
+                } else if int_ranges {
+                    crate::pointer_free::analyze(f, &kinds, &program)
+                } else {
+                    crate::pointer_free::analyze_with_ranges(f, &kinds, &program, false)
+                };
                 if let Some(started) = started {
                     eprintln!("; pointer-free analysis\t{}\t{} microseconds", f.symbol, started.elapsed().as_micros());
                 }

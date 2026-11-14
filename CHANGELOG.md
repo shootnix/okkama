@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Sparrow integer root proofs (#539, builds on #535).** Array/text lengths,
+  conversions of proven byte/character constants and moves, and signed modulo
+  by proven nonzero small constants can omit GC roots. Every register definition
+  must satisfy the proof; map lengths and unknown or overflow-capable values
+  remain traced. Runtime arithmetic, failure paths and safepoints are unchanged.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three

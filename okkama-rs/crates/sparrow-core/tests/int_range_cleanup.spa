@@ -1,0 +1,27 @@
+; #539: a proven length survives unwind after modulo-by-zero, destroy A once.
+type t18 failure
+function f17 "range cleanup failure" $ASYNC {
+    registers [t1, t4, t3, t6, t18, t0, t0, t2, t1]
+    params []
+    result void
+    handler 8 9 @10 r4
+    0: const r0, str ""
+    1: call r1, f0, [r0]
+    2: region.enter r2
+    3: const r0, str "A"
+    4: obj.new r3, obj2, [r0, r1]
+    5: region.adopt r2, r3
+    6: str.len r5, r0
+    7: const r6, int 0
+    8: int.mod r6, r5, r6
+    9: ret _
+    10: $UNWIND r4, r2, r4
+    11: call r0, f1, [r1]
+    12: const r6, int 1
+    13: int.cmp eq, r7, r5, r6
+    14: br r7, @16, @15
+    15: trap confirm, "lost length through cleanup"
+    16: const r8, str "A"
+    17: call _, f11, [r0, r8]
+    18: raise r4
+}

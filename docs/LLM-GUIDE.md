@@ -154,6 +154,12 @@ off the persistent `okkama.rt.PMap`, #336), `OKKAMA_TRACE=off` (no stack in fail
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
 
+For differential root checks, `SPARROW_CORE_POINTER_FREE=0` keeps every traced
+register rooted; `SPARROW_CORE_INT_RANGE=0` keeps #535's constant-only proofs
+while disabling #539's operation proofs. Both are read once per loaded program
+and apply to stack maps and suspended-frame layouts. See
+[integer root proofs](int-range-proofs-539.md) for proofs and the Docker handoff.
+
 `OKKAMA_TRACE_DESTROY=FILE` (IR) and `SPARROW_TRACE_DESTROY=FILE` (Sparrow)
 append `<ObjectTypeName> <creation serial>\n` before each selected sync or async
 destroy (#561). Names retain module qualification. Serials start at 1 and count
