@@ -80,7 +80,7 @@ fn every_opcode_builder_roundtrips_and_every_invoke_slot_is_preserved() {
         roundtrip(&module);
     }
     assert_eq!(seen, Operation::opcode_inventory().into_iter().collect(), "opcode missing a builder round-trip case");
-    assert_eq!(seen.len(), 268);
+    assert_eq!(seen.len(), 269);
 }
 
 #[test]

@@ -1,0 +1,25 @@
+oir 2 high
+module successor
+object C {
+    field x: int
+}
+scope S action in @f
+scope Sn action in @next
+func @f(%self: C) -> void {
+^entry in S unwind ^failed:
+    %next: ^C = call @next(%self)
+    %a: C = succ.take %next, ty C
+    %b: C = succ.take %next, ty C
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}
+func @next(%self: C) -> ^C [successor C] {
+    boundary B0 lexical in Sn
+^entry in Sn unwind ^failed:
+    %next: ^C = obj.next %self { x: 1 }
+    exit.prepare return %next at B0
+    ret %next
+^failed(%failure: failure) in Sn:
+    raise %failure
+}

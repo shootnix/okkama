@@ -56,7 +56,7 @@ pub(super) fn check(module: &Module, function: FuncId, body: &Body, edges: &[Edg
                         prefix.push(id);
                     }
                 }
-                if let Some(target) = unwind && ContractRegistry::new(module).lookup(&inst.op)
+                if let Some(target) = unwind && ContractRegistry::new(module).construction_schema(&inst.op, body)
                     .is_ok_and(|c| !c.effects.failures.is_empty() || c.effects.suspends) {
                     flow.join(target, &prefix, state);
                 }

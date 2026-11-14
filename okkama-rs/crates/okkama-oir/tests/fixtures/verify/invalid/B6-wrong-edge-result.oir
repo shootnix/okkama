@@ -3,7 +3,7 @@ oir 2 own
 module verify
 requires core
 scope S action in @f
-summary M0 call-boundary contract call_contract(publication=atomic)
+summary M0 internal contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
 func @f(%p: own) -> void summary(M0) {
 ^entry in S:
     %local: int = const 1

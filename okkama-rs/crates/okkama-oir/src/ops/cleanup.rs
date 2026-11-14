@@ -38,6 +38,10 @@ operation_group! { ExitOp {
         => ("exit.replace", [pending: Consume, replacement: Borrow], Rule::Replace { pending: *pending, replacement: replacement.clone() });
     Commit { pending: ValueId, destination: ExitDestination, result: Option<TypeId> }
         => ("exit.commit", [pending: Consume], Rule::Commit { pending: *pending, result: *result });
+    // Finish the empty reservation returned by the last failed scope close.
+    // Nonempty reservations must follow the explicit abort protocol.
+    DiscardEmpty { pending: ValueId }
+        => ("exit.discard_empty", [pending: Consume], Rule::DiscardReservation(*pending));
     Abort { pending: ValueId, cleanup: ValueId, phase: AbortPhase }
         => ("exit.abort", [pending: Consume, cleanup: Consume], Rule::Abort { pending: *pending, cleanup: *cleanup, phase: *phase });
 } }

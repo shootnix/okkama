@@ -2,7 +2,7 @@ oir 2 own
 // expect OIR2-B6.1 instruction:0:2
 module verify
 requires core
-summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
 scope S action in @f
 func @f(%x: int) -> void summary(M0) {
     selection s0: selection = value(%local)

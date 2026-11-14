@@ -4,14 +4,14 @@ object C {
     field $pending: bool
 }
 scope S action in @f
-summary M0 call-boundary results [result_relation(provenance=unbound_result)] contract call_contract(results=[C], publication=atomic)
+summary M0 internal results [result_relation(provenance=unbound_result)] contract call_contract(results=[C], failures=[thrown, program, panic, native, cancelled], publication=atomic)
 func @f() -> C [ctor C] summary(M0) {
 ^entry in S:
     %p: bool = undef ty bool
     invoke.own obj.new C { $pending: %p } construction incomplete
         normal ^finish($value)
         unwind ^failed($failure)
-^finish(%v: C) in S:
+^finish(%v: C facts(plain(certificate=closed_graph(ty=C)))) in S:
     obj.init %v, false, field field_ref(declaration=C, index=0)
     ret %v
 ^failed(%e: failure) in S:

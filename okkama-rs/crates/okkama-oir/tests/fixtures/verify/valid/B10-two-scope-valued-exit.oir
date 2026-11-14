@@ -1,0 +1,79 @@
+oir 2 own
+module resources
+object R {
+    field x: int
+    destroy @destroy
+}
+scope Sd action in @destroy
+scope S action in @f
+scope SI block in @f parent S
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+scope Sc action in @create
+summary Mc internal results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
+    key kc: key = created(site=0, instance=%made)
+    dependency dc: dependency = key(kc)
+    boundary Bc call in Sc
+^entry in Sc:
+    invoke.own obj.new R { x: 1; %input }
+        normal ^ok($value, $packet)
+        unwind ^bad($packet, $failure)
+^ok(%made: R facts(managed(deps=dc)), %packet: own) in Sc:
+    ret %made, %packet
+^bad(%rest: own, %failure: failure) in Sc:
+    %closed: closed = end %rest, boundary Bc
+    raise %failure
+}
+func @f() -> (R, own, deps) summary(M0) {
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    key k0: key = created(site=0, instance=%r)
+    dependency d0: dependency = key(k0)
+    dependency dout: dependency = retention(value=%result, selection=selection(%result))
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    invoke.own call @create(; own.empty)
+        normal ^have_A($value, $packet, %q)
+        unwind ^failed_create(%q, $failure)
+^have_A(%a: R facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %with_A: scope<S> = own.admit %qa, %pa
+    invoke.own call @create(; own.empty)
+        normal ^have($value, $packet, %with_A)
+        unwind ^failed_create(%with_A, $failure)
+^have(%r: R facts(managed(deps=d0)), %packet: own, %state: scope<S>) in S:
+    %admitted: scope<S> = own.admit %state, %packet
+    br ^extract(%admitted)
+^extract(%owned: scope<S>) in S:
+    invoke.own scope.split %owned, selection(%r)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^failed_create($state, $failure)
+^prepare(%rest: scope<S>, %selected: own, %external: deps) in S:
+    %inner: scope<SI> = scope.begin SI
+    %pending: pending = exit.prepare return %r, %selected, deps(%external) at B0
+    invoke.own scope.end %inner, reserve %pending
+        normal ^outer($closed, $pending, %rest)
+        unwind ^abort_outer($closed, $failure, $pending, %rest)
+^outer(%ci: closed, %reserved: pending, %root: scope<S>) in S:
+    invoke.own scope.end %root, reserve %reserved
+        normal ^commit($closed, $pending)
+        unwind ^failed($closed, $failure, $pending)
+^commit(%co: closed, %ready: pending) in S:
+    (%result: R facts(managed(deps=dout)), %out: own, %full: deps) = exit.commit %ready, destination caller, result R
+    ret %result, %out, %full
+^abort_outer(%closed_inner: closed, %error: failure, %remaining: pending, %open: scope<S>) in S:
+    (%final: failure, %empty: pending) = scope.unwind %open, %error, reserve %remaining
+    %discarded: closed = exit.discard_empty %empty
+    raise %final
+^failed(%closed_outer: closed, %failure: failure, %aborted: pending) in S:
+    %discarded2: closed = exit.discard_empty %aborted
+    raise %failure
+^failed_create(%open_root: scope<S>, %creation_error: failure) in S:
+    %propagated: failure = scope.unwind %open_root, %creation_error
+    raise %propagated
+}

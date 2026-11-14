@@ -1,0 +1,30 @@
+oir 2 own
+// expect OIR2-B5.1 terminator:1:0
+module role_adapter_summary
+role Read {
+    read() -> str
+}
+object Reader {
+    field name: str
+    does Read { read=@adapter }
+}
+scope Sa action in @adapter
+scope S action in @main
+summary Ma call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[native], publication=atomic)
+summary Ms call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[program], publication=atomic)
+func @adapter(%self: Reader facts(plain(certificate=closed_graph(ty=Reader)))) -> str [method Reader] summary(Ma) {
+^entry in Sa:
+    %name: str = obj.get %self, name
+    ret %name
+}
+func @main(%view: Read facts(managed(deps=d0))) -> str summary(Ms) {
+    dependency d0: dependency = retention(value=%view, selection=selection(%view))
+^entry in S:
+    invoke.own call.role %view, Read slot 0() summary(Ms)
+        normal ^done($value)
+        unwind ^failed($failure)
+^done(%text: str) in S:
+    ret %text
+^failed(%error: failure) in S:
+    raise %error
+}

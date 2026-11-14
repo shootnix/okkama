@@ -1,0 +1,81 @@
+oir 2 own
+// expect OIR2-B4.3 instruction:2:6
+module resources
+object R {
+    field x: int
+    destroy @destroy
+}
+scope Sd action in @destroy
+scope S action in @f
+scope SI block in @f parent S
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+scope Sc action in @create
+summary Mc internal results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
+    key kc: key = created(site=0, instance=%made)
+    dependency dc: dependency = key(kc)
+    boundary Bc call in Sc
+^entry in Sc:
+    invoke.own obj.new R { x: 1; %input }
+        normal ^ok($value, $packet)
+        unwind ^bad($packet, $failure)
+^ok(%made: R facts(managed(deps=dc)), %packet: own) in Sc:
+    ret %made, %packet
+^bad(%rest: own, %failure: failure) in Sc:
+    %closed: closed = end %rest, boundary Bc
+    raise %failure
+}
+func @f(%again: bool) -> void summary(M0) {
+    binding b0 "resource": R in S
+    key k0: key = created(site=0, instance=%initial)
+    key k1: key = created(site=1, instance=%next)
+    dependency d0: dependency = key(k0)
+    dependency d1: dependency = key(k1)
+^entry in S:
+    %root: scope<S> = scope.begin S
+    invoke.own call @create(; own.empty)
+        normal ^initial($value, $packet, %root)
+        unwind ^failed(%root, $failure)
+^initial(%initial: R facts(managed(deps=d0)), %p0: own, %q0: scope<S>) in S:
+    %bound: scope<S> = own.bind binding elaborated_binding(binding=b0, resource=resource_value(value=%initial, packet=%p0), state=%q0, original_scope=S)
+    br ^loop(%bound)
+^loop(%current: scope<S>) in S:
+    %inner: scope<SI> = scope.begin SI
+    invoke.own call @create(; own.empty)
+        normal ^admit($value, $packet, %current, %inner)
+        unwind ^loop_failed(%current, %inner, $failure)
+^admit(%next: R facts(managed(deps=d1)), %pn: own, %qn: scope<S>, %qi: scope<SI>) in SI:
+    %admission: scope<SI> = own.accept %qi, %pn
+    br ^extract(%qn, %admission)
+^extract(%outer: scope<S>, %inside: scope<SI>) in SI:
+    invoke.own scope.split %inside, selection(%next)
+        normal ^replace(%outer, $state, $selected, $external_deps)
+        unwind ^loop_failed(%outer, $state, $failure)
+^replace(%owner: scope<S>, %rest: scope<SI>, %selected: own, %deps: deps) in SI:
+    %rebound: scope<S> = own.rebind binding elaborated_binding(binding=b0, resource=resource_value(value=%next, packet=%selected), state=%owner, original_scope=S)
+    invoke.own scope.end %rest
+        normal ^test(%rebound)
+        unwind ^failed(%rebound, $failure)
+^test(%latest: scope<S>) in S:
+    cond %again, ^loop(%latest), ^close(%latest)
+^close(%last: scope<S>) in S:
+    invoke.own scope.end %last
+        normal ^done($closed)
+        unwind ^closed_failed($closed, $failure)
+^loop_failed(%outer_state: scope<S>, %inner_state: scope<SI>, %error: failure) in SI:
+    %inner_error: failure = scope.unwind %inner_state, %error
+    br ^failed(%outer_state, %inner_error)
+^failed(%open: scope<S>, %failure: failure) in S:
+    %final: failure = scope.unwind %open, %failure
+    raise %final
+^closed_failed(%closed: closed, %closing_failure: failure) in S:
+    raise %closing_failure
+^done(%closed2: closed) in S:
+    ret
+}

@@ -33,6 +33,18 @@ fn complete_summaries(module: &mut Module) {
         let summary = module.summaries.alloc(summary).unwrap();
         module.functions.get_mut(id).unwrap().summary = Some(summary);
     }
+    for (_, data) in module.functions.iter_mut() {
+        if let Some(body) = &mut data.body {
+            for (_, value) in body.values.iter_mut() {
+                if value.facts == ValueFacts::Unelaborated && module.types.get(value.ty).is_ok_and(|ty| {
+                    matches!(ty, Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat
+                        | Type::Char | Type::Str | Type::Range)
+                }) {
+                    value.facts = ValueFacts::Plain { certificate: PlainCertificate::Scalar };
+                }
+            }
+        }
+    }
 }
 fn arithmetic() -> Module {
     let mut module = ModuleBuilder::new("verify", Profile::High);
@@ -70,6 +82,26 @@ fn own_summary(results: Vec<TypeId>) -> Summary {
             publication: Publication::Atomic, protocol: None,
         },
     }
+}
+
+// Operand-family tests intentionally construct isolated operations with live
+// service results. Check structure/types here; conservation has full CFG tests.
+fn verify_types(module: &Module) -> Result<(), VerifyReport> {
+    let options = VerifyOptions::default();
+    let mut state = State {
+        module, options: &options, context: VerifyContext::default(), diagnostics: vec![],
+        stats: VerifyStats::default(), incomplete: false, suppressed: 0,
+        location: EntityLocation::Module, source_loc: None,
+        poisoned: std::collections::BTreeSet::new(), positions: std::collections::BTreeMap::new(),
+        edge_positions: std::collections::BTreeMap::new(),
+    };
+    structure::check(module, None, &mut state);
+    types::check(module, None, &mut state);
+    if state.diagnostics.is_empty() && !state.incomplete { return Ok(()); }
+    Err(VerifyReport {
+        failure: if state.incomplete { VerifyFailure::Incomplete } else { VerifyFailure::Rejected },
+        diagnostics: state.diagnostics, suppressed: state.suppressed, stats: state.stats,
+    })
 }
 
 #[test]
@@ -272,7 +304,7 @@ fn t2_tuple_arity_and_read_only_result_formulas() {
     let packet = builder.block_params(builder.entry()).unwrap()[0];
     let results = builder.emit_schema(Operation::Call(CallOp::Direct { function: callee, call: CallSite {
         args: vec![], packet: Some(packet), deps: vec![ValueId::from_u32(1)],
-        descriptors: vec![], type_args: vec![], summary,
+        descriptors: vec![], type_args: vec![], summary: Some(summary),
     } })).unwrap();
     assert_eq!(results.len(), 2);
     assert_eq!(builder.body().values.get(results[0]).unwrap().ty, own);
@@ -282,7 +314,7 @@ fn t2_tuple_arity_and_read_only_result_formulas() {
     module.define_function(caller, body).unwrap();
     let mut module = module.finish().unwrap();
     complete_summaries(&mut module);
-    verify(&module).unwrap();
+    verify_types(&module).unwrap();
 }
 
 #[test]
@@ -613,9 +645,9 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
             16 => (vec![scope_ty, own], Operation::Ownership(OwnershipOp::Admit { state: v(0), packet: v(1) })),
             17 => (vec![own], Operation::Ownership(OwnershipOp::Split { packet: v(0), selection })),
             18 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeSplit { state: v(0), selection })),
-            19 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeEnd { state: v(0) })),
+            19 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeEnd { state: v(0), reserve: None })),
             20 => (vec![scope_ty, failure], Operation::Ownership(OwnershipOp::ScopeUnwind {
-                state: v(0), failure: v(1),
+                state: v(0), failure: v(1), reserve: None,
             })),
             21 => (vec![own], Operation::Ownership(OwnershipOp::End { packet: v(0), boundary })),
             22 => (vec![key, snapshot], Operation::Ownership(OwnershipOp::DynamicCheck {
@@ -677,7 +709,7 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
         let mut positive = module.finish().unwrap();
         complete_summaries(&mut positive);
         positive.functions.get_mut(function).unwrap().attrs.push(FunctionAttr::Async);
-        verify(&positive).unwrap_or_else(|report| panic!("case {case} {op:?}: {report:?}"));
+        verify_types(&positive).unwrap_or_else(|report| panic!("case {case} {op:?}: {report:?}"));
         for index in 0..operand_count {
             let mut negative = positive.clone();
             let wrong = negative.types.intern(Type::Bool).unwrap();
@@ -745,10 +777,13 @@ fn type_depth_outcome_schema_and_nested_summary_limits_are_incomplete() {
 
 #[test]
 fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
-    struct Catalog(Signature);
+    struct Catalog(Signature, Summary);
     impl ExternalContracts for Catalog {
         fn native(&self, name: &str) -> Option<&Signature> { (name == "host.identity").then_some(&self.0) }
         fn intrinsic(&self, _: &str) -> Option<&Signature> { None }
+        fn native_summary(&self, name: &str) -> Option<&Summary> {
+            (name == "host.identity").then_some(&self.1)
+        }
     }
     let mut module = ModuleBuilder::new("native", Profile::Own);
     let int = module.intern_type(Type::Int).unwrap();
@@ -756,11 +791,12 @@ fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
     summary.parameters.push(ParameterEffect {
         convention: FreshConvention::Borrow, retention: None, deps: vec![], destination: TransferDestination::None,
     });
+    let native_contract = summary.clone();
     let summary = module.add_summary(summary).unwrap();
     let mut native = function("native", vec![int], vec![int]);
     native.summary = Some(summary);
     native.attrs.push(FunctionAttr::Extern("host.identity".into()));
-    let catalog = Catalog(native.signature.clone());
+    let catalog = Catalog(native.signature.clone(), native_contract);
     let native = module.declare_function(native).unwrap();
     let caller = module.declare_function(function("caller", vec![int], vec![])).unwrap();
     let scope = module.declare_scope(ScopeDecl {
@@ -769,7 +805,7 @@ fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
     let mut builder = module.function_builder(caller, scope).unwrap();
     builder.emit_schema(Operation::Call(CallOp::Native { function: native, call: CallSite {
         args: vec![CallArgument { value: ValueId::from_u32(0), convention: OperandConvention::Borrow }],
-        packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary,
+        packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: Some(summary),
     } })).unwrap();
     builder.terminate(TermKind::Ret { values: vec![] }).unwrap();
     let body = builder.finish().unwrap();
@@ -779,6 +815,9 @@ fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
     rejected(&module, RuleId::T1);
     let context = VerifyContext { text_locations: None, external_contracts: &catalog };
     verify_with(&module, &VerifyOptions::default(), context).unwrap();
+    module.summaries.get_mut(summary).unwrap().results[0].fresh.push(CreationSiteId::from_u32(42));
+    let report = verify_with(&module, &VerifyOptions::default(), context).unwrap_err();
+    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == RuleId::B51));
 }
 
 #[test]

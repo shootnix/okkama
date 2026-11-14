@@ -1,0 +1,56 @@
+oir 2 own
+// spec: 5.1;16.3; status: v2; expected-rule: -
+module order
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    destroy @destroy_holder
+}
+scope S action in @main
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify2 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify4 call-boundary parameters [] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @Res.new(%name: str; %input: own) -> (Res, own, deps) [extern "fixture.Res.new"] summary(M0);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify2);
+func @destroy_holder(%self: Holder) -> void [extern "fixture.destroy_holder", destroy Holder] summary(Mverify3);
+summary Mholder call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)), destination=result), parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)] contract call_contract(results=[Holder], failures=[thrown], publication=atomic)
+func @Holder.new(%res: Res, %label: str; %input: own) -> (Holder, own, deps) [extern "fixture.Holder.new", ctor Holder] summary(Mholder);
+func @main() -> void summary(Mverify4) {
+    binding ba "a": Res in S
+    binding bb "b": Res in S
+    dependency dfull_a: dependency = retention(value=%a, selection=selection(%a))
+    dependency dfull_b: dependency = retention(value=%b, selection=selection(%b))
+    dependency dfull_h: dependency = retention(value=%h, selection=selection(%h))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    invoke.own call @Res.new("a"; own.empty)
+        normal ^a($value, $packet, $deps, %q0)
+        unwind ^failed($failure, %q0)
+^a(%a: Res facts(managed(deps=dfull_a)), %pa: own, %da: deps, %q1: scope<S>) in S:
+    %q2: scope<S> = own.bind binding elaborated_binding(binding=ba, resource=resource_value(value=%a, packet=%pa), state=%q1, original_scope=S)
+    invoke.own call @Res.new("b"; own.empty)
+        normal ^b($value, $packet, $deps, %q2)
+        unwind ^failed($failure, %q2)
+^b(%b: Res facts(managed(deps=dfull_b)), %pb: own, %db: deps, %q3: scope<S>) in S:
+    %q4: scope<S> = own.bind binding elaborated_binding(binding=bb, resource=resource_value(value=%b, packet=%pb), state=%q3, original_scope=S)
+    invoke.own call @Holder.new(consume %a, "h"; own.empty)
+        normal ^h($value, $packet, %q4)
+        unwind ^failed($failure, %q4)
+^h(%h: Holder facts(managed(deps=dfull_h)), %ph: own, %q5: scope<S>) in S:
+    %q6: scope<S> = own.admit %q5, %ph
+    invoke.own scope.end %q6
+        normal ^done($closed)
+        unwind ^closed_failed($closed, $failure)
+^failed(%failure: failure, %open: scope<S>) in S:
+    %final: failure = scope.unwind %open, %failure
+    raise %final
+^closed_failed(%closed: closed, %cleanup_failure: failure) in S:
+    raise %cleanup_failure
+^done(%closed2: closed) in S:
+    ret
+}

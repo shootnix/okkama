@@ -1,0 +1,43 @@
+oir 2 own
+module multi_result_provenance
+object R {
+    destroy @destroy
+}
+scope S action in @main
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mp call-boundary results [result_relation(fresh=[0], provenance=unbound_result), result_relation(fresh=[1], provenance=bound), result_relation(fresh=[2], provenance=staged_or_carrier_owned), result_relation(fresh=[3], provenance=cache_owned), result_relation(fresh=[4], provenance=extracted_at_existing_boundary), result_relation(fresh=[5], provenance=temporary_await_result)] contract call_contract(results=[R, R, R, R, R, R], publication=atomic)
+summary Ms call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 call-boundary contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R) -> void [extern "fixture.destroy", destroy R] summary(Md);
+func @produce(%input: own) -> (R, R, R, R, R, R, own, deps) [extern "fixture.produce"] summary(Mp);
+func @sink(%a: R, %b: R, %c: R, %d: R, %e: R, %f: R; %input: own) -> (own, deps) [extern "fixture.sink"] summary(Ms);
+func @main() -> void summary(M0) {
+    boundary B0 lexical in S
+    dependency d0: dependency = retention(value=%v0, selection=selection(%v0))
+    selection s0: selection = value(%v0)
+    dependency d1: dependency = retention(value=%v1, selection=selection(%v1))
+    selection s1: selection = value(%v1)
+    dependency d2: dependency = retention(value=%v2, selection=selection(%v2))
+    selection s2: selection = value(%v2)
+    dependency d3: dependency = retention(value=%v3, selection=selection(%v3))
+    selection s3: selection = value(%v3)
+    dependency d4: dependency = retention(value=%v4, selection=selection(%v4))
+    selection s4: selection = value(%v4)
+    dependency d5: dependency = retention(value=%v5, selection=selection(%v5))
+    selection s5: selection = value(%v5)
+    selection sall: selection = union([s0, s1, s2, s3, s4, s5])
+    selection sfresh: selection = admissible(sall)
+^entry in S:
+    (%v0: R facts(managed(deps=d0)), %v1: R facts(managed(deps=d1)), %v2: R facts(managed(deps=d2)), %v3: R facts(managed(deps=d3)), %v4: R facts(managed(deps=d4)), %v5: R facts(managed(deps=d5)), %packet: own, %full: deps) = call @produce(; own.empty)
+    %alias0: R facts(managed(deps=d0)) = retag %v0, ty R facts(provenance=[provenance_fact(obligations=s0, state=unbound_result)])
+    %alias1: R facts(managed(deps=d1)) = retag %v1, ty R facts(provenance=[provenance_fact(obligations=s1, state=bound)])
+    %alias2: R facts(managed(deps=d2)) = retag %v2, ty R facts(provenance=[provenance_fact(obligations=s2, state=staged_or_carrier_owned)])
+    %alias3: R facts(managed(deps=d3)) = retag %v3, ty R facts(provenance=[provenance_fact(obligations=s3, state=cache_owned)])
+    %alias4: R facts(managed(deps=d4)) = retag %v4, ty R facts(provenance=[provenance_fact(obligations=s4, state=extracted_at_existing_boundary)])
+    %alias5: R facts(managed(deps=d5)) = retag %v5, ty R facts(provenance=[provenance_fact(obligations=s5, state=temporary_await_result)])
+    (%rest: own, %selected: own, %external: deps) = own.split %packet, sfresh
+    (%empty: own, %deps: deps) = call @sink(%v0, %v1, %v2, %v3, %v4, %v5; %selected)
+    %all: own = own.join [%rest, %empty]
+    %closed: closed = end %all, boundary B0
+    ret
+}

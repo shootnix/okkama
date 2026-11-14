@@ -1,0 +1,11 @@
+oir 2 own
+// expect OIR2-B2.1 instruction:0:1
+module core
+scope S action in @f
+summary M0 internal   contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%p: own) -> (own, own) summary(M0) {
+^entry in S:
+    %a: own = own.move %p
+    %b: own = own.move %p
+    ret %a, %b
+}

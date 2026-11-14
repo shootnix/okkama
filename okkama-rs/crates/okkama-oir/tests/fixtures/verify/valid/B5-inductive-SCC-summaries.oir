@@ -1,0 +1,60 @@
+oir 2 own
+module inductive_summaries
+object R {
+    field x: int
+    destroy @destroy
+}
+scope Sd action in @destroy
+scope Sf action in @f
+scope Sg action in @g
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mr internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+func @f(%stop: bool; %input: own) -> (R, own) [ctor R] summary(Mr) {
+    key k0: key = created(site=0, instance=%result)
+    dependency d0: dependency = key(k0)
+    boundary B0 call in Sf
+^entry in Sf:
+    cond %stop, ^create(%input), ^recur(%input)
+^create(%p: own) in Sf:
+    invoke.own obj.new R { x: 1; %p }
+        normal ^done($value, $packet)
+        unwind ^failed($packet, $failure)
+^recur(%q: own) in Sf:
+    invoke.own call @g(%stop; %q)
+        normal ^done($value, $packet)
+        unwind ^call_failed($failure)
+^done(%result: R facts(managed(deps=d0)), %out: own) in Sf:
+    ret %result, %out
+^failed(%rest: own, %failure: failure) in Sf:
+    %closed: closed = end %rest, boundary B0
+    raise %failure
+^call_failed(%error: failure) in Sf:
+    raise %error
+}
+func @g(%stop: bool; %input: own) -> (R, own) [ctor R] summary(Mr) {
+    key k0: key = created(site=0, instance=%result)
+    dependency d0: dependency = key(k0)
+    boundary B0 call in Sg
+^entry in Sg:
+    cond %stop, ^create(%input), ^recur(%input)
+^create(%p: own) in Sg:
+    invoke.own obj.new R { x: 1; %p }
+        normal ^done($value, $packet)
+        unwind ^failed($packet, $failure)
+^recur(%q: own) in Sg:
+    invoke.own call @f(%stop; %q)
+        normal ^done($value, $packet)
+        unwind ^call_failed($failure)
+^done(%result: R facts(managed(deps=d0)), %out: own) in Sg:
+    ret %result, %out
+^failed(%rest: own, %failure: failure) in Sg:
+    %closed: closed = end %rest, boundary B0
+    raise %failure
+^call_failed(%error: failure) in Sg:
+    raise %error
+}

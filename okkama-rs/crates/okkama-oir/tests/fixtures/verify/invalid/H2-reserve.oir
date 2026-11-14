@@ -1,0 +1,14 @@
+oir 2 high
+// expect OIR2-H2 value:0:0
+module high_reserve
+scope S action in @f
+func @f(%pending: pending, %q: scope<S>) -> void {
+^entry in S:
+    invoke.own scope.end %q, reserve %pending
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure, $pending)
+^done(%closed: closed, %reserved: pending) in S:
+    ret
+^failed(%cf: closed, %error: failure, %remainder: pending) in S:
+    raise %error
+}

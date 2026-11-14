@@ -1,7 +1,7 @@
 //! Independent, read-only verification of OIR-2.
 //! Implements structure, types, SSA, edge contracts, authority, summary shapes
-//! and the high contract. Ownership/lifetime and lowered protocol checks remain
-//! reserved passes; a certificate covers only the implemented subset.
+//! and core ownership/lifetime conservation. Async protocols and lowered cleanup
+//! remain reserved passes; a certificate covers only the implemented subset.
 mod diagnostic;
 mod limits;
 mod index;
@@ -10,6 +10,7 @@ mod types;
 mod expressions;
 pub(crate) mod read;
 mod later;
+mod linearity;
 mod graph;
 mod dominance;
 mod contracts;
@@ -38,6 +39,8 @@ pub struct VerifyOptions {
 pub trait ExternalContracts {
     fn native(&self, name: &str) -> Option<&Signature>;
     fn intrinsic(&self, name: &str) -> Option<&Signature>;
+    fn native_summary(&self, _: &str) -> Option<&Summary> { None }
+    fn intrinsic_summary(&self, _: &str) -> Option<&Summary> { None }
 }
 #[derive(Debug)]
 pub struct NoExternalContracts;
@@ -222,7 +225,7 @@ fn run<'m>(
     authority::check(module, function, &mut state);
     summaries::check(module, function, &mut state);
     high::check(module, function, &mut state);
-    later::ownership_and_lifetimes(module, &mut state);
+    linearity::check(module, function, &mut state);
     later::async_cleanup_and_profiles(module, &mut state);
     order_diagnostics(module, &mut state);
     // Passes emit in traversal order: module arenas, function/block arenas,

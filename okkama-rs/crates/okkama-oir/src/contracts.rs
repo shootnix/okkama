@@ -328,6 +328,7 @@ pub(crate) enum Rule {
     CarrierAttach { failure: ValueId, packet: ValueId, owner: ValueId, protocol: ProtocolId },
     CarrierTransfer { state: ValueId, target: CarrierDestination, protocol: ProtocolId },
     Prepare(PreparedExit), Replace { pending: ValueId, replacement: PreparedExit },
+    DiscardReservation(ValueId),
     Commit { pending: ValueId, result: Option<TypeId> }, Abort { pending: ValueId, cleanup: ValueId, phase: AbortPhase },
     CleanupBegin { state: ValueId, pending: Option<ValueId> },
     CleanupStep { cleanup: ValueId, finishing: bool }, CleanupNext(ValueId),
@@ -748,6 +749,10 @@ impl<'a> ContractRegistry<'a> {
                 c.normal.postconditions.push(Postcondition::LexicalExit { kind: replacement.kind, boundary: replacement.boundary, selection: replacement.selection });
                 c.normal.postconditions.push(Postcondition::PreserveFullDependencies);
                 c.roots.roots.push(RootKind::PendingExit);
+            }
+            Rule::DiscardReservation(pending) => {
+                c.normal.results.push(ResultSlot::service(N::Closed, S::Closed));
+                c.normal.transfers.push(TransferRule::Settle { inputs: vec![pending] });
             }
             Rule::Commit { pending, result } => {
                 if let Some(ty) = result { c.normal.results.push(ResultSlot::new(N::Value, ResultType::Exact(ty))); }

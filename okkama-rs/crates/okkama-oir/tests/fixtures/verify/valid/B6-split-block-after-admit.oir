@@ -1,0 +1,23 @@
+oir 2 own
+module core
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]  contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%q0: scope<S>, %p: own, %x: int) -> void summary(M0) {
+^entry in S:
+    %q1: scope<S> = own.admit %q0, %p
+    br ^body(%q1)
+^body(%current: scope<S>) in S unwind ^failed(%current):
+    %n: int = int.mod %x, %x
+    br ^close(%current)
+^close(%q2: scope<S>) in S:
+    invoke.own scope.end %q2
+        normal ^done($closed)
+        unwind ^closed_failed($closed, $failure)
+^failed(%old: scope<S>, %failure: failure) in S:
+    %final: failure = scope.unwind %old, %failure
+    raise %final
+^done(%c: closed) in S:
+    ret
+^closed_failed(%cf: closed, %f: failure) in S:
+    raise %f
+}

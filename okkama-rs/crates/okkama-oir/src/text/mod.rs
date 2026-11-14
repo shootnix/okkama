@@ -1297,6 +1297,7 @@ opcodes!(ExitOp {
     Prepare { exit } => "exit.prepare",
     Replace { pending, replacement } => "exit.replace",
     Commit { pending, destination, result } => "exit.commit",
+    DiscardEmpty { pending } => "exit.discard_empty",
     Abort { pending, cleanup, phase } => "exit.abort",
 });
 opcodes!(CleanupOp {

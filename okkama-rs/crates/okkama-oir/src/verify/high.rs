@@ -116,7 +116,7 @@ fn operation(
         && (call.packet.is_some() || !call.deps.is_empty()) {
         state.error(R::H2, "high calls have no ownership packet or deps operands");
     }
-    if let Ok(contract) = ContractRegistry::new(module).lookup(op)
+    if let Ok(contract) = ContractRegistry::new(module).construction_schema(op, body)
         && (!contract.effects.failures.is_empty() || contract.effects.suspends) && block.unwind.is_none() {
         state.error(R::H5, "may-fail high operation requires an explicit block unwind target");
     }

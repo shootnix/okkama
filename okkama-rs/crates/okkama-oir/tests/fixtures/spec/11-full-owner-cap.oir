@@ -12,23 +12,27 @@ object Holder {
 }
 enum Stop is Error = (stop)
 enum Cleanup is Error = (failed)
-summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
-summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
 summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
-func @new(%label: str) -> Res summary(Mnew);
-func @label(%r: Res) -> str summary(Mlabel);
-func @destroy(%self: Res) -> void;
-func @deferred() -> void summary(Mvoid);
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res];
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 cap Holder :: View {
     field label = @owner_label
 }
-func @owner_label(%owner: Holder) -> str;
+func @owner_label(%owner: Holder) -> str [extern "fixture.owner_label"];
+summary Mholder call-boundary parameters [parameter_effect(convention=take, retention=some(parameter(0)), destination=result), parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)] contract call_contract(results=[Holder], failures=[thrown], publication=atomic)
+func @Holder.new(%res: Res, %label: str) -> Holder [extern "fixture.Holder.new", ctor Holder] summary(Mholder);
 func @main() -> View {
+    boundary B0 lexical in S
 ^entry in S unwind ^failed:
     %r: Res = call @new("R")
-    %owner: Holder = obj.new Holder { res: %r, label: "O" }
+    %owner: Holder = call @Holder.new(consume %r, "O")
     %view: View = cap.make %owner, ty View
+    exit.prepare return %view at B0
     ret %view
 ^failed(%failure: failure) in S:
     raise %failure

@@ -106,7 +106,7 @@ fn analyze(
         for &id in &block.insts {
             if !state.step(width) { return; }
             if let Ok(inst) = body.insts.get(id) {
-                if ContractRegistry::new(module).lookup(&inst.op)
+                if ContractRegistry::new(module).construction_schema(&inst.op, body)
                     .is_ok_and(|contract| !contract.effects.failures.is_empty() || contract.effects.suspends) {
                     join_failure(&mut exceptional, &output);
                 }

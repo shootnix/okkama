@@ -20,7 +20,24 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
         } else if module.profile != Profile::High {
             state.error(R::B51, "elaborated function requires its declared summary");
         }
-        let Some(body) = &data.body else { continue; };
+        let Some(body) = &data.body else {
+            if module.profile != Profile::High {
+                for attr in &data.attrs {
+                    let trusted = match attr {
+                        FunctionAttr::Extern(name) => state.context.external_contracts.native_summary(name),
+                        FunctionAttr::Intrinsic { name, .. } => {
+                            state.context.external_contracts.intrinsic_summary(name)
+                        }
+                        _ => continue,
+                    };
+                    let declared = data.summary.and_then(|id| module.summaries.get(id).ok());
+                    if trusted.is_none() || trusted != declared {
+                        state.error(R::B51, "external ownership summary differs from the trusted backend contract");
+                    }
+                }
+            }
+            continue;
+        };
         if !super::graph::eligible(function, body, state) { continue; }
         for (block_id, block) in body.blocks.iter() {
             for &instruction in &block.insts {
@@ -80,7 +97,8 @@ fn shape(summary: &Summary, state: &mut State<'_>) {
         if let Some(selection) = &effect.retention { selection_indices(selection, params, state); }
     }
     for result in &summary.results {
-        if !state.step(result.external_deps.len()) { return; }
+        if !state.step(result.external_deps.len().saturating_add(result.fresh.len()))
+            || !state.array(result.fresh.len(), 32) { return; }
         if result.external_deps.iter().any(|i| usize::from(*i) >= params) {
             state.error(R::B51, "summary result dependency parameter is out of range");
         }
@@ -118,7 +136,11 @@ pub(super) fn call(op: &Operation) -> Option<(&CallSite, Option<CallArgument>, O
 }
 fn operation(module: &Module, body: &Body, op: &Operation, state: &mut State<'_>) {
     let Some((call, receiver, target)) = call(op) else { return; };
-    let Ok(summary) = module.summaries.get(call.summary) else { return; };
+    let Some(id) = call.summary else {
+        if module.profile != Profile::High { state.error(R::B51, "elaborated call requires a summary"); }
+        return;
+    };
+    let Ok(summary) = module.summaries.get(id) else { return; };
     let args = receiver.iter().chain(&call.args);
     if args.clone().count() != summary.parameters.len() {
         state.error(R::B51, "call arguments and summary parameters differ");
@@ -134,8 +156,14 @@ fn operation(module: &Module, body: &Body, op: &Operation, state: &mut State<'_>
         state.error(R::B51, "observation cannot accept an input packet");
     }
     dispatch(module, body, op, summary, state);
+    let target = target.or_else(|| cap_target(module, op));
     if let Some(target) = target.and_then(|id| module.functions.get(id).ok()) {
-        if target.summary != Some(call.summary)
+        if summary.entry_kind == EntryKind::ObservationAdmissionStaysCaller
+            && target.summary.and_then(|id| module.summaries.get(id).ok())
+                .is_some_and(|s| s.entry_kind == EntryKind::CallBoundary) {
+            state.error(R::B52, "a call-boundary method cannot be relabeled as an observation");
+        }
+        if target.summary != call.summary
             && (target.summary.is_some() || module.profile != Profile::High) {
             state.error(R::B51, "call summary differs from the callee declaration");
         }
@@ -143,10 +171,44 @@ fn operation(module: &Module, body: &Body, op: &Operation, state: &mut State<'_>
     }
 }
 
+pub(super) fn cap_target(module: &Module, op: &Operation) -> Option<FuncId> {
+    let Operation::Call(CallOp::Cap { field, .. }) = op else { return None; };
+    let DeclarationKind::Cap { fields, .. } = &module.declarations.get(field.declaration).ok()?.kind else {
+        return None;
+    };
+    fields.get(field.index as usize).map(|field| field.function)
+}
+
+fn witnesses(module: &Module, role: DeclId, slot: u32, summary: &Summary, state: &mut State<'_>) {
+    for (_, declaration) in module.declarations.iter() {
+        if !state.step(1) { return; }
+        let DeclarationKind::Object { witnesses, .. } = &declaration.kind else { continue; };
+        for witness in witnesses {
+            if !state.step(1) { return; }
+            if !matches!(module.types.get(witness.role), Ok(Type::Role { decl, .. }) if *decl == role) { continue; }
+            let actual = witness.slots.get(slot as usize).and_then(|id| module.functions.get(*id).ok())
+                .and_then(|function| function.summary).and_then(|id| module.summaries.get(id).ok());
+            let Some(actual) = actual else {
+                state.error(R::B51, "role witness adapter has no declared summary");
+                continue;
+            };
+            if actual.entry_kind != summary.entry_kind || actual.parameters != summary.parameters
+                || actual.results != summary.results || actual.contract.publication != summary.contract.publication
+                || actual.contract.protocol != summary.contract.protocol
+                || (actual.contract.suspends && !summary.contract.suspends)
+                || (actual.contract.async_destroy && !summary.contract.async_destroy)
+                || actual.contract.failures.iter().any(|failure| !summary.contract.failures.contains(failure)) {
+                state.error(R::B51, "role slot summary does not cover its witness adapter");
+            }
+        }
+    }
+}
+
 fn dispatch(module: &Module, body: &Body, op: &Operation, summary: &Summary, state: &mut State<'_>) {
     let Operation::Call(call) = op else { return; };
     match call {
         CallOp::Role { receiver, role, slot, .. } => {
+            witnesses(module, *role, *slot, summary, state);
             let Ok(decl) = module.declarations.get(*role) else { return; };
             let DeclarationKind::Role { methods, .. } = &decl.kind else { return; };
             let Some(method) = methods.get(*slot as usize) else { return; };

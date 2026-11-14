@@ -1,0 +1,33 @@
+oir 2 own
+// expect OIR2-B8.1 instruction:4:1
+// spec: 14; status: semantic-reject; expected-rule: OIR2-B8.1
+module B8-reused-builder
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify5 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=bound), result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[array<Res>, array<Res>], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
+scope S action in @main
+func @main(%buffer: builder<Res>, %packet: own) -> (array<Res>, array<Res>, own, own) summary(Mverify5) {
+    dependency dfull_a: dependency = retention(value=%a, selection=selection(%a))
+    dependency dfull_b: dependency = retention(value=%b, selection=selection(%b))
+^entry in S:
+    (%a: array<Res> facts(managed(deps=dfull_a)), %out1: own) = builder.finish %buffer, packet %packet
+    (%b: array<Res> facts(managed(deps=dfull_b)), %out2: own) = builder.finish %buffer, packet %packet
+    ret %a, %b, %out1, %out2
+}

@@ -1,0 +1,11 @@
+oir 2 own
+// expect OIR2-B3.1 operand-term:0:0:[0]
+module bad_anchor
+native object R
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[R], publication=atomic)
+func @f(%r: R facts(managed(deps=d0)), %p: own) -> (R, own) summary(M0) {
+    dependency d0: dependency = from_ssa(%p)
+^entry in S:
+    ret %r, %p
+}

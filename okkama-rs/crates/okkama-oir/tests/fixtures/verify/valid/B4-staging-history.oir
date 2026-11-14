@@ -1,0 +1,62 @@
+oir 2 own
+module resources
+object R {
+    field x: int
+    destroy @destroy
+}
+scope Sd action in @destroy
+scope S action in @f
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+object Holder {
+    field resource: R
+}
+enum Stop is Error = (stop)
+summary M0 call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Holder], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+scope Sc action in @create
+summary Mc internal results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
+    key kc: key = created(site=0, instance=%made)
+    dependency dc: dependency = key(kc)
+    boundary Bc call in Sc
+^entry in Sc:
+    invoke.own obj.new R { x: 1; %input }
+        normal ^ok($value, $packet)
+        unwind ^bad($packet, $failure)
+^ok(%made: R facts(managed(deps=dc)), %packet: own) in Sc:
+    ret %made, %packet
+^bad(%rest: own, %failure: failure) in Sc:
+    %closed: closed = end %rest, boundary Bc
+    raise %failure
+}
+func @f() -> Holder [ctor Holder] summary(M0) {
+    key k0: key = created(site=0, instance=%a)
+    key k1: key = created(site=1, instance=%b)
+    dependency d0: dependency = key(k0)
+    dependency d1: dependency = key(k1)
+^entry in S:
+    %root: scope<S> = scope.begin S
+    invoke.own call @create(; own.empty)
+        normal ^first($value, $packet, %root)
+        unwind ^failed(%root, $failure)
+^first(%a: R facts(managed(deps=d0)), %pa: own, %qa: scope<S>) in S:
+    %staged: scope<S> = own.stage stage elaborated_stage(action=S, field=field_ref(declaration=Holder, index=0), resource=resource_value(value=%a, packet=%pa), states=same(%qa))
+    br ^second(%staged)
+^second(%state: scope<S>) in S:
+    invoke.own call @create(; own.empty)
+        normal ^replace($value, $packet, %state)
+        unwind ^failed(%state, $failure)
+^replace(%b: R facts(managed(deps=d1)), %pb: own, %qb: scope<S>) in S:
+    %overwritten: scope<S> = own.stage stage elaborated_stage(action=S, field=field_ref(declaration=Holder, index=0), resource=resource_value(value=%b, packet=%pb), states=same(%qb))
+    %stop: Stop facts(plain(certificate=scalar)) = const Stop.stop
+    br ^throw(%overwritten, %stop)
+^throw(%q: scope<S>, %failure: Stop facts(plain(certificate=scalar))) in S unwind ^failed(%q):
+    throw %failure
+^failed(%open: scope<S>, %error: failure) in S:
+    %final: failure = scope.unwind %open, %error
+    raise %final
+}

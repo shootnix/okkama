@@ -218,18 +218,26 @@ impl Checker<'_, '_> {
         else { self.operand = self.operand.saturating_add(1); }
     }
     fn expect(&mut self, value: ValueId, expected: Type) -> Checked<()> {
+        if matches!(self.ty(value)?, Type::Service(_)) && !matches!(expected, Type::Service(_)) {
+            self.report(R::B11, "service token cannot be used as a language reference");
+        }
         let valid = self.ty(value)? == &expected;
         self.require(valid, "operand has an unexpected type");
         Ok(())
     }
     fn exact(&mut self, value: ValueId, expected: TypeId) -> Checked<()> {
         let actual = value_type(self.body, value)?;
+        if matches!(self.module.types.get(actual)?, Type::Service(_))
+            && !matches!(self.module.types.get(expected)?, Type::Service(_)) {
+            self.report(R::B11, "service token cannot be stored in a language field/argument");
+        }
         let valid = matches_type(self.module, expected, actual, &self.substitution, self.state)?;
         self.require(valid, "operand type differs from the substituted parameter/field type");
         Ok(())
     }
     fn language(&mut self, value: ValueId) -> Checked<()> {
         let valid = language_type(self.module, value_type(self.body, value)?, self.state)?;
+        if !valid { self.report(R::B11, "service token is not a language reference"); }
         self.require(valid, "service/internal value is not a language operand");
         Ok(())
     }
@@ -381,7 +389,7 @@ fn operation<'a>(
         if before == checker.state.diagnostics.len() { checker.report(R::T1, "invalid operand type or index"); }
         return None;
     }
-    let Ok(contract) = ContractRegistry::new(module).lookup(op) else {
+    let Ok(contract) = ContractRegistry::new(module).construction_schema(op, body) else {
         checker.report(R::T1, "operation contract cannot be resolved from its declarations");
         return None;
     };
@@ -833,7 +841,7 @@ fn terminator<'a>(
             }
             TermKind::InvokeOwn { op, normal, unwind } => {
                 let sub = operation(module, body, op, None, site, checker.state).unwrap_or_default();
-                if let Ok(contract) = ContractRegistry::new(module).lookup(op) {
+                if let Ok(contract) = ContractRegistry::new(module).construction_schema(op, body) {
                     at_edge(function, block_id, next_edge, checker.state);
                     invoke_target(module, body, normal, Outcome::Normal, &contract.normal.results, &sub, checker.state);
                     if let Some(failure) = &contract.unwind {
@@ -877,7 +885,14 @@ fn metadata<'a>(module: &'a Module, body: &'a Body, function: FuncId, state: &mu
     for (_, dep) in body.deps.iter() {
         if !checker.state.step(1) { return; }
         let result = match dep {
-            DepExpr::FromSsa(value) => checker.service(*value, ServiceType::Deps),
+            DepExpr::FromSsa(value) => {
+                if checker.ty(*value).is_ok_and(|ty| {
+                    matches!(ty, Type::Service(service) if service.is_linear())
+                }) {
+                    checker.report(R::B31, "a linear packet register cannot anchor a lifetime");
+                }
+                checker.service(*value, ServiceType::Deps)
+            }
             DepExpr::Retention { value, .. } => checker.language(*value),
             DepExpr::Empty | DepExpr::Key(_) | DepExpr::Union(_) => Ok(()),
         };
@@ -911,7 +926,7 @@ fn metadata<'a>(module: &'a Module, body: &'a Body, function: FuncId, state: &mu
                         checker.require(key == element, "selection map key type mismatch");
                     }
                 },
-                SelectionExpr::Union(_) => {}
+                SelectionExpr::Union(_) | SelectionExpr::Admissible(_) => {}
             }
             Ok(())
         };
@@ -1009,7 +1024,8 @@ fn function_types(module: &Module, data: &Function, state: &mut State<'_>) -> Ch
                     state.error(R::T5, "destroy must take only self and return void");
                 }
                 if matches!(attr, FunctionAttr::Successor(_)) {
-                    let valid = data.signature.results.len() == 1 && data.signature.results.first()
+                    let results = language_slots(module, &data.signature.results, state);
+                    let valid = results.len() == 1 && results.first()
                         .and_then(|id| module.types.get(*id).ok()).is_some_and(|ty| match ty {
                             Type::Successor(id) => module.types.get(*id).is_ok_and(|ty| {
                                 matches!(ty, Type::Object { decl, .. } if decl == owner)
@@ -1020,7 +1036,8 @@ fn function_types(module: &Module, data: &Function, state: &mut State<'_>) -> Ch
                 }
             }
             FunctionAttr::Ctor(owner) => {
-                let valid = data.signature.results.len() == 1 && data.signature.results.first()
+                let results = language_slots(module, &data.signature.results, state);
+                let valid = results.len() == 1 && results.first()
                     .and_then(|id| module.types.get(*id).ok())
                     .is_some_and(|ty| matches!(ty, Type::Object { decl, .. } if decl == owner));
                 if !valid { state.error(R::T5, "constructor must return its object type"); }

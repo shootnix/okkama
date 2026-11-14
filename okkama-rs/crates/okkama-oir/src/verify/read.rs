@@ -282,6 +282,7 @@ impl Read for SelectionExpr {
         match self {
             Self::Value(value) | Self::OwnerGraph(value) | Self::ViewOwner(value) => value.read(visitor),
             Self::Projection(projection) => projection.read(visitor),
+            Self::Admissible(selection) => selection.read(visitor),
             Self::Union(items) => items.read(visitor),
             Self::Descriptor { descriptor, value } => {
                 descriptor.read(visitor);
@@ -310,6 +311,15 @@ impl Read for Projection {
                 value.read(visitor);
                 keys.read(visitor);
             }
+        }
+    }
+}
+
+impl Read for CreationOrigin {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Instruction(inst) => inst.read(visitor),
+            Self::Invoke { block, .. } => block.read(visitor),
         }
     }
 }

@@ -1,0 +1,10 @@
+oir 2 own
+// expect OIR2-B1.1 operand:0:0:[0]
+module core
+scope S action in @f
+summary M0 internal   contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%p: own) -> own summary(M0) {
+^entry in S:
+    %n: int = int.add %p, %p
+    ret %p
+}

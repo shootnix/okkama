@@ -1,0 +1,18 @@
+oir 2 own
+// expect OIR2-B10.1 instruction:0:7
+module active_failure_reserve
+scope S action in @f
+summary M0 call-boundary results [result_relation(provenance=bound)] contract call_contract(results=[int], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f(%failure: failure) -> (int, own, deps) summary(M0) {
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %v: int = const 1
+    %empty: own = own.empty
+    (%rest: own, %selected: own, %deps: deps) = own.split %empty, selection(%v)
+    %joined: own = own.join [%rest, %selected]
+    %pending: pending = exit.prepare return %v, %joined, deps(%deps) at B0
+    (%active: failure, %aborted: pending) = scope.unwind %q, %failure, reserve %pending
+    (%result: int, %out: own, %full: deps) = exit.commit %aborted, destination caller, result int
+    ret %result, %out, %full
+}

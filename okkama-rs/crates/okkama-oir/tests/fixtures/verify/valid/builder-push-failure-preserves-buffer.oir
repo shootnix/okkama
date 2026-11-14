@@ -1,0 +1,50 @@
+oir 2 own
+// spec: 8;9.2; status: v2; expected-rule: -
+module 08-builder-journal
+requires core
+object Res {
+    field label: str
+    destroy @destroy
+}
+object Holder {
+    field res: Res
+    field label: str
+}
+enum Stop is Error = (stop)
+enum Cleanup is Error = (failed)
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mlabel call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mverify3 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [] contract call_contract(results=[], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mverify5 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract call_contract(results=[array<Res>], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @new(%label: str) -> Res [extern "fixture.new"] summary(Mnew);
+func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
+func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
+scope S action in @main
+func @main(%element: Res facts(managed(deps=dfull_element)); %input: own) -> (array<Res>, own) summary(Mverify5) {
+    dependency dfull_element: dependency = retention(value=%element, selection=selection(%element))
+    dependency dfull_array: dependency = retention(value=%array, selection=selection(%array))
+    boundary B0 call in S
+^entry in S:
+    %buffer: builder<Res> = builder.new element Res
+    invoke.own builder.push %buffer, %element, packet %input
+        normal ^finish($buffer, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^finish(%next: builder<Res>, %journal: own) in S:
+    invoke.own builder.finish %next, packet %journal
+        normal ^done($value, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^done(%array: array<Res> facts(managed(deps=dfull_array)), %out: own) in S:
+    ret %array, %out
+^abandon(%original: builder<Res>, %old_journal: own, %failure: failure) in S:
+    %rest: own = builder.abandon %original, packet %old_journal
+    invoke.own end %rest, boundary B0
+        normal ^failed($closed, %failure)
+        unwind ^secondary($closed, $failure, %failure)
+^failed(%closed: closed, %error: failure) in S:
+    raise %error
+^secondary(%closed2: closed, %cleanup_error: failure, %prior: failure) in S:
+    %joined: failure = fail.secondary %prior, %cleanup_error
+    raise %joined
+}

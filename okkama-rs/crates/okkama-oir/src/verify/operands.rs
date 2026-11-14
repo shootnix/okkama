@@ -854,7 +854,7 @@ impl Checker<'_, '_> {
             OwnershipOp::Join { packets } => {
                 for &packet in packets { self.service(packet, ServiceType::Own)?; }
             }
-            OwnershipOp::Admit { state, packet } => {
+            OwnershipOp::Admit { state, packet } | OwnershipOp::Accept { state, packet } => {
                 self.scope(*state)?;
                 self.service(*packet, ServiceType::Own)?;
             }
@@ -868,8 +868,13 @@ impl Checker<'_, '_> {
                 self.exact(stage.resource.value, field_type(self.module, stage.field)?)?;
                 self.service(stage.resource.packet, ServiceType::Own)?;
             }
-            OwnershipOp::ScopeSplit { state, .. } | OwnershipOp::ScopeEnd { state } => self.scope(*state)?,
-            OwnershipOp::ScopeUnwind { state, failure } => {
+            OwnershipOp::ScopeSplit { state, .. } => self.scope(*state)?,
+            OwnershipOp::ScopeEnd { state, reserve } => {
+                self.scope(*state)?;
+                if let Some(reserve) = reserve { self.service(*reserve, ServiceType::Pending)?; }
+            }
+            OwnershipOp::ScopeUnwind { state, failure, reserve } => {
+                if let Some(reserve) = reserve { self.service(*reserve, ServiceType::Pending)?; }
                 self.scope(*state)?;
                 self.service(*failure, ServiceType::Failure)?;
             }
@@ -949,10 +954,11 @@ impl Checker<'_, '_> {
         if let OwnershipAbi::Explicit { .. } = data.signature.ownership_abi {
             self.require(call.packet.is_some(), "explicit callee ABI needs an input packet");
         }
-        if let Some(summary) = data.summary {
-            self.require(summary == call.summary, "call summary differs from its target declaration");
+        if call.summary.is_some() && let Some(summary) = data.summary {
+            self.require(Some(summary) == call.summary, "call summary differs from its target declaration");
         }
-        let summary = self.module.summaries.get(call.summary)?;
+        let Some(summary) = call.summary else { return Ok(()); };
+        let summary = self.module.summaries.get(summary)?;
         let language_results: Vec<_> = data.signature.results.iter().copied().filter(|id| {
             self.module.types.get(*id).is_ok_and(|ty| !matches!(ty, Type::Service(_)))
         }).collect();
@@ -995,7 +1001,8 @@ impl Checker<'_, '_> {
                 let params = signature.params.clone();
                 let result = signature.result;
                 self.call_site(call, &params, None)?;
-                let summary = self.module.summaries.get(call.summary)?;
+                let Some(summary) = call.summary else { return Ok(()); };
+        let summary = self.module.summaries.get(summary)?;
                 self.require(summary.contract.results.as_slice() == result.as_slice(), "fn summary result mismatch");
                 self.require(call.type_args.is_empty(), "fn.call cannot have nominal type arguments");
             }
@@ -1039,6 +1046,26 @@ impl Checker<'_, '_> {
             }
             AsyncOp::UniqueCacheProof { proof } => {
                 self.future(proof.future)?;
+                match proof.evidence.creation {
+                    CreationOrigin::Instruction(inst) => {
+                        let results = &self.body.insts.get(inst)?.results;
+                        let ty = value_type(self.body, proof.future)?;
+                        let valid = results.iter().any(|v| value_type(self.body, *v).is_ok_and(|actual| actual == ty));
+                        self.require(valid, "proof instruction origin has no matching Future result");
+                    }
+                    CreationOrigin::Invoke { block, outcome, slot } => {
+                        let TermKind::InvokeOwn { op, .. } = &self.body.blocks.get(block)?.term.kind else {
+                            self.require(false, "proof invoke origin is not an invoke");
+                            return Ok(());
+                        };
+                        let contract = ContractRegistry::new(self.module).lookup(op).map_err(|_| TypeCheckError)?;
+                        let result = contract.outcome(outcome).and_then(|schema| schema.results.get(usize::from(slot)));
+                        let valid = result.is_some_and(|result| super::edge_slot_matches(self.module, self.body, op,
+                            &result.ty, value_type(self.body, proof.future).unwrap_or(TypeId::from_u32(u32::MAX)),
+                            self.state));
+                        self.require(valid, "proof invoke origin has an invalid outcome/slot/Future type");
+                    }
+                }
                 for &alias in &proof.evidence.aliases { self.same(proof.future, alias)?; }
             }
             AsyncOp::CacheRehome { state, .. } => self.service(*state, ServiceType::CacheState)?,
@@ -1157,7 +1184,9 @@ impl Checker<'_, '_> {
                 self.service(*pending, ServiceType::Pending)?;
                 self.prepared(replacement)?;
             }
-            ExitOp::Commit { pending, .. } => self.service(*pending, ServiceType::Pending)?,
+            ExitOp::Commit { pending, .. } | ExitOp::DiscardEmpty { pending } => {
+                self.service(*pending, ServiceType::Pending)?;
+            }
             ExitOp::Abort { pending, cleanup, .. } => {
                 self.service(*pending, ServiceType::Pending)?;
                 self.service(*cleanup, ServiceType::CleanupState)?;

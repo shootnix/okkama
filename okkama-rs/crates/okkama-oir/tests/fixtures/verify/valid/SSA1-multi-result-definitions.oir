@@ -1,11 +1,14 @@
 oir 2 own
 module multi_result
 scope S action in @f
-summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
 func @f(%p: own, %x: int) -> void summary(M0) {
+    boundary B0 call in S
 ^entry in S:
     (%r: own, %s: own, %d: deps) = own.split %p, selection(%x)
     %m: own = own.move %r
     %n: own = own.move %s
+    %both: own = own.join [%m, %n]
+    %closed: closed = end %both, boundary B0
     ret
 }
