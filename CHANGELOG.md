@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **Group-owned Futures and safe suspension snapshots on Sparrow (#581).**
+  FutureGroup retains registered Futures, their caches and transferred fresh
+  dependencies after a registering call or lexical binding exits. Duplicate
+  registration, multiple groups and surviving lexical owners release the cache
+  once at its final owner; internal FutureScope groups settle their children
+  before cleanup and preserve the body result. Lowering and region elision
+  account for these hidden ownership edges, including async destroys. This
+  prevents accepted HTTP connections from closing before dispatch. Suspended
+  frames now save live registers and clear dead ones instead of resurrecting
+  reclaimed pointers, fixing the SQLite throughput lifetime GC-stress crash.
+
 - **Unique await and escaping cache results on Sparrow (#581).** In addition to
   direct async calls, `await.take` now accepts proven fresh results of plain
   Future factories, fresh Future outcomes returned by async actions, and exclusive

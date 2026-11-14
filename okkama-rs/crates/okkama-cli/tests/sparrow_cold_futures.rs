@@ -158,8 +158,11 @@ fn cold_future_cached_result_escapes_with_future() {
                 let inner = Factory().create(log);
                 let value = await inner;
                 confirm value.label() == "V";
+                confirm log.value() == "";
                 inner;
             } else { Factory().create(log); };
+            // Observe the escaped cache too: a sole fresh await may take it.
+            confirm (await cold).label() == "V";
             confirm log.value() == "";
         }
         confirm log.value() == "V";

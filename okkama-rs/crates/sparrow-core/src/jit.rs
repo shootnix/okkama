@@ -471,7 +471,8 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     // of the code. A synchronous function keeps Cranelift's stack maps, which
     // cost a third less in call-heavy code such as recursion (#362).
     let explicit = source.is_async && !jit.frontend_maps.has(symbol);
-    let root_live = explicit.then(|| okkama_sparrow::live_sets(source)).flatten();
+    let frame_live = source.is_async.then(|| okkama_sparrow::live_sets(source).map(std::sync::Arc::new)).flatten();
+    let root_live = if explicit { frame_live.clone() } else { None };
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
     context.func.signature = jit.signature(params);
@@ -503,6 +504,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             cost_limit,
             plain,
             root_live,
+            frame_live,
             roots: None,
         };
         emit.body()?;
@@ -654,7 +656,9 @@ struct Emitter<'a, 'b> {
     spill_area: Option<cranelift_codegen::ir::StackSlot>,
     /// Registers live before each instruction, for explicit roots (#354);
     /// `None`: Cranelift's frontend keeps the stack maps.
-    root_live: Option<okkama_sparrow::LiveSets>,
+    root_live: Option<std::sync::Arc<okkama_sparrow::LiveSets>>,
+    /// Live registers at suspension, independently of the stack-map strategy.
+    frame_live: Option<std::sync::Arc<okkama_sparrow::LiveSets>>,
     roots: Option<Roots>,
 }
 
@@ -767,6 +771,16 @@ impl Emitter<'_, '_> {
 
     fn set(&mut self, register: &okkama_sparrow::Register, value: Value) {
         self.builder.def_var(self.vars[register.0 as usize], value);
+        // If liveness exceeds its analysis budget, keep the heap snapshot
+        // current at every pointer definition instead. Saving an unrooted old
+        // machine register at a later suspension could resurrect freed memory.
+        if self.frame_live.is_none() && self.kinds[register.0 as usize].traced()
+            && let Some(frame) = self.frame
+        {
+            let frame = self.builder.use_var(frame);
+            let offset = crate::tasks::REGISTERS as i32 + register.0 as i32 * 8;
+            self.builder.ins().store(MEMORY, value, frame, offset);
+        }
         if let Some(roots) = &self.roots
             && let Some(word) = roots.word[register.0 as usize]
         {
@@ -1247,11 +1261,15 @@ impl Emitter<'_, '_> {
         let ready = self.builder.create_block();
         let pending = self.builder.ins().icmp_imm_u(IntCC::Equal, outcome, crate::tasks::AWAIT_PENDING as i64);
         self.builder.ins().brif(pending, suspend, &[], ready, &[]);
-        // Save every register and re-enter this await when resumed.
+        // Save the live continuation and re-enter this await when resumed.
+        // Dead machine registers may already point to reclaimed cells. They
+        // must never be published back into a precisely traced heap frame.
         self.builder.switch_to_block(suspend);
         let frame = self.builder.use_var(self.frame.expect("frame"));
         for register in 0..self.kinds.len() {
-            let value = self.word(&okkama_sparrow::Register(register as u32));
+            let live = self.frame_live.as_ref().is_none_or(|sets|
+                sets[pc].get(register / 64).is_some_and(|word| word >> (register % 64) & 1 != 0));
+            let value = if live { self.word(&okkama_sparrow::Register(register as u32)) } else { self.iconst(0) };
             let offset = crate::tasks::REGISTERS as i32 + register as i32 * 8;
             self.builder.ins().store(MEMORY, value, frame, offset);
         }

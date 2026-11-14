@@ -1398,7 +1398,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
         loop {
             let mut changed = false;
             for index in 0..self.objects.len() {
-                let plain = self.objects[index].destroy.is_none()
+                let plain = !group_decl(self.reg, self.objects[index].decl.0)
+                    && self.objects[index].destroy.is_none()
                     && self.objects[index]
                         .fields
                         .iter()
@@ -1440,7 +1441,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 // System objects (`Cancelled`, `NativeFailure`) have no destroy.
                 let own = self.reg.objects.get(self.objects[index].decl.0)
                     .is_some_and(|info| info.destroy.is_some_and(|destroy| destroy.is_async));
-                let reaching = own || self.objects[index].fields.iter().any(|(_, ty, _)| self.may_async_destroy(ty));
+                let reaching = own || group_decl(self.reg, self.objects[index].decl.0) || self.objects[index].fields.iter().any(|(_, ty, _)| self.may_async_destroy(ty));
                 if !self.async_objects[index] && reaching {
                     self.async_objects[index] = true;
                     changed = true;
@@ -1594,7 +1595,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             let variant_plain = |id: usize| self.variant_plain(id, &snapshot);
             let mut changed = false;
             for (index, object) in self.objects.iter().enumerate() {
-                let plain = object.destroy.is_none()
+                let plain = !group_decl(self.reg, object.decl.0) && object.destroy.is_none()
                     && object
                         .fields
                         .iter()
@@ -1807,13 +1808,19 @@ fn decl_plain_ty(ty: &Ty, objects: &[bool], roles: &[bool]) -> bool {
     }
 }
 
+/// A group's intrinsic registration retains Futures outside its declared fields.
+fn group_decl(reg: &Registry<'_>, object: usize) -> bool {
+    reg.objects.get(object).is_some_and(|info|
+        info.name == "FutureGroup" && reg.modules[info.module].name == "async/scope")
+}
+
 /// Объявления объектов без `destroy`, чьи поля plain (при данных ролях).
 fn decl_plain_objects(reg: &Registry<'_>, roles: &[bool]) -> Vec<bool> {
     let mut objects = vec![true; reg.objects.len()];
     loop {
         let mut changed = false;
         for (index, info) in reg.objects.iter().enumerate() {
-            let plain = info.destroy.is_none()
+            let plain = !group_decl(reg, index) && info.destroy.is_none()
                 && info
                     .fields
                     .iter()

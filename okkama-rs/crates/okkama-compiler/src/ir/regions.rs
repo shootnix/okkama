@@ -221,6 +221,14 @@ impl Plain {
                 .map(|variant| variant.cases.iter().map(|(_, object)| object.0).collect())
                 .collect(),
         };
+        // Registered Futures are hidden intrinsic state, rather than fields.
+        for function in &module.functions {
+            if let Some((name, objects)) = function.intrinsic()
+                && matches!(name, "okkama.scope.FutureGroup.new" | "okkama.scope.FutureScope.outcome")
+            {
+                plain.objects[objects[0].0] = false;
+            }
+        }
         loop {
             let mut changed = false;
             for (index, object) in module.objects.iter().enumerate() {

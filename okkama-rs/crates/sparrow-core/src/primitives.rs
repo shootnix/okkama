@@ -103,6 +103,8 @@ pub struct Channel {
 
 #[derive(Debug, Default)]
 pub struct Group {
+    /// Private ownership packet of registered Futures and their fresh inputs.
+    pub resources: Option<Word>,
     pub sealed: bool,
     pub cancelled: bool,
     pub entries: Vec<Word>,
@@ -132,6 +134,7 @@ impl State {
                 stream.entries.iter().chain(&stream.waiters).chain(&stream.aborted).for_each(|&w| visit(w, Repr::Ref))
             }
             Self::Group(group) => {
+                if let Some(resources) = group.resources { visit(resources, Repr::Ref); }
                 group.entries.iter().for_each(|&w| visit(w, Repr::Ref));
                 if let Some(Ok(w) | Err(w)) = group.result {
                     visit(w, Repr::Ref);

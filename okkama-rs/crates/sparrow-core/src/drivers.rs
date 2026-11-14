@@ -404,9 +404,12 @@ fn set_state(runtime: &mut Runtime, frame: Word, payload: Box<dyn Payload>) {
 
 #[derive(Debug)]
 struct GroupWait {
-    /// 0 start, 1 body pending (scope), 2 waiting for members.
+    /// 0 start, 1 body pending (scope), 2 members, 3 scope cleanup.
     phase: u8,
     group: Word,
+    /// A scope owns its internal group and body Future until all children
+    /// settle; the body receives a borrowed supervising capability.
+    resources: Word,
     body: Word,
     value: Word,
     value_repr: Repr,
@@ -417,6 +420,7 @@ struct GroupWait {
 impl Payload for GroupWait {
     fn trace(&self, visit: &mut dyn FnMut(Word, Repr)) {
         visit(self.group, Repr::Ref);
+        visit(self.resources, Repr::Ref);
         visit(self.body, Repr::Ref);
         visit(self.value, self.value_repr);
         if let Some(external) = self.external {
@@ -442,14 +446,21 @@ fn group_wait(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
         let group = if scope {
             let owner = runtime.loaded.program.functions[function].intrinsic.as_ref().expect("intrinsic").objects[0].0;
             let group = runtime.heap.object_new(owner, &[]);
+            runtime.created(owner as usize, group);
             runtime.state_new(group, State::Group(Default::default()));
             group
         } else {
             receiver
         };
+        let resources = if scope {
+            let resources = runtime.heap.allocate_array(Repr::Ref, &[UNBOUND; 1 + crate::failures::REGION_SLOTS]);
+            runtime.region_add(resources, group, true);
+            resources
+        } else { UNBOUND };
         let wait = GroupWait {
             phase: if scope { 0 } else { 2 },
             group,
+            resources,
             body: UNBOUND,
             value: if value_repr == Repr::Raw { crate::word::UNBOUND_RAW } else { UNBOUND },
             value_repr,
@@ -462,6 +473,9 @@ fn group_wait(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
             seal(runtime, frame);
         }
     }
+    if scope && state::<GroupWait>(runtime, frame).expect("group wait").phase == 3 {
+        return scope_cleanup(runtime, ctx, frame, deliver);
+    }
     let group = state::<GroupWait>(runtime, frame).expect("group wait").group;
     if state::<GroupWait>(runtime, frame).expect("group wait").phase == 0 {
         let action = runtime.heap.field(receiver, 0);
@@ -469,7 +483,11 @@ fn group_wait(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize
         let s = state::<GroupWait>(runtime, frame).expect("group wait");
         s.phase = 1;
         match unsafe { (*ctx).status } {
-            OK => s.body = body,
+            OK => {
+                s.body = body;
+                let resources = s.resources;
+                runtime.region_add(resources, body, true);
+            }
             _ => match call_failed(ctx) {
                 Ok(failure) => {
                     s.external = Some(failure);
@@ -602,7 +620,19 @@ fn group_members(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, scope: bool,
         }
     };
     let s = state::<GroupWait>(runtime, frame).expect("group wait");
-    let (external, value) = (s.external, s.value);
+    let external = s.external;
+    if scope {
+        let primary = match (external, result) {
+            (Some(external), Err(failed)) if failed != external => Some(runtime.failure_link(external, failed, true)),
+            (Some(external), _) => Some(external),
+            (None, Err(failed)) => Some(failed),
+            (None, Ok(_)) => None,
+        };
+        let s = state::<GroupWait>(runtime, frame).expect("group wait");
+        s.external = primary;
+        s.phase = 3;
+        return scope_cleanup(runtime, ctx, frame, false);
+    }
     if let Some(external) = external {
         if let Err(failed) = result
             && failed != external {
@@ -612,8 +642,28 @@ fn group_members(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, scope: bool,
     }
     match result {
         Err(failure) => Failed(failure),
-        Ok(_) if scope => Done(value),
         Ok(_) => Done(param(runtime, frame, runtime.function_of(frame), 0)),
+    }
+}
+
+/// Close the scope's internal ownership packet, preserving only the published
+/// body result (or failure). Async destroys use the ordinary shielded settle.
+fn scope_cleanup(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, deliver: bool) -> Step {
+    if deliver && state::<GroupWait>(runtime, frame).expect("group wait").external.is_none() {
+        let failure = runtime.cancelled_failure();
+        state::<GroupWait>(runtime, frame).expect("group wait").external = Some(failure);
+    }
+    let s = state::<GroupWait>(runtime, frame).expect("group wait");
+    let (resources, value, primary) = (s.resources, s.value, s.external);
+    let keep = if s.value_repr == Repr::Ref && primary.is_none() { value } else { UNBOUND };
+    match tasks::rt_region_settle(ctx, frame, resources, keep, primary.unwrap_or(UNBOUND)) {
+        tasks::AWAIT_PENDING => Pending,
+        _ if unsafe { (*ctx).status } != OK => match call_failed(ctx) {
+            Ok(failure) => Failed(failure),
+            Err(()) => Stop,
+        },
+        _ if primary.is_some() => Failed(unsafe { (*ctx).scratch }),
+        _ => Done(value),
     }
 }
 

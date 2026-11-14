@@ -5,7 +5,8 @@ use std::path::PathBuf;
 struct Stdlib(PathBuf);
 impl lowering::ModuleLoader for Stdlib {
     fn load(&mut self, path: &str, _importer: &str) -> Result<Option<lowering::LoadedModule>, String> {
-        let file = [self.0.join(format!("{path}.ok")), self.0.join("../t/support").join(format!("{path}.ok"))]
+        let file = [self.0.join(format!("{path}.ok")), self.0.join("../t/support").join(format!("{path}.ok")),
+            self.0.join("../conformance/harness/okkama").join(format!("{path}.ok"))]
             .into_iter().find(|file| file.is_file());
         let Some(file) = file else { return Ok(None); };
         let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
@@ -23,7 +24,7 @@ fn compile(body: &str) -> okkama_sparrow::Program {
         import "async/event" take Event;
         import "async/channel" take Channel;
         import "async/collect" take AllFutures, FutureCompletions;
-        import "async/scope" take FutureGroup;
+        import "async/scope" take FutureGroup, FutureScope, Supervising;
         import "db/sqlite" take SqliteMemory;
         import "db/pool" take DbPreparedPool, PoolOptions;
         import "db/acquisition" take DbAcquiring, DbAcquisition;
@@ -64,15 +65,63 @@ fn compile(body: &str) -> okkama_sparrow::Program {
             Holder(:resource);
             label() is string {{ resource.label(); }}
         }}
+        // HttpServerPeer.run's acquisition/group/dispatch lifetime, without a
+        // listener, sockets, native handles or an external server process.
+        object Peer {{
+            has waiting is Future<Res>;
+            has group is FutureGroup<bool>;
+            has ready, dispatch, done is Event;
+            Peer(:waiting, :ready, :dispatch, :done) {{ group = FutureGroup(); }}
+            start() is void {{ group.start(self.run()); }}
+            async run() is bool {{
+                defer done.set();
+                let connections is FutureGroup<Res> = FutureGroup();
+                connections.start(waiting);
+                let available = [await waiting];
+                ready.set();
+                await dispatch.wait();
+                confirm available[0].label() == "A";
+                true;
+            }}
+        }}
+        object Scoped {{
+            has log is Atomic<string>;
+            has gate, ready is Event;
+            Scoped(:log, :gate, :ready);
+            async run(group is Supervising<Res>) is int {{
+                group.start(Work().delayed(Res(name: "A", log: log), gate));
+                ready.set();
+                7;
+            }}
+            async result(group is Supervising<Res>) is Res {{ Res(name: "A", log: log); }}
+            async flushing(group is Supervising<AsyncRes>) is int {{
+                group.start(Work().asynchronous("A", log));
+                7;
+            }}
+            async flawed(group is Supervising<Bad>) is int {{
+                group.start(Work().bad("A", log));
+                7;
+            }}
+        }}
         object Work {{
             Work();
             observe(value is Res) is void {{ value.label(); }}
+            count(values is @int) is void {{ confirm values.size() == 137; }}
             async opening(gate is Event, ready is Event) is void {{ await ready.wait(); gate.set(); }}
             async server(log is Atomic<string>) is Holder {{
                 let listener = await self.make("A", log);
                 Holder(resource: listener);
             }}
             async serve(server is Holder) is void {{ server.label(); }}
+            start(group is FutureGroup<Res>, log is Atomic<string>) is void {{
+                group.start(self.make("A", log));
+            }}
+            group(log is Atomic<string>) is FutureGroup<Res> {{
+                let group is FutureGroup<Res> = FutureGroup();
+                self.start(group, log);
+                group;
+            }}
+            async delayed(value is Res, gate is Event) is Res {{ await gate.wait(); value.label(); value; }}
             async listen(log is Atomic<string>) is void {{ await self.serve(await self.server(log)); }}
             future(log is Atomic<string>) is Future<Res> {{ self.make("A", log); }}
             async make(name is string, log is Atomic<string>) is Res {{ Res(name: name, log: log); }}
@@ -491,6 +540,19 @@ fn future_outcome_suspended_temporary_take() {
 }
 
 #[test]
+fn future_outcome_suspension_does_not_publish_dead_registers() {
+    check(r#"
+        let gate = Event(); let ready = Event();
+        spawn Work().opening(gate, ready);
+        Work().count((0..137).map()->index { index; });
+        // Event.set's safepoint can reclaim the now-dead large array before
+        // await saves the continuation. Its old register must not be saved.
+        ready.set();
+        await gate.wait();
+    "#);
+}
+
+#[test]
 fn future_outcome_temporary_async_destroy_and_failure_cleanup() {
     check(r#"
         { await Work().asynchronous("A", log); confirm log.value() == ""; }
@@ -533,6 +595,196 @@ fn future_outcome_group_and_collection_aliases_borrow() {
         }
         confirm log.value() == "A";
     "#);
+}
+
+#[test]
+fn future_outcome_group_keeps_registered_future_after_start_returns() {
+    check(r#"
+        {
+            let group is FutureGroup<Res> = FutureGroup();
+            Work().start(group, log);
+            confirm log.value() == "";
+            await group.wait();
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_group_keeps_bound_future_after_lexical_owner_exits() {
+    check(r#"
+        {
+            let group is FutureGroup<Res> = FutureGroup();
+            {
+                let future = Work().make("A", log);
+                group.start(future);
+                group.start(future);
+            }
+            confirm log.value() == "";
+            await group.wait();
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_bound_future_outlives_inner_group() {
+    check(r#"
+        {
+            let future = Work().make("A", log);
+            {
+                let group is FutureGroup<Res> = FutureGroup();
+                group.start(future);
+                await group.wait();
+            }
+            confirm (await future).label() == "A";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_multiple_groups_keep_one_cache_until_last_owner() {
+    check(r#"
+        {
+            let remaining is FutureGroup<Res> = FutureGroup();
+            {
+                let first is FutureGroup<Res> = FutureGroup();
+                { let future = Work().make("A", log); first.start(future); remaining.start(future); }
+                await first.wait();
+                confirm log.value() == "";
+            }
+            confirm log.value() == "";
+            await remaining.wait();
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_returned_group_keeps_hidden_registrations() {
+    check(r#"
+        {
+            let group = Work().group(log);
+            confirm log.value() == "";
+            await group.wait();
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_group_final_owner_awaits_async_outcome_cleanup() {
+    check(r#"
+        {
+            let group is FutureGroup<AsyncRes> = FutureGroup();
+            group.start(Work().asynchronous("A", log));
+            await group.wait();
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_group_transfers_retained_inputs_with_running_future() {
+    check(r#"
+        {
+            let group is FutureGroup<Res> = FutureGroup();
+            let gate = Event();
+            {
+                let future = Work().delayed(Res(name: "A", log: log), gate);
+                group.start(future);
+            }
+            confirm log.value() == "";
+            gate.set();
+            await group.wait();
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_scope_owns_group_until_children_settle() {
+    check(r#"
+        let gate = Event(); let ready = Event();
+        spawn Work().opening(gate, ready);
+        let scope is FutureScope<Res, int> = FutureScope(action: Scoped(log: log, gate: gate, ready: ready).run);
+        confirm await scope.outcome() == 7;
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_scope_publishes_body_result_and_awaits_child_cleanup() {
+    check(r#"
+        {
+            let action = Scoped(log: log, gate: Event(), ready: Event());
+            let scope is FutureScope<Res, Res> = FutureScope(action: action.result);
+            let value = await scope.outcome();
+            confirm value.label() == "A";
+        }
+        confirm log.value() == "A" else panic "body scope log: " + log.value();
+        log.replace("");
+        let action = Scoped(log: log, gate: Event(), ready: Event());
+        let scope is FutureScope<AsyncRes, int> = FutureScope(action: action.flushing);
+        confirm await scope.outcome() == 7;
+        confirm log.value() == "A" else panic "async scope log: " + log.value();
+    "#);
+}
+
+#[test]
+fn future_outcome_scope_cancellation_and_cleanup_failure_release_once() {
+    check(r#"
+        {
+            let ready = Event();
+            let action = Scoped(log: log, gate: Event(), ready: ready);
+            let scope is FutureScope<Res, int> = FutureScope(action: action.run);
+            let start is async () is int = scope.outcome;
+            let pending = spawn start();
+            await ready.wait();
+            pending.cancel();
+            try { await pending; } catch e is Cancelled { e.text(); }
+            confirm log.value() == "A";
+        }
+        log.replace("");
+        let action = Scoped(log: log, gate: Event(), ready: Event());
+        let scope is FutureScope<Bad, int> = FutureScope(action: action.flawed);
+        let pending = scope.outcome();
+        try { await pending; } catch e is Stop { e.text(); }
+        try { await pending; } catch e is Stop { e.text(); }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_accepted_connection_survives_peer_start_and_dispatch() {
+    check(r#"
+        let ready = Event(); let dispatch = Event(); let done = Event();
+        {
+            let peer = Peer(waiting: Work().make("A", log), ready: ready, dispatch: dispatch, done: done);
+            peer.start();
+            await ready.wait();
+        }
+        confirm log.value() == "";
+        dispatch.set();
+        await done.wait();
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_sqlite_throughput_lifetime_in_process() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../conformance/cases/L11-protocols-and-persistence/sqlite.throughput-lifetime/main.ok");
+    let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
+    let program = compile_source(&source);
+    let bytes = okkama_sparrow::encode(&program).unwrap();
+    let limits = sparrow_core::budget::Limits { steps: Some(10_000_000), ..Default::default() };
+    assert_eq!(sparrow_core::run_limited(bytes, Vec::new(), false, Vec::new(), limits).unwrap(), 0);
 }
 
 #[test]

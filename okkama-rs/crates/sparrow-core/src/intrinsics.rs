@@ -494,6 +494,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
         }
         GroupNew => {
             let object = new(runtime, &[]);
+            runtime.created(related(runtime, function, 0) as usize, object);
             runtime.state_new(object, State::Group(primitives::Group::default()));
             Value(object, Repr::Ref)
         }
@@ -509,6 +510,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             if !known {
                 group.entries.push(future);
                 group.owned.push(false);
+                runtime.group_own(receiver, future);
             }
             runtime.spawn(ctx, future);
             VOID

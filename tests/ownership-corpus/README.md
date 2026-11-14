@@ -127,8 +127,9 @@ escape, and fresh argument admission. It also runs the two failing socket-free
 std modules `http/static` and `web/around` in-process (six inline tests).
 
 The network/signal cases and full conformance gate require the external runner.
-The gc-stress HARNESS_ERROR is `L11.sqlite.throughput-lifetime`, distinct from
-`L11.sqlite.prepared-pool-query`; the supplied excerpt has no crash/timeout detail.
+The gc-stress HARNESS_ERROR was `L11.sqlite.throughput-lifetime`, distinct from
+`L11.sqlite.prepared-pool-query`; its continuation-snapshot cause and the
+in-process reproductions are recorded in the follow-up below.
 
 ## Handwritten programs
 
@@ -427,6 +428,64 @@ restrictions. The Book remains unchanged; the final report proposes exact wordin
   with `--offline -j 4`.
 
 Full conformance, network inline tests and real signals tests were not executed
-under the requested restrictions. The next external gate must validate those
-paths and separately diagnose the `sqlite.throughput-lifetime` harness error if
-it recurs. No formatter, Docker, standalone program/server run or commit was used.
+under the requested restrictions. That checkpoint left those
+paths and the `sqlite.throughput-lifetime` harness error for the next gate;
+the follow-up below resolves the newly supplied failures. No formatter, Docker, standalone program/server run or commit was used.
+
+
+## #581c accepted connections and GC-stress gate follow-up
+
+The accepted connection was cached in `HttpServerPeer.waiting`. Its `run()`
+registers that Future in the local `connections` group before borrowing its
+result and waiting for dispatch. The group had scheduler/GC references, but no
+resource ownership edges: closing a registering helper or the peer's lexical
+scope could drain the Future's outcome and close the connection before a
+response. The same HTTP server path underlies the signal integration failures.
+
+Groups now have resource identities and private packets for registered Futures.
+A bound Future keeps its lexical owner and gains group owners; if that owner
+expires first, its retained input graph moves to a surviving group packet.
+Duplicate registration is idempotent, multiple groups share the lifetime, and
+only the final owner drains the cached outcome. Lowering's plain/async-destroy
+analyses, OIR region elision, runtime descriptor reachability and GC's group
+state visitor all include this hidden state. Internal FutureScope groups own
+children until settlement, then close their packet with shielded async cleanup,
+preserving the body result or primary failure for publication.
+
+The SQLite HARNESS_ERROR also reproduced in-process with a step budget and
+`SPARROW_CORE_GC_STRESS=1`. Temporary GC diagnostics caught a saved `main` frame
+referencing a reclaimed large array; without those diagnostics macOS reported
+allocator corruption/SIGTRAP. `suspend_unless_ready` copied every machine
+register into the traced heap frame, including dead registers whose pointers
+had already been reclaimed at an earlier safepoint. Suspension now saves live
+registers and clears dead ones, independently of the stack-map strategy. If
+liveness exceeds its analysis budget, pointer definitions keep the heap
+snapshot current instead. Temporary diagnostics were removed after isolating
+the defect. A minimal array/Event reproduction failed before the fix and passes
+after it; the full original SQLite case runs in-process with a step budget.
+
+- [x] Reproduce helper-return cleanup and accepted-connection dispatch without
+  sockets, then cover bound owners, duplicate/multiple registrations, retained
+  inputs, returned groups, async destroys and FutureScope failure/cancellation.
+- [x] Reach ordinary `await_` in the helper fixture with repeated observation;
+  unique lowering had converted all previous await sites into takes.
+- [x] Make the cold cached-result escape test observe the escaped Future again,
+  explicitly requiring a shared cache instead of assuming an unused Future
+  retains a result already extracted by its sole fresh await.
+- [x] Pass `sparrow-core --test future_outcomes` (49/49, including six socket-free
+  std inline tests) in debug and optimized `gate` profiles. Pass all 49 under
+  GC-stress in `gate`, also with `OKKAMA_IR_PASSES=none`. Pass 48/48 selected
+  cases (excluding the std inline runner) in debug GC-stress with
+  `SPARROW_CORE_FRONTEND_MAPS=*`.
+- [x] Pass `sparrow-core --test all_futures` (2/2), `--test compile_cost` (2/2),
+  compiler `--test lowering_ownership` (20/20), and CLI helpers (1/1), cold
+  Futures (8/8), Future outcomes (15/15), intrinsic contracts (2/2) in debug.
+  Helpers (1/1) and cold Futures (8/8) also pass in optimized `gate`.
+- [x] Pass workspace `check --all-targets`, workspace clippy with all targets
+  and denied warnings, and `git diff --check`.
+
+All Cargo commands use `--offline -j 4`. No network server/client, signal test,
+Docker, standalone program, full gate, benchmark, formatter or commit is run.
+The next external gate must verify the four network std modules and two real
+signal tests. The expected conformance result is 1035/1035 also under GC-stress;
+the known locale/collation failure is outside this change.
