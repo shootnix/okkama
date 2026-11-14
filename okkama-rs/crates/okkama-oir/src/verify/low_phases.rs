@@ -23,10 +23,11 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
         let Some(body) = &declaration.body else {
             continue;
         };
-        if !super::graph::eligible(function, body, state) || !state.array(body.values.len(), 32) {
+        if !super::graph::eligible(function, body, state) || !state.array(body.values.len(), 64) {
             continue;
         }
         let mut phases = vec![0_u8; body.values.len()];
+        let mut cursors = vec![BTreeSet::<(CleanupPlanId, usize)>::new(); body.values.len()];
         let mut origins = vec![BTreeSet::new(); body.values.len()];
         let edges = super::graph::edges(body, state);
         loop {
@@ -38,15 +39,45 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                 if let Some((_, phase)) = transition(&inst.op)
                     && let Some(result) = inst.results.first() {
                     changed |= join(&mut phases, *result, phase);
+                    let positions = match &inst.op {
+                        Operation::Cleanup(CleanupOp::Plan { plan, .. }) => {
+                            body.cleanup.plans.get(*plan).ok().filter(|item| item.direct.is_some())
+                                .map(|_| BTreeSet::from([(*plan, 0)])).unwrap_or_default()
+                        }
+                        Operation::Cleanup(CleanupOp::DestroyDirect { cleanup, .. }) => {
+                            cursors[cleanup.as_u32() as usize].iter().filter_map(|(plan, index)| {
+                                let proof = body.cleanup.plans.get(*plan).ok()?.direct?;
+                                let proof = body.cleanup.proofs.get(proof).ok()?;
+                                (*index < proof.slots.len()).then_some((*plan, index + 1))
+                            }).collect()
+                        }
+                        _ => transition(&inst.op).and_then(|(input, _)| input)
+                            .map(|(value, _)| cursors[value.as_u32() as usize].clone()).unwrap_or_default(),
+                    };
+                    for position in positions {
+                        if !state.step(1) {
+                            return;
+                        }
+                        if cursors[result.as_u32() as usize].insert(position) {
+                            if !state.memory(32) {
+                                return;
+                            }
+                            changed = true;
+                        }
+                    }
                     let source = match &inst.op {
                         Operation::Cleanup(CleanupOp::Begin { close, .. }) => BTreeSet::from([*close]),
                         _ => transition(&inst.op).and_then(|(input, _)| input)
                             .map(|(value, _)| origins[value.as_u32() as usize].clone()).unwrap_or_default(),
                     };
                     for close in source {
-                        if !state.step(1) { return; }
+                        if !state.step(1) {
+                            return;
+                        }
                         if origins[result.as_u32() as usize].insert(close) {
-                            if !state.memory(32) { return; }
+                            if !state.memory(32) {
+                                return;
+                            }
                             changed = true;
                         }
                     }
@@ -69,9 +100,13 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                             let phase = if result.outcome == Outcome::CleanupSelected { CURRENT } else { DRAINED };
                             changed |= join(&mut phases, *parameter, phase);
                             for close in origins[cleanup.as_u32() as usize].clone() {
-                                if !state.step(1) { return; }
+                                if !state.step(1) {
+                                    return;
+                                }
                                 if origins[parameter.as_u32() as usize].insert(close) {
-                                    if !state.memory(32) { return; }
+                                    if !state.memory(32) {
+                                        return;
+                                    }
                                     changed = true;
                                 }
                             }
@@ -104,10 +139,25 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                         _ => {}
                     }
                     changed |= join(&mut phases, *parameter, phase);
+                    for position in cursors[value.as_u32() as usize].clone() {
+                        if !state.step(1) {
+                            return;
+                        }
+                        if cursors[parameter.as_u32() as usize].insert(position) {
+                            if !state.memory(32) {
+                                return;
+                            }
+                            changed = true;
+                        }
+                    }
                     for close in origins[value.as_u32() as usize].clone() {
-                        if !state.step(1) { return; }
+                        if !state.step(1) {
+                            return;
+                        }
                         if origins[parameter.as_u32() as usize].insert(close) {
-                            if !state.memory(32) { return; }
+                            if !state.memory(32) {
+                                return;
+                            }
                             changed = true;
                         }
                     }
@@ -131,9 +181,32 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
             let Some((input, _)) = transition(&inst.op) else {
                 continue;
             };
-            let Some((value, required)) = input else {
+            let Some((value, mut required)) = input else {
                 continue;
             };
+            let positions = &cursors[value.as_u32() as usize];
+            if matches!(inst.op, Operation::Cleanup(CleanupOp::Finish { .. })) && positions.len() == 1 {
+                let (plan, index) = *positions.first().unwrap();
+                let complete = body.cleanup.plans.get(plan).ok().and_then(|plan| plan.direct)
+                    .and_then(|proof| body.cleanup.proofs.get(proof).ok())
+                    .is_some_and(|proof| index == proof.slots.len());
+                if complete {
+                    required = PLANNED;
+                }
+            }
+            if let Operation::Cleanup(CleanupOp::DestroyDirect { identity, descriptor, destroy, .. }) = &inst.op {
+                let valid = positions.len() == 1 && positions.first().is_some_and(|(plan, index)| {
+                    body.cleanup.plans.get(*plan).ok().and_then(|plan| plan.direct)
+                        .and_then(|proof| body.cleanup.proofs.get(proof).ok())
+                        .and_then(|proof| proof.slots.get(*index)).is_some_and(|slot| {
+                            slot.identity == *identity && slot.descriptor == *descriptor && slot.destroy == *destroy
+                        })
+                });
+                if !valid {
+                    state.at(L::Instruction { function, instruction }, inst.loc);
+                    state.error(R::B101, "direct step must match the next active slot in its typed plan");
+                }
+            }
             let actual = &origins[value.as_u32() as usize];
             let expected = match &inst.op {
                 Operation::Cleanup(CleanupOp::SettleEmpty { schedule, .. }) => {
@@ -166,6 +239,7 @@ fn transition(op: &Operation) -> Option<(Option<(ValueId, u8)>, u8)> {
         CleanupOp::SettleEmpty { cleanup, .. } => (Some((*cleanup, BEGUN)), SETTLED),
         CleanupOp::Plan { cleanup, .. } => (Some((*cleanup, SETTLED)), PLANNED),
         CleanupOp::Next { cleanup } => (Some((*cleanup, PLANNED)), SELECTED),
+        CleanupOp::DestroyDirect { cleanup, .. } => (Some((*cleanup, PLANNED)), CAPTURED),
         CleanupOp::Destroy { cleanup, .. } => (Some((*cleanup, CURRENT)), CAPTURED),
         CleanupOp::RecordFailure { cleanup, .. } => (Some((*cleanup, RECORD)), PLANNED),
         CleanupOp::Finish { cleanup } => (Some((*cleanup, DRAINED)), 0),

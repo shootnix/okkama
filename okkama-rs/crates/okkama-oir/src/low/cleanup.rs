@@ -111,7 +111,9 @@ fn produced(outcome: Outcome, slot: u16) -> EdgeArg {
     EdgeArg::Produced(EdgeResult { outcome, slot })
 }
 
-pub(super) fn expand(module: &mut Module, body: &mut Body, budget: &mut Budget<'_>) -> Result<(), LowError> {
+pub(super) fn expand(
+    module: &mut Module, body: &mut Body, fresh: &plans::FreshSummaries, budget: &mut Budget<'_>,
+) -> Result<(), LowError> {
     let mut queue: VecDeque<_> = body.blocks.iter().map(|(id, _)| id).collect();
     while let Some(source) = queue.pop_front() {
         budget.step(1)?;
@@ -193,7 +195,10 @@ pub(super) fn expand(module: &mut Module, body: &mut Body, budget: &mut Budget<'
         if close.pending.is_some() {
             sources.push(MergeSource::WholeReserveOnFailure);
         }
-        let plan = body.cleanup.plans.alloc(CleanupPlan { close: close_id, sources })?;
+        let direct = plans::prove(
+            module, body, close.state, close.pending, body.cleanup.closes.get(close_id)?, fresh, budget,
+        )?.map(|proof| body.cleanup.proofs.alloc(proof)).transpose()?;
+        let plan = body.cleanup.plans.alloc(CleanupPlan { close: close_id, sources, direct })?;
         let begin = CleanupOp::Begin {
             state: close.state, pending: close.pending, failure: close.failure,
             close: close_id, effects: close.effects,
@@ -214,30 +219,61 @@ pub(super) fn expand(module: &mut Module, body: &mut Body, budget: &mut Budget<'
         };
         let c = emit(module, body, source, CleanupOp::SettleEmpty { cleanup: c, schedule }, loc)?[0];
         let c = emit(module, body, source, CleanupOp::Plan { cleanup: c, plan }, loc)?[0];
-        let (next, next_params) = block(body, scope, &[cleanup_type], budget)?;
-        let (destroy, destroy_params) = block(body, scope, &[cleanup_type, key_type], budget)?;
-        let (record, record_params) = block(body, scope, &[cleanup_type, failure_type], budget)?;
-        let (finish, finish_params) = block(body, scope, &[cleanup_type], budget)?;
-        branch(body, source, next, vec![c])?;
-        terminate(body, next, TermKind::CleanupNext {
-            cleanup: next_params[0],
-            selected: InvokeEdge { block: destroy, args: vec![produced(Outcome::CleanupSelected, 0),
-                produced(Outcome::CleanupSelected, 1)] },
-            done: InvokeEdge { block: finish, args: vec![produced(Outcome::CleanupDone, 0)] },
-        }, loc)?;
-        let step = emit(module, body, destroy, CleanupOp::Destroy {
-            cleanup: destroy_params[0], key: destroy_params[1],
-        }, loc)?;
-        terminate(body, destroy, TermKind::FailureDispatch {
-            failure: step[1],
-            none: Target { block: next, args: vec![step[0]] },
-            some: InvokeEdge { block: record, args: vec![EdgeArg::Value(step[0]),
-                produced(Outcome::FailureSome, 0)] },
-        }, loc)?;
-        let recorded = emit(module, body, record, CleanupOp::RecordFailure {
-            cleanup: record_params[0], failure: record_params[1],
-        }, loc)?[0];
-        branch(body, record, next, vec![recorded])?;
+        let (finish, finish_params) = if let Some(proof) = direct {
+            let (finish, finish_params) = block(body, scope, &[cleanup_type], budget)?;
+            let slots = body.cleanup.proofs.get(proof)?.slots.clone();
+            let mut predecessor = source;
+            let mut current = c;
+            for slot in slots {
+                let (destroy, destroy_params) = block(body, scope, &[cleanup_type], budget)?;
+                let (record, record_params) = block(body, scope, &[cleanup_type, failure_type], budget)?;
+                let (next, next_params) = block(body, scope, &[cleanup_type], budget)?;
+                branch(body, predecessor, destroy, vec![current])?;
+                let step = emit(module, body, destroy, CleanupOp::DestroyDirect {
+                    cleanup: destroy_params[0], identity: slot.identity,
+                    descriptor: slot.descriptor, destroy: slot.destroy,
+                }, loc)?;
+                terminate(body, destroy, TermKind::FailureDispatch {
+                    failure: step[1], none: Target { block: next, args: vec![step[0]] },
+                    some: InvokeEdge { block: record, args: vec![EdgeArg::Value(step[0]),
+                        produced(Outcome::FailureSome, 0)] },
+                }, loc)?;
+                let recorded = emit(module, body, record, CleanupOp::RecordFailure {
+                    cleanup: record_params[0], failure: record_params[1],
+                }, loc)?[0];
+                branch(body, record, next, vec![recorded])?;
+                predecessor = next;
+                current = next_params[0];
+            }
+            branch(body, predecessor, finish, vec![current])?;
+            (finish, finish_params)
+        } else {
+            let (next, next_params) = block(body, scope, &[cleanup_type], budget)?;
+            let (destroy, destroy_params) = block(body, scope, &[cleanup_type, key_type], budget)?;
+            let (record, record_params) = block(body, scope, &[cleanup_type, failure_type], budget)?;
+            let (finish, finish_params) = block(body, scope, &[cleanup_type], budget)?;
+            branch(body, source, next, vec![c])?;
+            terminate(body, next, TermKind::CleanupNext {
+                cleanup: next_params[0],
+                selected: InvokeEdge { block: destroy, args: vec![produced(Outcome::CleanupSelected, 0),
+                    produced(Outcome::CleanupSelected, 1)] },
+                done: InvokeEdge { block: finish, args: vec![produced(Outcome::CleanupDone, 0)] },
+            }, loc)?;
+            let step = emit(module, body, destroy, CleanupOp::Destroy {
+                cleanup: destroy_params[0], key: destroy_params[1],
+            }, loc)?;
+            terminate(body, destroy, TermKind::FailureDispatch {
+                failure: step[1],
+                none: Target { block: next, args: vec![step[0]] },
+                some: InvokeEdge { block: record, args: vec![EdgeArg::Value(step[0]),
+                    produced(Outcome::FailureSome, 0)] },
+            }, loc)?;
+            let recorded = emit(module, body, record, CleanupOp::RecordFailure {
+                cleanup: record_params[0], failure: record_params[1],
+            }, loc)?[0];
+            branch(body, record, next, vec![recorded])?;
+            (finish, finish_params)
+        };
         let finished = emit(module, body, finish, CleanupOp::Finish { cleanup: finish_params[0] }, loc)?;
         let mut success = None;
         let mut pending = None;

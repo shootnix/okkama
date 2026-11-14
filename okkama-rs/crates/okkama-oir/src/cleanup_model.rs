@@ -7,6 +7,7 @@ pub struct CleanupMetadata {
     pub schedules: Arena<CleanupScheduleId, CleanupSchedule>,
     pub plans: Arena<CleanupPlanId, CleanupPlan>,
     pub roots: Arena<RootMapId, RootRequirement>,
+    pub proofs: Arena<CleanupOrderProofId, CleanupOrderProof>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CleanupSource { Scope(ScopeId), Packet(BoundaryId) }
@@ -30,8 +31,54 @@ pub enum MergeSource { ScopeInventory, PacketInventory, WholeReserveOnFailure }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CleanupPlan {
     pub close: CleanupCloseId,
-    /// One descending-serial selector over every source. Reserve joins only the unexecuted suffix.
+    /// Complete inventory in either form. Without a direct proof, one serial selector covers every source.
+    /// Reserve joins only the unexecuted suffix.
     pub sources: Vec<MergeSource>,
+    /// None selects the common merge executor; Some selects the checked finite direct chain.
+    pub direct: Option<CleanupOrderProofId>,
+}
+/// A completion event, never an allocation, admission order or a fabricated serial.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CreationWitness {
+    /// Successful complete obj.new or completion-bearing obj.init in the current OIR vocabulary.
+    Create { site: HighOperationSite },
+    FreshResult { site: HighOperationSite, callee: FuncId, summary: SummaryId },
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirectSlot {
+    pub identity: ValueId,
+    pub descriptor: ValueId,
+    pub destroy: FuncId,
+    pub origin: CreationWitness,
+    /// This identity is unconditionally present at this close, in this scope instance.
+    pub active_at: BlockId,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreserveWitness {
+    pub from: ValueId,
+    pub to: ValueId,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JoinWitness {
+    pub state: ValueId,
+    pub predecessors: Vec<ValueId>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupSuffix {
+    /// Number of completed (Dead) entries, including current. Both outcomes use this suffix.
+    pub completed: u32,
+    pub remaining: Vec<ValueId>,
+    pub roots: Vec<ValueId>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupOrderProof {
+    pub state: ValueId,
+    pub slots: Vec<DirectSlot>,
+    pub preserves: Vec<PreserveWitness>,
+    pub joins: Vec<JoinWitness>,
+    pub suffixes: Vec<CleanupSuffix>,
+    /// B2: no pending, or a pending whose entire reserve is checked empty.
+    pub reserve_empty: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RootBoundary { BeforeInstruction(InstId), AfterInstruction(InstId), Terminator(BlockId), Entry(BlockId) }

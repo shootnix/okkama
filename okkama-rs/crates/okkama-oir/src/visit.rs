@@ -4,6 +4,7 @@ use crate::*;
 
 pub trait VisitorMut {
     fn cleanup_close(&mut self, _: &mut CleanupCloseId) {}
+    fn cleanup_order_proof(&mut self, _: &mut CleanupOrderProofId) {}
     fn cleanup_plan(&mut self, _: &mut CleanupPlanId) {}
     fn cleanup_schedule(&mut self, _: &mut CleanupScheduleId) {}
     fn root_map(&mut self, _: &mut RootMapId) {}
@@ -37,7 +38,7 @@ macro_rules! leaf {
         }
     )*};
 }
-leaf!(CleanupCloseId => cleanup_close, CleanupPlanId => cleanup_plan,
+leaf!(CleanupOrderProofId => cleanup_order_proof, CleanupCloseId => cleanup_close, CleanupPlanId => cleanup_plan,
     CleanupScheduleId => cleanup_schedule, RootMapId => root_map, ValueId => value, InstId => instruction,
     BlockId => block, BindingId => binding,
     BoundaryId => boundary, DepExprId => dependency, KeyExprId => key,
@@ -281,9 +282,9 @@ impl Rewrite for HighOperationSite {
 }
 
 fields!(
-    CleanupMetadata { closes, schedules, plans, roots },
+    CleanupMetadata { closes, schedules, plans, roots, proofs },
     CleanupClose { source, after_defers, effects }, CleanupSchedule { close, holders },
-    CleanupPlan { close, sources }, RootRequirement { boundary, bindings }, RootBinding { value, trace }
+    CleanupPlan { close, sources, direct }, RootRequirement { boundary, bindings }, RootBinding { value, trace }
 );
 impl Rewrite for CleanupSource {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
@@ -309,6 +310,24 @@ impl Rewrite for RootTrace {
             Self::Value(value) => value.rewrite(visitor),
             Self::Descriptor(value) => value.rewrite(visitor),
             _ => {},
+        }
+    }
+}
+
+fields!(
+    DirectSlot { identity, descriptor, destroy, origin, active_at },
+    PreserveWitness { from, to }, JoinWitness { state, predecessors }, CleanupSuffix { completed, remaining, roots },
+    CleanupOrderProof { state, slots, preserves, joins, suffixes, reserve_empty }
+);
+impl Rewrite for CreationWitness {
+    fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
+        match self {
+            Self::Create { site } => site.rewrite(visitor),
+            Self::FreshResult { site, callee, summary } => {
+                site.rewrite(visitor);
+                callee.rewrite(visitor);
+                summary.rewrite(visitor);
+            }
         }
     }
 }

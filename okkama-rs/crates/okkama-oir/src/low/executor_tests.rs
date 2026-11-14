@@ -41,6 +41,7 @@ impl Activation {
 #[derive(Clone, Debug)]
 enum Value {
     Unit,
+    Identity(usize),
     Packet(Vec<usize>),
     State(Activation),
     Key(Option<usize>),
@@ -60,8 +61,23 @@ struct Executor {
     risky_failure: bool,
     defer_failure: bool,
     creation_failure: bool,
+    created: usize,
 }
 impl Executor {
+    fn destroy_current(&mut self, mut state: Activation) -> Vec<Value> {
+        let identity = state.current.take().unwrap();
+        assert!(!self.dead.contains(&identity));
+        let (name, _, error) = self.identities[identity];
+        self.trace.push(name);
+        self.dead.push(identity);
+        let failure = error.map(|error| {
+            let mut failure = Failure::new(error);
+            failure.cleanup_origin = true;
+            failure
+        });
+        state.needs_record = failure.is_some();
+        vec![Value::State(state), Value::Failures(failure)]
+    }
     fn packet(&mut self, value: ValueId) -> Vec<usize> {
         let Value::Packet(packet) = self.values.remove(&value).unwrap() else {
             panic!("expected packet");
@@ -104,11 +120,15 @@ impl Executor {
             for instruction in &data.insts {
                 let inst = body.insts.get(*instruction).unwrap();
                 let result = match &inst.op {
-                    Operation::Const(_) => vec![Value::Unit],
+                    Operation::Const(_) | Operation::Core(CoreOp::TypeOf { .. }) => vec![Value::Unit],
+                    Operation::Exit(ExitOp::Prepare { exit }) => {
+                        vec![Value::Packet(self.packet(exit.packet.unwrap()))]
+                    }
                     Operation::Ownership(OwnershipOp::ScopeBegin { .. } | OwnershipOp::Empty {}) => {
                         vec![Value::Packet(vec![])]
                     }
-                    Operation::Ownership(OwnershipOp::Admit { state, packet }) => {
+                    Operation::Ownership(OwnershipOp::Admit { state, packet }
+                        | OwnershipOp::Accept { state, packet }) => {
                         let mut values = self.packet(*state);
                         values.extend(self.packet(*packet));
                         vec![Value::Packet(values)]
@@ -161,17 +181,18 @@ impl Executor {
                         };
                         let identity = state.current.take().unwrap();
                         assert_eq!(selected, Some(identity));
-                        assert!(!self.dead.contains(&identity));
-                        let (name, _, error) = self.identities[identity];
-                        self.trace.push(name);
-                        self.dead.push(identity);
-                        let failure = error.map(|error| {
-                            let mut failure = Failure::new(error);
-                            failure.cleanup_origin = true;
-                            failure
-                        });
-                        state.needs_record = failure.is_some();
-                        vec![Value::State(state), Value::Failures(failure)]
+                        state.current = Some(identity);
+                        self.destroy_current(state)
+                    }
+                    Operation::Cleanup(CleanupOp::DestroyDirect { cleanup, identity, .. }) => {
+                        let mut state = self.state(*cleanup);
+                        assert!(!state.needs_record && state.current.is_none());
+                        let Value::Identity(identity) = self.values[identity] else {
+                            panic!("expected direct identity");
+                        };
+                        let position = state.remaining.iter().position(|entry| *entry == identity).unwrap();
+                        state.current = Some(state.remaining.remove(position));
+                        self.destroy_current(state)
                     }
                     Operation::Cleanup(CleanupOp::RecordFailure { cleanup, failure }) => {
                         let mut state = self.state(*cleanup);
@@ -237,6 +258,17 @@ impl Executor {
                         self.edge(body, success.as_ref().unwrap(), &[Value::Unit])
                     }
                 }
+                TermKind::InvokeOwn { op, normal, .. }
+                    if matches!(op.as_ref(), Operation::Core(CoreOp::ObjNew { .. })) => {
+                    let Operation::Core(CoreOp::ObjNew { packet, .. }) = op.as_ref() else {
+                        unreachable!();
+                    };
+                    let mut packet = self.packet(packet.unwrap());
+                    let identity = self.created;
+                    self.created += 1;
+                    packet.push(identity);
+                    self.edge(body, normal, &[Value::Identity(identity), Value::Packet(packet)])
+                }
                 TermKind::InvokeOwn { op, normal, unwind } => {
                     let Operation::Call(CallOp::Direct { function, call }) = op.as_ref() else {
                         panic!("expected call");
@@ -246,7 +278,10 @@ impl Executor {
                     }
                     let name = &module.functions.get(*function).unwrap().symbol;
                     let failed = if name == "new" { self.creation_failure } else { self.risky_failure };
-                    if failed {
+                    if name == "old" {
+                        let identity = self.values[&call.args[0].value].clone();
+                        self.edge(body, normal, &[identity, Value::Packet(vec![]), Value::Unit])
+                    } else if failed {
                         self.edge(body, unwind, &[Value::Failure(Failure::new("body"))])
                     } else if name == "new" {
                         self.edge(body, normal, &[Value::Unit, Value::Packet(vec![0]), Value::Unit])
@@ -335,4 +370,40 @@ fn risky_paths_run_exactly_the_reached_defer_prefix() {
             assert_eq!(failure.secondaries, ["defer"]);
         }
     }
+}
+
+#[test]
+fn direct_failure_continues_suffix_once_and_old_result_uses_serial_merge() {
+    for source in [
+        include_str!("fixtures/local-pair.own.oir"),
+        include_str!("fixtures/return-old.own.oir"),
+    ] {
+        let module = checked(source);
+        let param = body(&module).blocks.get(body(&module).entry).unwrap().params[0];
+        let mut executor = Executor {
+            identities: vec![("A", 1, Some("A failed")), ("B", 2, Some("B failed"))],
+            ..Executor::default()
+        };
+        executor.values.insert(param, Value::Unit);
+        executor.run(&module);
+        assert_eq!(executor.trace, ["B", "A"]);
+        assert_eq!(executor.dead, [1, 0]);
+        let failure = executor.terminal.unwrap();
+        assert_eq!(failure.error, "B failed");
+        assert_eq!(failure.secondaries, ["A failed"]);
+    }
+}
+
+#[test]
+fn finite_local_triplet_uses_creation_order() {
+    let module = checked(&super::direct_tests::triplet_source());
+    let param = body(&module).blocks.get(body(&module).entry).unwrap().params[0];
+    let mut executor = Executor {
+        identities: vec![("a", 1, None), ("b", 2, None), ("h", 3, None)],
+        ..Executor::default()
+    };
+    executor.values.insert(param, Value::Unit);
+    executor.run(&module);
+    assert_eq!(executor.trace, ["h", "b", "a"]);
+    assert_eq!(executor.dead, [2, 1, 0]);
 }

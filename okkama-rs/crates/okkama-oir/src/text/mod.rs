@@ -1669,7 +1669,7 @@ macro_rules! cleanup_id_codec {
         }
     )*};
 }
-cleanup_id_codec!(CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId);
+cleanup_id_codec!(CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId, CleanupOrderProofId);
 impl<I: ArenaId, T: Codec> Codec for Arena<I, T> {
     fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
         let mut arena = Self::new();
@@ -1688,10 +1688,36 @@ impl<I: ArenaId, T: Codec> Codec for Arena<I, T> {
         Ok(())
     }
 }
-record!(CleanupMetadata, "cleanup_metadata", { closes, schedules, plans, roots });
+impl Codec for CleanupMetadata {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("cleanup_metadata")?;
+        r.expect("(")?;
+        let closes = Codec::read_field(r, "closes")?;
+        let schedules = Codec::read_field(r, "schedules")?;
+        let plans = Codec::read_field(r, "plans")?;
+        let roots = Codec::read_field(r, "roots")?;
+        let proofs = if r.is("proofs") {
+            Codec::read_field(r, "proofs")?
+        } else {
+            Arena::new()
+        };
+        r.expect(")")?;
+        Ok(Self { closes, schedules, plans, roots, proofs })
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("cleanup_metadata(");
+        self.closes.write_field(w, "closes")?;
+        self.schedules.write_field(w, "schedules")?;
+        self.plans.write_field(w, "plans")?;
+        self.roots.write_field(w, "roots")?;
+        self.proofs.write_field(w, "proofs")?;
+        w.close_record();
+        Ok(())
+    }
+}
 record!(CleanupClose, "cleanup_close", { source, after_defers, reserve, active_failure, effects });
 record!(CleanupSchedule, "cleanup_schedule", { close, holders });
-record!(CleanupPlan, "cleanup_plan", { close, sources });
+record!(CleanupPlan, "cleanup_plan", { close, sources, direct });
 record!(RootRequirement, "root_requirement", { boundary, bindings });
 record!(RootBinding, "root_binding", { value, trace });
 variants!(CleanupSource { Scope(value) => "scope", Packet(value) => "packet" });
@@ -1708,4 +1734,18 @@ variants!(RootTrace {
     CleanupActivation => "cleanup_activation", ScopeInventory => "scope_inventory",
     PacketInventory => "packet_inventory", PendingValueReserveDeps => "pending_value_reserve_deps",
     FailureGraph => "failure_graph", ExitReserve => "exit_reserve"
+});
+
+record!(DirectSlot, "direct_slot", { identity, descriptor, destroy, origin, active_at });
+record!(PreserveWitness, "preserve", { from, to });
+record!(JoinWitness, "join", { state, predecessors });
+record!(CleanupSuffix, "suffix", { completed, remaining, roots });
+record!(CleanupOrderProof, "order_proof", { state, slots, preserves, joins, suffixes, reserve_empty });
+variants!(CreationWitness {
+    Create { site } => "create",
+    FreshResult { site, callee, summary } => "fresh_result"
+});
+
+variants!(HighOperationSite {
+    Instruction(value) => "instruction", Terminator(value) => "terminator"
 });

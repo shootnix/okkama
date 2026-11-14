@@ -62,6 +62,14 @@ impl Reader for References<'_, '_> {
             self.invalid(RuleId::S3, "invalid cleanup close reference");
         }
     }
+    fn cleanup_order_proof(&mut self, id: &CleanupOrderProofId) {
+        if !self.state.step(1) {
+            return;
+        }
+        if self.body.is_none_or(|body| body.cleanup.proofs.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup order proof reference");
+        }
+    }
     fn cleanup_plan(&mut self, id: &CleanupPlanId) {
         if !self.state.step(1) { return; }
         if self.body.is_none_or(|body| body.cleanup.plans.get(*id).is_err()) {

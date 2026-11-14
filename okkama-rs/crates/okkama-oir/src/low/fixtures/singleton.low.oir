@@ -1,0 +1,78 @@
+oir 2 low
+module singleton
+
+object Res {
+    destroy @destroy
+}
+scope S0 action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+        call_contract(failures=[thrown], publication=atomic)
+summary M1 internal parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)] contract
+        call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+
+func @destroy(%arg0: Res) -> void [extern "fixture.destroy", destroy Res] summary(M0);
+
+func @main(%0: Res facts(managed(deps=d0))) -> Res [ctor Res] summary(M1) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S0), after_defers=^b1,
+        effects=scope_effects(failures=[thrown], suspends=false, cancel=false)), cleanup_close(source=scope(S0),
+        after_defers=^b2, active_failure=true, effects=scope_effects(failures=[thrown], suspends=false,
+        cancel=false)), ], schedules=[cleanup_schedule(close=0), cleanup_schedule(close=1), ],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory], direct=some(0)), cleanup_plan(close=1,
+        sources=[scope_inventory]), ], roots=[], proofs=[order_proof(state=%7, slots=[direct_slot(identity=%4,
+        descriptor=%2, destroy=@destroy, origin=create(site=terminator(^b0)), active_at=^b1)],
+        preserves=[preserve(from=%1, to=%6), preserve(from=%6, to=%7), preserve(from=%3, to=%5), preserve(from=%5,
+        to=%7)], suffixes=[suffix(completed=1)], reserve_empty=true), ])
+    dependency d0: dependency = retention(value=%0, selection=selection(%0))
+    dependency d1: dependency = retention(value=%4, selection=selection(%4))
+    ^b0 in S0:
+    %1: scope<S0> = scope.begin S0
+    %2: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, summary=M0)
+    %3: own = own.empty
+    invoke.own obj.new Res {; %3 }
+        normal ^b1($value, $packet, %1)
+        unwind ^b2($packet, $failure, %1)
+    ^b1(%4: Res facts(managed(deps=d1)), %5: own, %6: scope<S0>) in S0:
+    %7: scope<S0> = own.admit %6, %5
+    %8: cleanup-state = cleanup.begin %7, close 0, effects scope_effects(failures=[thrown], suspends=false,
+        cancel=false)
+    %9: cleanup-state = cleanup.settle.empty %8, schedule 0
+    %10: cleanup-state = cleanup.plan %9, plan 0
+    br ^b6(%10)
+    ^b2(%11: own, %12: failure, %13: scope<S0>) in S0:
+    %14: scope<S0> = own.admit %13, %11
+    %15: cleanup-state = cleanup.begin %14, failure %12, close 1, effects scope_effects(failures=[thrown],
+        suspends=false, cancel=false)
+    %16: cleanup-state = cleanup.settle.empty %15, schedule 1
+    %17: cleanup-state = cleanup.plan %16, plan 1
+    br ^b10(%17)
+    ^b3(%18: closed) in S0:
+    ret %0
+    ^b4(%19: closed, %20: failure) in S0:
+    raise %20
+    ^b5(%21: cleanup-state) in S0:
+    (%22: closed, %23: failure-state, %24: exit-state) = cleanup.finish %21
+    exit.dispatch 0 %22 %23 %24 success ^b3($closed) failure ^b4($closed, $failure)
+    ^b6(%25: cleanup-state) in S0:
+    (%26: cleanup-state, %27: failure-state) = destroy.direct %25, %4, %2, destroy @destroy
+    failure.dispatch %27 none ^b8(%26) some ^b7(%26, $failure)
+    ^b7(%28: cleanup-state, %29: failure) in S0:
+    %30: cleanup-state = cleanup.failure %28, %29
+    br ^b8(%30)
+    ^b8(%31: cleanup-state) in S0:
+    br ^b5(%31)
+    ^b9(%32: failure) in S0:
+    raise %32
+    ^b10(%33: cleanup-state) in S0:
+    cleanup.next %33 selected ^b11($state, $selected) done ^b13($state)
+    ^b11(%34: cleanup-state, %35: stable-key) in S0:
+    (%36: cleanup-state, %37: failure-state) = cleanup.destroy %34, %35
+    failure.dispatch %37 none ^b10(%36) some ^b12(%36, $failure)
+    ^b12(%38: cleanup-state, %39: failure) in S0:
+    %40: cleanup-state = cleanup.failure %38, %39
+    br ^b10(%40)
+    ^b13(%41: cleanup-state) in S0:
+    (%42: closed, %43: failure-state, %44: exit-state) = cleanup.finish %41
+    exit.dispatch 1 %42 %43 %44 failure ^b9($failure)
+}

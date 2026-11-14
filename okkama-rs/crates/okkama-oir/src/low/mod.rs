@@ -7,6 +7,8 @@ mod cleanup;
 mod eligibility;
 mod roots;
 mod graph;
+mod plans;
+pub use plans::check_cleanup_plans;
 
 use crate::*;
 
@@ -79,23 +81,25 @@ impl Budget<'_> {
 }
 
 /// Expand every close, preserving lexical boundaries and the already elaborated D8 CFG.
-/// No empty-scope elision or static order specialization is performed in L1.
+/// Direct plans require complete finite inventory, serial evidence and the B2 reserve condition.
 pub fn lower_cleanup(mut module: Module, options: &LowOptions) -> Result<Module, LowError> {
     if module.profile != Profile::Own {
         return Err(LowError::InvalidInput { function: None, message: "expected Own profile".into() });
     }
     let mut budget = Budget { options, steps: 0, blocks: 0, roots: 0 };
     eligibility::check(&module, &mut budget)?;
+    let fresh = plans::fresh_summaries(&module, &mut budget)?;
     let functions: Vec<_> = module.functions.iter().map(|(id, _)| id).collect();
     for function in functions {
         let Some(mut body) = module.functions.get_mut(function)?.body.take() else {
             continue;
         };
-        cleanup::expand(&mut module, &mut body, &mut budget)?;
+        cleanup::expand(&mut module, &mut body, &fresh, &mut budget)?;
         roots::collect(&module, &mut body, &mut budget)?;
         module.functions.get_mut(function)?.body = Some(body);
     }
     module.profile = Profile::Low;
+    plans::check(&module, &mut budget)?;
     Ok(module)
 }
 
@@ -104,3 +108,6 @@ mod tests;
 
 #[cfg(test)]
 mod executor_tests;
+
+#[cfg(test)]
+mod direct_tests;

@@ -419,6 +419,16 @@ impl Writer<'_> {
                 referenced.insert(inst);
             }
         }
+        for (_, proof) in body.cleanup.proofs.iter() {
+            for slot in &proof.slots {
+                let site = match &slot.origin {
+                    CreationWitness::Create { site } | CreationWitness::FreshResult { site, .. } => site,
+                };
+                if let HighOperationSite::Instruction(inst) = site {
+                    referenced.insert(*inst);
+                }
+            }
+        }
         for result in &body.high_results {
             referenced.extend(result.prepared);
         }

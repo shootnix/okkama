@@ -1328,6 +1328,14 @@ impl Checker<'_, '_> {
                     }
                     self.require(plan.sources == expected,
                         "merge plan must cover its complete close and reserve sources");
+                    if let Some(proof) = plan.direct {
+                        let valid = self.body.cleanup.proofs.get(proof).is_ok_and(|proof| {
+                            !proof.slots.is_empty() && proof.suffixes.len() == proof.slots.len()
+                                && ((!close.reserve || proof.reserve_empty)
+                                    || (close.effects.failures.is_empty() && !close.active_failure))
+                        });
+                        self.require(valid, "direct plan requires complete suffix maps and the B2 reserve condition");
+                    }
                 } else {
                     self.report(R::T1, "invalid cleanup plan ID");
                 }

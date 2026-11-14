@@ -10,6 +10,7 @@ pub(super) fn checked(source: &str) -> Module {
     verify_fixture(&output).unwrap_or_else(|report| panic!("Low: {report:?}"));
     let printed = text::print(&output).unwrap();
     let reparsed = parsed(&printed);
+    check_cleanup_plans(&reparsed, &LowOptions::default()).unwrap();
     verify_fixture(&reparsed).unwrap_or_else(|report| panic!("round-trip: {report:?}\n{printed}"));
     assert!(text::normalized_eq(&output, &reparsed).unwrap());
     output
@@ -17,7 +18,7 @@ pub(super) fn checked(source: &str) -> Module {
 pub(super) fn body(module: &Module) -> &Body {
     module.functions.iter().find(|(_, function)| function.symbol == "main").unwrap().1.body.as_ref().unwrap()
 }
-fn body_mut(module: &mut Module) -> &mut Body {
+pub(super) fn body_mut(module: &mut Module) -> &mut Body {
     module.functions.iter_mut().find(|(_, function)| function.symbol == "main").unwrap().1.body.as_mut().unwrap()
 }
 fn without_roots(mut module: Module) -> Module {
@@ -96,7 +97,7 @@ impl ExternalContracts for FixtureContracts<'_> {
         }).then_some(function.summary).flatten()).and_then(|id| self.0.summaries.get(id).ok())
     }
 }
-fn verify_fixture(module: &Module) -> Result<VerifiedModule<'_>, VerifyReport> {
+pub(super) fn verify_fixture(module: &Module) -> Result<VerifiedModule<'_>, VerifyReport> {
     verify_with(module, &VerifyOptions::default(), VerifyContext {
         external_contracts: &FixtureContracts(module), ..VerifyContext::default()
     })
@@ -126,7 +127,7 @@ fn valued_exit_commits_only_the_successful_reserve() {
         .any(|binding| binding.trace == RootTrace::PendingValueReserveDeps)));
 }
 
-fn rejected_after_roundtrip(module: &Module, rule: RuleId) {
+pub(super) fn rejected_after_roundtrip(module: &Module, rule: RuleId) {
     let printed = text::print(module).unwrap();
     let reparsed = parsed(&printed);
     for module in [module, &reparsed] {
