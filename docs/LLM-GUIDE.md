@@ -120,6 +120,12 @@ okkama exec x.spb      # SPB on Sparrow inside okkama
 Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE=sparrow|jvm`,
 `SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
 regions, awaits, heap bytes, compile time and code size per function),
+`OKKAMA_PROFILE_REGISTERS=1` (compiler OIR-to-SPB register-colouring phase
+times and work/capacity counters on stderr, #540; includes the baseline busy
+set clones and the final function clone separately). This is compiler
+diagnostics, separate from JIT machine-register allocation or runtime timing;
+keep it out of timed samples.
+Other runtime diagnostics:
 `SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
 (§9), `SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
 stderr — instructions, registers, suspensions, CLIF blocks and instructions,
