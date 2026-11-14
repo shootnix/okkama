@@ -115,12 +115,12 @@ fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core:
     match result {
         Ok(Ok(code)) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
         Ok(Err((error, uncaught))) => {
-            let code = report(error);
             // `OKKAMA_TRACE=off` — the failure alone, as with `okkama run`.
-            if let Some(uncaught) = uncaught.filter(|_| std::env::var("OKKAMA_TRACE").as_deref() != Ok("off")) {
-                eprint!("{}", sparrow_core::render_trace(&program, &uncaught.trace));
-            }
-            code
+            let error = match uncaught.filter(|_| std::env::var("OKKAMA_TRACE").as_deref() != Ok("off")) {
+                Some(uncaught) => sparrow_core::Error(uncaught.render_report(&error.0, |trace| sparrow_core::render_trace(&program, trace))),
+                None => error,
+            };
+            report(error)
         }
         Err(error) => report(error),
     }

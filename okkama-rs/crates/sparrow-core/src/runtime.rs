@@ -518,7 +518,7 @@ impl Runtime {
     /// The report of an exhausted run.
     fn exhausted_report(&mut self) -> Error {
         let message = self.budget.exhausted.unwrap_or(Exhausted::Interrupted).message();
-        self.uncaught = Some(crate::Uncaught { category: "exhausted", error_type: None, message: message.into(), trace: Vec::new() });
+        self.uncaught = Some(crate::Uncaught { category: "exhausted", error_type: None, message: message.into(), trace: Vec::new(), trace_offset: 0, cause_traces: Vec::new() });
         Error(message.into())
     }
 }

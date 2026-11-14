@@ -33,8 +33,8 @@ const REPORTED: [&str; 9] = ["recursion", "closure", "rethrow", "task", "cause",
 
 #[test]
 fn sparrow_reports_failures_causes_and_cleanup() {
-    // The whole report: the failure, its secondary cleanup failures and its
-    // causes (#270), then the place and the stack.
+    // Every root and cause has a place and stack; secondary cleanup
+    // failures keep their text-only entries.
     for name in REPORTED {
         let path = program(name);
         let core = okkama(&["run", "--engine", "sparrow"], &path, true);
@@ -42,10 +42,19 @@ fn sparrow_reports_failures_causes_and_cleanup() {
         let core = stderr(&core);
         assert!(core.contains("Stack trace (most recent call first):\n"), "{name}:\n{core}");
         assert!(place_and_stack(&core).len() < core.len(), "{name}");
+        if name == "cleanup" || name == "collect" {
+            let stacks = if name == "cleanup" { 2 } else { 1 };
+            assert_eq!(core.matches("Stack trace (most recent call first):").count(), stacks, "{core}");
+            for secondary in core.split("Secondary cleanup failure:\n").skip(1) {
+                assert!(secondary.starts_with("  CloseError:") || secondary.starts_with("  Broken:"), "{core}");
+                let entry = secondary.split("Caused by:").next().unwrap();
+                assert!(!entry.contains("  Stack trace (most recent call first):"), "{core}");
+            }
+        }
     }
-    let cause = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cause"), true));
+    let cause = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cause"), false));
     assert!(cause.starts_with("OrderError: OrderError.failed(7)\nCaused by:\n  StoreError: StoreError.closed\n"), "{cause}");
-    let cleanup = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cleanup"), true));
+    let cleanup = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cleanup"), false));
     assert!(
         cleanup.starts_with(
             "JobError: JobError.broken\nSecondary cleanup failure:\n  CloseError: CloseError.stuck(\"b\")\n\
@@ -91,4 +100,89 @@ fn bytecode_runs_print_the_stack_in_sparrow_terms() {
     );
     assert!(traced.contains(": panic r") && traced.contains("  at main [f"), "{traced}");
     assert_eq!(plain, "Panic: stop\n");
+}
+
+#[test]
+fn cause_stacks_preserve_each_origin() {
+    for (name, entries) in [("chain", 3), ("rethrow", 1), ("cause", 2), ("cause_callee", 2)] {
+        let output = okkama(&["run", "--engine", "sparrow"], &program(name), true);
+        let text = stderr(&output);
+        assert_eq!(output.status.code(), Some(1), "{text}");
+        println!("=== {name} ===\n{text}");
+        assert_eq!(text.matches("Caused by:").count(), entries - 1, "{text}");
+        assert_eq!(text.matches("Stack trace (most recent call first):").count(), entries, "{text}");
+        assert_eq!(text.matches("--> ").count(), entries, "{text}");
+        let parts: Vec<_> = text.split("Caused by:\n").collect();
+        let expected: &[&[&str]] = match name {
+            "chain" => &[
+                &["chain.ok:18:57", "at Orders.place", "at main"],
+                &["chain.ok:12:56", "at Store.save", "at Orders.place"],
+                &["chain.ok:7:22", "at Disk.write", "at Store.save"],
+            ],
+            "rethrow" => &[&["rethrow.ok:5:21", "at Store.load", "at Store.retry", "at main"]],
+            "cause" => &[
+                &["cause.ok:8:56", "at Orders.place", "at main"],
+                &["cause.ok:6:30", "at Orders.save", "at Orders.place"],
+            ],
+            "cause_callee" => &[
+                &["cause_callee.ok:10:23", "at Store.failed", "at Store.save", "at main"],
+                &["cause_callee.ok:6:22", "at Disk.write", "at Store.save"],
+            ],
+            _ => unreachable!(),
+        };
+        for (part, expected) in parts.iter().zip(expected) {
+            for fragment in *expected {
+                assert!(part.contains(fragment), "missing {fragment}:\n{text}");
+            }
+        }
+        for cause in parts.iter().skip(1) {
+            assert!(cause.lines().all(|line| line.starts_with("  ")), "{text}");
+        }
+        if name == "rethrow" {
+            assert_eq!(text.matches("Broken: Broken.broken").count(), 1, "{text}");
+            assert!(!text.contains("rethrow.ok:10:"), "{text}");
+        }
+        let plain = stderr(&okkama(&["run", "--engine", "sparrow"], &program(name), false));
+        assert_eq!(plain.matches("Caused by:").count(), entries - 1, "{plain}");
+        assert!(!plain.contains("Stack trace") && !plain.contains("-->"), "{plain}");
+    }
+}
+
+#[test]
+fn bytecode_cause_stacks_preserve_each_origin() {
+    for (name, entries, frames) in [
+        ("chain", 3, &["Orders.place", "Store.save", "Disk.write"][..]),
+        ("rethrow", 1, &["Store.load", "Store.retry"][..]),
+        ("cause", 2, &["Orders.place", "Orders.save"][..]),
+        ("cause_callee", 2, &["Store.failed", "Disk.write"][..]),
+    ] {
+        let output = std::env::temp_dir().join(format!("okkama-cause-traces-{}-{name}.spb", std::process::id()));
+        let built = Command::new(env!("CARGO_BIN_EXE_okkama"))
+            .args(["build", "--target", "sparrow", "-o"])
+            .arg(&output)
+            .arg(program(name))
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{}", stderr(&built));
+        let traced = okkama(&["exec"], &output, true);
+        let plain = okkama(&["exec"], &output, false);
+        let _ = std::fs::remove_file(&output);
+        assert_eq!(traced.status.code(), Some(1));
+        assert_eq!(plain.status.code(), Some(1));
+        let traced = stderr(&traced);
+        let plain = stderr(&plain);
+        assert_eq!(traced.matches("Caused by:").count(), entries - 1, "{traced}");
+        assert_eq!(traced.matches("Stack trace (Sparrow, most recent call first):").count(), entries, "{traced}");
+        for frame in frames {
+            assert!(traced.contains(&format!("at {frame} [f")), "{traced}");
+        }
+        for cause in traced.split("Caused by:\n").skip(1) {
+            assert!(cause.lines().all(|line| line.starts_with("  ")), "{traced}");
+        }
+        assert!(!plain.contains("Stack trace"), "{plain}");
+        assert_eq!(plain.matches("Caused by:").count(), entries - 1, "{plain}");
+        if name == "rethrow" {
+            assert_eq!(plain, "Broken: Broken.broken\n");
+        }
+    }
 }

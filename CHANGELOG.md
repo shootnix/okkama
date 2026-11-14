@@ -8,6 +8,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- **Cause stacks in failure reports (#74).** Each `Caused by:` entry shows the
+  place and stack of its own raise, not only the outermost failure. Rethrowing
+  the caught value itself (`throw e;`) keeps the original origin, stack and
+  causes and prints once instead of naming itself as its cause.
+
 - **Group-owned Futures and safe suspension snapshots on Sparrow (#581).**
   FutureGroup retains registered Futures, their caches and transferred fresh
   dependencies after a registering call or lexical binding exits. Duplicate

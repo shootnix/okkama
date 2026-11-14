@@ -1649,8 +1649,10 @@ catch e is DbError { throw InvoiceError.storage(e); }   // text(): InvoiceError.
 ```
 
 Plain cases have no such payload, so no null or sentinel is necessary. Host
-diagnostics also keep the runtime cause chain and render `Caused by:` entries
-with source stacks.
+diagnostics also keep the runtime cause chain and render `Caused by:` entries,
+each with the place and source stack of its own raise. Rethrowing the caught
+value itself (`throw e;`) is a rethrow: it keeps the failure's origin, stack and
+causes and is reported once, not as its own cause.
 Default CLI diagnostics show the concrete Error type, public message, optional
 application context, causes, source stacks and secondary cleanup failures.
 `-d` additionally shows the evaluator trace; it is not needed to see errors.

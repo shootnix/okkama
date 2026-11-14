@@ -295,7 +295,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
     let (outcome, trace) =
         core_described(sparrow_core::run_described(bytes, arguments, false, core::worker_command(Path::new(path)), limits));
-    with_trace(outcome, || sparrow_core::render_trace(&program, &trace))
+    with_trace(outcome, trace, |sites| sparrow_core::render_trace(&program, sites))
 }
 
 /// A test-profile program on the core: the report goes to stdout.
@@ -309,11 +309,11 @@ fn core_tests(bytes: Vec<u8>) -> Outcome {
 /// `core_outcome` of `run_described`, with the failure's call stack.
 fn core_described(
     result: Result<Result<i64, (sparrow_core::Error, Option<sparrow_core::Uncaught>)>, sparrow_core::Error>,
-) -> (Outcome, Vec<sparrow_core::Site>) {
+) -> (Outcome, Option<sparrow_core::Uncaught>) {
     match result {
-        Ok(Ok(value)) => (core_outcome(Ok(value)), Vec::new()),
-        Ok(Err((error, uncaught))) => (core_outcome(Err(error)), uncaught.map(|u| u.trace).unwrap_or_default()),
-        Err(error) => (core_outcome(Err(error)), Vec::new()),
+        Ok(Ok(value)) => (core_outcome(Ok(value)), None),
+        Ok(Err((error, uncaught))) => (core_outcome(Err(error)), uncaught),
+        Err(error) => (core_outcome(Err(error)), None),
     }
 }
 
@@ -349,9 +349,14 @@ fn core_outcome(result: Result<i64, sparrow_core::Error>) -> Outcome {
 /// `OKKAMA_TRACE=off` — без них (например, для сравнения движков).
 /// The trace is rendered only when it is printed: with `OKKAMA_TRACE=off`
 /// a stack of millions of frames costs nothing (#241).
-fn with_trace(mut outcome: Outcome, trace: impl FnOnce() -> String) -> Outcome {
-    if outcome.code == 1 && std::env::var("OKKAMA_TRACE").as_deref() != Ok("off") {
-        outcome.stderr.push_str(&trace());
+fn with_trace(
+    mut outcome: Outcome,
+    uncaught: Option<sparrow_core::Uncaught>,
+    render: impl Fn(&[sparrow_core::Site]) -> String,
+) -> Outcome {
+    if outcome.code == 1 && std::env::var("OKKAMA_TRACE").as_deref() != Ok("off")
+        && let Some(uncaught) = uncaught {
+        outcome.stderr = uncaught.render_report(&outcome.stderr, render);
     }
     outcome
 }
@@ -1520,7 +1525,7 @@ fn run_command(args: &[String]) -> Outcome {
         }
         // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
         let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
-        return with_trace(outcome, || trace::render_trace(&module, &trace));
+        return with_trace(outcome, trace, |sites| trace::render_trace(&module, sites));
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),
