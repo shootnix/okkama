@@ -803,6 +803,110 @@ pub(crate) fn is_once_slot(name: &str) -> bool {
 
 // ---- the helper ----
 
+/// Positional builder entry points. Keep the generic path on the same
+/// implementation, including spare payloads and external-byte accounting.
+#[inline(never)]
+pub extern "C" fn rt_builder_new(ctx: *mut Ctx, repr: u64) -> Word {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    let word = builder_new(runtime, Repr::from_bits(repr));
+    runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
+    word
+}
+
+#[inline(never)]
+pub extern "C" fn rt_builder_finish(ctx: *mut Ctx, builder: Word, packed: u64) -> Word {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    let word = builder_finish(runtime, builder, packed != 0);
+    runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
+    word
+}
+
+/// #344 integration: the existing Rat/IntValue representation and exact
+/// constructor, without a second rational representation or instruction decode.
+#[inline(never)]
+pub extern "C" fn rt_rat_new(ctx: *mut Ctx, left: Word, right: Word) -> Word {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    let outcome = rat_new(runtime, left, right);
+    exec_outcome(runtime, ctx, frame, outcome, |_| Repr::Ref)
+}
+
+/// Read the concrete payload through Rust's checked downcast and Entries::len,
+/// never by assuming an offset in a Rust enum or BTreeMap. Heap::int preserves
+/// the tagged-small / BigInt rule even for a theoretical very large map.
+#[inline(never)]
+pub extern "C" fn rt_map_len(ctx: *mut Ctx, map: Word) -> Word {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    let word = map_len(runtime, map);
+    runtime.safepoint(frame, ctx, &[(word, Repr::Int)]);
+    word
+}
+
+/// Successful inline conversions still offer the collection opportunity that
+/// rt_exec offered. Their result is proven pointer-free (raw f64 or tagged int),
+/// so only the caller's unchanged root maps are needed here.
+#[inline(never)]
+pub extern "C" fn rt_scalar_safepoint(ctx: *mut Ctx, conversion: u64) {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    runtime.count(|_| if conversion == 0 { "fast cvt int.float" } else { "fast cvt float.int" }.into());
+    runtime.safepoint(frame, ctx, &[]);
+}
+
+fn builder_new(runtime: &mut Runtime, repr: Repr) -> Word {
+    let spare = runtime.heap.allocate_spare(|payload| {
+        match payload.as_any_mut().downcast_mut::<Builder>() {
+            Some(builder) => {
+                builder.repr = repr;
+                builder.items.clear();
+                true
+            }
+            None => false,
+        }
+    });
+    spare.unwrap_or_else(|| runtime.heap.allocate_payload(Box::new(Builder { repr, items: Vec::new() })))
+}
+
+fn builder_finish(runtime: &mut Runtime, object: Word, packed: bool) -> Word {
+    let builder = runtime.heap.payload_mut::<Builder>(object).expect("builder");
+    let (repr, mut items) = (builder.repr, std::mem::take(&mut builder.items));
+    let array = if packed {
+        let bytes: Vec<u8> = items.iter().map(|&w| w as u8).collect();
+        runtime.heap.allocate_bytes(&bytes)
+    } else {
+        runtime.heap.allocate_array(repr, &items)
+    };
+    // #503: growth was charged as it happened. Preserve the capacity limit,
+    // discharge and retirement order exactly, including the large-buffer path.
+    runtime.heap.discharge_external(items.capacity() * 8);
+    if items.capacity() <= crate::heap::SPARE_CAPACITY {
+        items.clear();
+        if let Some(builder) = runtime.heap.payload_mut::<Builder>(object) {
+            builder.items = items;
+        }
+        runtime.heap.retire_payload(object);
+    }
+    array
+}
+
+fn rat_new(runtime: &mut Runtime, left: Word, right: Word) -> Outcome {
+    let ratio = Rat::new(&runtime.int_value(left), &runtime.int_value(right))?;
+    Ok(runtime.rational_new(ratio))
+}
+
+fn map_len(runtime: &mut Runtime, map: Word) -> Word {
+    let length = runtime.heap.payload::<MapValue>(map).expect("map").entries.len();
+    runtime.heap.int(length as i64)
+}
+
 /// `builder.push`: append a word to a builder (no collection here: the
 /// items vector is Rust memory). Returns the builder.
 #[inline(never)]
@@ -861,6 +965,20 @@ pub extern "C" fn rt_exec(
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
     runtime.count(|_| format!("exec {}", instruction.mnemonic()));
+    // Direction-specific denominators for #537. Other cvt forms still use
+    // rt_exec, so the aggregate exec-cvt count is not a guard-miss count.
+    if runtime.stats.is_some()
+        && let I::Convert { dst, source } = instruction
+    {
+        let direction = match (runtime.ty(function, *source), runtime.ty(function, dst.0)) {
+            (Some(Type::Int), Some(Type::Float)) => Some("generic cvt int.float"),
+            (Some(Type::Float), Some(Type::Int)) => Some("generic cvt float.int"),
+            _ => None,
+        };
+        if let Some(direction) = direction {
+            runtime.count(|_| direction.into());
+        }
+    }
     // The instruction's uses in visit order, as the call site recorded them
     // when it was compiled, and one word for each.
     // SAFETY: the table lives with the machine code; the caller spilled one
@@ -889,10 +1007,14 @@ pub extern "C" fn rt_exec(
         I::GlobalGet { global, .. } => crate::intrinsics::global(ctx, runtime, *global as usize),
         _ => execute(runtime, function, instruction, &operands),
     };
+    exec_outcome(runtime, ctx, frame, outcome, |runtime| def_repr(runtime, function, instruction))
+}
+
+fn exec_outcome(runtime: &mut Runtime, ctx: &mut Ctx, frame: u64, outcome: Outcome, repr: impl FnOnce(&Runtime) -> Repr) -> Word {
     match outcome {
         Ok(word) => {
             if runtime.heap.needs_collection() {
-                let repr = def_repr(runtime, function, instruction);
+                let repr = repr(runtime);
                 runtime.safepoint(frame, ctx, &[(word, repr)]);
             }
             word
@@ -1130,10 +1252,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &O
         }
         I::Convert { dst, source } => convert(runtime, function, *source, dst.0, value(source)),
         I::ByteFrom { source, context, .. } => byte_from(runtime, kinds[source.0 as usize], value(source), context.as_deref()),
-        I::RatNew { left, right, .. } => {
-            let ratio = Rat::new(&runtime.int_value(value(left)), &runtime.int_value(value(right)))?;
-            Ok(runtime.rational_new(ratio))
-        }
+        I::RatNew { left, right, .. } => rat_new(runtime, value(left), value(right)),
         I::RatAdd { left, right, .. }
         | I::RatSub { left, right, .. }
         | I::RatMul { left, right, .. }
@@ -1318,20 +1437,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &O
                 Some(Type::Builder(element)) => runtime.kind_of(*element).repr(),
                 _ => return Err("builder.new needs a builder type".into()),
             };
-            let spare = runtime.heap.allocate_spare(|payload| {
-                match payload.as_any_mut().downcast_mut::<Builder>() {
-                    Some(builder) => {
-                        builder.repr = repr;
-                        builder.items.clear();
-                        true
-                    }
-                    None => false,
-                }
-            });
-            match spare {
-                Some(object) => Ok(object),
-                None => Ok(runtime.heap.allocate_payload(Box::new(Builder { repr, items: Vec::new() }))),
-            }
+            Ok(builder_new(runtime, repr))
         }
         I::BuilderPush { builder, value: item, .. } => {
             let (builder, item) = (value(builder), value(item));
@@ -1395,21 +1501,8 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &O
             Ok(builder)
         }
         I::BuilderFinish { dst, builder } => {
-            let object = value(builder);
-            let builder = runtime.heap.payload_mut::<Builder>(object).expect("builder");
-            let (repr, mut items) = (builder.repr, std::mem::take(&mut builder.items));
-            let array = new_array(runtime, function, dst.0, repr, &items);
-            // Its growth was charged as it grew; the buffer is freed or kept
-            // for the next builder here (#503).
-            runtime.heap.discharge_external(items.capacity() * 8);
-            if items.capacity() <= crate::heap::SPARE_CAPACITY {
-                items.clear();
-                if let Some(builder) = runtime.heap.payload_mut::<Builder>(object) {
-                    builder.items = items;
-                }
-                runtime.heap.retire_payload(object);
-            }
-            Ok(array)
+            let packed = matches!(runtime.ty(function, dst.0), Some(Type::Array(element)) if runtime.kind_of(*element) == Kind::Byte);
+            Ok(builder_finish(runtime, value(builder), packed))
         }
         I::MapNew { dst, entries } => {
             let mut map = map_for(runtime, function, dst.0)?;
@@ -1566,10 +1659,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, operands: &O
             // The entries were charged as the builder took them.
             Ok(runtime.heap.allocate_payload_moved(Box::new(finished)))
         }
-        I::MapLen { map, .. } => {
-            let length = runtime.heap.payload::<MapValue>(value(map)).expect("map").entries.len();
-            Ok(runtime.heap.int(length as i64))
-        }
+        I::MapLen { map, .. } => Ok(map_len(runtime, value(map))),
         I::MapHas { map, key, .. } | I::MapGet { map, key, .. } => {
             let (key_kind, key_type) = map_key(runtime, function, *map);
             let key_word = value(key);
@@ -1776,7 +1866,9 @@ fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Regis
             if !(-9223372036854775808.0..9223372036854775808.0).contains(&truncated) {
                 return Err(format!(
                     "Cannot convert float value {} to int: expected signed-64 range",
-                    crate::scalar::float_text(n)
+                    // Nonfinite low-level arguments must fail, not panic in
+                    // the finite-only formatter at an extern-C boundary.
+                    if n.is_finite() { crate::scalar::float_text(n) } else { n.to_string() }
                 ));
             }
             Ok(runtime.heap.int(truncated as i64))
