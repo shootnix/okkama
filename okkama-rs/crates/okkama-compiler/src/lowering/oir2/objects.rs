@@ -204,26 +204,40 @@ impl BodyLowerer<'_, '_> {
         let args = values.into_iter().map(|value| ir::CallArgument {
             value, convention: ir::OperandConvention::Borrow,
         }).collect();
+        let target = self.b.module().functions.get(function)?;
+        let summary = target.summary;
+        let native = target.attrs.iter().any(|attr| matches!(attr, ir::FunctionAttr::Extern(_)));
+        let intrinsic = target.attrs.iter().any(|attr| matches!(attr, ir::FunctionAttr::Intrinsic { .. }));
         let call = ir::CallSite {
-            args, packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: None,
+            args, packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary,
             cleanup: ir::CallCleanupMode::Ordinary,
         };
         self.sync_failure()?;
-        let values = self.b.emit_schema(ir::Operation::Call(ir::CallOp::Direct { function, call }))?;
+        let op = if native {
+            ir::CallOp::Native { function, call }
+        } else if intrinsic {
+            ir::CallOp::Intrinsic { function, call }
+        } else {
+            ir::CallOp::Direct { function, call }
+        };
+        let values = self.b.emit_schema(ir::Operation::Call(op))?;
         let block = self.current.expect("open call block");
         let instruction = *self.b.body().blocks.get(block)?.insts.last().expect("emitted call");
+        let known = summary.map(|id| self.b.module().summaries.get(id)).transpose()?;
+        let effects = if let Some(summary) = known {
+            ir::HighEffectEnvelope {
+                failures: summary.contract.failures.clone(), may_suspend: summary.contract.suspends,
+            }
+        } else {
+            ir::HighEffectEnvelope {
+                failures: vec![ir::FailureKind::Thrown, ir::FailureKind::Program, ir::FailureKind::Panic,
+                    ir::FailureKind::Native, ir::FailureKind::Cancelled],
+                may_suspend: true,
+            }
+        };
         self.b.add_high_effect(ir::HighEffectRecord {
             site: ir::HighOperationSite::Instruction(instruction),
-            effects: ir::HighEffectEnvelope {
-                failures: [
-                    ir::FailureKind::Thrown,
-                    ir::FailureKind::Program,
-                    ir::FailureKind::Panic,
-                    ir::FailureKind::Native,
-                    ir::FailureKind::Cancelled,
-                ].into_iter().collect(),
-                may_suspend: true,
-            },
+            effects,
         })?;
         Ok(values.first().copied())
     }
@@ -245,6 +259,16 @@ impl BodyLowerer<'_, '_> {
             }
             thir::Callee::Ctor { object, ctor, given, type_args } if type_args.is_empty() => {
                 self.context.constructors[&(*object, *ctor, given.clone())]
+            }
+            thir::Callee::Native(index) => self.context.natives[index],
+            thir::Callee::Role { receiver, role, slot: 0 }
+                if self.types.contains_key(&crate::analysis::ty::Ty::role(*role))
+                    && self.context.error_text.is_some() => {
+                let Some(value) = self.value(receiver)? else {
+                    return Ok(None);
+                };
+                values.push(value);
+                self.context.error_text.expect("declared Error.text")
             }
             _ => return Err(LowerError::unsupported(expr.span, "non-direct or generic call")),
         };

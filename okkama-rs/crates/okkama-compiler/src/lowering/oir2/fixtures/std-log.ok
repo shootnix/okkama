@@ -1,0 +1,17 @@
+module app;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+object Log {
+    has state is Atomic<string>;
+    Log(:state);
+    append(text is string) is void {
+        state.replace(state.value() + text);
+    }
+}
+main() is int {
+    let state = Atomic("");
+    Log(state: state).append("ready");
+    Stdout().writeln(state.value());
+    state.close();
+    0;
+}

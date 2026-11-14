@@ -1,0 +1,119 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object cell.Cell_int {
+    field state: async.atomic.Atomic_int
+}
+
+object async.atomic.Atomic_int [builtin] {
+}
+
+enum async.atomic.AtomicClosed is Error = (closed)
+scope S0 action in @main
+scope S1 iteration in @main parent S0
+scope S2 action in @cell.Cell_int.replace#1
+scope S3 action in @cell.Cell_int.value#0
+scope S4 action in @cell.Cell_int.new#0
+summary M0 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[async.atomic.Atomic_int], publication=atomic)
+summary M1 observation parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+summary M2 observation parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=unbound_result)] contract call_contract(results=[int], failures=[thrown], publication=atomic)
+
+func @main() -> int [entry] {
+    binding b0 "count": cell.Cell_int in S0
+    binding b1 "step": int in S1
+    boundary B0 lexical in S0
+    boundary B1 loop in S1
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 0
+    [i1] %1: cell.Cell_int = call @cell.Cell_int.new#0(%0)
+    bind %1, binding b0
+    %2: int = const 1
+    %3: int = const 4
+    %4: range = range.new %2, %3, inclusive true
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
+    br ^b3(%2, %1)
+    ^b1(%5: failure) in S0:
+    raise %5
+    ^b2(%6: cell.Cell_int) in S0 unwind ^b1:
+    [i6] %7: int = call @cell.Cell_int.value#0(%6)
+    want %7
+    [i8] exit.prepare return %7 at B0
+    result.exit edge normal(0), value %7, demand want, prepare #8
+    high.effects at #6 failures [thrown, program, panic, native, cancelled], suspends true
+    ret %7
+    ^b3(%8: int, %9: cell.Cell_int) in S0 unwind ^b1:
+    %10: bool = int.le %8, %3
+    cond %10, ^b4, ^b5
+    ^b4 in S1 unwind ^b1:
+    bind %8, binding b1
+    [i11] %11: int = call @cell.Cell_int.value#0(%9)
+    %12: int = int.add %11, %8
+    [i13] call @cell.Cell_int.replace#1(%9, %12)
+    want %9
+    [i15] exit.prepare fallthrough %9 at B1
+    result.exit edge normal(0), value %9, demand want, prepare #15
+    high.effects at #11 failures [thrown, program, panic, native, cancelled], suspends true
+    high.effects at #13 failures [thrown, program, panic, native, cancelled], suspends true
+    br ^b6(%9)
+    ^b5 in S0 unwind ^b1:
+    br ^b2(%9)
+    ^b6(%13: cell.Cell_int) in S0 unwind ^b1:
+    %14: int = const 1
+    %15: int = int.add %8, %14
+    br ^b3(%15, %13)
+}
+
+func @cell.Cell_int.new#0(%0: int) -> cell.Cell_int [ctor cell.Cell_int] {
+    binding b0 "value": int in S4
+    boundary B0 lexical in S4
+    ^b0 in S4 unwind ^b1:
+    %1: async.atomic.Atomic_int = undef ty async.atomic.Atomic_int
+    bind %0, binding b0
+    [i2] %2: async.atomic.Atomic_int = call.intrinsic @okkama.atomic.Atomic.new_value#int(%0)
+    stage %2, action S4, field field_ref(declaration=cell.Cell_int, index=0)
+    %3: cell.Cell_int = obj.new cell.Cell_int { state: %2 }
+    want %3
+    [i6] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %3, demand want, prepare #6
+    high.effects at #2 failures [], suspends false
+    ret %3
+    ^b1(%4: failure) in S4:
+    raise %4
+}
+
+func @cell.Cell_int.replace#1(%0: cell.Cell_int, %1: int) -> void [method cell.Cell_int] {
+    binding b0 "value": int in S2
+    boundary B0 lexical in S2
+    selection s0: selection = union([])
+    ^b0 in S2 unwind ^b1:
+    bind %1, binding b0
+    %2: async.atomic.Atomic_int = obj.get %0, state
+    [i2] call.intrinsic @okkama.atomic.Atomic.replace#int(%2, %1)
+    exit.prepare return select s0 at B0
+    high.effects at #2 failures [thrown], suspends false
+    ret
+    ^b1(%3: failure) in S2:
+    raise %3
+}
+
+func @cell.Cell_int.value#0(%0: cell.Cell_int) -> int [method cell.Cell_int] {
+    boundary B0 lexical in S3
+    ^b0 in S3 unwind ^b1:
+    %1: async.atomic.Atomic_int = obj.get %0, state
+    [i1] %2: int = call.intrinsic @okkama.atomic.Atomic.value#int(%1)
+    want %2
+    [i3] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %2, demand want, prepare #3
+    high.effects at #1 failures [thrown], suspends false
+    ret %2
+    ^b1(%3: failure) in S3:
+    raise %3
+}
+
+func @okkama.atomic.Atomic.new_value#int(%arg0: int) -> async.atomic.Atomic_int [ctor async.atomic.Atomic_int, intrinsic "okkama.atomic.Atomic.new_value$int" objects [async.atomic.Atomic_int]] summary(M0);
+
+func @okkama.atomic.Atomic.replace#int(%arg0: async.atomic.Atomic_int, %arg1: int) -> void [method async.atomic.Atomic_int, intrinsic "okkama.atomic.Atomic.replace$int" objects [async.atomic.AtomicClosed]] summary(M1);
+
+func @okkama.atomic.Atomic.value#int(%arg0: async.atomic.Atomic_int) -> int [method async.atomic.Atomic_int, intrinsic "okkama.atomic.Atomic.value$int" objects [async.atomic.AtomicClosed]] summary(M2);

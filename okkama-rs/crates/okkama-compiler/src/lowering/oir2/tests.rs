@@ -1026,7 +1026,15 @@ fn oir2_s3_destroy_normal_locals_and_nested_resource_exits_roundtrip() {
 }
 
 fn verify_high(module: &ir::Module, context: &str) {
-    if let Err(report) = ir::verify::verify_high(module) {
+    assert_eq!(module.profile, ir::Profile::High);
+    let catalog = super::native_summaries::P1NativeSummaries::for_module(module).expect("trusted P1 catalog");
+    let context_with_catalog = ir::verify::VerifyContext { text_locations: None, external_contracts: &catalog };
+    let checked = if module.functions.iter().all(|(_, function)| function.body.is_some()) {
+        ir::verify::verify_high(module)
+    } else {
+        ir::verify::verify_with(module, &ir::verify::VerifyOptions::default(), context_with_catalog)
+    };
+    if let Err(report) = checked {
         panic!("{context}: {report:#?}");
     }
 }
@@ -1045,7 +1053,7 @@ fn oir2_all_stored_goldens_pass_verify_high() {
         verify_high(&module, path.to_str().expect("golden path"));
         count += 1;
     }
-    assert_eq!(count, 41, "every lowering golden must be verified");
+    assert_eq!(count, 44, "every lowering golden must be verified");
 }
 
 fn check_verified(module: &ir::Module) -> Result<(), LowerError> {
@@ -1144,4 +1152,199 @@ fn oir2_d11_local_discards_keep_their_scope_before_divergence() {
         }
         assert!(discarded > 0);
     }
+}
+
+struct StdLoader;
+
+impl crate::lowering::ModuleLoader for StdLoader {
+    fn load(&mut self, path: &str, _: &str) -> Result<Option<crate::lowering::LoadedModule>, String> {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../std").join(format!("{path}.ok"));
+        let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
+        let source = SourceFile::new(file.to_string_lossy(), text).map_err(|error| error.to_string())?;
+        let program = syntax::parse(&source, &ParseOptions::default()).map_err(|error| format!("{error:?}"))?;
+        let program = syntax::prune::strip_test_items(program);
+        Ok(Some(crate::lowering::LoadedModule { id: file.to_string_lossy().into_owned(), source, program }))
+    }
+}
+
+fn lower_std(source: &str) -> Result<ir::Module, LowerError> {
+    let file = SourceFile::new("oir2-std.ok", source).expect("small source");
+    let program = syntax::parse(&file, &ParseOptions::default()).expect("valid source syntax");
+    let roots = [(&program, "oir2-std.ok", Some(&file))];
+    let graph = crate::lowering::modules::load_graph(&roots, &mut StdLoader).expect("local std graph");
+    let modules = crate::lowering::modules::source_modules(&graph, &roots);
+    let analysis = analysis::analyze(modules).unwrap_or_else(|errors| panic!("std analysis: {errors:?}"));
+    lower_to_oir2(&analysis)
+}
+
+const STD_SOURCES: [(&str, &str, &str); 3] = [
+    ("std-log", include_str!("fixtures/std-log.ok"), include_str!("goldens/std-log.oir")),
+    ("std-cell", include_str!("fixtures/std-cell.ok"), include_str!("goldens/std-cell.oir")),
+    ("std-error", include_str!("fixtures/std-error.ok"), include_str!("goldens/std-error.oir")),
+];
+
+#[test]
+fn oir2_std_source_goldens_and_ownership_inference() {
+    for (name, source, expected) in STD_SOURCES {
+        let module = lower_std(source).unwrap_or_else(|error| panic!("{name}: {error}"));
+        verify_high(&module, name);
+        let actual = ir::text::print(&module).expect("print std high");
+        let parsed = ir::text::parse(&actual).expect("std high round trip");
+        verify_high(&parsed, name);
+        assert!(ir::text::normalized_eq(&module, &parsed).unwrap());
+        compare_golden(name, &actual, expected);
+        let catalog = super::native_summaries::P1NativeSummaries::for_module(&module).unwrap();
+        let inferred = ir::own::elaborate_ownership(module, &catalog, &ir::own::OwnOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error:#?}"));
+        verify_high(&inferred.module, name);
+        for (_, function) in inferred.module.functions.iter() {
+            let summary = inferred.module.summaries.get(function.summary.expect("inferred summary")).unwrap();
+            assert!(!summary.contract.suspends, "{name}: {}", function.symbol);
+            assert!(!summary.contract.async_destroy);
+        }
+        // This branch exports classification/inference only (own/mod.rs). There is
+        // no synchronous High -> Own rewrite to call. Never relabel High as Own:
+        // call packets, paired deps, scope state and failure outcome edges need it.
+        assert_eq!(inferred.module.profile, ir::Profile::High);
+    }
+}
+
+#[test]
+fn oir2_std_closed_specializations_and_error_cases() {
+    for source in [
+        concat!("module app; import \"async/atomic\" take Atomic, AtomicClosed; ",
+            "import \"io/stdout\" take Stdout; main() is int { let a = Atomic(1); a.close(); ",
+            "try { a.value(); } catch e is AtomicClosed { Stdout().writeln(e.text()); 0; } }"),
+        concat!("module app; import \"async/atomic\" take Atomic; ",
+            "main() is int { let a = Atomic(1); let b = Atomic(\"a\"); ",
+            "a.replace(a.value() + 1); b.replace(b.value() + \"b\"); a.close(); b.close(); 0; }"),
+        concat!("module app; import \"cell\" take Cell; ",
+            "main() is int { let a = Cell(1); let b = Cell(\"a\"); ",
+            "a.replace(a.value() + 1); b.replace(b.value() + \"b\"); a.value(); }"),
+        concat!("module app; import \"io/stdout\" take Stdout; enum E is Error = (empty, text(s is string)); ",
+            "main() is int { try { throw E.empty; } catch e is E { Stdout().writeln(e.text(), \"!\"); } 0; }"),
+        concat!("module app; import \"io/stdout\" take Stdout; enum E is Error = (bad); ",
+            "main() is int { Stdout().writeln(); try { throw E.bad; } catch e is E { ",
+            "Stdout().writeln(e.text()); } 0; }"),
+    ] {
+        let module = lower_std(source).unwrap_or_else(|error| panic!("{source}\n{error}"));
+        verify_high(&module, source);
+        let catalog = super::native_summaries::P1NativeSummaries::for_module(&module).unwrap();
+        let inferred = ir::own::elaborate_ownership(module, &catalog, &ir::own::OwnOptions::default())
+            .unwrap_or_else(|error| panic!("{source}\n{error:#?}"));
+        verify_high(&inferred.module, source);
+    }
+}
+
+#[test]
+fn oir2_std_rejects_other_intrinsics_resources_and_async() {
+    for body in [
+        "let a = Atomic(1); a.closed(); 0;",
+        "let a = Atomic(1); a.compare_and_replace(1, 2); 0;",
+        "let a = Atomic(R()); 0;",
+        "let a = Cell(R()); 0;",
+        "let action = () is int { 1; }; 0;",
+    ] {
+        let source = format!("module app; import \"async/atomic\" take Atomic; import \"cell\" take Cell; \
+            object R {{ R(); destroy {{ }} }} main() is int {{ {body} }}");
+        let error = lower_std(&source).expect_err("outside finite P1 boundary catalog");
+        assert!(error.to_string().contains("unsupported in OIR-2 lowering"), "{error}");
+    }
+    let error = lower_std("module app; import \"async/atomic\" take Atomic; async main() is int { \
+        let a = Atomic(1); a.value(); }").expect_err("async remains unsupported");
+    assert!(error.to_string().contains("unsupported in OIR-2 lowering: async"), "{error}");
+}
+
+#[test]
+fn oir2_std_boundary_catalog_is_finite_and_own_checks_entry_abi() {
+    use ir::own::{ExternalBoundary, NativeSummaries, Substitution};
+    let mut module = lower_std(include_str!("fixtures/std-log.ok")).unwrap();
+    let catalog = super::native_summaries::P1NativeSummaries::for_module(&module).unwrap();
+    for boundary in [
+        ExternalBoundary::Intrinsic("unknown"),
+        ExternalBoundary::Intrinsic("okkama.atomic.Atomic.closed$string"),
+        ExternalBoundary::Native("runtime/stdio@1::stderr_write/1"),
+        ExternalBoundary::Native("okkama.atomic.Atomic.value$string"),
+        ExternalBoundary::Service(ir::TypeId::from_u32(u32::MAX)),
+    ] {
+        assert!(catalog.lookup(boundary, &Substitution::default()).is_err());
+    }
+    let substitution = Substitution { types: vec![ir::TypeId::from_u32(0)], descriptors: vec![] };
+    assert!(catalog.lookup(ExternalBoundary::Intrinsic("okkama.atomic.Atomic.value$string"), &substitution).is_err());
+    for (_, function) in module.functions.iter() {
+        let Some(summary) = function.summary else {
+            continue;
+        };
+        let summary = module.summaries.get(summary).unwrap();
+        assert!(!summary.contract.suspends);
+        assert!(!summary.contract.async_destroy);
+        assert!(summary.parameters.iter().all(|param| param.retention.is_none() && param.deps.is_empty()));
+        assert!(summary.results.iter().all(|result| result.aliases.is_empty() && result.external_deps.is_empty()));
+    }
+    module.profile = ir::Profile::Own;
+    let context = ir::verify::VerifyContext { text_locations: None, external_contracts: &catalog };
+    let report = ir::verify::verify_with(&module, &ir::verify::VerifyOptions::default(), context).unwrap_err();
+    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == ir::verify::RuleId::B51
+        && diagnostic.message.contains("entry kind differs")), "{report:?}");
+}
+
+#[test]
+fn oir2_std_p1_manifest_extractions_lower_with_destroy_log() {
+    // #593 manifest references scopes checks 1-3 and branches checks 3-4.
+    // Preserve those scopes/checkpoints here without importing general TAP.
+    let prelude = concat!("module app; import \"async/atomic\" take Atomic; import \"io/stdout\" take Stdout; ",
+        "object Res { has name is string; has log is Atomic<string>; ",
+        "Res(name is string, log is Atomic<string>) { self.name = name; self.log = log; } ",
+        "label() is string { name; } destroy { log.replace(log.value() + name); } } ");
+    for body in [
+        concat!("let log = Atomic(\"\"); defer log.close(); { let a = Res(\"A\", log); ",
+            "{ let b = Res(\"B\", log); { let c = Res(\"C\", log); } } ",
+            "confirm log.value() == \"CB\"; Stdout().writeln(log.value()); ",
+            "{ let a = Res(\"S\", log); a.label(); } ",
+            "confirm log.value() == \"CBS\"; Stdout().writeln(log.value()); a.label(); } ",
+            "confirm log.value() == \"CBSA\"; Stdout().writeln(log.value()); 0;"),
+        concat!("let log = Atomic(\"\"); defer log.close(); { ",
+            "if false { Res(\"Z\", log); } else { Res(\"B\", log); }; ",
+            "confirm log.value() == \"B\"; Stdout().writeln(log.value()); } ",
+            "confirm log.value() == \"B\"; Stdout().writeln(log.value()); 0;"),
+    ] {
+        let source = format!("{prelude}main() is int {{ {body} }}");
+        let module = lower_std(&source).unwrap_or_else(|error| panic!("{source}\n{error}"));
+        verify_high(&module, &source);
+        let catalog = super::native_summaries::P1NativeSummaries::for_module(&module).unwrap();
+        let inferred = ir::own::elaborate_ownership(module, &catalog, &ir::own::OwnOptions::default())
+            .unwrap_or_else(|error| panic!("{source}\n{error:#?}"));
+        verify_high(&inferred.module, &source);
+    }
+}
+
+#[test]
+fn oir2_high_observation_requires_a_trusted_external() {
+    with_analysis("module app; main() is int { 0; }", |analysis| {
+        let mut module = lower_to_oir2(analysis).unwrap();
+        let result = module.functions.get(module.entry.unwrap()).unwrap().signature.results[0];
+        let summary = module.summaries.alloc(ir::Summary {
+            entry_kind: ir::EntryKind::ObservationAdmissionStaysCaller,
+            parameters: vec![],
+            results: vec![ir::ResultRelation {
+                fresh: vec![], aliases: vec![], external_deps: vec![],
+                provenance: ir::AdmissionProvenance::UnboundResult,
+            }],
+            contract: ir::CallContract {
+                results: vec![result], failures: vec![], suspends: false, async_destroy: false,
+                publication: ir::Publication::Atomic, protocol: None,
+            },
+        }).unwrap();
+        module.functions.get_mut(module.entry.unwrap()).unwrap().summary = Some(summary);
+        let report = ir::verify::verify_high(&module).expect_err("source actions keep their call boundary");
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == ir::verify::RuleId::B51
+            && diagnostic.message.contains("entry kind differs")), "{report:?}");
+    });
+    let mut module = lower_std(include_str!("fixtures/std-log.ok")).unwrap();
+    assert!(ir::verify::verify_high(&module).is_err(), "external calls require the trusted catalog");
+    let function = module.functions.iter().find_map(|(id, function)| {
+        (function.symbol == "okkama.atomic.Atomic.value#string").then_some(id)
+    }).unwrap();
+    module.functions.get_mut(function).unwrap().signature.results.clear();
+    assert!(super::native_summaries::P1NativeSummaries::for_module(&module).is_err());
 }

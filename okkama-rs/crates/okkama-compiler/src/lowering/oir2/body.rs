@@ -6,6 +6,8 @@ use crate::oir2 as ir;
 
 pub(super) struct BodyContext<'t> {
     pub functions: &'t HashMap<thir::BodyOwner, ir::FuncId>,
+    pub natives: &'t HashMap<usize, ir::FuncId>,
+    pub error_text: Option<ir::FuncId>,
     pub objects: &'t HashMap<ObjectId, ir::DeclId>,
     pub constructors: &'t HashMap<(ObjectId, usize, Vec<usize>), ir::FuncId>,
     pub given: Vec<usize>,
@@ -486,13 +488,32 @@ impl<'a, 't> BodyLowerer<'a, 't> {
             E::SelfValue => self.self_value().map(Some),
             E::Field(field) => self.read_field(*field).map(Some),
             E::PendingField(field) => self.pending_field(*field).map(Some),
-            E::VariantNew { case, values } if values.is_empty() => {
-                let ty = self.ty(expr.ty.as_ref().expect("typed enum value"), expr.span)?;
-                let ir::Type::Enum(declaration) = *self.b.module().types.get(ty)? else {
-                    return Err(LowerError::unsupported(expr.span, "non-plain enum value"));
-                };
-                self.core(ir::CoreOp::EnumCase { declaration, case: *case as u32 }).map(Some)
+            E::VariantNew { case, values } => {
+                let ty = self.ty(expr.ty.as_ref().expect("typed variant"), expr.span)?;
+                if let ir::Type::Enum(declaration) = *self.b.module().types.get(ty)? {
+                    return self.core(ir::CoreOp::EnumCase { declaration, case: *case as u32 }).map(Some);
+                }
+                let mut fields = vec![];
+                for field in values {
+                    let Some(value) = self.value(field)? else {
+                        return Ok(None);
+                    };
+                    fields.push(value);
+                }
+                self.core(ir::CoreOp::VariantNew { ty, case: *case as u32, fields, packet: None }).map(Some)
             }
+            E::Pack { items, spread: None } => {
+                let ty = self.ty(expr.ty.as_ref().expect("typed pack"), expr.span)?;
+                let mut values = vec![];
+                for item in items {
+                    let Some(value) = self.value(item)? else {
+                        return Ok(None);
+                    };
+                    values.push(value);
+                }
+                self.collection(ir::CollectionOp::ArrayNew { ty, values, packet: None }).map(Some)
+            }
+            E::Unpack(value) => self.value(value),
             E::EnumCase { ty, case } => {
                 let ty = self.ty(&Ty::Enum(*ty), expr.span)?;
                 let ir::Type::Enum(declaration) = *self.b.module().types.get(ty)? else {
@@ -506,7 +527,8 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 };
                 self.take(value).map(Some)
             }
-            E::Call { callee: thir::Callee::Method { .. } | thir::Callee::Ctor { .. }, .. } => {
+            E::Call { callee: thir::Callee::Method { .. } | thir::Callee::Ctor { .. }
+                | thir::Callee::Native(_) | thir::Callee::Role { .. }, .. } => {
                 self.direct_call(expr)
             }
             E::If { condition, then_block, else_block } => {
@@ -752,6 +774,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         block: &thir::Block,
         ty: Option<&Ty>,
     ) -> Result<Option<ir::ValueId>> {
+        let mut array = None;
         let (start, end, inclusive) = match source {
             thir::Source::Range { start, end, inclusive } => {
                 let Some(start) = self.value(start)? else {
@@ -771,7 +794,16 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 let end = self.core(ir::CoreOp::IntAdd { left: start, right: len })?;
                 (start, end, false)
             }
-            _ => return Err(LowerError::unsupported(block.span, "for source other than integer range")),
+            thir::Source::Array(expr) if matches!(expr.ty, Some(Ty::Array(_))) => {
+                let Some(value) = self.value(expr)? else {
+                    return Ok(None);
+                };
+                array = Some(value);
+                let start = self.constant(ir::Literal::Int("0".into()))?;
+                let end = self.collection(ir::CollectionOp::ArrayLen { array: value })?;
+                (start, end, false)
+            }
+            _ => return Err(LowerError::unsupported(block.span, "for source other than integer range or std array")),
         };
         // Keep range validation even when traversal needs only integer endpoints.
         self.core(ir::CoreOp::RangeNew { start, end, inclusive })?;
@@ -835,7 +867,12 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         let step = self.new_block(parent, &step_types)?;
         self.env = head_env;
         self.switch(iteration)?;
-        self.bind(binding, index)?;
+        let element = if let Some(array) = array {
+            self.collection(ir::CollectionOp::ArrayGet { array, index })?
+        } else {
+            index
+        };
+        self.bind(binding, element)?;
         let boundary = self.boundary(scope, ir::BoundaryKind::Loop)?;
         self.loops.push(LoopFrame { next: step, exit: exit.clone(), boundary, state: state.clone() });
         let out = self.block(block, exit.value)?;
