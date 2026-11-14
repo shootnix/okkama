@@ -1,0 +1,61 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 iteration in @main parent S0
+scope S2 branch in @main parent S1
+scope S3 branch in @main parent S1
+func @main() -> int [entry] {
+    binding b0 "i": int in S1
+    boundary B0 lexical in S0
+    boundary B1 loop in S1
+    boundary B2 lexical in S3
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 1
+    %1: int = const 3
+    %2: range = range.new %0, %1, inclusive true
+    %3: bool = const false
+    %4: int = const 0
+    br ^b3(%0, %3, %4)
+    ^b1(%5: failure) in S0:
+    raise %5
+    ^b2(%6: int) in S0 unwind ^b1:
+    want %6
+    exit.prepare return %6 at B0
+    ret %6
+    ^b3(%7: int, %8: bool, %9: int) in S0 unwind ^b1:
+    %10: bool = int.le %7, %1
+    cond %10, ^b4, ^b5
+    ^b4 in S1 unwind ^b1:
+    bind %7, binding b0
+    %11: int = const 2
+    %12: bool = int.eq %7, %11
+    cond %12, ^b10(%7), ^b11(%7)
+    ^b5 in S0 unwind ^b1:
+    cond %8, ^b6, ^b7
+    ^b6 in S0 unwind ^b1:
+    br ^b2(%9)
+    ^b7 in S0 unwind ^b1:
+    trap empty "A void result cannot be used as a value"
+    ^b8(%13: bool, %14: int) in S0 unwind ^b1:
+    %15: int = const 1
+    %16: int = int.add %7, %15
+    br ^b3(%16, %13, %14)
+    ^b9(%17: int) in S1 unwind ^b1:
+    %18: bool = const true
+    want %18
+    exit.prepare fallthrough %18 at B1
+    want %17
+    exit.prepare fallthrough %17 at B1
+    br ^b8(%18, %17)
+    ^b10(%19: int) in S2 unwind ^b1:
+    %20: int = const 9
+    want %20
+    exit.prepare last %20 at B1
+    br ^b2(%20)
+    ^b11(%21: int) in S3 unwind ^b1:
+    want %21
+    exit.prepare fallthrough %21 at B2
+    br ^b9(%21)
+}

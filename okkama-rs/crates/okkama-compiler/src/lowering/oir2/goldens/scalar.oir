@@ -1,0 +1,25 @@
+oir 2 high
+module app v1.0.0
+requires core
+entry @main
+scope S0 action in @main
+func @main() -> int [entry] {
+    binding b0 "n": int in S0
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const -7
+    %1: int = const 3
+    %2: int = const 4
+    %3: int = int.mul %1, %2
+    %4: int = int.add %0, %3
+    %5: int = const 2
+    %6: int = int.sub %4, %5
+    bind %6, binding b0
+    %7: int = const 5
+    %8: int = int.mod %6, %7
+    want %8
+    exit.prepare return %8 at B0
+    ret %8
+    ^b1(%9: failure) in S0:
+    raise %9
+}

@@ -722,7 +722,9 @@ impl<'a> ContractRegistry<'a> {
                 self.protocol(protocol, ProtocolTransition::Transfer, c, validate)?;
             }
             Rule::Prepare(exit) => {
-                c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                if self.module.profile != Profile::High {
+                    c.normal.results.push(ResultSlot::service(N::State, S::Pending));
+                }
                 if let Some(packet) = exit.packet { c.normal.transfers.push(TransferRule::Reserve { packet, boundary: exit.boundary }); }
                 c.normal.postconditions.push(Postcondition::LexicalExit { kind: exit.kind, boundary: exit.boundary, selection: exit.selection });
                 c.roots.roots.push(RootKind::PendingExit);

@@ -1,0 +1,74 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 branch in @main parent S0
+scope S2 branch in @main parent S0
+scope S3 branch in @main parent S0
+scope S4 branch in @main parent S0
+scope S5 branch in @main parent S0
+scope S6 branch in @main parent S0
+func @main() -> int [entry] {
+    binding b0 "b": bool in S0
+    boundary B0 lexical in S0
+    boundary B1 lexical in S1
+    boundary B2 lexical in S2
+    boundary B3 lexical in S3
+    boundary B4 lexical in S4
+    boundary B5 lexical in S5
+    boundary B6 lexical in S6
+    ^b0 in S0 unwind ^b1:
+    %0: bool = const false
+    cond %0, ^b3, ^b4
+    ^b1(%1: failure) in S0:
+    raise %1
+    ^b2(%2: bool) in S0 unwind ^b1:
+    cond %2, ^b6, ^b7
+    ^b3 in S1 unwind ^b1:
+    %3: int = const 1
+    %4: int = const 0
+    %5: int = int.mod %3, %4
+    %6: int = const 0
+    %7: bool = int.eq %5, %6
+    want %7
+    exit.prepare fallthrough %7 at B1
+    br ^b2(%7)
+    ^b4 in S2 unwind ^b1:
+    %8: bool = const false
+    want %8
+    exit.prepare fallthrough %8 at B2
+    br ^b2(%8)
+    ^b5(%9: bool) in S0 unwind ^b1:
+    bind %9, binding b0
+    cond %9, ^b9(%9), ^b10(%9)
+    ^b6 in S3 unwind ^b1:
+    %10: bool = const true
+    want %10
+    exit.prepare fallthrough %10 at B3
+    br ^b5(%10)
+    ^b7 in S4 unwind ^b1:
+    %11: bool = const false
+    %12: bool = bool.not %11
+    want %12
+    exit.prepare fallthrough %12 at B4
+    br ^b5(%12)
+    ^b8(%13: int, %14: bool) in S0 unwind ^b1:
+    want %13
+    exit.prepare return %13 at B0
+    ret %13
+    ^b9(%15: bool) in S5 unwind ^b1:
+    %16: int = const 1
+    want %16
+    exit.prepare fallthrough %16 at B5
+    want %15
+    exit.prepare fallthrough %15 at B5
+    br ^b8(%16, %15)
+    ^b10(%17: bool) in S6 unwind ^b1:
+    %18: int = const 0
+    want %18
+    exit.prepare fallthrough %18 at B6
+    want %17
+    exit.prepare fallthrough %17 at B6
+    br ^b8(%18, %17)
+}

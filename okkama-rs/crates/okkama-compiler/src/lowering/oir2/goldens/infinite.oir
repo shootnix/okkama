@@ -1,0 +1,23 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 iteration in @main parent S0
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S0
+    boundary B1 loop in S1
+    selection s0: selection = union([])
+    ^b0 in S0 unwind ^b1:
+    br ^b3
+    ^b1(%0: failure) in S0:
+    raise %0
+    ^b2 in S0:
+    unreachable
+    ^b3 in S0 unwind ^b1:
+    br ^b4
+    ^b4 in S1 unwind ^b1:
+    exit.prepare next select s0 at B1
+    br ^b3
+}

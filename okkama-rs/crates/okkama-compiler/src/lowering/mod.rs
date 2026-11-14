@@ -20,6 +20,8 @@ mod ctx;
 mod futures;
 mod intrinsics;
 mod modules;
+#[cfg(test)]
+pub(crate) mod oir2;
 pub mod std_paths;
 
 pub use modules::{LoadedModule, ModuleLoader};

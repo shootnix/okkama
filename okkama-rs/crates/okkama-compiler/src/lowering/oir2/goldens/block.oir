@@ -1,0 +1,29 @@
+oir 2 high
+module app
+requires core
+entry @main
+scope S0 action in @main
+scope S1 block in @main parent S0
+func @main() -> int [entry] {
+    binding b0 "n": int in S0
+    binding b1 "n": int in S1
+    boundary B0 lexical in S0
+    boundary B1 lexical in S1
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 1
+    bind %0, binding b0
+    br ^b3
+    ^b1(%1: failure) in S0:
+    raise %1
+    ^b2(%2: int) in S0 unwind ^b1:
+    want %2
+    exit.prepare return %2 at B0
+    ret %2
+    ^b3 in S1 unwind ^b1:
+    %3: int = const 2
+    bind %3, binding b1
+    discard %3
+    want %0
+    exit.prepare fallthrough %0 at B1
+    br ^b2(%0)
+}
