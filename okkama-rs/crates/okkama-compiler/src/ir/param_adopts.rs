@@ -184,7 +184,7 @@ impl State {
                 }
             }
             // Stores and future progress can expose fresh children through aliases (#555).
-            InstKind::ObjInit { .. } | InstKind::OnceStore { .. } | InstKind::Await(_)
+            InstKind::ObjInit { .. } | InstKind::OnceStore { .. } | InstKind::Await(_) | InstKind::AwaitTake(_)
             | InstKind::FutSpawn(_) | InstKind::WorkerSpawn { .. } => {
                 self.forget(function, plain);
             }

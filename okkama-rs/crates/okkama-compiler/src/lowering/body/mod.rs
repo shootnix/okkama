@@ -1281,17 +1281,35 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     }
 
     fn emit(&mut self, kind: InstKind, ty: Type, span: Span) -> Typed {
-        let result = matches!(kind, InstKind::Call { .. } | InstKind::CallRole { .. } | InstKind::Await(_));
+        let result = matches!(kind, InstKind::Call { .. } | InstKind::CallRole { .. } | InstKind::AwaitTake(_));
         let value = Typed {
             value: self.b.emit(kind, ty.clone(), span),
             ty,
         };
-        // Результат вызова или await учитывается текущей областью (§7, §13.1),
-        // даже если выражение не связано с именем и его значение отбрасывается.
+        // A call or unique temporary await result belongs to this scope,
+        // including an unnamed expression whose value is discarded.
         if result {
             self.track(&value, span);
         }
         value
+    }
+
+    /// Only an async invocation allocates a new Future by construction. A
+    /// synchronous call returning Future may return an alias (e.g. a collector
+    /// input), so syntactic temporariness alone is insufficient. Bound Futures,
+    /// projections, collection items and control-flow joins stay borrowed.
+    fn unique_temporary_future(&self, expr: &thir::Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Call { callee, .. } => match callee {
+                thir::Callee::Method { object, method, .. } => self.ctx.reg.objects[object.0].methods[*method].is_async,
+                thir::Callee::Role { role, slot, .. } => self.ctx.reg.roles[role.0].methods[*slot].is_async,
+                thir::Callee::Native(native) => self.ctx.reg.natives[*native].is_async,
+                _ => false,
+            },
+            ExprKind::CallValue { callee, .. } => matches!(&callee.ty, Some(Ty::Action(action)) if action.is_async),
+            ExprKind::Spawn(value) => self.unique_temporary_future(value),
+            _ => false,
+        }
     }
 
     fn constant(&mut self, constant: Constant, span: Span) -> Typed {
@@ -2450,21 +2468,23 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     return Ok(Out::Diverged);
                 };
                 let future = self.take(future, inner.span);
+                let kind = if self.unique_temporary_future(inner) {
+                    InstKind::AwaitTake(future.value)
+                } else {
+                    InstKind::Await(future.value)
+                };
                 match &expr.ty {
                     None => {
-                        self.b.emit_void(InstKind::Await(future.value), span);
+                        self.b.emit_void(kind, span);
                         Ok(Out::Unit)
                     }
                     Some(_) => {
                         let ty = self.expr_type(expr)?;
                         let value = self.emit(
-                            InstKind::Await(future.value),
+                            kind,
                             ty,
                             span,
                         );
-                        // #579 tracking remains safe: the Future already owns
-                        // its cached outcome, including in this same scope.
-                        self.track(&value, span);
                         Ok(Out::Value(value))
                     }
                 }

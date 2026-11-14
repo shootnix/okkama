@@ -111,6 +111,7 @@ helpers! {
     trie_get = crate::ops::rt_trie_get as (ctx, array: Word, position: u64) -> Word; [Allocates];
     int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
     future_new = crate::tasks::rt_future_new as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
+    await_take = crate::tasks::rt_await_take as (ctx, this: Word, future: Word) -> u64; [Collects, Reenters, Fails];
     await_ = crate::tasks::rt_await as (ctx, this: Word, future: Word) -> u64; [Collects, Reenters, Fails];
     region_settle = crate::tasks::rt_region_settle as (ctx, this: Word, region: Word, keep: Word, failure: Word) -> u64; [Allocates, Collects, Reenters, Fails];
     complete = crate::tasks::rt_complete as (ctx, frame: Word, value: Word); [Collects, Reenters];
@@ -1773,10 +1774,15 @@ impl Emitter<'_, '_> {
                 self.check(pc);
                 self.suspend_unless_ready(pc, outcome, dst);
             }
-            I::Await { dst, future } if self.frame.is_some() => {
+            I::Await { dst, future } | I::AwaitTake { dst, future } if self.frame.is_some() => {
                 let this = self.builder.use_var(self.frame.expect("frame"));
                 let future = self.get(future);
-                let outcome = self.helper(|h| h.await_, &[ctx, this, future]).expect("result");
+                let helper: fn(&Helpers) -> FuncId = if matches!(instruction, I::AwaitTake { .. }) {
+                    |h| h.await_take
+                } else {
+                    |h| h.await_
+                };
+                let outcome = self.helper(helper, &[ctx, this, future]).expect("result");
                 self.check(pc);
                 self.suspend_unless_ready(pc, outcome, *dst);
             }
@@ -2331,7 +2337,7 @@ impl Emitter<'_, '_> {
 /// An instruction that may suspend its async frame and is re-entered on
 /// resumption: `await` and the region closes that await async destroys (#154).
 fn suspends(instruction: &I) -> bool {
-    matches!(instruction, I::Await { .. } | I::RegionSettle { .. } | I::RegionSettleUnwind { .. })
+    matches!(instruction, I::Await { .. } | I::AwaitTake { .. } | I::RegionSettle { .. } | I::RegionSettleUnwind { .. })
 }
 
 fn failure_or_region(instruction: &I) -> bool {

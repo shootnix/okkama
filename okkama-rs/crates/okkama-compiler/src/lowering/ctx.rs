@@ -1480,6 +1480,12 @@ impl<'r, 'a> Ctx<'r, 'a> {
             }),
             Type::Array(element) | Type::Builder(element) => self.may_async_destroy(element),
             Type::Map(_, value) | Type::MapBuilder(_, value) => self.may_async_destroy(value),
+            // A borrowed await leaves the outcome in this Future's cache.
+            // Closing its owner may therefore have to await that destroy.
+            Type::Future(outcome) => match &**outcome {
+                ResultType::Value(value) => self.may_async_destroy(value),
+                ResultType::Void => false,
+            },
             Type::Any | Type::Fn(_) | Type::Cap(_) => self.dynamic_async,
             _ => false,
         }

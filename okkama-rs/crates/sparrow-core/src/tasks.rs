@@ -26,6 +26,8 @@ pub const COLD: u64 = 0;
 pub const RUNNING: u64 = 1;
 pub const DONE: u64 = 2;
 pub const FAILURE_STATE: u64 = 3;
+/// A unique await has consumed the cache; it cannot publish another view.
+pub const CONSUMED: u64 = 4;
 
 pub const STATE: u64 = 8;
 pub const RESULT: u64 = 16;
@@ -523,6 +525,11 @@ pub extern "C" fn rt_await(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
             ctx.scratch = get(future, RESULT);
             AWAIT_READY
         }
+        CONSUMED => {
+            ctx.failure = runtime.failure_new(FailureKind::Panic("await of a consumed Future".into()));
+            ctx.status = FAILED;
+            AWAIT_READY
+        }
         FAILURE_STATE => {
             ctx.failure = get(future, FAILURE);
             ctx.status = FAILED;
@@ -533,6 +540,25 @@ pub extern "C" fn rt_await(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
             AWAIT_PENDING
         }
     }
+}
+
+/// Same suspension/cancellation protocol as borrow-await. Consume only after
+/// settlement was actually delivered; cancellation before delivery leaves the
+/// cache for the Future's normal cleanup. Scratch carries the delivered value
+/// until the JIT stores it; no safepoint intervenes after extraction. Failed
+/// awaits leave their carrier in the cache for normal unwind cleanup.
+#[inline(never)]
+pub extern "C" fn rt_await_take(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
+    let outcome = rt_await(ctx_ptr, this, future);
+    let (ctx, runtime) = unsafe { parts(ctx_ptr) };
+    let delivered = outcome == AWAIT_READY && get(future, STATE) == DONE && ctx.status == OK;
+    if delivered {
+        runtime.take_outcome(future);
+        set(future, RESULT, UNBOUND);
+        set(future, FAILURE, UNBOUND);
+        set(future, STATE, CONSUMED);
+    }
+    outcome
 }
 
 /// `region.settle` / `region.settle_unwind` from frame `this` (#154): close

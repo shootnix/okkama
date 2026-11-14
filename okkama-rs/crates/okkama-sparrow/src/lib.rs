@@ -380,6 +380,8 @@ instructions! {
     CallRole = 123, "call.role" { dst: Option<Dst>, receiver: Register, role: RoleRef, slot: u32, args: Vec<Register> }
     /// Поле cap вычисляется заново над владельцем (§8.5).
     CallCap = 124, "call.cap" { dst: Dst, cap: Register, ty: CapRef, field: u32 }
+    /// Consume the outcome of a compiler-proven unique temporary Future.
+    AwaitTake = 157, "await.take" { dst: Option<Dst>, future: Register }
     Await = 125, "await" { dst: Option<Dst>, future: Register }
     /// Запустить Future сейчас; результат — тот же Future.
     FutSpawn = 126, "fut.spawn" { dst: Dst, future: Register }

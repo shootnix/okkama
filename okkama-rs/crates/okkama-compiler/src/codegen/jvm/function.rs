@@ -830,7 +830,7 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                 let index = self.class.pool.method_ref(&owner, &name, &descriptor)?;
                 self.asm.op_index(0xb8, index, 1, 1); // invokestatic
             }
-            InstKind::Await(future) => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) => {
                 self.load(*future);
                 self.class.invoke_static(
                     &mut self.asm,
