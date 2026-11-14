@@ -44,7 +44,8 @@ macro_rules! inert {
 }
 inert!(u16, u32, bool, NumericType, ConstructionStatus, OperandMode,
     OperandConvention, DynamicReason, ExitKind, AbortPhase, DescriptorManaged,
-    AdmissionProvenance, ServiceKeyKind, BoundaryKind);
+    AdmissionProvenance, ServiceKeyKind, BoundaryKind, ScopeEffectEnvelope, CallCleanupMode,
+    HighEffectEnvelope, HighEdgeSelector, DeferReturnTag);
 impl Read for String {
     fn read(&self, visitor: &mut impl Reader) { visitor.sequence(self.len(), 1); }
 }
@@ -82,12 +83,16 @@ macro_rules! fields {
     )*};
 }
 fields!(
+    DeferLabel { result }, DeferRegistration { boundary },
+    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol },
+    HighResultExit { block, value, prepared }, HighEffectRecord { site },
+    DeferReplaceEdge { edge },
     FieldRef { declaration }, FieldValue { field, value }, ConstructionCompletion { state },
     CallArgument { value }, CallSite { args, packet, deps, descriptors, type_args, summary },
     ResourceValue { value, packet }, AccessContext { owner, holder, authority },
     ElaboratedBinding { binding, resource, state, original_scope },
     ElaboratedStage { action, field, resource, states },
-    DeferAction { function, captures, bindings },
+    DeferAction { function, captures, bindings, replacements },
     UniqueCacheProof { future, scope, region, evidence },
     UniqueCacheEvidence { creation, aliases }, FrameSlot { value }, SavedSlot { ty },
     DescriptorContract { retention, cleanup, summary },
@@ -98,7 +103,8 @@ fields!(
     Target { block, args }, InvokeEdge { block, args }, BlockUnwind { target },
     Block { lexical_scope, params, unwind, insts, term },
     Terminator { kind, loc }, SwitchCase { value, target },
-    Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections }
+    Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
+        high_results, high_effects, descriptor_bindings, service_schedules }
 );
 impl Read for DebugLoc {
     fn read(&self, visitor: &mut impl Reader) {
@@ -160,6 +166,14 @@ impl Read for TermKind {
                 normal.read(visitor);
                 unwind.read(visitor);
             }
+            Self::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+                function.read(visitor);
+                call.read(visitor);
+                continue_edge.read(visitor);
+                replacements.read(visitor);
+                unwind.read(visitor);
+            }
+            Self::RetDefer { values, .. } => values.read(visitor),
             Self::Ret { values } => values.read(visitor),
             Self::Throw(value) | Self::Raise(value) | Self::Panic(value) => value.read(visitor),
             Self::Catch { failure, ty, handler, next } => {
@@ -222,7 +236,8 @@ impl Read for SummarySelection {
             visitor.depth(depth);
             if !visitor.active() { break; }
             match item {
-                Self::Field { field, .. } => field.read(visitor),
+                Self::Path { fields, .. } => fields.read(visitor),
+            Self::Field { field, .. } => field.read(visitor),
                 Self::Union(items) => {
                     visitor.sequence(items.len(), std::mem::size_of::<&Self>());
                     if visitor.active() {
@@ -320,6 +335,28 @@ impl Read for CreationOrigin {
         match self {
             Self::Instruction(inst) => inst.read(visitor),
             Self::Invoke { block, .. } => block.read(visitor),
+        }
+    }
+}
+
+impl Read for FutureEnvironment {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Deferred { function, arguments, descriptors } => {
+                function.read(visitor);
+                arguments.read(visitor);
+                descriptors.read(visitor);
+            }
+            Self::Frame(frame) => frame.read(visitor),
+        }
+    }
+}
+
+impl Read for HighOperationSite {
+    fn read(&self, visitor: &mut impl Reader) {
+        match self {
+            Self::Instruction(instruction) => instruction.read(visitor),
+            Self::Terminator(block) => block.read(visitor),
         }
     }
 }

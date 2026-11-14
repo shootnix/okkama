@@ -3,6 +3,8 @@ use crate::*;
 
 #[path = "operands.rs"]
 mod operands;
+#[path = "elaboration_types.rs"]
+mod elaboration;
 
 #[derive(Clone, Debug, Default)]
 struct Substitution { entries: Vec<(TypeParameterRef, TypeId)> }
@@ -425,8 +427,13 @@ pub(super) fn check<'a>(module: &'a Module, selected: Option<FuncId>, state: &mu
         if function_types(module, data, state).is_err() && before == state.diagnostics.len() {
             state.error(R::T5, "invalid function attribute layout or signature");
         }
+        if let Some(summary) = data.summary.and_then(|id| module.summaries.get(id).ok()) {
+            let params = language_slots(module, &data.signature.params, state);
+            elaboration::summary_paths(module, summary, &params, state);
+        }
         let Some(body) = &data.body else { continue; };
         metadata(module, body, function, state);
+        elaboration::metadata(module, body, function, state);
         for (value, data) in body.values.iter() {
             if module.types.get(data.ty).is_ok_and(|ty| matches!(ty, Type::Never)) {
                 state.at(L::Value { function, value }, None);
@@ -799,7 +806,42 @@ fn terminator<'a>(
                 at_edge(function, block_id, next_edge, checker.state);
                 target(body, default, false, checker.state);
             }
+            TermKind::InvokeDefer { function: callee, call, continue_edge, replacements, unwind } => {
+                checker.direct_call(*callee, call)?;
+                elaboration::defer_edges(&mut checker, *callee, call, continue_edge, replacements,
+                    unwind.as_ref(), function, block_id, next_edge)?;
+            }
+            TermKind::RetDefer { tag, values } => {
+                let declaration = module.functions.get(function)?;
+                let labels = declaration.attrs.iter().find_map(|attr| {
+                    if let FunctionAttr::DeferEntry { replacements } = attr { Some(replacements) } else { None }
+                });
+                if let Some(labels) = labels {
+                    let outcome = match tag {
+                        DeferReturnTag::Continue => Some(Outcome::DeferContinue),
+                        DeferReturnTag::Replace(label) => labels.iter().position(|item| item.label == *label)
+                            .and_then(|index| u16::try_from(index).ok()).map(Outcome::DeferReplace),
+                    };
+                    if let Some(outcome) = outcome {
+                        let slots = ContractRegistry::new(module).defer_results(function, outcome)
+                            .map_err(|_| TypeCheckError)?;
+                        checker.require(values.len() == slots.len(), "tagged defer return arity mismatch");
+                        for (value, slot) in values.iter().zip(slots) {
+                            let actual = value_type(body, *value)?;
+                            let valid = matches_result_type(module, body, &slot.ty, actual, &sub, checker.state)?;
+                            checker.require(valid, "tagged defer return type mismatch");
+                        }
+                    } else {
+                        checker.report(R::T2, "undeclared defer return label");
+                    }
+                } else {
+                    checker.report(R::T2, "tagged defer return requires a defer entry declaration");
+                }
+            }
             TermKind::Ret { values } => {
+                let tagged = module.functions.get(function)?.attrs.iter()
+                    .any(|attr| matches!(attr, FunctionAttr::DeferEntry { .. }));
+                checker.require(!tagged, "defer entry requires a tagged return");
                 if values.len() != signature.results.len() { checker.report(R::T2, "return arity mismatch"); }
                 for (&value, &ty) in values.iter().zip(&signature.results) { checker.exact(value, ty)?; }
             }

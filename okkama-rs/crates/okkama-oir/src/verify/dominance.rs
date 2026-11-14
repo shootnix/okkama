@@ -68,6 +68,17 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
             }
             state.at(L::Terminator { function, block: block_id }, block.term.loc);
             checker.check(&block.term, entry + 1, Some(block.insts.len()), false, false, state);
+            for record in body.high_results.iter().filter(|record| record.block == block_id) {
+                checker.check(record, entry + 1, Some(block.insts.len()), false, false, state);
+                if let Some(prepared) = record.prepared
+                    && let Some(&(source, position)) = state.positions.get(&(function, prepared)) {
+                    let definition = Dominators::entry(source) + 1;
+                    if !dom.dominates(definition, entry + 1, state)
+                        || source == block_id && position >= block.insts.len() {
+                        state.error(R::SSA2, "result preparation does not dominate its edge");
+                    }
+                }
+            }
         }
     }
 }

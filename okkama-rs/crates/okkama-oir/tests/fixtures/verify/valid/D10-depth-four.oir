@@ -1,0 +1,15 @@
+oir 2 own
+module generic_path
+object Leaf {
+    field x: int
+}
+object Box<T> {
+    field item: T
+}
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[path(parameter=0, fields=[field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0), field_ref(declaration=Box, index=0), field_ref(declaration=Leaf, index=0)])], provenance=bound)] contract call_contract(results=[int], publication=atomic)
+func @f(%box: Box<Box<Box<Leaf>>> facts(managed(deps=db)), %box_deps: deps) -> int summary(M0) {
+    dependency db: dependency = from_ssa(%box_deps)
+^entry in S:
+    ret 0
+}

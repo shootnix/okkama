@@ -30,7 +30,7 @@ func @main() -> void summary(Mdead) {
     %q: scope<S> = scope.begin S
     (%borrow: Res facts(managed(deps=d0)), %packet: own, %deps: deps) = call @new("r"; own.empty)
     %admitted: scope<S> = own.admit %q, %packet
-    invoke.own scope.end %admitted
+    invoke.own scope.end %admitted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^dead($closed)
         unwind ^failed($closed, $failure)
 ^dead(%closed: closed) in S:

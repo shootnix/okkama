@@ -59,20 +59,20 @@ func @f(%again: bool) -> void summary(M0) {
         unwind ^loop_failed(%outer, $state, $failure)
 ^replace(%owner: scope<S>, %rest: scope<SI>, %selected: own, %deps: deps) in SI:
     %rebound: scope<S> = own.rebind binding elaborated_binding(binding=b0, resource=resource_value(value=%next, packet=%selected), state=%owner, original_scope=S)
-    invoke.own scope.end %rest
+    invoke.own scope.end %rest, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^test(%rebound)
         unwind ^failed(%rebound, $failure)
 ^test(%latest: scope<S>) in S:
     cond %again, ^loop(%latest), ^close(%latest)
 ^close(%last: scope<S>) in S:
-    invoke.own scope.end %last
+    invoke.own scope.end %last, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^closed_failed($closed, $failure)
 ^loop_failed(%outer_state: scope<S>, %inner_state: scope<SI>, %error: failure) in SI:
-    %inner_error: failure = scope.unwind %inner_state, %error
+    %inner_error: failure = scope.unwind %inner_state, %error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     br ^failed(%outer_state, %inner_error)
 ^failed(%open: scope<S>, %failure: failure) in S:
-    %final: failure = scope.unwind %open, %failure
+    %final: failure = scope.unwind %open, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^closed_failed(%closed: closed, %closing_failure: failure) in S:
     raise %closing_failure

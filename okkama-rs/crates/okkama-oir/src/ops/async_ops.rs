@@ -41,6 +41,23 @@ impl OperandSource for FrameSlot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SavedSlot { pub slot: u32, pub ty: TypeId, pub linear: bool }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FutureEnvironment {
+    Deferred { function: FuncId, arguments: Vec<ValueId>, descriptors: Vec<ValueId> },
+    Frame(ValueId),
+}
+impl OperandSource for FutureEnvironment {
+    fn append(&self, _: OperandMode, out: &mut Vec<ReferencedOperand>) {
+        match self {
+            Self::Deferred { arguments, descriptors, .. } => {
+                arguments.append(OperandMode::Borrow, out);
+                descriptors.append(OperandMode::Observe, out);
+            }
+            Self::Frame(frame) => frame.append(OperandMode::Consume, out),
+        }
+    }
+}
+
 operation_group! { AsyncOp {
     Await { future: ValueId, result: Option<TypeId> }
         => ("await", [future: Borrow], Rule::Await { future: *future, result: *result, take: None, shielded: false });
@@ -60,8 +77,11 @@ operation_group! { AsyncOp {
         => ("fut.done", [future: Observe], Rule::Data { ty: ResultType::Scalar(ScalarType::Bool), trap: false });
     FutureCancelled { future: ValueId }
         => ("fut.cancelled", [future: Observe], Rule::Data { ty: ResultType::Scalar(ScalarType::Bool), trap: false });
-    FutureNew { frame: ValueId, result: Option<TypeId>, packet: ValueId, deps: ValueId, owner: ScopeId, owner_state: ValueId }
-        => ("fut.new", [frame: Consume, packet: Consume, deps: Observe, owner_state: Consume], Rule::FutureNew { frame: *frame, packet: *packet, owner: *owner_state, result: *result });
+    FutureNew { packet: ValueId, deps: ValueId, owner_state: ValueId, environment: FutureEnvironment,
+        result: Option<TypeId>, owner: ScopeId }
+        => ("fut.new", [packet: Consume, deps: Observe, owner_state: Consume, environment: Borrow],
+            Rule::FutureNew { environment: environment.clone(), packet: *packet, owner: *owner_state,
+            result: *result });
     FuturePublish { task: ValueId, cache: ValueId, value: Option<ValueId>, packet: ValueId, deps: ValueId, failure: Option<ValueId>, protocol: ProtocolId }
         => ("fut.publish", [task: Consume, cache: Consume, value: Borrow, packet: Consume, deps: Observe, failure: Observe], Rule::Publish { task: *task, cache: *cache, packet: *packet, protocol: *protocol });
     FutureSettle { task: ValueId, protocol: ProtocolId }

@@ -1,0 +1,11 @@
+oir 2 own
+// expect OIR2-T1 operand:0:1:[0]
+module pure_close
+scope S action in @f
+summary M0 internal contract call_contract(publication=atomic)
+func @f() -> void summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %closed: closed = scope.end %q, effects scope_effects(failures=[], suspends=false, cancel=true)
+    ret
+}

@@ -34,15 +34,14 @@ func @main(%value: Res facts(managed(deps=dfull_value)), %deps: deps; %packet: o
     (%cleanup: Res facts(managed(deps=dcleanup)), %pa: own, %da: deps) = call @cleanup_A(; own.empty)
     %with_A: scope<S> = own.admit %q, %pa
     %pending: pending = exit.prepare return %value, %packet, deps(%deps) at B0
-    invoke.own scope.end %with_A, reserve %pending
+    invoke.own scope.end %with_A, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
-        unwind ^failed($closed, $failure, $pending)
+        unwind ^failed($closed, $failure)
 ^commit(%closed: closed, %reserved: pending) in S:
     (%result: Res facts(managed(deps=dfull_result)), %out: own, %full: deps) = exit.commit %reserved, destination caller, result Res
     ret %result, %out, %full
-^failed(%closed2: closed, %failure: failure, %remaining: pending) in S:
-    br ^outer_failure(%failure, %remaining)
-^outer_failure(%error: failure, %outer_reserve: pending) in S:
-    %discarded: closed = exit.discard_empty %outer_reserve
+^failed(%closed2: closed, %failure: failure) in S:
+    br ^outer_failure(%failure)
+^outer_failure(%error: failure) in S:
     raise %error
 }

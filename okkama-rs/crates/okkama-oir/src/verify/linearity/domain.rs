@@ -27,6 +27,7 @@ pub(super) enum Origin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ProjectionKind {
     Field(DeclId, u32),
+    Path { fields: [(DeclId, u32); 4], len: u8 },
     Index(ValueId),
     Slice(ValueId, ValueId),
     Map(ValueId),

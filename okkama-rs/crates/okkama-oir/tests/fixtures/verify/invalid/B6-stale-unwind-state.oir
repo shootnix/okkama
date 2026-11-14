@@ -9,11 +9,11 @@ func @f(%q0: scope<S>, %p: own, %x: int) -> void summary(M0) {
     %n: int = int.mod %x, %x
     br ^close(%q1)
 ^close(%q2: scope<S>) in S:
-    invoke.own scope.end %q2
+    invoke.own scope.end %q2, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^closed_failed($closed, $failure)
 ^failed(%old: scope<S>, %failure: failure) in S:
-    %final: failure = scope.unwind %old, %failure
+    %final: failure = scope.unwind %old, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^done(%c: closed) in S:
     ret

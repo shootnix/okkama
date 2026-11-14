@@ -16,7 +16,8 @@ func @f(%x: int) -> C [ctor C] {
     obj.init %self, 1, field field_ref(declaration=C, index=0)
     obj.init %self, false, field field_ref(declaration=C, index=1)
     %risk: int = int.mod %input, %input
-    exit.prepare return %self at B0
+    [iprep0] exit.prepare return %self at B0
+    result.exit edge normal(0), value %self, demand want, prepare iprep0
     ret %self
 ^repair(%early: C, %failure: failure) in S:
     raise %failure

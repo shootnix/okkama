@@ -1,0 +1,14 @@
+oir 2 own
+module typed_paths
+object Inner {
+    field x: int
+}
+object Outer {
+    field inner: Inner
+}
+scope S action in @f
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(aliases=[path(parameter=0, fields=[field_ref(declaration=Outer, index=0), field_ref(declaration=Inner, index=0)])], provenance=bound)] contract call_contract(results=[int], publication=atomic)
+func @f(%outer: Outer facts(plain(certificate=closed_graph(ty=Outer)))) -> int summary(M0) {
+^entry in S:
+    ret 0
+}

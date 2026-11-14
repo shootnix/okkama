@@ -20,7 +20,8 @@ sample_expr!(ConstructionCompletion, ConstructionCompletion { state: sample() })
 sample_expr!(FieldValue, FieldValue { field: sample(), value: sample() });
 sample_expr!(ResourceValue, ResourceValue { value: sample(), packet: sample() });
 sample_expr!(ResultDemand, ResultDemand::Discard);
-sample_expr!(DeferAction, DeferAction { function: sample(), captures: sample(), bindings: sample() });
+sample_expr!(DeferAction, DeferAction { replacements: vec![], function: sample(), captures: sample(),
+    bindings: sample() });
 sample_expr!(TransferStates, TransferStates::Same(sample()));
 sample_expr!(ElaboratedBinding, ElaboratedBinding { binding: sample(), resource: sample(), state: sample(), original_scope: sample() });
 sample_expr!(ElaboratedStage, ElaboratedStage { action: sample(), field: sample(), resource: sample(), states: sample() });
@@ -38,7 +39,9 @@ sample_expr!(PreparedExit, PreparedExit { kind: ExitKind::Return, value: sample(
 sample_expr!(ExitDestination, ExitDestination::Caller);
 sample_expr!(AbortPhase, AbortPhase::BeforeDestroy);
 sample_expr!(CallArgument, CallArgument { value: sample(), convention: OperandConvention::Borrow });
-sample_expr!(CallSite, CallSite { args: vec![CallArgument { value: sample(), convention: OperandConvention::Borrow }], packet: sample(), deps: sample(), descriptors: sample(), type_args: sample(), summary: sample() });
+sample_expr!(CallSite, CallSite { cleanup: CallCleanupMode::Ordinary,  args: vec![CallArgument { value: sample(),
+    convention: OperandConvention::Borrow }], packet: sample(), deps: sample(), descriptors: sample(),
+    type_args: sample(), summary: sample() });
 sample_expr!(DescriptorContract, DescriptorContract { managed: DescriptorManaged::Runtime, retention: SummarySelection::Parameter(0), cleanup: sample(), async_destroy: false, summary: sample() });
 fn v(index: u32) -> ValueId { ValueId::from_u32(index) }
 pub(crate) fn module() -> Module {
@@ -53,7 +56,7 @@ pub(crate) fn module() -> Module {
         results: vec![ResultRelation { fresh: vec![], aliases: vec![], external_deps: vec![], provenance: AdmissionProvenance::UnboundResult }],
         contract: CallContract { results: vec![sample()], failures: vec![FailureKind::Thrown, FailureKind::Cancelled], suspends: false, async_destroy: false, publication: Publication::Atomic, protocol: None },
     }).unwrap();
-    module.protocols.alloc(ProtocolDecl {
+    module.protocols.alloc(ProtocolDecl { kind: ProtocolKind::Storage,
         holders: vec![HolderKind::Cache, HolderKind::Frame, HolderKind::Carrier, HolderKind::Scope],
         rules: [ProtocolTransition::Attach, ProtocolTransition::Transfer, ProtocolTransition::Rehome, ProtocolTransition::Release, ProtocolTransition::Publish, ProtocolTransition::Settle, ProtocolTransition::Save, ProtocolTransition::Resume, ProtocolTransition::Cancel, ProtocolTransition::Pin, ProtocolTransition::Unpin, ProtocolTransition::Dynamic].into_iter().map(|transition| ProtocolRule {
             transition, from: HolderKind::Scope, to: HolderKind::Cache, checks: vec![ProtocolCheck::LiveDependencies], normal: ProtocolPoststate { holder: HolderKind::Cache, state: HolderState::Open }, unwind: Some(ProtocolPoststate { holder: HolderKind::Receipt, state: HolderState::Unaccepted }), cancel: Some(ProtocolPoststate { holder: HolderKind::Frame, state: HolderState::Running }),
@@ -62,7 +65,10 @@ pub(crate) fn module() -> Module {
     module
 }
 fn body() -> Body {
-    let mut body = Body { entry: sample(), values: Arena::new(), blocks: Arena::new(), insts: Arena::new(), bindings: Arena::new(), boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(), selections: Arena::new() };
+    let mut body = Body { high_results: vec![], high_effects: vec![], descriptor_bindings: vec![],
+        service_schedules: vec![], entry: sample(), values: Arena::new(), blocks: Arena::new(), insts: Arena::new(),
+        bindings: Arena::new(), boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(),
+        selections: Arena::new() };
     body.selections.alloc(SelectionExpr::Value(v(0))).unwrap();
     body
 }
@@ -126,11 +132,13 @@ fn representative_group_contracts() {
     assert_eq!(names(&split.normal), [N::Rest, N::Selected, N::ExternalDeps]);
     assert_eq!(names(split.unwind.as_ref().unwrap()), [N::Packet, N::Failure]);
     assert_eq!(split.unwind.as_ref().unwrap().transfers, [TransferRule::Preserve { input: v(1), output: N::Packet }]);
-    let end = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeEnd { state: v(1), reserve: None })).unwrap();
+    let end = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeEnd { state: v(1), reserve: None,
+        effects: ScopeEffectEnvelope::conservative() })).unwrap();
     assert_eq!(names(&end.normal), [N::Closed]);
     assert_eq!(names(end.unwind.as_ref().unwrap()), [N::Closed, N::Failure]);
-    assert_eq!(names(&end.cancellation.as_ref().unwrap().outcome), [N::Closed, N::Failure]);
-    let unwind = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeUnwind { state: v(1), failure: v(2), reserve: None })).unwrap();
+    assert!(end.cancellation.is_none());
+    let unwind = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeUnwind { state: v(1), failure: v(2),
+        reserve: None, effects: ScopeEffectEnvelope::conservative() })).unwrap();
     assert_eq!(names(&unwind.normal), [N::Failure]); assert!(unwind.unwind.is_none());
     assert!(unwind.normal.postconditions.contains(&Postcondition::Closed(v(1))));
     for reason in [DynamicReason::Atomic, DynamicReason::Cell, DynamicReason::Channel, DynamicReason::Group, DynamicReason::Any, DynamicReason::Closure, DynamicReason::Merge] {
@@ -167,7 +175,10 @@ fn representative_group_contracts() {
 fn call_conventions_summaries_and_edge_results() {
     let mut module = module();
     module.summaries.get_mut(sample()).unwrap().parameters.push(ParameterEffect { convention: FreshConvention::Take, retention: Some(SummarySelection::OwnerGraph(1)), deps: vec![1], destination: TransferDestination::Result });
-    let call = CallSite { args: vec![CallArgument { value: v(1), convention: OperandConvention::Borrow }, CallArgument { value: v(2), convention: OperandConvention::Consume }], packet: Some(v(3)), deps: vec![v(4)], descriptors: vec![v(5)], type_args: vec![], summary: sample() };
+    let call = CallSite { cleanup: CallCleanupMode::Ordinary,  args: vec![CallArgument { value: v(1),
+        convention: OperandConvention::Borrow }, CallArgument { value: v(2),
+        convention: OperandConvention::Consume }], packet: Some(v(3)), deps: vec![v(4)], descriptors: vec![v(5)],
+        type_args: vec![], summary: sample() };
     let registry = ContractRegistry::new(&module);
     let contract = registry.lookup(&Operation::Call(CallOp::Direct { function: sample(), call: call.clone() })).unwrap();
     assert_eq!(contract.operands.iter().map(|operand| operand.mode).collect::<Vec<_>>(), [OperandMode::Borrow, OperandMode::Consume, OperandMode::Consume, OperandMode::Observe, OperandMode::Observe]);
@@ -196,7 +207,8 @@ fn cfg_visits_all_operands_edges_and_definitions_of_hand_built_function() {
     body.blocks.alloc(Block {
         lexical_scope: sample(), params: vec![v(0), v(1)], unwind: Some(BlockUnwind { target: target(2, vec![v(1)]) }), insts: vec![inst],
         term: Terminator { loc: None, kind: TermKind::InvokeOwn {
-            op: Box::new(Operation::Ownership(OwnershipOp::ScopeEnd { state: v(2), reserve: None })),
+            op: Box::new(Operation::Ownership(OwnershipOp::ScopeEnd { state: v(2), reserve: None,
+                effects: ScopeEffectEnvelope::conservative() })),
             normal: invoke_target(1, vec![EdgeArg::Value(v(8)), EdgeArg::Produced(EdgeResult { outcome: Outcome::Normal, slot: 0 })]),
             unwind: invoke_target(2, vec![EdgeArg::Value(v(9)), EdgeArg::Produced(EdgeResult { outcome: Outcome::Unwind, slot: 0 }), EdgeArg::Produced(EdgeResult { outcome: Outcome::Unwind, slot: 1 })]),
         } },
@@ -266,7 +278,8 @@ fn missing_declarations_and_protocol_poststates_are_explicit() {
         future: v(1), evidence: UniqueCacheEvidence { aliases: vec![v(2), v(3)], ..sample::<UniqueCacheProof>().evidence }, ..sample()
     } });
     assert_eq!(operation_uses(&proof, &body()).unwrap().iter().map(|use_| use_.value).collect::<Vec<_>>(), [v(1), v(2), v(3)]);
-    *module.protocols.get_mut(sample()).unwrap() = ProtocolDecl { holders: vec![], rules: vec![], roots: vec![] };
+    *module.protocols.get_mut(sample()).unwrap() = ProtocolDecl { kind: ProtocolKind::Storage,  holders: vec![],
+        rules: vec![], roots: vec![] };
     assert!(matches!(ContractRegistry::new(&module).lookup(&op), Err(ContractError::MissingTransition { .. })));
 }
 
@@ -362,24 +375,26 @@ fn call_entry_accept_and_reserved_scope_close_have_distinct_transitions() {
     assert_eq!(accept.operands.iter().map(|o| o.mode).collect::<Vec<_>>(), [OperandMode::Consume; 2]);
     for reserve in [None, Some(v(3))] {
         for active_failure in [false, true] {
-            let op = if active_failure { OwnershipOp::ScopeUnwind { state: v(1), failure: v(2), reserve } }
-                else { OwnershipOp::ScopeEnd { state: v(1), reserve } };
+            let op = if active_failure { OwnershipOp::ScopeUnwind { state: v(1), failure: v(2), reserve,
+                effects: ScopeEffectEnvelope::conservative() } }
+                else { OwnershipOp::ScopeEnd { state: v(1), reserve, effects: ScopeEffectEnvelope::conservative() } };
             let c = registry.lookup(&Operation::Ownership(op)).unwrap();
             let mut expected = vec![if active_failure { SlotName::Failure } else { SlotName::Closed }];
-            if reserve.is_some() { expected.push(SlotName::Pending); }
+            if reserve.is_some() && !active_failure { expected.push(SlotName::Pending); }
             assert_eq!(names(&c.normal), expected);
             assert!(c.normal.postconditions.contains(&Postcondition::Closed(v(1))));
             if let Some(reserve) = reserve {
-                assert!(c.normal.transfers.contains(&TransferRule::CloseReserve { scope: v(1), reserve, output: SlotName::Pending, merge_scope_part: active_failure }));
+                assert!(c.normal.transfers.contains(&TransferRule::CloseReserve { scope: v(1), reserve,
+                    output: if active_failure { None } else { Some(SlotName::Pending) } }));
                 assert!(c.roots.roots.contains(&RootKind::PendingExit));
             }
             if let Some(unwind) = &c.unwind {
-                let mut expected = vec![SlotName::Closed, SlotName::Failure];
-                if reserve.is_some() { expected.push(SlotName::Pending); }
+                let expected = vec![SlotName::Closed, SlotName::Failure];
                 assert_eq!(names(unwind), expected);
-                assert_eq!(&c.cancellation.as_ref().unwrap().outcome, unwind);
+                assert!(c.cancellation.is_none());
                 if let Some(reserve) = reserve {
-                    assert!(unwind.postconditions.contains(&Postcondition::ReserveRemainder { scope: v(1), reserve, merged: true }));
+                    assert!(unwind.transfers.contains(&TransferRule::CloseReserve { scope: v(1), reserve,
+                        output: None }));
                 }
             } else { assert!(active_failure); }
         }
@@ -416,4 +431,62 @@ fn dynamic_census_add_merge_and_zero_counts() {
     census.add(FuncId::from_u32(3), DynamicReason::Any, 0);
     census.merge(&DynamicCensus::default());
     assert_eq!(census.functions().count(), 2);
+}
+
+sample_expr!(ScopeEffectEnvelope, ScopeEffectEnvelope::conservative());
+sample_expr!(FutureEnvironment, FutureEnvironment::Frame(sample()));
+
+impl DeclaredOperands for ScopeEffectEnvelope {
+    fn append_declared(&self, _: &mut Vec<OperandRef>) {}
+}
+impl DeclaredOperands for FutureEnvironment {
+    fn append_declared(&self, refs: &mut Vec<OperandRef>) {
+        match self {
+            Self::Frame(frame) => frame.append_declared(refs),
+            Self::Deferred { arguments, descriptors, .. } => {
+                arguments.append_declared(refs);
+                descriptors.append_declared(refs);
+            }
+        }
+    }
+}
+
+#[test]
+fn scope_envelope_projects_exact_outcome_availability_and_reserve_slots() {
+    let module = module();
+    let registry = ContractRegistry::new(&module);
+    for reserve in [None, Some(v(2))] {
+        for failures in [vec![], vec![FailureKind::Thrown]] {
+            for cancel in [false, true] {
+                let effects = ScopeEffectEnvelope { failures: failures.clone(), suspends: false, cancel };
+                let end = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeEnd {
+                    state: v(1), reserve, effects: effects.clone(),
+                })).unwrap();
+                let expected = if reserve.is_some() {
+                    vec![SlotName::Closed, SlotName::Pending]
+                } else {
+                    vec![SlotName::Closed]
+                };
+                assert_eq!(names(&end.normal), expected);
+                assert_eq!(end.unwind.is_some(), !failures.is_empty() || cancel);
+                assert_eq!(end.cancellation.is_some(), cancel);
+                if let Some(unwind) = &end.unwind {
+                    assert_eq!(names(unwind), [SlotName::Closed, SlotName::Failure]);
+                }
+                let unwind = registry.lookup(&Operation::Ownership(OwnershipOp::ScopeUnwind {
+                    state: v(1), failure: v(3), reserve, effects,
+                })).unwrap();
+                assert_eq!(names(&unwind.normal), [SlotName::Failure]);
+                assert!(unwind.unwind.is_none());
+                assert!(unwind.cancellation.is_none());
+                assert!(!end.effects.suspends);
+                assert!(end.roots.roots.contains(&RootKind::CleanupRemainder));
+            }
+        }
+    }
+    let extend = registry.lookup(&Operation::Exit(ExitOp::Extend { pending: v(1), packet: v(2) })).unwrap();
+    assert_eq!(names(&extend.normal), [SlotName::State]);
+    assert_eq!(extend.normal.results[0].ty, ResultType::Service(ServiceType::Pending));
+    assert_eq!(extend.operands.iter().map(|operand| operand.mode).collect::<Vec<_>>(),
+        [OperandMode::Consume, OperandMode::Consume]);
 }

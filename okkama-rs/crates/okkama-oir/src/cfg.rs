@@ -5,7 +5,8 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseSite { Instruction(InstId), Terminator(BlockId), BlockUnwind(BlockId), ValueFacts(ValueId), InstructionFacts(InstId), Declaration(OperandRef) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind { Branch, Yes, No, SwitchCase(u32), Default, BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
+pub enum EdgeKind { DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
+    BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CfgEvent {
     Use { site: UseSite, operand: OperandUse },
@@ -160,6 +161,25 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
             if let Some(outcome) = &contract.unwind { edge_definitions(block, EdgeKind::InvokeUnwind, Outcome::Unwind, &outcome.results, visit)?; }
             invoke_edge(block, normal, EdgeKind::InvokeNormal, site, visit); invoke_edge(block, unwind, EdgeKind::InvokeUnwind, site, visit);
         }
+        TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+            call.append(OperandMode::Borrow, &mut operands);
+            edge_definitions(block, EdgeKind::DeferContinue, Outcome::DeferContinue,
+                &registry.defer_results(*function, Outcome::DeferContinue)?, visit)?;
+            invoke_edge(block, continue_edge, EdgeKind::DeferContinue, site, visit);
+            for (index, replacement) in replacements.iter().enumerate() {
+                let index = u16::try_from(index).map_err(|_| TraversalError::TooManySlots)?;
+                let outcome = Outcome::DeferReplace(index);
+                edge_definitions(block, EdgeKind::DeferReplace(index), outcome,
+                    &registry.defer_results(*function, outcome)?, visit)?;
+                invoke_edge(block, &replacement.edge, EdgeKind::DeferReplace(index), site, visit);
+            }
+            if let Some(unwind) = unwind {
+                edge_definitions(block, EdgeKind::DeferUnwind, Outcome::Unwind,
+                    &registry.defer_results(*function, Outcome::Unwind)?, visit)?;
+                invoke_edge(block, unwind, EdgeKind::DeferUnwind, site, visit);
+            }
+        }
+        TermKind::RetDefer { values, .. } |
         TermKind::Ret { values } => operands.extend(values.iter().map(|&value| ssa(value, OperandMode::Forward))),
         TermKind::Throw(value) | TermKind::Raise(value) | TermKind::Panic(value) => operands.push(ssa(*value, OperandMode::Observe)),
         TermKind::Catch { failure, ty, handler, next } => {
@@ -180,6 +200,10 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
 /// Includes unused declarations and annotations. Expression leaves can occur at
 /// several sites; no use is deduplicated. Edge results have no source ValueId.
 pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl FnMut(CfgEvent)) -> Result<(), TraversalError> {
+    for binding in &body.descriptor_bindings {
+        emit_refs([ssa(binding.dictionary, OperandMode::Observe)],
+            UseSite::Terminator(body.entry), body, &mut visit)?;
+    }
     for (id, _) in body.keys.iter() { let reference = OperandRef::Key(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
     for (id, _) in body.deps.iter() { let reference = OperandRef::Dependency(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
     for (id, _) in body.selections.iter() { let reference = OperandRef::Selection(id); emit_refs([ReferencedOperand { reference, mode: OperandMode::Observe }], UseSite::Declaration(reference), body, &mut visit)?; }
@@ -208,6 +232,9 @@ pub fn walk_body(body: &Body, registry: ContractRegistry<'_>, mut visit: impl Fn
             for (index, &value) in inst.results.iter().enumerate() {
                 visit(CfgEvent::Definition { value, definition: Definition::InstResult { inst: inst_id, index: u16::try_from(index).map_err(|_| TraversalError::TooManySlots)? } });
             }
+        }
+        for record in body.high_results.iter().filter(|record| record.block == block_id) {
+            emit_refs([ssa(record.value, OperandMode::Observe)], UseSite::Terminator(block_id), body, &mut visit)?;
         }
         walk_terminator(block_id, &block.term, body, registry, &mut visit)?;
     }

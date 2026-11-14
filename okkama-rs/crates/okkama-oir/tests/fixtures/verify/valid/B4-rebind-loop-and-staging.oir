@@ -51,11 +51,11 @@ func @f(%again: bool) -> void summary(M0) {
     %rebound: scope<S> = own.rebind binding elaborated_binding(binding=b0, resource=resource_value(value=%next, packet=%pn), state=%qn, original_scope=S)
     cond %again, ^loop(%rebound), ^close(%rebound)
 ^close(%last: scope<S>) in S:
-    invoke.own scope.end %last
+    invoke.own scope.end %last, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^closed_failed($closed, $failure)
 ^failed(%open: scope<S>, %error: failure) in S:
-    %final: failure = scope.unwind %open, %error
+    %final: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^closed_failed(%closed: closed, %closing_failure: failure) in S:
     raise %closing_failure

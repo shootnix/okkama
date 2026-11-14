@@ -4,9 +4,9 @@ module high_reserve
 scope S action in @f
 func @f(%pending: pending, %q: scope<S>) -> void {
 ^entry in S:
-    invoke.own scope.end %q, reserve %pending
+    invoke.own scope.end %q, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed, $pending)
-        unwind ^failed($closed, $failure, $pending)
+        unwind ^failed($closed, $failure)
 ^done(%closed: closed, %reserved: pending) in S:
     ret
 ^failed(%cf: closed, %error: failure, %remainder: pending) in S:

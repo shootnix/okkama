@@ -32,7 +32,8 @@ func @main() -> View {
     %r: Res = call @new("R")
     %owner: Holder = call @Holder.new(consume %r, "O")
     %view: View = cap.make %owner, ty View
-    exit.prepare return %view at B0
+    [iprep0] exit.prepare return %view at B0
+    result.exit edge normal(0), value %view, demand want, prepare iprep0
     ret %view
 ^failed(%failure: failure) in S:
     raise %failure

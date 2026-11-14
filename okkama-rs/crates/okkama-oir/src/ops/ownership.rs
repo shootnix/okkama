@@ -61,10 +61,13 @@ operation_group! { OwnershipOp {
         => ("dynamic.check", [key: Observe, snapshot: Observe], Rule::Check);
     DynamicRefresh { key: ValueId, access: AccessContext }
         => ("dynamic.refresh", [key: Observe, access: Observe], Rule::Data { ty: ResultType::Service(ServiceType::OwnerSnapshot), trap: true });
-    ScopeEnd { state: ValueId, reserve: Option<ValueId> }
-        => ("scope.end", [state: Consume, reserve: Consume], Rule::Close { input: *state, failure: None, reserve: *reserve });
-    ScopeUnwind { state: ValueId, failure: ValueId, reserve: Option<ValueId> }
-        => ("scope.unwind", [state: Consume, failure: Observe, reserve: Consume], Rule::Close { input: *state, failure: Some(*failure), reserve: *reserve });
+    ScopeEnd { state: ValueId, reserve: Option<ValueId>, effects: ScopeEffectEnvelope }
+        => ("scope.end", [state: Consume, reserve: Consume], Rule::Close { input: *state, failure: None,
+            reserve: *reserve, effects: effects.clone() });
+    ScopeUnwind { state: ValueId, failure: ValueId, reserve: Option<ValueId>, effects: ScopeEffectEnvelope }
+        => ("scope.unwind", [state: Consume, failure: Observe, reserve: Consume], Rule::Close { input: *state,
+            failure: Some(*failure), reserve: *reserve, effects: effects.clone() });
     End { packet: ValueId, boundary: BoundaryId }
-        => ("end", [packet: Consume], Rule::Close { input: *packet, failure: None, reserve: None });
+        => ("end", [packet: Consume], Rule::Close { input: *packet, failure: None, reserve: None,
+            effects: ScopeEffectEnvelope::conservative() });
 } }

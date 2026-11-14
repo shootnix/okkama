@@ -28,7 +28,8 @@ func @main() -> array<Res> {
     %original: array<Res> = array.new [%a, %b], ty array<Res>
     %slice: array<Res> = array.slice %original, 0, 1
     want %slice
-    exit.prepare return %slice at B0
+    [iprep0] exit.prepare return %slice at B0
+    result.exit edge normal(0), value %slice, demand want, prepare iprep0
     ret %slice
 ^failed(%failure: failure) in S:
     raise %failure

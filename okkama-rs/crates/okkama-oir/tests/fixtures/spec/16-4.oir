@@ -23,7 +23,7 @@ func @main() -> void summary(Mverify4) {
         normal ^have($value, $packet)
         unwind ^create_failed($failure)
 ^create_failed(%make_error: failure):
-    %creation_failure: failure = scope.unwind %q0, %make_error
+    %creation_failure: failure = scope.unwind %q0, %make_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %creation_failure
 ^have(%r: Res facts(managed(deps=dfull_r)), %pr: own):
     %q1: scope<S> = own.admit %q0, %pr
@@ -45,10 +45,10 @@ func @main() -> void summary(Mverify4) {
 ^defer_failed(%q7: scope<S>, %f2: failure):
     br ^unwind_close(%q7, %f2)
 ^unwind_close(%q8: scope<S>, %f3: failure):
-    %g: failure = scope.unwind %q8, %f3
+    %g: failure = scope.unwind %q8, %f3, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %g
 ^close(%q9: scope<S>):
-    invoke.own scope.end %q9
+    invoke.own scope.end %q9, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^closed_failed($closed, $failure)
 ^closed_failed(%s: closed, %f4: failure):

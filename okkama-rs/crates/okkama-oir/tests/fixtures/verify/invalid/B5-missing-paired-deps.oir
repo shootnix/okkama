@@ -21,7 +21,7 @@ func @callee(%arg: R facts(managed(deps=darg)), %arg_deps: deps; %input: own) ->
     br ^body(%arg, %arg_deps, %accepted)
 ^body(%body_arg: R facts(managed(deps=dbody)), %body_deps: deps, %state: scope<Sc>) in Sc:
     %alias: R facts(managed(deps=dbody)) = retag %body_arg, ty R
-    invoke.own scope.end %state
+    invoke.own scope.end %state, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^failed($closed, $failure)
 ^done(%c: closed) in Sc:

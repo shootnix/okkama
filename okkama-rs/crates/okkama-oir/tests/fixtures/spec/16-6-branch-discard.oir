@@ -27,6 +27,7 @@ func @main(%test: bool) -> void {
 ^branch in Sbranch unwind ^failed:
     %a: Res = call @new("A")
     discard %a
+    result.exit edge normal(0), value %a, demand discard, prepare none
     br ^done
 ^done in S:
     ret

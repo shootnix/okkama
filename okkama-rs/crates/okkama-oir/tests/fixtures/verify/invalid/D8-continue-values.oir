@@ -1,0 +1,27 @@
+oir 2 own
+// expect OIR2-T1 operand-term:0:0:[0]
+module tagged_defer
+scope SD action in @d
+scope S action in @f
+summary Md internal contract call_contract(failures=[thrown], publication=atomic)
+summary Mf internal contract call_contract(publication=atomic)
+func @d(%input: own, %deps: deps) -> void [defer(replacements=[defer_label(label="return", result=some(int)), defer_label(label="last")])] summary(Md) {
+^entry in SD:
+    ret defer continue, %input
+}
+func @f(%input: own, %deps: deps) -> void summary(Mf) {
+^entry in S:
+    invoke.defer @d(; %input) summary(Md)
+        continue ^next()
+        replace return ^replacement($value, $packet, $deps)
+        replace last ^void_replacement($packet, $deps)
+        unwind ^failed($failure)
+^next in S:
+    ret
+^replacement(%value: int, %packet: own, %full: deps) in S:
+    ret
+^void_replacement(%packet2: own, %full2: deps) in S:
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

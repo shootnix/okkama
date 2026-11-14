@@ -1,0 +1,10 @@
+oir 2 own
+module extend_reserve
+scope S action in @f
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @f(%q: scope<S>, %p: pending, %part: own, %active: failure) -> failure summary(M0) {
+^entry in S:
+    %next: pending = exit.extend %p, %part
+    %failure: failure = scope.unwind %q, %active, reserve %next, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+    ret %failure
+}

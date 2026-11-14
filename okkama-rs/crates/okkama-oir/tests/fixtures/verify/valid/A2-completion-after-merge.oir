@@ -20,7 +20,8 @@ func @f(%choose: bool) -> C [ctor C] {
     br ^merge(%b)
 ^merge(%joined: C) in S:
     obj.init %joined, false, field field_ref(declaration=C, index=1)
-    exit.prepare return %joined at B0
+    [iprep0] exit.prepare return %joined at B0
+    result.exit edge normal(0), value %joined, demand want, prepare iprep0
     ret %joined
 ^failed(%e: failure) in S:
     raise %e

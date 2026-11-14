@@ -27,8 +27,12 @@ func @main(%test: bool) -> void {
     cond %test, ^branch, ^done
 ^branch in Sbranch unwind ^failed:
     %a: Res = call @new("A")
-    exit.prepare fallthrough %a at Bbranch
+    [iprep0] exit.prepare fallthrough %a at Bbranch
     want %a
+    result.exit edge normal(0), value %a, demand want, prepare iprep0
+    br ^wanted(%a)
+^wanted(%result: Res) in S:
+    temp %result, S
     br ^done
 ^done in S:
     ret

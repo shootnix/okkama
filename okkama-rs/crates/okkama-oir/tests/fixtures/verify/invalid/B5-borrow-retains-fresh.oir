@@ -48,7 +48,7 @@ func @f() -> void summary(M0) {
         unwind ^creation_failed($failure, %state)
 ^after(%dead: R facts(managed(deps=ddead)), %empty: own, %deps: deps, %live: scope<S>) in S:
     %admitted: scope<S> = own.admit %live, %empty
-    invoke.own scope.end %admitted
+    invoke.own scope.end %admitted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^close_failed($closed, $failure)
 ^creation_failed(%failure0: failure, %open0: scope<S>) in S:
@@ -56,7 +56,7 @@ func @f() -> void summary(M0) {
     br ^failed(%empty0, %failure0, %open0)
 ^failed(%rest: own, %failure: failure, %open: scope<S>) in S:
     %joined: scope<S> = own.admit %open, %rest
-    %f: failure = scope.unwind %joined, %failure
+    %f: failure = scope.unwind %joined, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %f
 ^close_failed(%cf: closed, %error: failure) in S:
     raise %error

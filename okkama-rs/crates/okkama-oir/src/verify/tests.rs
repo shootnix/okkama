@@ -10,9 +10,14 @@ fn function(symbol: &str, params: Vec<TypeId>, results: Vec<TypeId>) -> Function
 fn prepare_return(builder: &mut FunctionBuilder<'_>, scope: ScopeId, value: ValueId) {
     let boundary = builder.declare_boundary(Boundary { scope, kind: BoundaryKind::Lexical }).unwrap();
     let selection = builder.declare_selection(SelectionExpr::Value(value)).unwrap();
+    let prepared = InstId::from_u32(builder.body().insts.len() as u32);
     builder.emit_schema(Operation::Exit(ExitOp::Prepare { exit: PreparedExit {
         kind: ExitKind::Return, value: Some(value), packet: None, deps: None, selection, boundary,
     } })).unwrap();
+    builder.add_high_result(HighResultExit {
+        block: builder.current_block().unwrap(), edge: HighEdgeSelector::Normal(0),
+        value, demand: ResultDemand::Want, prepared: Some(prepared),
+    }).unwrap();
 }
 fn complete_summaries(module: &mut Module) {
     let ids: Vec<_> = module.functions.iter().map(|(id, _)| id).collect();
@@ -118,6 +123,7 @@ fn public_apis_are_read_only_and_require_exact_profiles() {
         module.profile = profile;
         // High return intents acquire a pending result only during elaboration.
         let body = body_mut(&mut module);
+        body.high_results.clear();
         let instruction = body.blocks.get(body.entry).unwrap().insts[1];
         body.insts.get_mut(instruction).unwrap().op = Operation::Lexical(LexicalOp::Discard {
             value: ValueId::from_u32(2),
@@ -302,7 +308,8 @@ fn t2_tuple_arity_and_read_only_result_formulas() {
     }).unwrap();
     let mut builder = module.function_builder(caller, scope).unwrap();
     let packet = builder.block_params(builder.entry()).unwrap()[0];
-    let results = builder.emit_schema(Operation::Call(CallOp::Direct { function: callee, call: CallSite {
+    let results = builder.emit_schema(Operation::Call(CallOp::Direct { function: callee,
+        call: CallSite { cleanup: CallCleanupMode::Ordinary,
         args: vec![], packet: Some(packet), deps: vec![ValueId::from_u32(1)],
         descriptors: vec![], type_args: vec![], summary: Some(summary),
     } })).unwrap();
@@ -645,10 +652,11 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
             16 => (vec![scope_ty, own], Operation::Ownership(OwnershipOp::Admit { state: v(0), packet: v(1) })),
             17 => (vec![own], Operation::Ownership(OwnershipOp::Split { packet: v(0), selection })),
             18 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeSplit { state: v(0), selection })),
-            19 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeEnd { state: v(0), reserve: None })),
+            19 => (vec![scope_ty], Operation::Ownership(OwnershipOp::ScopeEnd { state: v(0), reserve: None,
+                effects: ScopeEffectEnvelope::conservative() })),
             20 => (vec![scope_ty, failure], Operation::Ownership(OwnershipOp::ScopeUnwind {
                 state: v(0), failure: v(1), reserve: None,
-            })),
+                effects: ScopeEffectEnvelope::conservative() })),
             21 => (vec![own], Operation::Ownership(OwnershipOp::End { packet: v(0), boundary })),
             22 => (vec![key, snapshot], Operation::Ownership(OwnershipOp::DynamicCheck {
                 key: v(0), snapshot: v(1),
@@ -658,7 +666,8 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
             25 => (vec![future], Operation::Async(AsyncOp::FutureSpawn { future: v(0) })),
             26 => (vec![frame], Operation::Async(AsyncOp::FrameLoad { frame: v(0), slot: 0, ty: int })),
             27 => (vec![frame, own, deps, scope_ty], Operation::Async(AsyncOp::FutureNew {
-                frame: v(0), packet: v(1), deps: v(2), owner: scope, owner_state: v(3), result: Some(int),
+                environment: FutureEnvironment::Frame(v(0)), packet: v(1), deps: v(2), owner: scope,
+                    owner_state: v(3), result: Some(int),
             })),
             28 => (vec![pending], Operation::Exit(ExitOp::Commit {
                 pending: v(0), destination: ExitDestination::Caller, result: Some(int),
@@ -684,6 +693,7 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
             _ => unreachable!(),
         };
         let operand_count = params.len();
+        if case == 27 { module.raw_mut().profile = Profile::Coro; }
         params.push(int);
         let function = module.declare_function(function("operation", params, vec![])).unwrap();
         let scope = module.declare_scope(ScopeDecl {
@@ -803,7 +813,8 @@ fn external_abi_catalog_is_trusted_separately_from_input_declarations() {
         function: caller, parent: None, kind: ScopeKind::Action, loc: None,
     }).unwrap();
     let mut builder = module.function_builder(caller, scope).unwrap();
-    builder.emit_schema(Operation::Call(CallOp::Native { function: native, call: CallSite {
+    builder.emit_schema(Operation::Call(CallOp::Native { function: native,
+        call: CallSite { cleanup: CallCleanupMode::Ordinary,
         args: vec![CallArgument { value: ValueId::from_u32(0), convention: OperandConvention::Borrow }],
         packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: Some(summary),
     } })).unwrap();
@@ -871,4 +882,15 @@ fn shared_metadata_dag_is_verified_without_expanding_all_leaf_paths() {
     }
     let verified = verify(&module).unwrap();
     assert!(verified.stats().steps < 10_000);
+}
+
+#[test]
+fn deferred_future_structural_types_and_obsolete_own_cache_result() {
+    let source = include_str!("../../tests/fixtures/text/d12-deferred-future.oir");
+    let module = text::parse(source).unwrap();
+    verify_types(&module).unwrap();
+    let wrong = source.replace("%next: scope<S>) = fut.new", "%cache: cache-state, %next: scope<S>) = fut.new");
+    let wrong = text::parse(&wrong).unwrap();
+    let report = verify_types(&wrong).unwrap_err();
+    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == RuleId::T2));
 }

@@ -20,17 +20,16 @@ func @main(%session: Session facts(managed(deps=dfull_session)), %full: deps; %q
         normal ^prepare($state, $selected, $external_deps)
         unwind ^split_failed($state, $failure)
 ^split_failed(%original: scope<S>, %split_error: failure) in S:
-    %final: failure = scope.unwind %original, %split_error
+    %final: failure = scope.unwind %original, %split_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^prepare(%rest: scope<S>, %selected: own, %external: deps) in S:
     %pending: pending = exit.prepare return %child, %selected, deps(%full) at B0
-    invoke.own scope.end %rest, reserve %pending
+    invoke.own scope.end %rest, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
-        unwind ^failed($closed, $failure, $pending)
+        unwind ^failed($closed, $failure)
 ^commit(%closed: closed, %reservation: pending) in S:
     (%result: Connection facts(managed(deps=dfull_result)), %out: own, %deps: deps) = exit.commit %reservation, destination caller, result Connection
     ret %result, %out, %deps
-^failed(%closed2: closed, %failure: failure, %outer_reserve: pending) in S:
-    %discarded: closed = exit.discard_empty %outer_reserve
+^failed(%closed2: closed, %failure: failure) in S:
     raise %failure
 }

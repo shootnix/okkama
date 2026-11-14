@@ -303,7 +303,7 @@ impl Engine<'_, '_> {
                         labels.extend(&flow.contained[value.as_u32() as usize]);
                     }
                 }
-                SummarySelection::Field { .. } => {}
+                SummarySelection::Field { .. } | SummarySelection::Path { .. } => {}
             }
         }
         labels
@@ -318,6 +318,47 @@ impl Engine<'_, '_> {
             let index = match selection {
                 SummarySelection::Parameter(i) | SummarySelection::OwnerGraph(i) | SummarySelection::Descriptor(i)
                 => *i,
+                SummarySelection::Path { parameter, fields } => {
+                    if let Some(value) = args.get(usize::from(*parameter)) {
+                        if fields.is_empty() {
+                            selected.extend(&flow.refs[value.as_u32() as usize]);
+                        } else if fields.len() == 1 {
+                            selected.extend(self.field(flow, *value, fields[0]));
+                        } else if fields.len() <= 4 {
+                            let mut keys = BTreeSet::from([self.identity(flow, *value)]);
+                            let mut known = true;
+                            for (index, field) in fields.iter().enumerate() {
+                                let mut next = BTreeSet::new();
+                                for key in keys {
+                                    if let Some((refs, identity)) = flow.fields.get(&(
+                                        key, field.declaration, field.index,
+                                    )) {
+                                        if index + 1 < fields.len() {
+                                            next.extend(identity);
+                                        } else {
+                                            next.extend(refs);
+                                        }
+                                    } else {
+                                        known = false;
+                                    }
+                                }
+                                keys = next;
+                            }
+                            if known {
+                                selected.extend(keys);
+                            } else {
+                                let mut path = [(DeclId::from_u32(0), 0); 4];
+                                for (slot, field) in path.iter_mut().zip(fields) {
+                                    *slot = (field.declaration, field.index);
+                                }
+                                selected.insert(Origin::Projection(*value, ProjectionKind::Path {
+                                    fields: path, len: fields.len() as u8,
+                                }));
+                            }
+                        }
+                    }
+                    continue;
+                }
                 SummarySelection::Field { parameter, field } => {
                     if let Some(value) = args.get(usize::from(*parameter)) {
                         selected.extend(self.field(flow, *value, *field));
@@ -478,6 +519,7 @@ fn summary_mentions(root: &SummarySelection, parameter: u16) -> bool {
         match selection {
             SummarySelection::Union(items) => pending.extend(items),
             SummarySelection::Parameter(i) | SummarySelection::OwnerGraph(i) | SummarySelection::Descriptor(i)
+            | SummarySelection::Path { parameter: i, .. }
             | SummarySelection::Field { parameter: i, .. } if *i == parameter => return true,
             _ => {}
         }

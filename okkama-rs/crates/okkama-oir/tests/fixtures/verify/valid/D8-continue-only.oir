@@ -1,0 +1,16 @@
+oir 2 own
+module defer_continue
+scope SD action in @d
+scope S action in @f
+summary Md internal contract call_contract(publication=atomic)
+func @d(%input: own) -> void [defer()] summary(Md) {
+^entry in SD:
+    ret defer continue
+}
+func @f(%input: own) -> void summary(Md) {
+^entry in S:
+    invoke.defer @d(; %input)
+        continue ^next()
+^next in S:
+    ret
+}

@@ -208,7 +208,14 @@ impl Engine<'_, '_> {
                     let owner = scope(self.module, self.body, *state);
                     let mut incoming = before.tokens[packet.as_u32() as usize].clone();
                     incoming.pieces = incoming.pieces.into_iter().map(|mut piece| {
-                        if piece.owner.is_some() && piece.owner != owner && piece.provenance & !FRESH != 0 {
+                        let restored = matches!(op, Operation::Ownership(OwnershipOp::Accept { .. }))
+                            && incoming.scope == owner
+                            && piece.owner.is_some_and(|old| before.scopes.get(&old) == Some(&2))
+                            && piece.owner.zip(owner).is_some_and(|(old, target)| {
+                                super::super::high::inside(self.module, old, target, self.state)
+                            });
+                        if piece.owner.is_some() && piece.owner != owner
+                            && piece.provenance & !FRESH != 0 && !restored {
                             self.error(R::B43, "admission cannot silently change an existing lexical owner");
                         }
                         piece.owner = owner;
@@ -284,35 +291,70 @@ impl Engine<'_, '_> {
                         slot.ty == ResultType::Service(ServiceType::Pending)
                     }) { slots[i].token = token; }
                 }
-                TransferRule::CloseReserve { scope: state, reserve, output, merge_scope_part } => {
+                TransferRule::CloseReserve { scope: state, reserve, output } => {
                     let mut token = before.tokens[reserve.as_u32() as usize].clone();
-                    let closing = scope(self.module, self.body, *state);
-                    if let Some(scope) = closing {
-                        token.reserve.remove(&scope);
-                    }
-                    if *merge_scope_part {
-                        let merged: Vec<_> = token.pieces.iter().filter(|p| p.owner == closing).cloned().collect();
+                    if output.is_none() {
+                        let merged: Vec<_> = token.pieces.iter().cloned().collect();
                         self.invalidate(&before, flow, &merged);
                         flow.closed_inputs.extend(merged);
-                        token.pieces.retain(|p| {
-                            if p.owner == closing {
-                                flow.dead.insert(p.origin);
-                                false
-                            } else { true }
-                        });
+                        flow.dead.extend(token.pieces.iter().map(|piece| piece.origin));
+                    } else {
+                        if let Some(scope) = scope(self.module, self.body, *state) {
+                            token.reserve.remove(&scope);
+                        }
+                        for piece in &token.pieces {
+                            flow.dead.remove(&piece.origin);
+                        }
+                        if let Some(i) = output.and_then(slot_index) {
+                            let index = reserve.as_u32() as usize;
+                            slots[i].token = token;
+                            slots[i].refs = before.refs[index].clone();
+                            slots[i].identity = before.identities[index];
+                            slots[i].aliases = before.aliases[index].clone();
+                            slots[i].requirements = before.full_deps[index].clone();
+                            slots[i].lifetime = flow.lifetimes[index];
+                        }
                     }
-                    // Normal close protects the reserve from the closing plan.
-                    for piece in &token.pieces {
-                        flow.dead.remove(&piece.origin);
+                }
+                TransferRule::ReplaceReservation { pending, packet } => {
+                    if let Operation::Exit(ExitOp::Replace { replacement, .. }) = op {
+                        let (mut rest, kept) = self.partition(&before,
+                            &before.tokens[pending.as_u32() as usize], replacement.selection);
+                        rest.reserve.clear();
+                        rest.scope = self.body.boundaries.get(replacement.boundary).ok().map(|boundary| boundary.scope);
+                        if let Some(i) = slot_index(SlotName::Rest) {
+                            slots[i].token = rest;
+                        }
+                        let offered = packet.map(|packet| before.tokens[packet.as_u32() as usize].clone())
+                            .unwrap_or_default();
+                        let mut next = self.union([kept, offered], false);
+                        if let Ok(boundary) = self.body.boundaries.get(replacement.boundary) {
+                            next.reserve.insert(boundary.scope);
+                        }
+                        if let Some(i) = slot_index(SlotName::State) {
+                            slots[i].token = next;
+                            slots[i].refs = replacement.value.map(|value| before.refs[value.as_u32() as usize].clone())
+                                .unwrap_or_default();
+                            slots[i].requirements = replacement.deps.map(|deps| before.refs[deps.as_u32() as
+                                usize].clone())
+                                .unwrap_or_default();
+                        }
                     }
-                    if let Some(i) = slot_index(*output) {
-                        let index = reserve.as_u32() as usize;
+                }
+                TransferRule::ExtendReservation { pending, packet } => {
+                    let mut token = self.union([
+                        before.tokens[pending.as_u32() as usize].clone(),
+                        before.tokens[packet.as_u32() as usize].clone(),
+                    ], false);
+                    token.scope = before.tokens[pending.as_u32() as usize].scope;
+                    if let Some(i) = slot_index(SlotName::State) {
                         slots[i].token = token;
+                        let index = pending.as_u32() as usize;
                         slots[i].refs = before.refs[index].clone();
                         slots[i].identity = before.identities[index];
                         slots[i].aliases = before.aliases[index].clone();
                         slots[i].requirements = before.full_deps[index].clone();
-                        slots[i].lifetime = flow.lifetimes[index];
+                        slots[i].lifetime = before.lifetimes[index];
                     }
                 }
                 TransferRule::CompleteIdentity { identity, state, output } => {

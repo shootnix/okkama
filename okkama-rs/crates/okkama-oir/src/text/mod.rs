@@ -11,6 +11,7 @@ mod diagnostic;
 mod surface;
 mod types;
 mod declarations;
+mod elaboration;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind, Span, PrintError, print_diagnostic};
 pub use parser::{parse, parse_with_limits};
@@ -527,6 +528,8 @@ variants!(FunctionAttr {
     Hidden => "hidden",
     Intrinsic { name, objects, helpers } => "intrinsic",
     Async => "async",
+    DeferEntry { replacements } => "defer",
+    Cleanup => "cleanup",
     Lambda { captures, owner } => "lambda"
 });
 record!(ScopeDecl, "scope_decl", { function, parent, kind, loc });
@@ -578,7 +581,9 @@ record!(TypeParameter, "type_parameter", { name, bounds });
 variants!(Outcome {
     Normal => "normal",
     Unwind => "unwind",
-    Cancel => "cancel"
+    Cancel => "cancel",
+    DeferContinue => "defer_continue",
+    DeferReplace(index) => "defer_replace"
 });
 record!(EdgeResult, "edge_result", { outcome, slot });
 impl Codec for SwitchCase {
@@ -780,7 +785,7 @@ variants!(ProvenanceTransition {
 });
 record!(OutcomeContract, "outcome_contract", { results, transfers, postconditions, retention });
 variants!(TransferRule {
-    CloseReserve { scope, reserve, output, merge_scope_part } => "close_reserve",
+    CloseReserve { scope, reserve, output } => "close_reserve",
     Preserve { input, output } => "preserve",
     Move { inputs, outputs } => "move",
     Partition { input, selection, rest, selected } => "partition",
@@ -792,6 +797,7 @@ variants!(TransferRule {
     Publish { input, holder, provenance } => "publish",
     Extract { future, capability, boundary } => "extract",
     Reserve { packet, boundary } => "reserve",
+    ExtendReservation { pending, packet } => "extend_reservation",
     ReplaceReservation { pending, packet } => "replace_reservation",
     AbortReservation { pending, cleanup, phase } => "abort_reservation",
     FrameSave { frame, values } => "frame_save",
@@ -799,7 +805,7 @@ variants!(TransferRule {
     CompleteIdentity { identity, state, output } => "complete_identity"
 });
 variants!(Postcondition {
-    ReserveRemainder { scope, reserve, merged } => "reserve_remainder",
+    OwnerServiceDuty { value, owner, kind } => "owner_service_duty",
     Closed(x0) => "closed",
     CacheConsumed(x0) => "cache_consumed",
     AdmissionStaysCaller => "admission_stays_caller",
@@ -882,6 +888,7 @@ record!(ParameterEffect, "parameter_effect", { convention, retention, deps, dest
 variants!(SummarySelection {
     Parameter(x0) => "parameter",
     Field { parameter, field } => "field",
+    Path { parameter, fields } => "path",
     OwnerGraph(x0) => "owner_graph",
     Descriptor(x0) => "descriptor",
     Union(x0) => "union"
@@ -951,7 +958,49 @@ variants!(ProtocolCheck {
 });
 record!(ProtocolPoststate, "protocol_poststate", { holder, state });
 record!(ProtocolRule, "protocol_rule", { transition, from, to, checks, normal, unwind, cancel });
-record!(ProtocolDecl, "protocol_decl", { holders, rules, roots });
+record!(ProtocolDecl, "protocol_decl", { kind, holders, rules, roots });
+variants!(ProtocolKind {
+    Storage => "storage", Callable => "callable", Atomic => "atomic", Cell => "cell",
+    Channel => "channel", Group => "group", Any => "any", Closure => "closure", Services => "services"
+});
+impl Codec for ScopeEffectEnvelope {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("scope_effects")?;
+        r.expect("(")?;
+        let failures = Codec::read_field(r, "failures")?;
+        let suspends = Codec::read_field(r, "suspends")?;
+        let cancel = Codec::read_field(r, "cancel")?;
+        r.expect(")")?;
+        Ok(Self { failures, suspends, cancel })
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("scope_effects(failures=");
+        self.failures.write(w)?;
+        w.push(", suspends=");
+        self.suspends.write(w)?;
+        w.push(", cancel=");
+        self.cancel.write(w)?;
+        w.push(")");
+        Ok(())
+    }
+}
+variants!(FutureEnvironment {
+    Deferred { function, arguments, descriptors } => "deferred", Frame(value) => "frame"
+});
+impl Codec for CallCleanupMode {
+    fn default_value() -> Option<Self> { Some(Self::Ordinary) }
+    fn is_default(&self) -> bool { *self == Self::Ordinary }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        if r.eat("ordinary") { return Ok(Self::Ordinary); }
+        r.expect("shielded")?;
+        Ok(Self::Shielded)
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push(if *self == Self::Ordinary { "ordinary" } else { "shielded" });
+        Ok(())
+    }
+}
+
 record!(DescriptorContract, "descriptor_contract", { managed, retention, cleanup, async_destroy, summary });
 variants!(DescriptorManaged {
     Plain => "plain",
@@ -973,12 +1022,16 @@ variants!(ConstructionStatus {
 });
 record!(ConstructionCompletion, "construction_completion", { state });
 record!(CallArgument, "call_argument", { value, convention });
-record!(CallSite, "call_site", { args, packet, deps, descriptors, type_args, summary });
+record!(CallSite, "call_site", { args, packet, deps, descriptors, type_args, summary, cleanup });
 variants!(ResultDemand {
     Want => "want",
     Discard => "discard"
 });
-record!(DeferAction, "defer_action", { function, captures, bindings });
+record!(DeferAction, "defer_action", { function, captures, bindings, replacements });
+record!(DeferLabel, "defer_label", { label, result });
+record!(DeferRegistration, "defer_registration", { label, kind, boundary });
+variants!(HighEdgeSelector { Normal(index) => "normal", Unwind => "unwind" });
+
 variants!(TransferStates {
     Same(x0) => "same",
     Between { from, to } => "between"
@@ -1257,8 +1310,8 @@ opcodes!(OwnershipOp {
     Dynamic { state, packet, target, reason, protocol } => "own.dynamic",
     DynamicCheck { key, snapshot } => "dynamic.check",
     DynamicRefresh { key, access } => "dynamic.refresh",
-    ScopeEnd { state, reserve } => "scope.end",
-    ScopeUnwind { state, failure, reserve } => "scope.unwind",
+    ScopeEnd { state, reserve, effects } => "scope.end",
+    ScopeUnwind { state, failure, reserve, effects } => "scope.unwind",
     End { packet, boundary } => "end",
 });
 opcodes!(AsyncOp {
@@ -1271,7 +1324,7 @@ opcodes!(AsyncOp {
     FutureCancel { future } => "fut.cancel",
     FutureDone { future } => "fut.done",
     FutureCancelled { future } => "fut.cancelled",
-    FutureNew { frame, result, packet, deps, owner, owner_state } => "fut.new",
+    FutureNew { packet, deps, owner_state, environment, result, owner } => "fut.new",
     FuturePublish { task, cache, value, packet, deps, failure, protocol } => "fut.publish",
     FutureSettle { task, protocol } => "fut.settle",
     FrameAlloc { function } => "frame.alloc",
@@ -1297,7 +1350,7 @@ opcodes!(ExitOp {
     Prepare { exit } => "exit.prepare",
     Replace { pending, replacement } => "exit.replace",
     Commit { pending, destination, result } => "exit.commit",
-    DiscardEmpty { pending } => "exit.discard_empty",
+    Extend { pending, packet } => "exit.extend",
     Abort { pending, cleanup, phase } => "exit.abort",
 });
 opcodes!(CleanupOp {

@@ -26,12 +26,6 @@ impl Engine<'_, '_> {
                 self.error(R::B51, "callee must accept fresh inputs before evaluating its body");
             }
         }
-        if let Operation::Exit(ExitOp::DiscardEmpty { pending }) = op {
-            let reservation = &before.tokens[pending.as_u32() as usize];
-            if !reservation.pieces.is_empty() || !reservation.reserve.is_empty() {
-                self.error(R::B101, "exit.discard_empty requires a proved empty, fully closed reservation");
-            }
-        }
         if let Operation::Exit(ExitOp::Commit { pending, .. }) = op {
             if before.active_failure != 0 {
                 self.error(R::B101, "exit.commit cannot publish a reserve while failure/cancel is active");

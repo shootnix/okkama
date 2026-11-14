@@ -57,6 +57,6 @@ func @f() -> Holder [ctor Holder] summary(M0) {
 ^throw(%q: scope<S>, %failure: Stop facts(plain(certificate=scalar))) in S unwind ^failed(%q):
     throw %failure
 ^failed(%open: scope<S>, %error: failure) in S:
-    %final: failure = scope.unwind %open, %error
+    %final: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 }

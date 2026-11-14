@@ -25,6 +25,7 @@ func @construct() -> int;
 func @main(%value: int) -> future<int> {
 ^entry in S unwind ^failed:
     %result: future<int> = proc.spawn [%value], constructor @construct, action @worker, result int
+    result.exit edge normal(0), value %result, demand want, prepare none
     ret %result
 ^failed(%failure: failure) in S:
     raise %failure

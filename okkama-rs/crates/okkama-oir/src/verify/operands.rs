@@ -838,8 +838,23 @@ impl Checker<'_, '_> {
             }
             LexicalOp::DeferRegister { action, .. } => {
                 let signature = &self.module.functions.get(action.function)?.signature;
-                self.arguments(&action.captures, &signature.params)?;
+                let capture_count = action.captures.len();
+                self.require(signature.params.len() == capture_count + action.bindings.len(),
+                    "defer parameters must be captures followed by bindings");
+                self.arguments(&action.captures, &signature.params[..capture_count.min(signature.params.len())])?;
+                for (binding, expected) in action.bindings.iter().zip(signature.params.iter().skip(capture_count)) {
+                    let ty = self.body.bindings.get(*binding)?.ty;
+                    let valid = matches_type(self.module, *expected, ty, &self.substitution, self.state)?;
+                    self.require(valid, "defer binding parameter type mismatch");
+                }
                 self.require(signature.results.is_empty(), "defer action must return void");
+                let declaration = self.module.functions.get(action.function)?;
+                let labels = declaration.attrs.iter().find_map(|attr| {
+                    if let FunctionAttr::DeferEntry { replacements } = attr { Some(replacements) } else { None }
+                });
+                let declared: Vec<_> = labels.into_iter().flatten().map(|label| &label.label).collect();
+                let registered: Vec<_> = action.replacements.iter().map(|item| &item.label).collect();
+                self.require(declared == registered, "defer registration must map every declared replacement label");
             }
         }
         Ok(())
@@ -869,11 +884,13 @@ impl Checker<'_, '_> {
                 self.service(stage.resource.packet, ServiceType::Own)?;
             }
             OwnershipOp::ScopeSplit { state, .. } => self.scope(*state)?,
-            OwnershipOp::ScopeEnd { state, reserve } => {
+            OwnershipOp::ScopeEnd { state, reserve, effects } => {
+                self.close_envelope(effects, false, *state)?;
                 self.scope(*state)?;
                 if let Some(reserve) = reserve { self.service(*reserve, ServiceType::Pending)?; }
             }
-            OwnershipOp::ScopeUnwind { state, failure, reserve } => {
+            OwnershipOp::ScopeUnwind { state, failure, reserve, effects } => {
+                self.close_envelope(effects, true, *state)?;
                 if let Some(reserve) = reserve { self.service(*reserve, ServiceType::Pending)?; }
                 self.scope(*state)?;
                 self.service(*failure, ServiceType::Failure)?;
@@ -914,6 +931,15 @@ impl Checker<'_, '_> {
         Err(TypeCheckError)
     }
     fn call_site(&mut self, call: &CallSite, params: &[TypeId], receiver: Option<ValueId>) -> Checked<()> {
+        if call.cleanup == CallCleanupMode::Shielded {
+            let function = match self.site {
+                OperationSite::Instruction { function, .. } | OperationSite::Terminator { function, .. } => function,
+            };
+            let attrs = &self.module.functions.get(function)?.attrs;
+            let cleanup = attrs.iter().any(|attr| matches!(attr,
+                FunctionAttr::Cleanup | FunctionAttr::Destroy(_) | FunctionAttr::DeferEntry { .. }));
+            self.require(cleanup, "shielded calls require declared cleanup execution");
+        }
         self.packet(call.packet)?;
         for &dep in &call.deps { self.service(dep, ServiceType::Deps)?; }
         for &descriptor in &call.descriptors { self.expect(descriptor, Type::Descriptor)?; }
@@ -932,8 +958,34 @@ impl Checker<'_, '_> {
         }
         Ok(())
     }
-    fn direct_call(&mut self, function: FuncId, call: &CallSite) -> Checked<()> {
+    fn close_envelope(&mut self, effects: &ScopeEffectEnvelope, active_failure: bool, state: ValueId) -> Checked<()> {
+        super::elaboration::failure_set(&effects.failures, false, self.state);
+        if effects.cancel {
+            let function = match self.site {
+                OperationSite::Instruction { function, .. } | OperationSite::Terminator { function, .. } => function,
+            };
+            let root = match self.ty(state)? {
+                Type::Service(ServiceType::Scope(scope)) => self.module.scopes.get(*scope)
+                    .is_ok_and(|scope| scope.parent.is_none() && scope.kind == ScopeKind::Action),
+                _ => false,
+            };
+            let attrs = &self.module.functions.get(function)?.attrs;
+            self.require(root && !active_failure && attrs.contains(&FunctionAttr::Async),
+                "cancel delivery requires a successful async action exit");
+        }
+        Ok(())
+    }
+    pub(super) fn direct_call(&mut self, function: FuncId, call: &CallSite) -> Checked<()> {
         let data = self.module.functions.get(function)?;
+        if data.attrs.iter().any(|attr| matches!(attr, FunctionAttr::DeferEntry { .. })) {
+            let tagged = match self.site {
+                OperationSite::Terminator { block, .. } => self.body.blocks.get(block).is_ok_and(|block| {
+                    matches!(block.term.kind, TermKind::InvokeDefer { function: callee, .. } if callee == function)
+                }),
+                _ => false,
+            };
+            if !tagged { self.report(R::T1, "defer entry must be called through invoke.defer"); }
+        }
         if !self.state.array(data.signature.params.len(), 64)
             || !self.state.step(data.signature.params.len()) { return Err(TypeCheckError); }
         for attr in &data.attrs {
@@ -1071,8 +1123,36 @@ impl Checker<'_, '_> {
             AsyncOp::CacheRehome { state, .. } => self.service(*state, ServiceType::CacheState)?,
             AsyncOp::FutureSpawn { future } | AsyncOp::FutureCancel { future }
             | AsyncOp::FutureDone { future } | AsyncOp::FutureCancelled { future } => { self.future(*future)?; }
-            AsyncOp::FutureNew { frame, packet, deps, owner, owner_state, .. } => {
-                self.frame(*frame)?;
+            AsyncOp::FutureNew { environment, packet, deps, owner, owner_state, result } => {
+                match environment {
+                    FutureEnvironment::Deferred { function, arguments, descriptors } => {
+                        let signature = &self.module.functions.get(*function)?.signature;
+                        let params: Vec<_> = signature.params.iter().copied().filter(|ty| {
+                            self.module.types.get(*ty).is_ok_and(|ty| !matches!(ty,
+                                Type::Service(_) | Type::Descriptor))
+                        }).collect();
+                        self.arguments(arguments, &params)?;
+                        let results: Vec<_> = signature.results.iter().copied().filter(|ty| {
+                            self.module.types.get(*ty).is_ok_and(|ty| !matches!(ty, Type::Service(_)))
+                        }).collect();
+                        self.require(results == result.iter().copied().collect::<Vec<_>>(),
+                            "Future environment body result differs from Future result");
+                        let count = signature.params.iter().filter(|ty| {
+                            self.module.types.get(**ty) == Ok(&Type::Descriptor)
+                        }).count();
+                        self.require(descriptors.len() == count, "Future environment dictionary arity mismatch");
+                        for descriptor in descriptors {
+                            self.expect(*descriptor, Type::Descriptor)?;
+                        }
+                        self.require(self.module.profile == Profile::Own,
+                            "deferred Future environment belongs to own");
+                    }
+                    FutureEnvironment::Frame(frame) => {
+                        self.frame(*frame)?;
+                        self.require(self.module.profile != Profile::Own,
+                            "own Future requires a deferred environment");
+                    }
+                }
                 self.service(*packet, ServiceType::Own)?;
                 self.service(*deps, ServiceType::Deps)?;
                 self.service(*owner_state, ServiceType::Scope(*owner))?;
@@ -1184,7 +1264,11 @@ impl Checker<'_, '_> {
                 self.service(*pending, ServiceType::Pending)?;
                 self.prepared(replacement)?;
             }
-            ExitOp::Commit { pending, .. } | ExitOp::DiscardEmpty { pending } => {
+            ExitOp::Extend { pending, packet } => {
+                self.service(*pending, ServiceType::Pending)?;
+                self.service(*packet, ServiceType::Own)?;
+            }
+            ExitOp::Commit { pending, .. } => {
                 self.service(*pending, ServiceType::Pending)?;
             }
             ExitOp::Abort { pending, cleanup, .. } => {

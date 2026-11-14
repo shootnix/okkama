@@ -88,6 +88,12 @@ pub(super) fn check<'m>(module: &'m Module, selected: Option<FuncId>, state: &mu
         if !state.array(body.values.len(), 64) {
             return;
         }
+        // D8 tagged transfer/settlement is a separate B10 pass in #564 commit 4.
+        // Do not run the ordinary-return engine over the tagged defer ABI.
+        if body.blocks.iter().any(|(_, block)| matches!(block.term.kind,
+            TermKind::InvokeDefer { .. } | TermKind::RetDefer { .. })) {
+            continue;
+        }
         let mut engine = Engine {
             module, function, declaration, body, state, emit: false,
             reported: BTreeSet::new(),

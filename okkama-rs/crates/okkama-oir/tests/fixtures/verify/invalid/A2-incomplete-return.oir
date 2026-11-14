@@ -13,7 +13,8 @@ func @f() -> C [ctor C] {
     %p: bool = undef ty bool
     %o: C = obj.new C { x: %u, $pending: %p } construction incomplete
     obj.init %o, 1, field field_ref(declaration=C, index=0)
-    exit.prepare return %o at B0
+    [iprep0] exit.prepare return %o at B0
+    result.exit edge normal(0), value %o, demand want, prepare iprep0
     ret %o
 ^failed(%e: failure) in S:
     raise %e

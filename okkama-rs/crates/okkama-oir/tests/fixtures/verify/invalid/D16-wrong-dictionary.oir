@@ -1,0 +1,12 @@
+oir 2 own
+// expect OIR2-T1 function:0
+module declarations
+protocol Services kind services
+scope S action in @f
+summary M0 internal contract call_contract(publication=atomic)
+func @f(%dict: int) -> void summary(M0) {
+    descriptor.binding %dict contract descriptor_contract(managed=runtime, retention=descriptor(0), cleanup=@f, async_destroy=false, summary=M0)
+    service.schedule Schedule0 owner S, protocol Services
+^entry in S:
+    ret
+}

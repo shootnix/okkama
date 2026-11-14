@@ -218,7 +218,7 @@ pub(super) fn read_operation(r: &mut Reader<'_>) -> Result<Option<Operation>, Di
     Ok(Some(op))
 }
 
-fn read_call(r: &mut Reader<'_>, default_summary: Option<SummaryId>) -> Result<CallSite, Diagnostic> {
+pub(super) fn read_call(r: &mut Reader<'_>, default_summary: Option<SummaryId>) -> Result<CallSite, Diagnostic> {
     let type_args = r.type_arguments()?;
     r.expect("(")?;
     let mut args = vec![];
@@ -257,7 +257,14 @@ fn read_call(r: &mut Reader<'_>, default_summary: Option<SummaryId>) -> Result<C
         r.expect(")")?;
         summary
     } else { default_summary };
-    Ok(CallSite { args, packet, deps, descriptors, type_args, summary })
+    let cleanup = if r.operand_keyword("cleanup") {
+        r.eat(",");
+        r.expect("cleanup")?;
+        CallCleanupMode::read(r)?
+    } else {
+        CallCleanupMode::Ordinary
+    };
+    Ok(CallSite { args, packet, deps, descriptors, type_args, summary, cleanup })
 }
 
 fn read_field(r: &mut Reader<'_>, object: ValueId) -> Result<FieldRef, Diagnostic> {
@@ -453,7 +460,8 @@ pub(super) fn write_operation(op: &Operation, w: &mut Writer<'_>) -> Result<bool
     Ok(true)
 }
 
-fn write_call(call: &CallSite, default_summary: Option<SummaryId>, w: &mut Writer<'_>) -> Result<(), PrintError> {
+pub(super) fn write_call(call: &CallSite, default_summary: Option<SummaryId>, w: &mut Writer<'_>) -> Result<(),
+    PrintError> {
     if let Some(summary) = call.summary { w.module.summaries.get(summary).map_err(|e| PrintError::new(e.to_string()))?; }
     types::write_type_arguments(&call.type_args, w)?;
     w.push("(");
@@ -479,10 +487,13 @@ fn write_call(call: &CallSite, default_summary: Option<SummaryId>, w: &mut Write
         w.push(" descriptors ");
         call.descriptors.write(w)?;
     }
-    if call.summary != default_summary {
+    if call.cleanup == CallCleanupMode::Shielded || call.summary != default_summary {
         w.push(" summary(");
         if let Some(summary) = call.summary { summary.write(w)?; } else { w.push("none"); }
         w.push(")");
+    }
+    if call.cleanup == CallCleanupMode::Shielded {
+        w.push(", cleanup shielded");
     }
     Ok(())
 }

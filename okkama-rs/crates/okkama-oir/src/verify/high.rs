@@ -46,7 +46,8 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
             for &instruction in &block.insts {
                 let Ok(inst) = body.insts.get(instruction) else { continue; };
                 state.at(L::Instruction { function, instruction }, inst.loc);
-                operation(module, body, block, &inst.op, &mut bindings, state);
+                operation(module, body, block, &inst.op, HighOperationSite::Instruction(instruction), &mut bindings,
+                    state);
                 if !inst.results.is_empty() && matches!(inst.op, Operation::Lexical(_) | Operation::Exit(_)) {
                     state.error(R::H3, "high intents must be statements without SSA results");
                 }
@@ -58,7 +59,10 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                 }
                 state.error(R::H2, "invoke.own belongs to elaborated ownership profiles");
             }
-            exits(module, body, block_id, block, &dom.edges, state);
+            result_records(module, body, block_id, block, &dom.edges, state);
+            if !body.high_results.iter().any(|record| record.block == block_id) {
+                exits(module, body, block_id, block, &dom.edges, state);
+            }
         }
     }
 }
@@ -92,6 +96,15 @@ fn scopes(module: &Module, function: FuncId, body: &Body, dom: &Dominators, stat
                 entries.insert(edge.target);
             }
         }
+        for edge in &dom.edges {
+            if entries.contains(&edge.target)
+                && body.blocks.get(edge.source).is_ok_and(|block| {
+                    inside(module, block.lexical_scope, scope, state)
+                }) {
+                state.at(L::Scope(scope), decl.loc);
+                state.error(R::H1, "scope subtree cannot branch back to its own entry block");
+            }
+        }
         if entries.len() > 1 {
             state.at(L::Scope(scope), decl.loc);
             state.error(R::H1, "lexical scope has multiple entry blocks");
@@ -103,6 +116,7 @@ fn operation(
     body: &Body,
     block: &Block,
     op: &Operation,
+    site: HighOperationSite,
     bindings: &mut BTreeSet<BindingId>,
     state: &mut State<'_>,
 ) {
@@ -116,7 +130,7 @@ fn operation(
         && (call.packet.is_some() || !call.deps.is_empty()) {
         state.error(R::H2, "high calls have no ownership packet or deps operands");
     }
-    if let Ok(contract) = ContractRegistry::new(module).construction_schema(op, body)
+    if let Ok(contract) = ContractRegistry::new(module).high_site_schema(op, body, site)
         && (!contract.effects.failures.is_empty() || contract.effects.suspends) && block.unwind.is_none() {
         state.error(R::H5, "may-fail high operation requires an explicit block unwind target");
     }
@@ -303,6 +317,74 @@ fn binding_definitions(function: FuncId, body: &Body, dom: &Dominators, state: &
                     state.at(L::Instruction { function, instruction }, inst.loc);
                     state.error(R::H7, "binding's initial SSA definition must dominate rebind/defer registration");
                 }
+            }
+        }
+    }
+}
+
+fn result_records(
+    module: &Module, body: &Body, id: BlockId, block: &Block, edges: &[Edge], state: &mut State<'_>,
+) {
+    let outgoing: Vec<_> = edges.iter().filter(|edge| edge.source == id && !edge.entry).collect();
+    let mut records = BTreeSet::new();
+    for record in body.high_results.iter().filter(|record| record.block == id) {
+        let index = match record.edge {
+            HighEdgeSelector::Normal(index) => Some(usize::from(index)),
+            HighEdgeSelector::Unwind => None,
+        };
+        let target = index.and_then(|index| outgoing.get(index)).map(|edge| edge.target);
+        let terminal = matches!(block.term.kind, TermKind::Ret { .. }) && index == Some(0);
+        if !terminal && target.is_none() {
+            state.error(R::H4, "result.exit selector does not name an outgoing normal edge");
+        }
+        if !records.insert((index, record.value)) {
+            state.error(R::H4, "duplicate High result record");
+        }
+        match record.demand {
+            ResultDemand::Discard => {
+                if record.prepared.is_some() {
+                    state.error(R::H4, "discarded result must retain its cleanup boundary without preparation");
+                }
+            }
+            ResultDemand::Want => {
+                let exit = record.prepared.and_then(|id| body.insts.get(id).ok()).and_then(|inst| {
+                    if let Operation::Exit(ExitOp::Prepare { exit }) = &inst.op { Some(exit) } else { None }
+                });
+                let carried = terminal && matches!(&block.term.kind, TermKind::Ret { values }
+                    if values.contains(&record.value))
+                    || index.and_then(|index| outgoing.get(index)).is_some_and(|edge| {
+                        edge.args.contains(&EdgeArg::Value(record.value))
+                    });
+                let valid = carried && exit.is_some_and(|exit| exit.value == Some(record.value)
+                    && (!terminal || exit.kind == ExitKind::Return)
+                    && body.boundaries.get(exit.boundary).is_ok_and(|boundary| {
+                        inside(module, block.lexical_scope, boundary.scope, state)
+                            && target.is_none_or(|target| body.blocks.get(target).is_ok_and(|block| {
+                                !inside(module, block.lexical_scope, boundary.scope, state)
+                            }))
+                    }));
+                if !valid { state.error(R::H4,
+                    "wanted result record requires matching preparation and exited boundary"); }
+            }
+        }
+    }
+    for instruction in &block.insts {
+        let demand = body.insts.get(*instruction).ok().and_then(|inst| match inst.op {
+            Operation::Lexical(LexicalOp::Want { value }) => Some((value, ResultDemand::Want)),
+            Operation::Lexical(LexicalOp::Discard { value }) => Some((value, ResultDemand::Discard)),
+            _ => None,
+        });
+        if let Some((value, demand)) = demand
+            && !body.high_results.iter().any(|record| record.block == id
+                && record.value == value && record.demand == demand) {
+            state.error(R::H4, "High result intent requires an explicit result.exit record");
+        }
+    }
+    if let TermKind::Ret { values } = &block.term.kind {
+        for value in values {
+            if !body.high_results.iter().any(|record| record.block == id && record.value == *value
+                && record.demand == ResultDemand::Want && record.edge == HighEdgeSelector::Normal(0)) {
+                state.error(R::H4, "valued return requires an explicit wanted result record");
             }
         }
     }

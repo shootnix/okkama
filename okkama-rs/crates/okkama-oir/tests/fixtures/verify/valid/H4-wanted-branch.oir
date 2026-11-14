@@ -9,7 +9,8 @@ func @f(%x: int) -> void {
     br ^inner
 ^inner in S1:
     want %x
-    exit.prepare last %x at B0
+    [iprep0] exit.prepare last %x at B0
+    result.exit edge normal(0), value %x, demand want, prepare iprep0
     br ^out(%x)
 ^out(%p: int) in S:
     ret

@@ -28,6 +28,7 @@ func @main(%a: future<Res>, %b: future<Res>) -> future<array<Res>> {
 ^entry in S unwind ^failed:
     %positions: array<future<Res>> = array.new [%a, %b, %a], ty array<future<Res>>
     %result: future<array<Res>> = call @all(%positions)
+    result.exit edge normal(0), value %result, demand want, prepare none
     ret %result
 ^failed(%failure: failure) in S:
     raise %failure

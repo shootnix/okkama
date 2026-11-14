@@ -10,6 +10,7 @@ func @f(%x: int) -> void {
 ^inner in S1:
     %v: int = const 1
     discard %v
+    result.exit edge normal(0), value %v, demand discard, prepare none
     br ^out
 ^out in S:
     ret

@@ -1,0 +1,18 @@
+oir 2 high
+// expect OIR2-H5 instruction:1:0
+module explicit_effects
+scope SD action in @d
+scope S action in @f
+func @d() -> void {
+^entry in SD:
+    ret
+}
+func @f(%active: failure) -> void {
+^entry in S:
+    [i0] call @d() summary(none)
+    high.effects at #0 failures [thrown, program, panic, native, cancelled], suspends true
+    br ^failed(%active)
+^failed(%error: failure) in S:
+    high.effects at terminator ^failed failures [thrown], suspends false
+    raise %error
+}

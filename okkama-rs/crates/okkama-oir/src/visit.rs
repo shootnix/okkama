@@ -43,7 +43,8 @@ macro_rules! inert {
 }
 inert!(u16, u32, bool, String, NumericType, ConstructionStatus, OperandMode,
     OperandConvention, DynamicReason, ExitKind, AbortPhase, DescriptorManaged,
-    AdmissionProvenance, ServiceKeyKind, BoundaryKind);
+    AdmissionProvenance, ServiceKeyKind, BoundaryKind, ScopeEffectEnvelope, CallCleanupMode,
+    HighEffectEnvelope, HighEdgeSelector, DeferReturnTag);
 impl<T: Rewrite> Rewrite for Vec<T> {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) { for item in self { item.rewrite(visitor); } }
 }
@@ -67,12 +68,16 @@ macro_rules! fields {
     )*};
 }
 fields!(
+    DeferLabel { result }, DeferRegistration { boundary },
+    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol },
+    HighResultExit { block, value, prepared }, HighEffectRecord { site },
+    DeferReplaceEdge { edge },
     FieldRef { declaration }, FieldValue { field, value }, ConstructionCompletion { state },
     CallArgument { value }, CallSite { args, packet, deps, descriptors, type_args, summary },
     ResourceValue { value, packet }, AccessContext { owner, holder, authority },
     ElaboratedBinding { binding, resource, state, original_scope },
     ElaboratedStage { action, field, resource, states },
-    DeferAction { function, captures, bindings },
+    DeferAction { function, captures, bindings, replacements },
     UniqueCacheProof { future, scope, region, evidence },
     UniqueCacheEvidence { creation, aliases }, FrameSlot { value }, SavedSlot { ty },
     DescriptorContract { retention, cleanup, summary },
@@ -83,7 +88,8 @@ fields!(
     Target { block, args }, InvokeEdge { block, args }, BlockUnwind { target },
     Block { lexical_scope, params, unwind, insts, term },
     Terminator { kind, loc }, SwitchCase { value, target },
-    Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections }
+    Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
+        high_results, high_effects, descriptor_bindings, service_schedules }
 );
 impl Rewrite for DebugLoc {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) { self.file.rewrite(visitor); visitor.location(self); }
@@ -122,6 +128,14 @@ impl Rewrite for TermKind {
             Self::Cond { condition, yes, no } => { condition.rewrite(visitor); yes.rewrite(visitor); no.rewrite(visitor); }
             Self::Switch { value, cases, default } => { value.rewrite(visitor); cases.rewrite(visitor); default.rewrite(visitor); }
             Self::InvokeOwn { op, normal, unwind } => { op.rewrite(visitor); normal.rewrite(visitor); unwind.rewrite(visitor); }
+            Self::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+                function.rewrite(visitor);
+                call.rewrite(visitor);
+                continue_edge.rewrite(visitor);
+                replacements.rewrite(visitor);
+                unwind.rewrite(visitor);
+            }
+            Self::RetDefer { values, .. } => values.rewrite(visitor),
             Self::Ret { values } => values.rewrite(visitor),
             Self::Throw(value) | Self::Raise(value) | Self::Panic(value) => value.rewrite(visitor),
             Self::Catch { failure, ty, handler, next } => { failure.rewrite(visitor); ty.rewrite(visitor); handler.rewrite(visitor); next.rewrite(visitor); }
@@ -157,7 +171,8 @@ impl Rewrite for ExitDestination {
 }
 impl Rewrite for SummarySelection {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
-        match self { Self::Field { field, .. } => field.rewrite(visitor), Self::Union(items) => items.rewrite(visitor),
+        match self { Self::Path { fields, .. } => fields.rewrite(visitor),
+            Self::Field { field, .. } => field.rewrite(visitor), Self::Union(items) => items.rewrite(visitor),
             Self::Parameter(_) | Self::OwnerGraph(_) | Self::Descriptor(_) => {} }
     }
 }
@@ -204,10 +219,36 @@ impl Rewrite for Projection {
 /// Visit every use (including unused declarations and facts), without changing
 /// SSA definitions, block parameter/result lists or arena keys.
 pub fn rewrite_uses(body: &mut Body, visitor: &mut impl VisitorMut) {
+    body.high_results.rewrite(visitor);
+    body.high_effects.rewrite(visitor);
+    body.descriptor_bindings.rewrite(visitor);
+    body.service_schedules.rewrite(visitor);
     body.keys.rewrite(visitor); body.deps.rewrite(visitor); body.selections.rewrite(visitor);
     for (_, data) in body.values.iter_mut() { data.facts.rewrite(visitor); }
     for (_, inst) in body.insts.iter_mut() { inst.op.rewrite(visitor); inst.facts.rewrite(visitor); inst.loc.rewrite(visitor); }
     body.bindings.rewrite(visitor);
     body.boundaries.rewrite(visitor);
     for (_, block) in body.blocks.iter_mut() { block.unwind.rewrite(visitor); block.term.rewrite(visitor); }
+}
+
+impl Rewrite for FutureEnvironment {
+    fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
+        match self {
+            Self::Deferred { function, arguments, descriptors } => {
+                function.rewrite(visitor);
+                arguments.rewrite(visitor);
+                descriptors.rewrite(visitor);
+            }
+            Self::Frame(frame) => frame.rewrite(visitor),
+        }
+    }
+}
+
+impl Rewrite for HighOperationSite {
+    fn rewrite(&mut self, visitor: &mut impl VisitorMut) {
+        match self {
+            Self::Instruction(instruction) => instruction.rewrite(visitor),
+            Self::Terminator(block) => block.rewrite(visitor),
+        }
+    }
 }

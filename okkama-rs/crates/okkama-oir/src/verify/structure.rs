@@ -101,7 +101,25 @@ pub(super) fn check<'a>(module: &'a Module, selected: Option<FuncId>, state: &mu
                         state.error(R::S1, "lambda capture count exceeds its parameters");
                     }
                 }
-                FunctionAttr::Entry | FunctionAttr::Hidden | FunctionAttr::Async => {}
+                FunctionAttr::DeferEntry { replacements } => {
+                    if data.attrs.iter().filter(|attr| matches!(attr, FunctionAttr::DeferEntry { .. })).count() != 1 {
+                        state.error(R::S1, "function must have exactly one defer entry declaration");
+                    }
+                    if replacements.len() > state.options.limits.outcome_slots {
+                        state.incomplete = true;
+                        return;
+                    }
+                    for label in replacements {
+                        if label.result.is_some_and(|ty| module.types.get(ty).is_ok_and(|ty| {
+                            matches!(ty, Type::Service(_) | Type::Frame(_) | Type::LowCell(_) | Type::Never)
+                        })) {
+                            state.error(R::T5, "defer replacement label requires a language result type");
+                        }
+                    }
+                    unique(replacements.iter().map(|label| label.label.as_str()), state);
+                    refs(module, replacements, state);
+                }
+                FunctionAttr::Cleanup | FunctionAttr::Entry | FunctionAttr::Hidden | FunctionAttr::Async => {}
             }
         }
         if externs > 1 || intrinsics > 1 || externs + intrinsics > 1
@@ -314,6 +332,10 @@ fn body_structure<'a>(module: &'a Module, function: FuncId, data: &Function, bod
         if !state.step(1) { return; }
         references(module, Some(body), Some(function), selection, state);
     }
+    references(module, Some(body), Some(function), &body.high_results, state);
+    references(module, Some(body), Some(function), &body.high_effects, state);
+    references(module, Some(body), Some(function), &body.descriptor_bindings, state);
+    references(module, Some(body), Some(function), &body.service_schedules, state);
     expressions::check(body, state);
     if !state.array(body.insts.len(), 8) || !state.array(body.values.len(), 8) { return; }
     let mut inst_count = vec![0_u8; body.insts.len()];
@@ -396,9 +418,14 @@ pub(super) fn targets(block: &Block) -> Vec<BlockId> {
             targets.push(default.block);
         }
         TermKind::InvokeOwn { normal, unwind, .. } => targets.extend([normal.block, unwind.block]),
+        TermKind::InvokeDefer { continue_edge, replacements, unwind, .. } => {
+            targets.push(continue_edge.block);
+            targets.extend(replacements.iter().map(|replacement| replacement.edge.block));
+            targets.extend(unwind.iter().map(|edge| edge.block));
+        }
         TermKind::Catch { handler, next, .. } => targets.extend([handler.block, next.block]),
         TermKind::Lookup { found, missing, .. } => targets.extend([found.block, missing.block]),
-        TermKind::Ret { .. } | TermKind::Throw(_) | TermKind::Raise(_) | TermKind::Panic(_)
+        TermKind::RetDefer { .. } | TermKind::Ret { .. } | TermKind::Throw(_) | TermKind::Raise(_) | TermKind::Panic(_)
         | TermKind::Trap { .. } | TermKind::Unreachable => {}
     }
     targets

@@ -52,24 +52,22 @@ func @f() -> (R, own, deps) summary(M0) {
     %inner: scope<SI> = scope.begin SI
     %pending: pending = exit.prepare return %r, %selected, deps(%external) at B0
     (%early: R facts(managed(deps=d0)), %ep: own, %ed: deps) = exit.commit %pending, destination caller, result R
-    invoke.own scope.end %inner, reserve %pending
+    invoke.own scope.end %inner, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^outer($closed, $pending, %rest)
-        unwind ^abort_outer($closed, $failure, $pending, %rest)
+        unwind ^abort_outer($closed, $failure, %rest)
 ^outer(%ci: closed, %reserved: pending, %root: scope<S>) in S:
-    invoke.own scope.end %root, reserve %reserved
+    invoke.own scope.end %root, reserve %reserved, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
-        unwind ^failed($closed, $failure, $pending)
+        unwind ^failed($closed, $failure)
 ^commit(%co: closed, %ready: pending) in S:
     (%result: R facts(managed(deps=dout)), %out: own, %full: deps) = exit.commit %ready, destination caller, result R
     ret %result, %out, %full
-^abort_outer(%closed_inner: closed, %error: failure, %remaining: pending, %open: scope<S>) in S:
-    (%final: failure, %empty: pending) = scope.unwind %open, %error, reserve %remaining
-    %discarded: closed = exit.discard_empty %empty
+^abort_outer(%closed_inner: closed, %error: failure, %open: scope<S>) in S:
+    %final: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
-^failed(%closed_outer: closed, %failure: failure, %aborted: pending) in S:
-    %discarded2: closed = exit.discard_empty %aborted
+^failed(%closed_outer: closed, %failure: failure) in S:
     raise %failure
 ^failed_create(%open_root: scope<S>, %creation_error: failure) in S:
-    %propagated: failure = scope.unwind %open_root, %creation_error
+    %propagated: failure = scope.unwind %open_root, %creation_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %propagated
 }

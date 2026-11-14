@@ -2,8 +2,8 @@ oir 2 own
 module core
 scope S action in @f
 summary M0 internal   contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
-func @f(%q: scope<S>, %failure: failure, %pending: pending) -> (failure, pending) summary(M0) {
+func @f(%q: scope<S>, %failure: failure, %pending: pending) -> failure summary(M0) {
 ^entry in S:
-    (%f: failure, %rest: pending) = scope.unwind %q, %failure, reserve %pending
-    ret %f, %rest
+    %f: failure = scope.unwind %q, %failure, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    ret %f
 }

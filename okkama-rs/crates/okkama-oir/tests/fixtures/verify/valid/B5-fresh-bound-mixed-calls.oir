@@ -50,11 +50,11 @@ func @main() -> void summary(Mverify4) {
         unwind ^failed($failure, %remaining)
 ^h(%h: Holder facts(managed(deps=dfull_h)), %ph: own, %q5: scope<S>) in S:
     %q6: scope<S> = own.admit %q5, %ph
-    invoke.own scope.end %q6
+    invoke.own scope.end %q6, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^closed_failed($closed, $failure)
 ^failed(%failure: failure, %open: scope<S>) in S:
-    %final: failure = scope.unwind %open, %failure
+    %final: failure = scope.unwind %open, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^closed_failed(%closed: closed, %cleanup_failure: failure) in S:
     raise %cleanup_failure

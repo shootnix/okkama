@@ -24,11 +24,11 @@ func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
 func @main(%q: scope<S>) -> void summary(Mverify5) {
 ^entry in S:
-    invoke.own scope.end %q
+    invoke.own scope.end %q, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^again($closed)
         unwind ^failed($closed, $failure)
 ^again(%closed: closed) in S:
-    invoke.own scope.end %q
+    invoke.own scope.end %q, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^failed($closed, $failure)
 ^done(%closed2: closed) in S:

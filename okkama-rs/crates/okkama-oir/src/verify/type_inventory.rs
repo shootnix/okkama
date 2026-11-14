@@ -253,7 +253,7 @@ pub(super) const TYPE_RULES: &[&str] = &[
     "exit.prepare",
     "exit.replace",
     "exit.commit",
-    "exit.discard_empty",
+    "exit.extend",
     "exit.abort",
     "cleanup.begin",
     "cleanup.defer",

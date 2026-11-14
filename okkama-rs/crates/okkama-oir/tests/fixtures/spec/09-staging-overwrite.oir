@@ -28,7 +28,8 @@ func @main() -> Holder [ctor Holder] {
     %b: Res = call @new("B")
     stage %b, action S, field field_ref(declaration=Holder, index=0)
     %result: Holder = obj.new Holder { res: %b, label: "staged" }
-    exit.prepare return %result at B0
+    [iprep0] exit.prepare return %result at B0
+    result.exit edge normal(0), value %result, demand want, prepare iprep0
     ret %result
 ^failed(%failure: failure) in S:
     raise %failure

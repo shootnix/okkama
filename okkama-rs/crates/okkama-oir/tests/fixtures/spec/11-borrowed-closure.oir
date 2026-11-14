@@ -41,6 +41,7 @@ func @main() -> void {
     %callback: fn() -> str = call @Stored.action(%stored)
     %result: str = fn.call %callback() summary(Mclosure)
     discard %result
+    result.exit edge normal(0), value %result, demand discard, prepare none
     br ^outer
 ^outer in S unwind ^failed:
     %alive: str = call @label(%a)

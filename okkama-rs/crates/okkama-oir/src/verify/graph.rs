@@ -37,6 +37,15 @@ pub(super) fn edges(body: &Body, state: &mut State<'_>) -> Vec<Edge> {
                 add(normal.block, normal.args.clone(), false);
                 add(unwind.block, unwind.args.clone(), false);
             }
+            TermKind::InvokeDefer { continue_edge, replacements, unwind, .. } => {
+                add(continue_edge.block, continue_edge.args.clone(), false);
+                for replacement in replacements {
+                    add(replacement.edge.block, replacement.edge.args.clone(), false);
+                }
+                if let Some(unwind) = unwind {
+                    add(unwind.block, unwind.args.clone(), false);
+                }
+            }
             TermKind::Catch { handler, next, .. } => {
                 target(next);
                 add(handler.block, handler.args.clone(), false);

@@ -39,10 +39,10 @@ func @adapter(%self: Read facts(managed(deps=dfull_self)), %r: Res facts(managed
         normal ^close($value, %state)
         unwind ^bad($failure, %state)
 ^bad(%failure: failure, %failed_state: scope<Sadapter>) in Sadapter:
-    %final: failure = scope.unwind %failed_state, %failure
+    %final: failure = scope.unwind %failed_state, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^close(%text: str, %rest: scope<Sadapter>) in Sadapter:
-    invoke.own scope.end %rest
+    invoke.own scope.end %rest, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed, %text)
         unwind ^close_failed($closed, $failure)
 ^close_failed(%closed: closed, %error: failure) in Sadapter:
@@ -68,7 +68,7 @@ func @main(%reader: Read facts(managed(deps=dreader))) -> (str, own, deps) summa
         unwind ^failed(%q, $failure)
 ^close(%text: str, %rest: own, %open: scope<S>) in S:
     %admitted: scope<S> = own.admit %open, %rest
-    invoke.own scope.end %admitted
+    invoke.own scope.end %admitted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed, %text)
         unwind ^closed_failed($closed, $failure)
 ^done(%closed: closed, %answer: str) in S:
@@ -77,7 +77,7 @@ func @main(%reader: Read facts(managed(deps=dreader))) -> (str, own, deps) summa
     %out: own = own.join [%empty, %selected]
     ret %answer, %out, %deps
 ^failed(%open2: scope<S>, %failure: failure) in S:
-    %final: failure = scope.unwind %open2, %failure
+    %final: failure = scope.unwind %open2, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^closed_failed(%closed2: closed, %error: failure) in S:
     raise %error

@@ -110,8 +110,12 @@ fn selection_indices(root: &SummarySelection, params: usize, state: &mut State<'
     let mut stack = vec![root];
     while let Some(selection) = stack.pop() {
         if !state.step(1) { return; }
+        if let SummarySelection::Path { fields, .. } = selection && fields.len() > 4 {
+            state.error(R::T4, "summary path cannot exceed four fields");
+        }
         let index = match selection {
             SummarySelection::Parameter(i) | SummarySelection::OwnerGraph(i) | SummarySelection::Descriptor(i)
+            | SummarySelection::Path { parameter: i, .. }
             | SummarySelection::Field { parameter: i, .. } => *i,
             SummarySelection::Union(items) => {
                 if !state.array(items.len(), 8) { return; }

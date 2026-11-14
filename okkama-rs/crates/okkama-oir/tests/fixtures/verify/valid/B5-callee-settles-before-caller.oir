@@ -6,7 +6,7 @@ func @f(%input: own) -> own abi explicit(input_packet=0, output_packet=0) summar
 ^entry in S:
     %q: scope<S> = scope.begin S
     %accepted: scope<S> = own.accept %q, %input
-    invoke.own scope.end %accepted
+    invoke.own scope.end %accepted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^failed($closed, $failure)
 ^done(%c: closed) in S:

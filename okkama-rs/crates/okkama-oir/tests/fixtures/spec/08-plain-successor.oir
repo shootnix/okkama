@@ -37,7 +37,8 @@ func @next(%self: C) -> ^C [successor C] {
     boundary B0 lexical in Sn
 ^entry in Sn unwind ^failed:
     %next: ^C = obj.next %self { x: 1 }
-    exit.prepare return %next at B0
+    [iprep0] exit.prepare return %next at B0
+    result.exit edge normal(0), value %next, demand want, prepare iprep0
     ret %next
 ^failed(%failure: failure) in Sn:
     raise %failure
