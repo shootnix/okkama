@@ -25,6 +25,7 @@ pub mod builder;
 pub mod visit;
 pub mod text;
 pub mod verify;
+pub mod own;
 mod types;
 mod value;
 
