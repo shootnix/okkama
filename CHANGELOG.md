@@ -102,8 +102,8 @@ fake fields; role fakes and their ordinary typed fields remain available.
 - **Faster Sparrow: the 0.6.0 perf wave.** Micro A/B against the previous
   0.6.0 state: geometric mean −7.0% over 69 benchmarks (Docker, fat LTO, five
   runs). `float` −70%, `rat` operations −13…−26%, `try-catch` −24%, and calls,
-  arrays, constructors and maps −3…−5%. `json-parse` +2.7% and `map-keys`
-  +3.8% are known costs of the wave. Contents:
+  arrays, constructors and maps −3…−5%. Ten changes are significant, all
+  faster; `json-parse` +2.7% and `map-keys` +3.8% stay within the noise band. Contents:
   - payload objects lose their extra box (#436);
   - the GC walks precomputed pointer-bearing field indices (#437);
   - SPB is decoded and verified once on the CLI path, and CLIF diagnostics are
