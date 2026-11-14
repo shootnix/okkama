@@ -10,7 +10,7 @@ pub enum OperandMode { Borrow, Consume, Observe, DestroyBorrow, Forward }
 pub enum OperandConvention { Borrow, Consume }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperandUse { pub value: ValueId, pub mode: OperandMode }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperandRef { Value(ValueId), Selection(SelectionId), Dependency(DepExprId), Key(KeyExprId) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReferencedOperand { pub reference: OperandRef, pub mode: OperandMode }

@@ -27,46 +27,92 @@ impl std::error::Error for TraversalError {}
 /// Path-local cycle detection also terminates on deliberately malformed IR.
 pub fn operation_uses(op: &Operation, body: &Body) -> Result<Vec<OperandUse>, TraversalError> {
     let mut uses = vec![];
-    for operand in op.operand_refs() { expand(operand, body, &mut vec![], &mut uses)?; }
+    for operand in op.operand_refs() { expand(operand, body, &mut uses)?; }
     Ok(uses)
 }
-fn expand(operand: ReferencedOperand, body: &Body, stack: &mut Vec<OperandRef>, uses: &mut Vec<OperandUse>) -> Result<(), TraversalError> {
-    let mode = operand.mode;
-    if let OperandRef::Value(value) = operand.reference { uses.push(OperandUse { value, mode }); return Ok(()); }
-    if stack.contains(&operand.reference) { return Err(TraversalError::CyclicExpression(operand.reference)); }
-    stack.push(operand.reference);
+
+/// Immediate references, without recursively expanding a shared expression DAG.
+pub(crate) fn expression_children(reference: OperandRef, body: &Body) -> Result<Vec<OperandRef>, TraversalError> {
     let mut refs = vec![];
     let mut value = |value| refs.push(OperandRef::Value(value));
-    match operand.reference {
-        OperandRef::Value(_) => unreachable!(),
+    match reference {
+        OperandRef::Value(v) => value(v),
         OperandRef::Selection(id) => match body.selections.get(id)? {
             SelectionExpr::Value(v) | SelectionExpr::OwnerGraph(v) | SelectionExpr::ViewOwner(v) => value(*v),
             SelectionExpr::Projection(projection) => match projection {
                 Projection::Field { value: v, .. } => value(*v),
-                Projection::Index { value: v, index } => { value(*v); value(*index); }
-                Projection::Slice { value: v, start, end } => { value(*v); value(*start); value(*end); }
-                Projection::Map { value: v, keys } => { value(*v); value(*keys); }
+                Projection::Index { value: v, index } => {
+                    value(*v);
+                    value(*index);
+                }
+                Projection::Slice { value: v, start, end } => {
+                    value(*v);
+                    value(*start);
+                    value(*end);
+                }
+                Projection::Map { value: v, keys } => {
+                    value(*v);
+                    value(*keys);
+                }
             },
             SelectionExpr::Union(items) => refs.extend(items.iter().copied().map(OperandRef::Selection)),
-            SelectionExpr::Descriptor { descriptor, value: v } => { value(*descriptor); value(*v); }
+            SelectionExpr::Descriptor { descriptor, value: v } => {
+                value(*descriptor);
+                value(*v);
+            }
         },
         OperandRef::Dependency(id) => match body.deps.get(id)? {
-            DepExpr::Empty => {}, DepExpr::Key(id) => refs.push(OperandRef::Key(*id)),
+            DepExpr::Empty => {}
+            DepExpr::Key(id) => refs.push(OperandRef::Key(*id)),
             DepExpr::Union(items) => refs.extend(items.iter().copied().map(OperandRef::Dependency)),
             DepExpr::FromSsa(v) => value(*v),
-            DepExpr::Retention { value: v, selection } => { value(*v); refs.push(OperandRef::Selection(*selection)); }
+            DepExpr::Retention { value: v, selection } => {
+                value(*v);
+                refs.push(OperandRef::Selection(*selection));
+            }
         },
         OperandRef::Key(id) => match body.keys.get(id)? {
             KeyExpr::Created { instance, .. } => value(*instance),
             KeyExpr::ServiceOf { value: v, .. } | KeyExpr::Runtime(v) => value(*v),
         },
     }
-    for reference in refs { expand(ReferencedOperand { reference, mode }, body, stack, uses)?; }
-    stack.pop(); Ok(())
+    Ok(refs)
 }
-fn emit_refs(refs: impl IntoIterator<Item = ReferencedOperand>, site: UseSite, body: &Body, visit: &mut impl FnMut(CfgEvent)) -> Result<(), TraversalError> {
+
+fn expand(
+    operand: ReferencedOperand,
+    body: &Body,
+    uses: &mut Vec<OperandUse>,
+) -> Result<(), TraversalError> {
+    // Leave markers give path-local cycle detection. A shared node is revisited
+    // on each occurrence, preserving the previous walk's order and multiplicity.
+    let mut pending = vec![(operand.reference, false)];
+    let mut active = HashSet::new();
+    while let Some((reference, leaving)) = pending.pop() {
+        if leaving {
+            active.remove(&reference);
+            continue;
+        }
+        if let OperandRef::Value(value) = reference {
+            uses.push(OperandUse { value, mode: operand.mode });
+            continue;
+        }
+        if !active.insert(reference) { return Err(TraversalError::CyclicExpression(reference)); }
+        pending.push((reference, true));
+        let children = expression_children(reference, body)?;
+        pending.extend(children.into_iter().rev().map(|child| (child, false)));
+    }
+    Ok(())
+}
+fn emit_refs(
+    refs: impl IntoIterator<Item = ReferencedOperand>,
+    site: UseSite,
+    body: &Body,
+    visit: &mut impl FnMut(CfgEvent),
+) -> Result<(), TraversalError> {
     for operand in refs {
-        let mut uses = vec![]; expand(operand, body, &mut vec![], &mut uses)?;
+        let mut uses = vec![];
+        expand(operand, body, &mut uses)?;
         for operand in uses { visit(CfgEvent::Use { site, operand }); }
     }
     Ok(())

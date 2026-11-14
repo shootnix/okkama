@@ -137,7 +137,7 @@ pub enum OwnershipAbi {
     Observation,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FunctionAttr {
     Entry,
     Method(DeclId),

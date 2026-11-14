@@ -22,6 +22,7 @@ pub mod cfg;
 pub mod builder;
 pub mod visit;
 pub mod text;
+pub mod verify;
 mod types;
 mod value;
 
@@ -32,6 +33,7 @@ pub use module::*;
 pub use ops::*;
 pub use types::*;
 pub use value::*;
+pub use verify::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Profile {
