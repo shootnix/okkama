@@ -85,6 +85,28 @@ pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
 /// one per register: classes up to 128 words keep frames of large functions
 /// on free lists instead of separate allocations.
 pub const CLASSES: [usize; 18] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128];
+/// Direct word-count lookup, generated from the same classes used by pages
+/// and inline JIT allocation. Construction fails at compile time if the
+/// canonical classes cease to be strictly increasing or their indices no
+/// longer fit in a byte.
+const SMALL_CLASS_LIMIT: usize = CLASSES[CLASSES.len() - 1];
+const CLASS_BY_WORDS: [u8; SMALL_CLASS_LIMIT + 1] = {
+    assert!(CLASSES.len() <= u8::MAX as usize + 1);
+    let mut table = [0; SMALL_CLASS_LIMIT + 1];
+    let mut class = 0;
+    let mut words = 0;
+    while class < CLASSES.len() {
+        assert!(CLASSES[class] >= 2);
+        assert!(class == 0 || CLASSES[class - 1] < CLASSES[class]);
+        while words <= CLASSES[class] {
+            table[words] = class as u8;
+            words += 1;
+        }
+        class += 1;
+    }
+    table
+};
+
 /// The words of a reclaimed cell under collector stress.
 const POISON: u64 = 0xdead_dead_dead_dead;
 /// Collections start once this much has been allocated, at least.
@@ -429,7 +451,12 @@ impl Heap {
 
     /// Size class of an object of `words` words, if it is not large.
     pub fn class_of(words: usize) -> Option<usize> {
-        CLASSES.iter().position(|&size| size >= words)
+        // Bound the original count before indexing; no rounding, addition
+        // or byte multiplication can overflow for even usize::MAX here.
+        if words > SMALL_CLASS_LIMIT {
+            return None;
+        }
+        Some(usize::from(CLASS_BY_WORDS[words]))
     }
 
     /// Address of the free-list head of a class, popped inline by machine code.
@@ -1652,6 +1679,107 @@ mod tests {
             objects: vec![vec![Repr::Ref, Repr::Int], vec![Repr::Ref, Repr::Ref]],
             closures: vec![vec![Repr::Ref, Repr::Int]],
             frames: vec![],
+        }
+    }
+
+    #[test]
+    fn gh09_class_mapping_matches_scan_exhaustively() {
+        let largest = *CLASSES.last().unwrap();
+        let old = |words| CLASSES.iter().position(|&size| size >= words);
+        for words in 0..=largest + 1 {
+            assert_eq!(Heap::class_of(words), old(words), "words={words}");
+        }
+        for size in CLASSES {
+            for words in [size - 1, size, size + 1] {
+                assert_eq!(Heap::class_of(words), old(words), "boundary words={words}");
+            }
+        }
+        // Query only: never try to allocate these requests. No rounding or
+        // byte multiplication may wrap a large request into a small class.
+        for words in [largest + 2, usize::MAX / 8, usize::MAX / 8 + 1, usize::MAX - 1, usize::MAX] {
+            assert_eq!(Heap::class_of(words), None, "large words={words}");
+        }
+    }
+
+    #[test]
+    fn gh09_all_classes_collect_and_reuse_bounded_cells() {
+        let mut heap = Heap::new(Layouts::default());
+        // Flat Raw arrays let us exercise every rounded size without object
+        // descriptors. Include zero length and the first large allocation.
+        let sizes: Vec<usize> = (1..=CLASSES[CLASSES.len() - 1] + 1).collect();
+        let mut roots = Vec::new();
+        for &words in &sizes {
+            let values = vec![0x1234; words - 1];
+            roots.push(heap.allocate_array(Repr::Raw, &values));
+        }
+        heap.collect(|visit| roots.iter().for_each(|&root| visit(root, Repr::Ref)));
+        for (&root, &words) in roots.iter().zip(&sizes) {
+            assert_eq!(&*heap.elements(root), &vec![0x1234; words - 1]);
+        }
+        assert_eq!(heap.stats().large, 1);
+        let pages = heap.stats().pages;
+        assert!(pages <= CLASSES.len());
+        heap.collect(|_| {});
+        assert_eq!(heap.stats().live_bytes, 0);
+        assert_eq!(heap.stats().large, 0);
+        roots.clear();
+        for &words in &sizes {
+            roots.push(heap.allocate_array(Repr::Raw, &vec![0x5678; words - 1]));
+        }
+        heap.collect(|visit| roots.iter().for_each(|&root| visit(root, Repr::Ref)));
+        assert_eq!(heap.stats().pages, pages, "reuse must not grow the heap");
+        for (&root, &words) in roots.iter().zip(&sizes) {
+            assert_eq!(&*heap.elements(root), &vec![0x5678; words - 1]);
+        }
+    }
+
+    /// Diagnostic only: Claude runs this explicitly in a bounded Docker
+    /// release/gate build. It is never part of ordinary test timing evidence.
+    #[test]
+    #[ignore = "isolated lookup benchmark; Docker only"]
+    fn gh09_class_lookup_benchmark() {
+        use std::hint::black_box;
+        use std::time::Instant;
+        fn scan(words: usize) -> Option<usize> {
+            CLASSES.iter().position(|&size| size >= words)
+        }
+        type Lookup = fn(usize) -> Option<usize>;
+        fn batch(lookup: Lookup, inputs: &[usize], n: usize) -> (u128, usize) {
+            let mut checksum = 0usize;
+            let start = Instant::now();
+            for i in 0..n {
+                let words = black_box(inputs[i % inputs.len()]);
+                checksum = checksum.wrapping_add(black_box(lookup(words)).map_or(0, |c| c + 1));
+            }
+            (start.elapsed().as_nanos(), black_box(checksum))
+        }
+        let n = std::env::var("GH09_LOOKUP_N").map_or(2_000_000, |s| s.parse::<usize>().expect("GH09_LOOKUP_N"));
+        assert!((1..=20_000_000).contains(&n), "bounded benchmark N");
+        let largest = CLASSES[CLASSES.len() - 1];
+        let uniform: Vec<_> = (0..=largest + 1).chain([usize::MAX]).collect();
+        let tiny = [0, 1, 2, 3, 4, 5, 6, 8];
+        let boundaries: Vec<_> = CLASSES.iter().flat_map(|&c| [c - 1, c, c + 1]).collect();
+        for (name, inputs) in [("uniform", &uniform[..]), ("tiny", &tiny[..]), ("boundaries", &boundaries[..])] {
+            // Independent expected checksum uses interval partitioning, not
+            // either measured implementation. No allocations in timed loops.
+            let expected: usize = (0..n).map(|i| {
+                let words = inputs[i % inputs.len()];
+                if words > largest { 0 } else { 1 + CLASSES.iter().filter(|&&c| c < words).count() }
+            }).sum();
+            let _ = batch(scan, inputs, n / 10 + 1);
+            let _ = batch(Heap::class_of, inputs, n / 10 + 1);
+            for sample in 0usize..7 {
+                let order: [(&str, Lookup); 2] = if sample.is_multiple_of(2) {
+                    [("scan", scan), ("table", Heap::class_of)]
+                } else {
+                    [("table", Heap::class_of), ("scan", scan)]
+                };
+                for (implementation, lookup) in order {
+                    let (ns, checksum) = batch(lookup, inputs, n);
+                    assert_eq!(checksum, expected);
+                    println!("gh09-lookup {name} {implementation} sample={sample} n={n} warmup={} elapsed_ns={ns} checksum={checksum}", n / 10 + 1);
+                }
+            }
         }
     }
 

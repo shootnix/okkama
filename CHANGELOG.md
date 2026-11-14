@@ -26,6 +26,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
     as Sparrow, numbered the same way, so one program can be compared across
     engines (#561).
 
+### Changed
+
+- **Sparrow region and allocation lookups (#543).** Cleanup scans borrow
+  region overflow entries once per uninterrupted scan, ending the borrow
+  before summary invalidation or destruction. Rust-side size-class selection
+  uses a constant table generated from the canonical classes. GC roots,
+  cleanup order and heap accounting are preserved; performance validation
+  remains pending the independent Docker A/B.
+
 ### Fixed
 
 - **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size
