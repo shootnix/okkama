@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """OCS adapter for the developing Rust implementation (okkama-rs).
 
-Protocol: ocs-adapter/1 (conformance/adapters/PROTOCOL.md).
+Protocol: ocs-adapter/2 (conformance/adapters/PROTOCOL.md).
 
 The Rust implementation is expected to grow a native protocol endpoint:
 
     okkama-rs --ocs-capabilities
-        -> prints {"protocol": "ocs-adapter/1", "modes": ["parse", ...]}
+        -> prints {"protocol": "ocs-adapter/2", "modes": ["parse", ...]}
     okkama-rs --ocs-request REQUEST.json --ocs-response RESPONSE.json
-        -> behaves exactly like an ocs-adapter/1 adapter for one request
+        -> behaves exactly like an ocs-adapter/2 adapter for one request
 
 This adapter builds the crate (into a cache directory, never into the
 implementation tree), asks the binary for its capabilities and forwards only
@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 
-PROTOCOL = "ocs-adapter/1"
+PROTOCOL = "ocs-adapter/2"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -164,7 +164,7 @@ def probe_uncached():
         ev["reason"] = None
     except Exception:
         ev["modes"] = []
-        ev["reason"] = ("binary does not implement the ocs-adapter/1 capability query "
+        ev["reason"] = ("binary does not implement the ocs-adapter/2 capability query "
                         "(`--ocs-capabilities` printed %r, exit %s); no parse/check/run/test contract is available"
                         % (out.strip()[:200], code))
     return ev

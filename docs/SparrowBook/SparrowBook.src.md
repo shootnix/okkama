@@ -4,7 +4,7 @@ Sparrow is the bytecode of Okkama: `okkama build --target sparrow` writes it,
 the Sparrow runtime (`sparrow`, `okkama exec`; its current version is Tomato) verifies it
 and runs it as machine code. This book teaches its text form, Sparrow assembly
 (`.spa`), well enough to read what the compiler produces and to write programs
-by hand. It describes SPB version 12, the format of Okkama 0.4.1.
+by hand. It describes SPB version 16, the format of Okkama 0.4.1.
 
 Every example lives in [examples/](examples/) and is assembled, checked and
 run as part of writing this book; the result shown after each one is what
@@ -68,7 +68,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 15                      ; format version
+sparrow 16                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases

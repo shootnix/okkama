@@ -1,4 +1,4 @@
-# Okkama Conformance Suite — Specification (suite format `ocs-case/1`, protocol `ocs-adapter/1`)
+# Okkama Conformance Suite — Specification (suite format `ocs-case/2`, protocol `ocs-adapter/2`)
 
 This document is normative for the suite itself: how cases are written, how an
 implementation is driven, how observations are judged and what a conformance
@@ -242,7 +242,7 @@ resources they create. A fixture that fails to start BLOCKS the case.
 
 ## 12. Coverage obligations
 
-`contracts/*.json` (schema `ocs-contracts/1`) inventory contracts with status
+`contracts/*.json` (schema `ocs-contracts/2`) inventory contracts with status
 `mandatory`, `unresolved`, `deferred` or `informative` and a requirement for
 each aspect (`required` or `n/a: <justification>`). Standard-library contracts
 are generated per module from a scan of `std/` (`tools/inventory_std.py`);

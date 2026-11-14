@@ -1,4 +1,4 @@
-# Adapter protocol `ocs-adapter/1`
+# Adapter protocol `ocs-adapter/2`
 
 An adapter is any executable that lets the runner drive one Okkama
 implementation. The runner is written in Python only as a portable baseline; an
@@ -7,12 +7,12 @@ into the runner.
 
 ## Configuration
 
-`adapters/<name>/adapter.json` (schema `ocs-adapter-config/1`):
+`adapters/<name>/adapter.json` (schema `ocs-adapter-config/2`):
 
 ```json
 {
-  "schema": "ocs-adapter-config/1",
-  "protocol": "ocs-adapter/1",
+  "schema": "ocs-adapter-config/2",
+  "protocol": "ocs-adapter/2",
   "name": "okkama-perl",
   "command": ["perl", "{adapter_dir}/okkama_perl_adapter.pl"],
   "env": {"OCS_PERL_IMPLEMENTATION_ROOT": "{suite_root}/../okkama-pl"},
@@ -55,7 +55,7 @@ For a case the runner starts the command with:
 
 ```json
 {
-  "protocol": "ocs-adapter/1",
+  "protocol": "ocs-adapter/2",
   "mode": "run",
   "sources": ["/tmp/ocs-x/work/main.ok", "/tmp/ocs-x/work/part.ok"],
   "args": ["alpha", ""],
@@ -72,7 +72,7 @@ file; several sources form one multi-file module.
 
 ```json
 {
-  "protocol": "ocs-adapter/1",
+  "protocol": "ocs-adapter/2",
   "adapter": {"name": "okkama-perl", "version": "1"},
   "mode": "run",
   "outcome": "failed",

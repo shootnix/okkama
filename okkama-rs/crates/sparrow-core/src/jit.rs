@@ -2702,7 +2702,7 @@ mod profile_tests {
         ]);
         crate::on_vm_thread(|| {
             let program = okkama_sparrow::assemble(
-                "sparrow 15\nmodule \"profile\" \"v1.0.0\"\ntype t0 int\n\
+                "sparrow 16\nmodule \"profile\" \"v1.0.0\"\ntype t0 int\n\
                  function f0 \"main\" {\n registers [t0]\n params []\n result t0\n\
                  0: const r0, int 7\n 1: ret r0\n}\nentry f0\n"
             ).unwrap();

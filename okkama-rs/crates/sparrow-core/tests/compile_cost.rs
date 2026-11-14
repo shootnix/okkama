@@ -31,7 +31,7 @@ fn chain(k: usize) -> Vec<u8> {
     code.push("ret r5".into());
     let body: String = code.iter().enumerate().map(|(pc, line)| format!(" {pc}: {line}\n")).collect();
     let text = format!(
-        "sparrow 15\nmodule \"cost\" \"v1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 float\n\
+        "sparrow 16\nmodule \"cost\" \"v1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 float\n\
          function f0 \"deep\" {{\n registers [{}]\n params [r0]\n result t0\n{body}}}\n\
          function f1 \"main\" {{\n registers [t0, t0]\n params []\n result t0\n 0: const r0, int 2\n 1: call r1, f0, [r0]\n 2: const r0, int 0\n 3: ret r0\n}}\nentry f1\n",
         registers.join(", ")

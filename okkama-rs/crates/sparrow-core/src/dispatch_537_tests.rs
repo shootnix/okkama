@@ -17,7 +17,7 @@ fn runtime(source: &str, plain: bool, stress: bool) -> Box<Runtime> {
 
 fn source(types: &str, registers: &str, params: &str, result: &str, code: &[String]) -> String {
     let body: String = code.iter().enumerate().map(|(pc, line)| format!(" {pc}: {line}\n")).collect();
-    format!("sparrow 15\nmodule \"dispatch-537\" \"1.0.0\"\n{types}\nfunction f0 \"main\" {{\n registers [{registers}]\n params [{params}]\n result {result}\n{body}}}\n")
+    format!("sparrow 16\nmodule \"dispatch-537\" \"1.0.0\"\n{types}\nfunction f0 \"main\" {{\n registers [{registers}]\n params [{params}]\n result {result}\n{body}}}\n")
 }
 
 fn event(runtime: &Runtime, name: &str) -> u64 {

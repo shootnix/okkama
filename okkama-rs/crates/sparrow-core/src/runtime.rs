@@ -963,7 +963,7 @@ mod embedding_tests {
     }
 
     fn bridge_runtime() -> Box<Runtime> {
-        let source = "sparrow 15\nmodule \"bridge\" \"1.0.0\"\ntype t0 int\n\
+        let source = "sparrow 16\nmodule \"bridge\" \"1.0.0\"\ntype t0 int\n\
             function f0 \"sync\" {\n registers [t0, t0]\n params [r0, r1]\n result t0\n 0: ret r0\n}\n\
             function f1 \"async\" async {\n registers [t0]\n params [r0]\n result t0\n 0: ret r0\n}\n";
         Box::new(Runtime::new(Loaded::new(okkama_sparrow::assemble(source).unwrap())).unwrap())

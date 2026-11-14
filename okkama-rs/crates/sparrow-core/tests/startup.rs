@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 fn main_program(body: &str) -> okkama_sparrow::Program {
     okkama_sparrow::assemble(&format!(
-        "sparrow 15\nmodule \"startup\" \"v1.0.0\"\ntype t0 int\n\
+        "sparrow 16\nmodule \"startup\" \"v1.0.0\"\ntype t0 int\n\
          function f0 \"main\" {{\n registers [t0]\n params []\n result t0\n{body}\n}}\nentry f0\n"
     )).unwrap()
 }

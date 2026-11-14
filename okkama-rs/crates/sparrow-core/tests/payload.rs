@@ -49,7 +49,7 @@ fn payload_436_jit_maps_builders_and_versions() {
     ];
     let body: String = code.iter().enumerate().map(|(pc, line)| format!(" {pc}: {line}\n")).collect();
     for asynchronous in ["", " async"] {
-        let source = format!(r#"sparrow 15
+        let source = format!(r#"sparrow 16
 module "payload-436" "1.0.0"
 type t0 int
 type t1 str
@@ -152,7 +152,7 @@ fn payload_436_persistent_map_versions_trace_shared_nodes() {
 
 #[test]
 fn payload_436_failure_causes_secondaries_and_cancellation() {
-    let program = okkama_sparrow::assemble("sparrow 15\nmodule \"failures\" \"1.0.0\"\ntype t0 int\nfunction f0 \"main\" {\n registers [t0]\n params []\n result t0\n 0: const r0, int 0\n 1: ret r0\n}\nentry f0\n").unwrap();
+    let program = okkama_sparrow::assemble("sparrow 16\nmodule \"failures\" \"1.0.0\"\ntype t0 int\nfunction f0 \"main\" {\n registers [t0]\n params []\n result t0\n 0: const r0, int 0\n 1: ret r0\n}\nentry f0\n").unwrap();
     let mut runtime = Runtime::new(Loaded::new(program)).unwrap();
     runtime.heap.set_stress(true);
     let thrown = runtime.heap.allocate_text("thrown value");

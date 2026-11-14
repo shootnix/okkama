@@ -272,7 +272,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     match sparrow_core::run_executable(
         bytes, arguments, core::worker_command(Path::new(path)), limits,
         sparrow_core::ExecutionOptions {
-            tests: Some(Box::new(okkama_runtime::stdout::Buffered)), trace, ..Default::default()
+            tests: Some(Box::new(okkama_runtime_core::stdout::Buffered)), trace, ..Default::default()
         },
     ) {
         Ok(sparrow_core::Execution::Tests(passed)) => Outcome {

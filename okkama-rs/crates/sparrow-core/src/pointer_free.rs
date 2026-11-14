@@ -204,7 +204,7 @@ mod tests {
     fn fixture(registers: &str, params: &str, handlers: &str, code: &[&str]) -> (Function, Vec<Kind>, Program) {
         let code: String = code.iter().enumerate().map(|(pc, text)| format!(" {pc}: {text}\n")).collect();
         let program = okkama_sparrow::assemble(&format!(
-            "sparrow 15\nmodule \"proof\" \"1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 str\ntype t3 failure\ntype t4 array t0\ntype t5 byte\ntype t6 char\ntype t7 float\ntype t8 rat\ntype t9 map t0 t0\n\
+            "sparrow 16\nmodule \"proof\" \"1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 str\ntype t3 failure\ntype t4 array t0\ntype t5 byte\ntype t6 char\ntype t7 float\ntype t8 rat\ntype t9 map t0 t0\n\
              function f0 \"proof\" {{\n registers [{registers}]\n params [{params}]\n result t0\n{handlers}{code}}}\n"
         )).unwrap();
         let function = program.functions[0].clone();
@@ -328,7 +328,7 @@ mod tests {
         }
         // bool -> int is not a legal SPB conversion. Never widen the numeric
         // contract just because the roadmap's candidate list mentions bool.
-        assert!(okkama_sparrow::assemble("sparrow 15\nmodule \"bad\" \"1\"\ntype t0 int\ntype t1 bool\nfunction f0 \"bad\" {\n registers [t0, t1]\n params [r1]\n result t0\n 0: cvt r0, r1\n 1: ret r0\n}\n").is_err());
+        assert!(okkama_sparrow::assemble("sparrow 16\nmodule \"bad\" \"1\"\ntype t0 int\ntype t1 bool\nfunction f0 \"bad\" {\n registers [t0, t1]\n params [r1]\n result t0\n 0: cvt r0, r1\n 1: ret r0\n}\n").is_err());
     }
 
     #[test]

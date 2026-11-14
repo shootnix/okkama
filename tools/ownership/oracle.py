@@ -391,7 +391,7 @@ def main():
             results.append(result)
             print(f'{result["status"]:16} {result["id"]}', flush=True)
     summary = summarize(results)
-    report = dict(schema=1, mode=args.mode, root=str(args.root), toolchain=str(args.toolchain),
+    report = dict(schema=2, mode=args.mode, root=str(args.root), toolchain=str(args.toolchain),
                   overrides={'A': dict(args.a_env), 'B': dict(args.b_env)},
                   settings=dict(jobs=args.jobs, timeout=args.timeout, build_timeout=args.build_timeout,
                                 pending=args.pending, program_args=args.program_arg),

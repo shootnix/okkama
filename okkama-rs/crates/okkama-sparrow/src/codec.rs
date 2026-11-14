@@ -16,7 +16,7 @@ pub const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
 /// expand into a large `Program` (each encoded element is at least a byte).
 pub const MAX_DECODED_BYTES: usize = 512 * 1024 * 1024;
 /// Версия формата. 14: `arr.replace` (#250), `arr.remove` (#251).
-pub const VERSION: u16 = 15;
+pub const VERSION: u16 = 16;
 const MAGIC: &[u8; 4] = b"SPRW";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
