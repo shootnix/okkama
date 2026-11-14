@@ -1,0 +1,65 @@
+// #581 owner decision: a Future owns its cached outcome; await only borrows it.
+// Book 20.2, 31.5; async/collect: settlement stream retains original future identities.
+module ownership v1.0.0;
+
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/collect" take FutureCompletions;
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(name is string, log is Atomic<string>) {
+        self.name = name;
+        self.log = log;
+    }
+
+    label() is string {
+        name;
+    }
+
+    destroy {
+        log.replace(log.value() + name);
+    }
+}
+
+object Work {
+    Work();
+    async make(name is string, log is Atomic<string>, gate is Event) is Res {
+        await gate.wait();
+        Res(name, log);
+    }
+}
+
+async main() is int {
+    let t = Tap(4);
+    let log = Atomic("");
+    defer log.close();
+    {
+        let firstGate = Event();
+        let secondGate = Event();
+        let a = Work().make("A", log, firstGate);
+        let b = Work().make("B", log, secondGate);
+        let origins is @Future<Res> = [a, b, a];
+        let stream is FutureCompletions<Res> = FutureCompletions(origins: origins);
+        firstGate.set();
+        let first = await stream.completion();
+        (await first).label();
+        t.note("completed future retains its resource result: " + log.value());
+        t = t.is(log.value(), "", "completed future retains its resource result");
+        let duplicate = await stream.completion();
+        (await duplicate).label();
+        t.note("duplicate position yields same identity without early cleanup: " + log.value());
+        t = t.is(log.value(), "", "duplicate position yields same identity without early cleanup");
+        secondGate.set();
+        let second = await stream.completion();
+        (await second).label();
+        t.note("stream keeps results alive until owning scope closes: " + log.value());
+        t = t.is(log.value(), "", "stream keeps results alive until owning scope closes");
+    }
+
+    t.note("completion stream destroys each result identity once: " + log.value());
+    t = t.is(log.value(), "BA", "completion stream destroys each result identity once");
+    t.done();
+}

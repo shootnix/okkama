@@ -1,4 +1,4 @@
-//! Shared arbitrary-precision integer arithmetic for IR and Sparrow.
+//! Exact integer arithmetic shared by Sparrow, natives and compiler constants.
 
 use crate::IntValue;
 

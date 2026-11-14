@@ -1561,7 +1561,7 @@ impl<'a> FunctionVerifier<'a> {
                     _ => Err("call.cap result does not match the cap field".to_string()),
                 };
             }
-            InstKind::Await(future) => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) => {
                 if !self.function.is_async() {
                     return Err("await is allowed only in async functions".to_string());
                 }

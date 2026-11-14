@@ -65,12 +65,6 @@ pub enum Intrinsic {
     TimeoutWithin,
     StreamRemaining,
     StreamCompletion,
-    FakeSet,
-    FakeGet,
-    FakeHas,
-    FakeRemove,
-    FakeClear,
-    FakeSize,
     TestOk,
     TestIs,
     TestIsnt,
@@ -150,12 +144,6 @@ impl Intrinsic {
             "okkama.timeout.Within.outcome" => TimeoutWithin,
             "okkama.collect.FutureCompletions.remaining_count" => StreamRemaining,
             "okkama.collect.FutureCompletions.completion" => StreamCompletion,
-            "okkama.fake.storage.set" => FakeSet,
-            "okkama.fake.storage.get" => FakeGet,
-            "okkama.fake.storage.has" => FakeHas,
-            "okkama.fake.storage.remove" => FakeRemove,
-            "okkama.fake.storage.clear" => FakeClear,
-            "okkama.fake.storage.size" => FakeSize,
             "okkama.test.ok" => TestOk,
             "okkama.test.is" => TestIs,
             "okkama.test.isnt" => TestIsnt,
@@ -506,6 +494,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
         }
         GroupNew => {
             let object = new(runtime, &[]);
+            runtime.created(related(runtime, function, 0) as usize, object);
             runtime.state_new(object, State::Group(primitives::Group::default()));
             Value(object, Repr::Ref)
         }
@@ -521,6 +510,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             if !known {
                 group.entries.push(future);
                 group.owned.push(false);
+                runtime.group_own(receiver, future);
             }
             runtime.spawn(ctx, future);
             VOID
@@ -556,7 +546,6 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             let remaining = (stream.entries.len() - stream.delivered) as i64;
             Value(runtime.heap.int(remaining), Repr::Int)
         }
-        FakeSet | FakeGet | FakeHas | FakeRemove | FakeClear | FakeSize => fake_storage(runtime, function, intrinsic, args),
         FloatFunction(name) => float_result(okkama_runtime_core::float::function(name, f64::from_bits(args[0]))),
         FloatAtan2 => float_result(okkama_runtime_core::float::atan2(f64::from_bits(args[0]), f64::from_bits(args[1]))),
         FloatMin => Value(okkama_runtime_core::float::min(f64::from_bits(args[0]), f64::from_bits(args[1])).to_bits(), Repr::Raw),
@@ -641,99 +630,6 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             program_failure("test skipped")
         }
         _ => Fatal(format!("intrinsic {intrinsic:?} is async")),
-    }
-}
-
-/// Per-fake storage of test fakes (`fake.storage.*`): typed values by key,
-/// owned by the fake object.
-type FakeMap = std::collections::BTreeMap<crate::ops::Key, (Word, Repr, Word, okkama_sparrow::TypeRef, Repr)>;
-
-fn fake_map(runtime: &mut Runtime, receiver: Word) -> Option<&mut FakeMap> {
-    match runtime.states.get_mut(&receiver) {
-        Some(State::FakeStorage(storage)) => Some(storage),
-        _ => None,
-    }
-}
-
-fn fake_storage(runtime: &mut Runtime, function: usize, intrinsic: Intrinsic, args: &[Word]) -> Outcome {
-    use Intrinsic::*;
-    let receiver = args[0];
-    let header = runtime.heap.header_of(receiver);
-    if crate::heap::kind(header) != crate::heap::OBJECT
-        || !runtime.loaded.program.objects[crate::heap::payload(header) as usize].name.ends_with("$fake")
-    {
-        return program_failure("fake storage requires a role fake");
-    }
-    match intrinsic {
-        FakeClear => {
-            if let Some(storage) = fake_map(runtime, receiver) {
-                storage.clear();
-            }
-            return VOID;
-        }
-        FakeSize => {
-            let size = fake_map(runtime, receiver).map_or(0, |s| s.len());
-            return Value(runtime.heap.int(size as i64), Repr::Int);
-        }
-        _ => {}
-    }
-    let (params, result) = {
-        let f = &runtime.loaded.program.functions[function];
-        (f.params.iter().map(|r| r.0 as usize).collect::<Vec<_>>(), f.result)
-    };
-    let registers = &runtime.loaded.program.functions[function].registers;
-    let key_type = registers[params[1]];
-    let key_kind = runtime.loaded.functions[function].kinds[params[1]];
-    let key_ty = runtime.loaded.program.ty(key_type);
-    let indexed = runtime.key(args[1], key_kind, key_ty);
-    if intrinsic == FakeSet {
-        let value_type = runtime.loaded.program.functions[function].registers[params[2]];
-        let repr = runtime.loaded.functions[function].kinds[params[2]].repr();
-        if fake_map(runtime, receiver).is_none() {
-            runtime.state_new(receiver, State::FakeStorage(Default::default()));
-        }
-        let entry = (args[1], key_kind.repr(), args[2], value_type, repr);
-        fake_map(runtime, receiver).expect("storage").insert(indexed, entry);
-        return VOID;
-    }
-    let found = fake_map(runtime, receiver).and_then(|s| s.get(&indexed)).copied();
-    if intrinsic == FakeHas {
-        return boolean(found.is_some());
-    }
-    let Some((_, _, value, stored, repr)) = found else {
-        let shown = show(runtime, args[1], key_type);
-        return program_failure(&format!("Fake storage has no key {shown}"));
-    };
-    if intrinsic == FakeRemove {
-        if let Some(storage) = fake_map(runtime, receiver) {
-            storage.remove(&indexed);
-        }
-        return VOID;
-    }
-    // get: the stored value under the requested type.
-    let expected = result.expect("fake get result");
-    let result_repr = runtime.loaded.functions[function].result.map_or(Repr::Raw, Kind::repr);
-    let program = &runtime.loaded.program;
-    if program.same_type(expected, stored) {
-        return Value(value, result_repr);
-    }
-    match program.ty(expected).cloned() {
-        Some(Type::Any) => {
-            let boxed = crate::ops::AnyBox { value, ty: stored, repr };
-            Value(runtime.heap.allocate_payload(Box::new(boxed)), Repr::Ref)
-        }
-        Some(Type::Role(role)) => {
-            let header = runtime.heap.header_of(value);
-            let does = repr == Repr::Ref
-                && crate::heap::kind(header) == crate::heap::OBJECT
-                && program.objects[crate::heap::payload(header) as usize].does.iter().any(|w| w.role == role);
-            if does {
-                Value(value, Repr::Ref)
-            } else {
-                program_failure("Fake storage value does not match the requested type")
-            }
-        }
-        _ => program_failure("Fake storage value does not match the requested type"),
     }
 }
 

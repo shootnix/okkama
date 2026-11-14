@@ -1,4 +1,4 @@
-// Book 20.2, 31.5: result transfer across suspension and repeated awaits.
+// Book 20.2, 31.5: Future-owned results across suspension and repeated awaits.
 module ownership v1.0.0;
 
 import "tap" take Tap;
@@ -33,7 +33,7 @@ object Work {
 }
 
 async main() is int {
-    let t = Tap(8);
+    let t = Tap(6);
     let log = Atomic("");
     defer log.close();
     {
@@ -54,31 +54,16 @@ async main() is int {
         t = t.is(log.value(), "L", "cached result aliases do not destroy result");
     }
 
-    t.note("awaiting scope destroys result once: " + log.value());
-    t = t.is(log.value(), "LR", "awaiting scope destroys result once");
+    t.note("Future owner destroys cached result once: " + log.value());
+    t = t.is(log.value(), "LR", "Future owner destroys cached result once");
     log.replace("");
     {
         await Work().make(log, Event(), Event(ready: true));
-        t.note("discarded awaited result gets lexical owner: " + log.value());
-        t = t.is(log.value(), "L", "discarded awaited result gets lexical owner");
+        t.note("temporary await takes discarded result into its scope: " + log.value());
+        t = t.is(log.value(), "L", "temporary await takes discarded result into its scope");
     }
 
-    t.note("discarded awaited result closes at scope exit: " + log.value());
-    t = t.is(log.value(), "LR", "discarded awaited result closes at scope exit");
-    log.replace("");
-    {
-        let outer = Res("O", log);
-        {
-            let before = Res("A", log);
-            await Work().make(log, Event(), Event(ready: true));
-            let after = Res("B", log);
-        }
-
-        t.note("discarded awaited result shares block cleanup order: " + log.value());
-        t = t.is(log.value(), "LBRA", "discarded awaited result shares block cleanup order");
-    }
-
-    t.note("outer cleanup does not destroy awaited result again: " + log.value());
-    t = t.is(log.value(), "LBRAO", "outer cleanup does not destroy awaited result again");
+    t.note("discarded taken result closes with awaiting scope: " + log.value());
+    t = t.is(log.value(), "LR", "discarded taken result closes with awaiting scope");
     t.done();
 }

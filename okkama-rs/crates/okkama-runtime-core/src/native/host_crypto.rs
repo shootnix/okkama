@@ -1,4 +1,4 @@
-//! `runtime/host_crypto`: криптография хоста для IR-интерпретатора и Sparrow —
+//! `runtime/host_crypto`: криптография хоста для native bridge Sparrow —
 //! тот же крейт `okkama-native` (RustCrypto), что JVM-рантайм вызывает через FFM.
 //! Коды отказов совпадают с JVM (`HostCryptoNatives`): `invalid_input`,
 //! `permission_denied` (проверка подлинности), `unsupported`, `unexpected`;
@@ -67,12 +67,8 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
                 .map(|part| bytes(part, arrays))
                 .collect::<Result<_, _>>()?;
             let slices: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
-            // A long operation (PBKDF2) stops for the run's interrupt flag
-            // (#238); the interpreter then reports the interruption.
-            let result = okkama_native::interruptible(crate::budget::interrupt_flag(), || {
-                okkama_native::call(&operation, &slices)
-            });
-            crate::budget::check_now().map_err(Error::Exhausted)?;
+            // Sparrow installs interruption around the native dispatch.
+            let result = okkama_native::call(&operation, &slices);
             Ok(byte_array(result.map_err(|error| failure(native, &error))?, arrays))
         }
         Native::DigestCreate => {

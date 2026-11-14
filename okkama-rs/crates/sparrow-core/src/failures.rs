@@ -24,6 +24,12 @@ enum Owner {
 struct Identity {
     serial: u64,
     owner: Owner,
+    /// Escaping a shared cache preserves a scope owner, never fresh call
+    /// admission. The next track installs that owner before a callee can adopt.
+    cache_rehomed: bool,
+    /// Additional group packets retaining this Future. Its lexical owner may
+    /// expire first; the last live owner drains the cache and retained inputs.
+    groups: Vec<Word>,
 }
 
 /// Explicit ownership of destroy-bearing objects; disabled without `destroy`.
@@ -137,6 +143,13 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
     let mut reachable = vec![false; parents.len()];
     let mut pending = Vec::new();
     let mut roles: HashMap<u32, Vec<usize>> = HashMap::default();
+    for function in &program.functions {
+        if let Some(intrinsic) = &function.intrinsic
+            && matches!(intrinsic.name.as_str(), "okkama.scope.FutureGroup.new" | "okkama.scope.FutureScope.outcome")
+        {
+            pending.push(offset + intrinsic.objects[0].0 as usize);
+        }
+    }
     for (index, ty) in program.types.iter().enumerate() {
         let child = match ty {
             Type::Object(id) | Type::Successor(id) => Some(offset + id.0 as usize),
@@ -207,9 +220,96 @@ impl Runtime {
         let resources = &mut self.resources;
         if resources.enabled && resources.flags[descriptor] {
             resources.serial += 1;
-            resources.identities.insert(object, Identity { serial: resources.serial, owner: Owner::Free });
+            resources.identities.insert(object, Identity { serial: resources.serial, owner: Owner::Free, cache_rehomed: false, groups: Vec::new() });
             self.heap.watch(object);
         }
+    }
+
+    /// A Future must be tracked even before its result exists.
+    pub(crate) fn future_created(&mut self, frame: Word) {
+        if self.resources.enabled {
+            self.resources.serial += 1;
+            self.resources.identities.insert(frame, Identity { serial: self.resources.serial, owner: Owner::Free, cache_rehomed: false, groups: Vec::new() });
+            self.heap.watch(frame);
+        }
+    }
+
+    /// Publication owns the outcome until cache cleanup or a proven unique take.
+    pub(crate) fn own_outcome(&mut self, frame: Word, success: bool, value: Word) {
+        if !self.resources.enabled {
+            return;
+        }
+        let roots = if success {
+            let repr = self.heap.layouts.frames[self.function_of(frame)][1];
+            repr.pointer(value).into_iter().collect()
+        } else {
+            self.failure_payloads(value)
+        };
+        if roots.is_empty() {
+            return;
+        }
+        let owned = self.heap.allocate_array(Repr::Ref, &[UNBOUND; 1 + REGION_SLOTS]);
+        crate::tasks::set(frame, crate::tasks::OWNED, owned);
+        for value in roots {
+            self.region_add(owned, value, true);
+        }
+    }
+
+    /// Group registration admits fresh Futures without taking external owners.
+    pub(crate) fn group_own(&mut self, group: Word, future: Word) {
+        if !self.resources.enabled { return; }
+        let owned = match self.group_mut(group).expect("group").resources {
+            Some(owned) => owned,
+            None => {
+                let owned = self.heap.allocate_array(Repr::Ref, &[UNBOUND; 1 + REGION_SLOTS]);
+                self.group_mut(group).expect("group").resources = Some(owned);
+                owned
+            }
+        };
+        let identity = self.resources.identities.get_mut(&future).expect("Future identity");
+        if !identity.groups.contains(&owned) { identity.groups.push(owned); }
+        self.region_push(owned, future);
+        // A fresh temporary has no lexical owner yet. Bound Futures keep
+        // theirs, and registration adds a lifetime rather than stealing it.
+        self.region_add(owned, future, true);
+    }
+
+    fn queue_private(&self, object: Word, groups: &mut Vec<Word>, futures: &mut Vec<Word>) {
+        if heap::kind(self.heap.header_of(object)) == heap::FRAME {
+            futures.push(object);
+        } else if matches!(self.states.get(&object), Some(crate::primitives::State::Group(_))) {
+            groups.push(object);
+        }
+    }
+
+    fn private_region(&self, object: Word) -> Option<Word> {
+        if heap::kind(self.heap.header_of(object)) == heap::FRAME {
+            let owned = crate::tasks::get(object, crate::tasks::OWNED);
+            (owned != UNBOUND).then_some(owned)
+        } else if let Some(crate::primitives::State::Group(group)) = self.states.get(&object) {
+            group.resources
+        } else { None }
+    }
+
+    /// Release only this cache's actual package. External borrows retain their
+    /// owners. No allocation, safepoint or user code occurs before region.track
+    /// admits the successfully delivered result in the caller.
+    pub(crate) fn take_outcome(&mut self, frame: Word) {
+        let owned = crate::tasks::get(frame, crate::tasks::OWNED);
+        if owned == UNBOUND {
+            return;
+        }
+        for index in 0..self.region_len(owned) {
+            let object = self.region_get(owned, index);
+            let identity = self.resources.identities.get_mut(&object).expect("identity");
+            if identity.owner == Owner::Region(owned) {
+                identity.owner = Owner::Free;
+                let serial = identity.serial;
+                self.freed(serial);
+            }
+        }
+        self.region_clear(owned);
+        crate::tasks::set(frame, crate::tasks::OWNED, UNBOUND);
     }
 
     /// Free or `via`-owned identities reachable from `roots`, oldest first.
@@ -298,11 +398,15 @@ impl Runtime {
             let base = pending.len();
             match heap::kind(header) {
                 heap::FRAME => {
-                    // Ownership follows retained inputs and the cached result,
-                    // not scheduler edges, local registers or region entries.
-                    // Frames (and containers reaching them) cannot be summarized:
-                    // completing a Future can add a newly created result.
+                    // The outcome has a private owner. Only retained inputs
+                    // follow the Future through lexical ownership transfers.
                     events += 1;
+                    let Some(identity) = self.resources.identities.get(&object) else { continue };
+                    if identity.owner == Owner::Free || Some(identity.owner) == via.map(Owner::Region) {
+                        found.push(object);
+                    }
+                    // Retained inputs keep the #578 transfer rules even when
+                    // the Future itself is already owned through another edge.
                     let function = heap::payload(header) as usize;
                     let source = &self.loaded.program.functions[function];
                     let layout = &self.heap.layouts.frames[function];
@@ -310,7 +414,6 @@ impl Runtime {
                     for index in (retained..layout.len()).rev() {
                         pending.push((self.heap.field(object, index), layout[index]));
                     }
-                    pending.push((crate::tasks::get(object, crate::tasks::RESULT), layout[1]));
                     continue;
                 }
                 heap::ARRAY => {
@@ -504,14 +607,14 @@ impl Runtime {
         }
     }
 
-    fn region_add(&mut self, region: Word, value: Word, own: bool) {
+    pub(crate) fn region_add(&mut self, region: Word, value: Word, own: bool) {
         if !self.may_reach_free(value) {
             return;
         }
         // The common add, a cursor or a constructor's result, is one free
         // identity whose fields reach no other: no walk.
         if let Some(object) = self.lone_free(value) {
-            if own {
+            if own || self.resources.identities[&object].cache_rehomed {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             } else if self.region_contains(region, object) {
                 return;
@@ -523,7 +626,7 @@ impl Runtime {
         // must still take ownership of tracked objects.
         let known = if own { None } else { Some(region) };
         for object in self.resource_graph_into(&[value], None, known) {
-            if own {
+            if own || self.resources.identities[&object].cache_rehomed {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             }
             self.region_push(region, object);
@@ -651,8 +754,60 @@ impl Runtime {
             self.region_clear(region);
             return Closed::Done(primary);
         }
-        let kept: HashSet<Word> =
+        let mut kept: HashSet<Word> =
             if keep.is_empty() { HashSet::default() } else { self.resource_graph(keep, Some(region)).into_iter().collect() };
+        // Groups add ownership edges, including to bound Futures. Drain
+        // dying groups first, withdrawing their edges before deciding which
+        // Futures die. The surviving group packets retain a Future when its
+        // lexical owner ends; the final owner releases its cache exactly once.
+        let (mut groups, mut futures) = (Vec::new(), Vec::new());
+        for index in 0..self.region_len(region) {
+            self.queue_private(self.region_get(region, index), &mut groups, &mut futures);
+        }
+        while let Some(object) = groups.pop().or_else(|| futures.pop()) {
+            if kept.contains(&object) || !self.resources.identities.get(&object)
+                .is_some_and(|identity| identity.owner == Owner::Free || identity.owner == Owner::Region(region))
+            {
+                continue;
+            }
+            let group = matches!(self.states.get(&object), Some(crate::primitives::State::Group(_)));
+            if !group
+                && let Some(&home) = self.resources.identities[&object].groups.first()
+            {
+                for child in self.resource_graph(&[object], Some(region)) {
+                    self.resources.identities.get_mut(&child).expect("identity").owner = Owner::Region(home);
+                    self.region_push(home, child);
+                }
+                continue;
+            }
+            self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Dead;
+            if let Some(owned) = self.private_region(object) {
+                for index in 0..self.region_len(owned) {
+                    let child = self.region_get(owned, index);
+                    let identity = self.resources.identities.get_mut(&child).expect("identity");
+                    if group { identity.groups.retain(|&packet| packet != owned); }
+                    if identity.owner == Owner::Region(owned) {
+                        identity.owner = Owner::Region(region);
+                        identity.cache_rehomed = true;
+                        self.region_push(region, child);
+                        self.queue_private(child, &mut groups, &mut futures);
+                    }
+                }
+                self.region_clear(owned);
+                if !keep.is_empty() {
+                    kept.extend(self.resource_graph(keep, Some(region)));
+                }
+            }
+        }
+        if !keep.is_empty() {
+            kept.extend(self.resource_graph(keep, Some(region)));
+        }
+        let mut entries: Vec<Word> = (0..self.region_len(region)).map(|i| self.region_get(region, i)).collect();
+        entries.sort_unstable_by_key(|object| self.serial_of(*object));
+        self.region_clear(region);
+        for object in entries {
+            self.region_push(region, object);
+        }
         // The region and the primary failure stay alive while destroys run.
         self.roots.push((region, Repr::Ref));
         let mut index = self.region_len(region);

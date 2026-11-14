@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Keep production dependency graphs of Sparrow and the IR runtime separate."""
+"""Keep Sparrow independent of the compiler and removed interpreter."""
 from pathlib import Path
 import subprocess
 
 manifest = Path(__file__).resolve().parents[1] / 'Cargo.toml'
 for package, forbidden in (
     # The core bridges natives to okkama-runtime-core, never to an interpreter.
-    # (corosensei comes with okkama-runtime-core's scheduler, which the core
-    # uses only for the promises of bridged natives.)
+    # Only native promises remain in the shared delivery scheduler.
     ('sparrow-core', {'okkama-compiler', 'okkama-runtime', 'sparrow-cli'}),
     ('sparrow-cli', {'okkama-compiler', 'okkama-runtime'}),
-    ('okkama-runtime', {'sparrow-core', 'sparrow-cli'}),
 ):
     result = subprocess.run(
         ['cargo', 'tree', '--offline', '--manifest-path', str(manifest),

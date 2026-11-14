@@ -23,7 +23,11 @@ okkama build test.ok --target sparrow -o out.spb
 sparrow out.spb
 ```
 
-`run` executes source with the Rust interpreter. `build` emits the selected
+`run` executes source on Sparrow (JIT) by default, including inline tests
+with `run -t`. Sparrow is the only Okkama engine (#584); the IR interpreter
+and its REPL were removed. `OKKAMA_ENGINE=sparrow|jvm` selects Sparrow or
+the legacy JVM backend, retained until #585.
+`build` emits the selected
 bytecode; the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
 version is called Tomato). `--backend` remains an alias
 for `--target`. `sparrow check out.spb` verifies without execution.
@@ -31,8 +35,8 @@ See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
 Every engine can bound a run, for untrusted programs or services: Sparrow
-(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
-engine (`okkama run`) and the JVM (`okkama run --engine jvm`). Every budget is
+(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`) and the legacy
+JVM backend (`okkama run --engine jvm`). Every budget is
 off by default and costs nothing then:
 
 ```sh
@@ -2352,9 +2356,9 @@ identity; it does not copy the object.
 
 An escaping action transfers ownership of captured local resources through the
 same rules as an object containing those resources. Unreferenced locals are
-not retained. A reference to `self`, or to the implicit receiver of
-`fake.storage`, retains that receiver. Access permissions from the declaring
-action remain in force even when the receiver is not captured.
+not retained. A reference to `self` or one of its fields or actions retains
+that receiver. Access permissions from the declaring action remain in force
+even when the receiver is not captured.
 
 Anonymous actions use ordinary lexical scope. A local binding becomes visible
 only after its initializer has been checked, so an anonymous action assigned to
@@ -2751,7 +2755,7 @@ that result. A valued `last resource;` transfers the reachable
 resource out of its loop; `last;` without a value keeps ordinary loop control.
 
 The runtime can omit ownership walks for a completed immutable object only when
-it has no destroy bodies, intrinsic state or fake storage, and every actual field
+it has no destroy bodies or intrinsic state, and every actual field
 is already proven resource-free. Its detached field table is frozen before that
 proof is retained. Declared types alone are insufficient. Futures, actions,
 capability-bearing fields and uncertified host objects keep conservative traversal.
@@ -3010,44 +3014,13 @@ role Package {
   shape, parameter types, return type) and may read fields and stage
   successor updates through `^field`.
 
-### 23.1 Hidden fake storage
+For mutable test-local values, use `Cell` from `cell`: `value()` reads the
+value and `replace(value)` updates it. Use `Atomic` from `async/atomic` for
+async code or state kept in object and fake fields; `Cell` cannot be stored in
+fields. A fake field such as `has calls is Atomic<int> = Atomic(0);` gives each
+construction its own state. Ordinary test objects use the same containers.
 
-Fake actions may also use a small mutable KV store for test scenarios where a
-double must remember calls or emulate a repository:
-
-```okkama
-role Books {
-    remember(id is int, title is string) is void;
-    title(id is int) is string;
-
-    fake {
-        remember(id is int, title is string) is void {
-            fake.storage.set(id, title);
-        }
-
-        title(id is int) is string {
-            fake.storage.get(id);
-        }
-    }
-}
-```
-
-The complete positional-only API is `set(key, value)`, `get(key)`,
-`has(key)`, `remove(key)`, `clear()`, and `size()`. Missing `get` and `remove`
-keys are programming errors—there is no null or optional result. Keys follow
-ordinary map-key restrictions; `any`, `byte`, and composite keys are invalid.
-Values may include objects and opaque `any`.
-
-This is a test-runtime intrinsic, not a mutable Okkama map. It is available
-only as a direct `fake.storage.<operation>(...)` call inside that fake's action
-bodies. It cannot be stored, returned, passed, exposed as `self.storage`, or
-observed through fields, equality, debug output, conformance, or nominal type.
-
-Each `Role.fake()` call creates an isolated storage identity. A fake and all
-of its successors share one identity, so repository state survives an
-ordinary `is ^Role` transition without copying the KV contents.
-
-### 23.2 Test blocks
+### 23.1 Test blocks
 
 Test blocks are declared at module, object, or role level:
 
@@ -3544,14 +3517,13 @@ target = "sparrow"         # sparrow | jvm
 output = "target/app.spb"  # default target/<name>.spb or .jar
 
 [run]
-engine = "sparrow"         # sparrow | ir | jvm; default: the build target
+engine = "sparrow"         # sparrow | jvm; default: the build target
 args = []                  # `blade run -- a b` appends a and b
 env = {}                   # extra environment variables
 ```
 
 `blade run` builds first when a `.ok` file, `blade.toml` or `blade.lock` is
-newer than the output, then runs the `.spb` (`okkama exec`), the sources on
-the IR interpreter (`okkama run --engine ir`, no build) or the JAR
+newer than the output, then runs the `.spb` (`okkama exec`) or the JAR
 (`java -jar`); the program's exit status is Blade's. Both commands refuse a
 project whose dependencies are not installed. Blade uses the `okkama` next to
 it, else the one on `PATH` (`BLADE_OKKAMA` names another).
@@ -4915,14 +4887,13 @@ settled result or failure leaves it unchanged. A worker cancelled before its
 process started never starts. Structured groups and root shutdown await that
 same completion. The kill is immediate (SIGKILL), so the worker's Okkama
 defers and `destroy` blocks do not run. A worker leads its own process group on
-Tomato and the IR engine, and the whole group is killed, so processes the
+Sparrow, and the whole group is killed, so processes the
 worker started go with it; the JVM, which has no process groups, kills the
 worker and the descendants it has at that moment (#359).
 
 The worker is the same program run again by the same engine: Tomato runs its
-`.spb` (one compiled in memory is written to a temporary file first), the IR
-engine its source files, multi-file programs included, and the JVM its
-classes. It gets an explicit working directory; source filenames are made
+`.spb` (one compiled in memory is written to a temporary file first), and
+the JVM its classes. It gets an explicit working directory; source filenames are made
 absolute in the parent before the worker changes directory, so relative CLI
 source paths work too. An embedder that runs programs which `spawn` must pass
 Tomato the worker command, and a `spawn` without one fails with

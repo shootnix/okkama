@@ -10,14 +10,11 @@
 #      останавливаются), тесты Rust всего workspace (профиль gate —
 #      оптимизации release без fat LTO, — и debug: глубина стека и
 #      debug-проверки видны только там), clippy без предупреждений;
-#   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
-#      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и на IR со
-#      сборкой циклов на каждом кандидате (OKKAMA_GC=stress);
-#   3. перечень std в conformance актуален (conformance/tools/inventory_std.py
-#      --check, #282); встроенные тесты всех модулей std на IR и Sparrow
-#      (tools/gate/std-tests.py);
-#   4. t/ — самопроверяющиеся программы на Okkama (tools/t/run.py, #245) на всех
-#      конфигурациях: IR, Sparrow, JVM, IR без проходов и IR со стресс-сборкой;
+#   2. conformance на Sparrow, JVM, Sparrow без IR-проходов
+#      (OKKAMA_IR_PASSES=none) и Sparrow со стресс-GC
+#      (SPARROW_CORE_GC_STRESS=1);
+#   3. актуальный перечень std в conformance; встроенные тесты std на Sparrow;
+#   4. t/ на sparrow, jvm, sparrow-passes-off, sparrow-gc-stress;
 #      TAP-потоки конфигураций обязаны совпадать.
 #
 # Статус каждого шага — код выхода его команды (ocs: 0 только если прошли все
@@ -163,17 +160,13 @@ conformance() {
 }
 
 step "conformance"
-conformance ir --adapter-env OCS_RUST_ENGINE=ir
-conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
 conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
-# Every engine runs the passed OIR: the IR suite again with the passes off
+conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
+# Sparrow also runs OIR with the passes off: a second configuration
 # shows a pass that changes meaning (#29).
 # Without the passes tail calls are real calls: L03.recursion.tail-constant-stack
 # makes 10^7 of them in the adapter's debug build, past its budget on CI.
-conformance ir-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_IR_PASSES=none
-# The IR cycle collector at every candidate: an edge it miscounts frees a
-# live value at once instead of thousands of candidates later (#43).
-conformance ir-gc-stress --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
+conformance sparrow-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env OKKAMA_IR_PASSES=none
 # Sparrow collects at every safepoint and poisons freed cells: a lost or
 # wrong root fails at once (#356; it found #355).
 conformance sparrow-gc-stress --timeout-scale 6 --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env SPARROW_CORE_GC_STRESS=1
@@ -203,7 +196,7 @@ fi
 
 step "t/ suite"
 started=$SECONDS
-if python3 "$ROOT/tools/t/run.py" --configs ir,sparrow,jvm,ir-passes-off,ir-gc-stress,sparrow-gc-stress --okkama "$OKKAMA" \
+if python3 "$ROOT/tools/t/run.py" --configs sparrow,jvm,sparrow-passes-off,sparrow-gc-stress --okkama "$OKKAMA" \
         | tee "$LOGS/t-suite.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
     record "t suite" pass $((SECONDS - started))
 else

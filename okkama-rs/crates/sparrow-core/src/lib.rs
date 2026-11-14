@@ -133,7 +133,7 @@ pub struct Uncaught {
     pub error_type: Option<String>,
     pub message: String,
     /// Function and instruction numbers; they are shared with OIR, so a
-    /// compiler can map them to source (`okkama_runtime::render_trace`).
+    /// compiler can map them to source (`okkama-cli/src/trace.rs`).
     pub trace: Vec<Site>,
 }
 

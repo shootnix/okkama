@@ -40,6 +40,8 @@ object Tasks {
         let first = await Square(7).run();
         let pending = spawn Square(8).run();
         let second = await pending;
+        // Repeated observation must keep a borrowed cache and reach await_.
+        confirm await pending == second;
         let idle = spawn Square(9).run();
         idle.cancel();
         first + second;

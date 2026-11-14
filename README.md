@@ -115,7 +115,7 @@ make install                      # into ~/.local; PREFIX=/opt/okkama make insta
 `okkama` finds the standard library and native libraries next to itself, so no
 environment variables are needed — `okkama env` shows what it found. The JVM
 engine additionally needs a JDK (22+ for the FFM natives: cryptography,
-SQLite, terminal, accounts, collation); the IR and Sparrow engines need nothing.
+SQLite, terminal, accounts, collation); Sparrow needs nothing.
 
 ## Quick start
 
@@ -138,7 +138,7 @@ main() is int {
 ```
 
 ```sh
-okkama hello.ok                   # run (IR interpreter)
+okkama hello.ok                   # run (Sparrow JIT)
 okkama -t hello.ok                # run the file's `test` blocks
 okkama fmt -w hello.ok            # format in place
 okkama lint hello.ok              # errors, warnings, lint findings
@@ -487,30 +487,32 @@ and `any`, and the class behind them cannot be named outside its module. What it
 deliberately does not do: an old immutable state stays valid, so "authorize
 twice" is a job for durable state and idempotency.
 
-## Three engines, one language
+## Sparrow
 
-The compiler lowers Okkama to one intermediate representation
-(OIR-1) and runs it on any of three engines with
-identical results — output, errors and exit status. The
-[conformance suite](conformance/) and an engine parity check over the tests of
-`std/` hold them to that.
+Sparrow is the only Okkama engine for source programs and inline tests
+(`okkama run -t`). The IR interpreter and its REPL were removed (#584);
+`--engine ir` and `OKKAMA_ENGINE=ir` report an error. The legacy JVM backend
+remains until #585.
+
+The compiler lowers Okkama to OIR, then generates Sparrow bytecode (SPB) or
+JVM classes. The [conformance suite](conformance/) checks output, errors and
+exit status against the same expectations.
 
 ```sh
-okkama hello.ok                              # IR interpreter (default), in-process
-okkama run --engine sparrow hello.ok         # Sparrow: whole-function Cranelift JIT
+okkama hello.ok                              # Sparrow JIT (default), in-process
 okkama run --engine jvm hello.ok             # JVM class files, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
 
-| | IR interpreter | Sparrow (JIT) | JVM |
-|---|---|---|---|
-| Start-up (`hello`) | 12 ms | **11 ms** | 53 ms |
-| `fib(32)`, 7 M calls | 1.29 s | **30 ms** | 188 ms |
-| Mandelbrot (float) | 0.55 s | **28 ms** | 147 ms |
-| 1 M successor steps | 0.93 s | **25 ms** | 131 ms |
-| 6-module application | 1.62 s | **96 ms** | 365 ms |
-| Peak memory, application | 10 MB | 13 MB | 259 MB |
-| Needs | nothing | nothing | JDK |
+| | Sparrow (JIT) | JVM |
+|---|---|---|
+| Start-up (`hello`) | **11 ms** | 53 ms |
+| `fib(32)`, 7 M calls | **30 ms** | 188 ms |
+| Mandelbrot (float) | **28 ms** | 147 ms |
+| 1 M successor steps | **25 ms** | 131 ms |
+| 6-module application | **96 ms** | 365 ms |
+| Peak memory, application | 13 MB | 259 MB |
+| Needs | nothing | JDK |
 
 Median of ten cold runs on an Apple M2 Max (0.5.6, release build, start-up
 included). Sparrow (its current version is called Tomato) compiles every function to
@@ -577,7 +579,7 @@ for each `vX.Y.Z` tag, which must match the version in `okkama-rs/Cargo.toml`.
 ```text
 okkama/
 ├── okkama-rs/        Rust implementation: compiler, JVM backend, Sparrow (Tomato),
-│                     IR interpreter, runtime and natives, LSP, fmt, lint, blade
+│                     Sparrow runtime and natives, LSP, fmt, lint, blade
 ├── std/              standard library
 ├── docs/             the Book (EN/RU) and the guide for LLM agents
 ├── conformance/      conformance suite (OCS) and its runner

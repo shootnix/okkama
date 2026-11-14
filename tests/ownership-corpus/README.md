@@ -11,22 +11,26 @@ failures, compile-negative fixtures and pending semantics must not enter it.
 
 ## Inventory and validation
 
-- Main directory: **96 programs, 433 TAP assertions** (36 handwritten programs
-  with 193 assertions, plus 60 generated programs with 240 assertions).
-- 94 main programs expect exit code 0 with all TAP assertions passing.
+- Main directory: **97 programs, 441 TAP assertions** (37 handwritten programs
+  with 201 assertions, plus 60 generated programs with 240 assertions).
+- 95 main programs expect exit code 0 with all TAP assertions passing.
 - Two main programs intentionally exit 1 after two passing cleanup assertions
   each: `panic-unwind.ok` and `secondary-failures.ok`.
-- `pending/`: three programs with 8 assertions tied to #579–#581. Discover
-  these separately; never treat them as ordinary passing oracle inputs.
+- No pending assertions remain. The initial #581 implementation restored the
+  eight checks from #579–#581 on both engines. Its temporary-await regression
+  is corrected on Sparrow by the follow-up described below; the retiring IR
+  engine still has borrow-only behavior.
 - `rejected/`: six compile-negative fixtures, not executable oracle inputs.
-- Across main and pending: 99 executable programs, 441 assertions. All
-  original assertions are retained exactly once; only the four incorrect
-  expectations listed below changed. #578 also adds four checks for running
+- All 441 assertions are in the main corpus. Original assertions are retained
+  exactly once; the four historical corrections below change expected values.
+  `channel-transfer` check 1 is restored to its original empty-log expectation
+  by unique temporary take. #578 adds
+  four checks for running
   an escaped Future, cached reuse, and cleanup at its owner’s exit.
 - Claude's original 0.5.8 IR/Sparrow results: 849 passing and 25 failing
   check executions (437 checks on each engine). Those saved results were
   inspected without running programs. Existing passing expectations remain
-  unchanged, including the three IR-only passes now isolated under #580.
+  unchanged except for the ownership decision recorded under #581 below.
 - Regeneration command: `python3 tests/ownership-corpus/gen.py`. All 60
   generated files reproduce byte for byte after the import-path migration;
   their only change from the old location is `../support/tap` → `tap`.
@@ -52,7 +56,7 @@ letters and `|` are explicit defer/handler/use markers. Async destroy uses
 
 ## Execution classes for the Docker oracle
 
-Use the 94 ordinary successful main programs as standard TAP inputs. Run
+Use the 95 ordinary successful main programs as standard TAP inputs. Run
 both `EXPECT-RUNTIME-FAIL` programs separately: require all cleanup assertions
 to pass and exit code **1** on both engines. Match stderr using these Python
 regular expressions (stack traces and source locations may differ):
@@ -82,26 +86,50 @@ Numbers below refer to checks in the original 97-program corpus.
 All four new expectations match both saved engine observations. Final cleanup
 expectations (`B`, `D`, `ACB`, `ED`) are unchanged.
 
-| Pending file | Original checks | Unchanged expectations | Status |
-| --- | --- | --- | --- |
-| [579-async-results.ok](pending/579-async-results.ok) | `async-results` 6 | `"LR"` | #579: discarded awaited result is never destroyed; both engines |
-| [580-all-futures.ok](pending/580-all-futures.ok) | `all-futures` 1–3 | `""`, `""`, `"BA"` | #580: Sparrow releases results early and in creation order; IR passes |
-| [581-future-completions.ok](pending/581-future-completions.ok) | `future-completions` 1–4 | `""`, `""`, `""`, `"BA"` | #581: open cached-outcome ownership semantics; expectations follow its proposal |
+#581 resolves cached-outcome ownership: a Future owns its outcome and ordinary
+`await` borrows it. The regression follow-up implements OIR-2 draft 3 §10 on
+Sparrow: directly awaited async calls and proven fresh plain factories use
+`await.take`. Fresh Future outcomes returned by async actions can also be taken.
+A whole-body use check rejects aliases, publication into storage/collections/
+closures/groups, repeated observations and CFG cycles that reuse a frame. An
+exclusive local binding can be extracted only at its original cleanup boundary;
+it gains no fresh call admission. Unknown projections and joins stay borrowed.
+Temporary take results are tracked once in the awaiting scope; external borrows
+keep their owners. Scope `keep` preserves the reachable part of dying local
+cache packages on escape, without consuming shared Futures. A returned nested
+Future keeps its private cache. Rehomed resources are adopted by the next scope
+track, so forwarding one through a call cannot shorten its cleanup boundary.
+The Book is not edited by this implementation.
 
-Each pending header names its ticket and quotes the relevant Book sentence.
-#581 is a proposal consistent with cached outcome reuse, not a settled Book
-rule about the owner across multiple consumers. Other pending expectations
-remain Book requirements despite runtime disagreement.
+| Restored checks | Expectations | Verification |
+| --- | --- | --- |
+| `async-results` 6 (#579) | `"LR"` | Awaiting-scope cleanup, including one `region.track` after `await.take` |
+| `all-futures` 1–3 (#580) | `""`, `""`, `"BA"` | Duplicate inputs, repeated collection, creation-order LIFO |
+| `future-completions` 1–4 (#581) | `""`, `""`, `""`, `"BA"` | Repeated Future identities and settlement requests |
 
-Main `cold-futures` now contains all six original checks plus four #578
-regressions; main `async-results` retains 1–5; main `all-futures` retains 4–6. Necessary setup is preserved or
-repeated in the pending fixture; passing assertions are not moved or removed.
-All of `future-completions` is pending, so there is no empty main file.
+The restored assertions keep their original expectations. `channel-transfer`
+check 1 changes from the initial #581 expectation `"R"` back to `""`: taking
+both the receive helper's temporary Future and its caller's temporary Future
+keeps the received resource alive through helper return. The fixture now reads
+its label at that checkpoint. Checks 2–6 are unchanged (`"R"`, `"R"`, `""`,
+`"ML"`, `"ML"`). `async-results` 5–6 change wording only: the discarded taken
+result lives until awaiting-scope cleanup (`"L"`, then `"LR"`). No assertion
+counts or other expected values change.
 
-Cooperative async actions are the only targets of `spawn`. Event handshakes,
-settled futures, and bounded/rendezvous channels make suspension and completion
-order explicit. There are no clocks, random Okkama inputs, network operations,
-filesystem operations, unbounded workloads, or process workers.
+Focused verification is in `sparrow-core/tests/future_outcomes.rs`, entirely
+in-process, including the real in-memory SQLite path and a socket-free model
+of WebApplication's listener returned inside a server. It covers temporary,
+bound-once, repeated, collection/group and collector awaits, borrowed inputs,
+suspension, async/throwing cleanup, fresh call admission and nested escapes.
+The follow-up covers the real prepared SQLite pool (including rollback and lease
+reuse), socket-free server/listener models, shared-cache escape, nested Future
+escape, and fresh argument admission. It also runs the two failing socket-free
+std modules `http/static` and `web/around` in-process (six inline tests).
+
+The network/signal cases and full conformance gate require the external runner.
+The gc-stress HARNESS_ERROR was `L11.sqlite.throughput-lifetime`, distinct from
+`L11.sqlite.prepared-pool-query`; its continuation-snapshot cause and the
+in-process reproductions are recorded in the follow-up below.
 
 ## Handwritten programs
 
@@ -136,16 +164,17 @@ order.
 | [bound-actions.ok](bound-actions.ok) | 5 | 18.5, 20.2: bound receiver lifetime, escaping method reference |
 | [caps.ok](caps.ok) | 4 | 16.3, 19, 20.2: caps retain hidden resources and original snapshot |
 | [roles-generics.ok](roles-generics.ok) | 5 | 22, 25, 20.2: role returns, generic wrappers, any transport |
-| [async-results.ok](async-results.ok) | 5 | 20.2, 31.5: result transfer across suspension and repeated awaits |
+| [async-results.ok](async-results.ok) | 6 | 20.2, 31.5: Future-owned results across suspension and repeated awaits |
 | [cold-futures.ok](cold-futures.ok) | 10 | 20.2, 31.5: lazy futures retain receiver and arguments before startup |
 | [spawn-cancellation.ok](spawn-cancellation.ok) | 5 | 15, 20.3, 31.5: cooperative spawn, cancellation waits for child cleanup |
 | [future-group.ok](future-group.ok) | 5 | 20.2–20.3, 31.5; async/scope: supervised resources and duplicate registration |
-| [all-futures.ok](all-futures.ok) | 3 | 20.2, 31.5; async/collect: empty collector and failure/cancellation cleanup; result graph in #580 |
+| [all-futures.ok](all-futures.ok) | 6 | 20.2, 31.5; async/collect: duplicate results, empty collector and failure/cancellation cleanup |
+| [future-completions.ok](future-completions.ok) | 4 | #581; 20.2, 31.5; async/collect: duplicate identities borrow Future-owned outcomes |
 | [raced.ok](raced.ok) | 4 | 20.2–20.3, 31.5; async/collect: loser cleanup precedes winner publication |
 | [channels.ok](channels.ok) | 8 | 20.2, 31.5.2; async/channel: message pins, unread messages, close and alias ownership |
 | [atomic-resources.ok](atomic-resources.ok) | 6 | 20.2; Book Shared infrastructure snapshots with Atomic: stored capabilities borrow |
 | [async-destroy.ok](async-destroy.ok) | 10 | 20.1.1, 20.3, 31.5: awaited LIFO destruction and shielded cancellation |
-| [channel-transfer.ok](channel-transfer.ok) | 6 | 20.2, 31.5–31.5.2: return message pins; cancel blocked send |
+| [channel-transfer.ok](channel-transfer.ok) | 6 | 20.2, 31.5–31.5.2: temporary await take survives helper return; cancel blocked send |
 | [panic-unwind.ok](panic-unwind.ok) | 2 | 14.2, 15, 20.1–20.3: panic unwind; cleanup allocation |
 | [secondary-failures.ok](secondary-failures.ok) | 2 | 14.2–14.4, 20.1–20.3: uncaught primary and secondary failures |
 
@@ -259,7 +288,8 @@ diagnostic cannot mask another.
 ## Semantic assumptions and interesting boundaries
 
 These expectations follow the Book and the rulings above. The saved runtime
-results corroborate the four corrections; open disagreements stay in pending/.
+results corroborate the four historical corrections; #581's focused regressions
+verify the new ownership decision.
 
 1. **Error payload contradiction.** Sections 14.3, 20.2 and 20.3 describe
    ownership transfer of resource-bearing Error payloads. Section 14.2
@@ -301,10 +331,12 @@ results corroborate the four corrections; open disagreements stay in pending/.
    child-extraction rule in 20.2; it does not assume field traversal order.
 
 7. **Channels and Atomic have different contracts.** Channel fresh messages
-   are pinned through delivery and the receiving scope; returning a received
-   value moves that pin. The expected received log R appears at the final
-   receiving scope's end, while unread U appears when all channel capabilities
-   finish. A cancelled rendezvous send expects ML: message input cleanup
+   are retained through delivery. The receiving Future owns its fresh outcome;
+   an immediate unique take transfers the received package through the helper.
+   `channel-transfer` expects an empty log while the returned resource is live,
+   then R at the consumer scope's exit. Shared cache views escaping a local
+   owner pass through the explicit scope `keep` boundary. Unread U appears when
+   all channel capabilities finish. A cancelled rendezvous send expects ML: message input cleanup
    before the sender's local. In contrast, the Book's “Shared infrastructure
    snapshots with Atomic” section explicitly says stored resources remain
    borrowed. `atomic-resources.ok` therefore expects an inner stored resource
@@ -349,6 +381,111 @@ results corroborate the four corrections; open disagreements stay in pending/.
   is 10; main/pending inventories are 433/8 assertions with matching plans.
 
 Whole-corpus execution in Docker remains assigned to Claude / oracle runner
-#562. #579–#580 and the semantics question #581 are outside this fix.
+#562. At that milestone, #579–#581 were outside the #578 fix.
 
-- #579 (merged): `async-results.ok` holds the awaited-result check again, plus two cleanup-order assertions; the counts above are refreshed with #581.
+## #581 Future-owned outcomes
+
+- [x] Give Futures ownership identities and private outcome regions on both
+  engines; await, track, adopt, keep and transfer of an outcome remain borrows.
+- [x] Preserve the #578 retained-input graph and escaping Future behavior,
+  including cold and completed collector Futures with fresh receivers.
+- [x] Drain dying Future outcomes into creation-order cleanup, including
+  duplicate inputs, nested Futures, async destroy and failing destroy.
+- [x] Keep the IR collector's cached Future owned by the collector, with GC edges.
+- [x] Restore #579–#581 checks and update the channel-return expectation and
+  ownership wording listed above; all 441 TAP assertions have matching plans.
+- [x] Verify 15 focused in-process cases on both engines and eight #578 cases.
+- [x] Verify three IR ownership unit cases, the #578 transfer unit case, a
+  cycle-collection regression, and three lowering tests (including all changed
+  corpus sources with stdlib).
+- [x] Pass `cargo check` and `cargo clippy --all-targets -- -D warnings` for
+  `okkama-compiler`, shared native support in `okkama-runtime-core` and `sparrow-core`,
+  always from `okkama-rs/` with `--offline -j 4`; pass `git diff --check`.
+
+The full corpus, Docker and benchmarks are not run under this task's machine
+restrictions. The Book remains unchanged; the final report proposes exact wording.
+
+
+## #581c remaining gate regressions
+
+- [x] Prove fresh Future results through plain factories and async outcome
+  factories; preserve the binding boundary for exclusive local extraction.
+- [x] Reject stored/captured/collected aliases, repeated observations and
+  cyclic reuse; verify these decisions in `lowering_ownership` (20/20).
+- [x] Preserve escaping views at `region.leave/settle keep`, including nested
+  caches and already tracked child frames. Preserve external owners and deny
+  fresh call admission to rehomed shared-cache resources.
+- [x] Pass the focused `sparrow-core --test future_outcomes` file (36/36),
+  including the prepared SQLite pool, rollback/reuse, six socket-free std
+  inline tests, the channel return and server/listener models.
+- [x] Pass the pool case with `OKKAMA_IR_PASSES=none` and
+  `SPARROW_CORE_GC_STRESS=1`; pass shared/nested cache escape under GC-stress.
+- [x] Correct both obsolete help expectations, delete the removed REPL test,
+  update the CLI channel/bound-result expectations, and pass
+  `okkama-cli --test cli help_and_version` (1/1).
+- [x] Pass workspace check and workspace clippy with all targets and denied
+  warnings; pass `git diff --check`. All Cargo commands run from `okkama-rs/`
+  with `--offline -j 4`.
+
+Full conformance, network inline tests and real signals tests were not executed
+under the requested restrictions. That checkpoint left those
+paths and the `sqlite.throughput-lifetime` harness error for the next gate;
+the follow-up below resolves the newly supplied failures. No formatter, Docker, standalone program/server run or commit was used.
+
+
+## #581c accepted connections and GC-stress gate follow-up
+
+The accepted connection was cached in `HttpServerPeer.waiting`. Its `run()`
+registers that Future in the local `connections` group before borrowing its
+result and waiting for dispatch. The group had scheduler/GC references, but no
+resource ownership edges: closing a registering helper or the peer's lexical
+scope could drain the Future's outcome and close the connection before a
+response. The same HTTP server path underlies the signal integration failures.
+
+Groups now have resource identities and private packets for registered Futures.
+A bound Future keeps its lexical owner and gains group owners; if that owner
+expires first, its retained input graph moves to a surviving group packet.
+Duplicate registration is idempotent, multiple groups share the lifetime, and
+only the final owner drains the cached outcome. Lowering's plain/async-destroy
+analyses, OIR region elision, runtime descriptor reachability and GC's group
+state visitor all include this hidden state. Internal FutureScope groups own
+children until settlement, then close their packet with shielded async cleanup,
+preserving the body result or primary failure for publication.
+
+The SQLite HARNESS_ERROR also reproduced in-process with a step budget and
+`SPARROW_CORE_GC_STRESS=1`. Temporary GC diagnostics caught a saved `main` frame
+referencing a reclaimed large array; without those diagnostics macOS reported
+allocator corruption/SIGTRAP. `suspend_unless_ready` copied every machine
+register into the traced heap frame, including dead registers whose pointers
+had already been reclaimed at an earlier safepoint. Suspension now saves live
+registers and clears dead ones, independently of the stack-map strategy. If
+liveness exceeds its analysis budget, pointer definitions keep the heap
+snapshot current instead. Temporary diagnostics were removed after isolating
+the defect. A minimal array/Event reproduction failed before the fix and passes
+after it; the full original SQLite case runs in-process with a step budget.
+
+- [x] Reproduce helper-return cleanup and accepted-connection dispatch without
+  sockets, then cover bound owners, duplicate/multiple registrations, retained
+  inputs, returned groups, async destroys and FutureScope failure/cancellation.
+- [x] Reach ordinary `await_` in the helper fixture with repeated observation;
+  unique lowering had converted all previous await sites into takes.
+- [x] Make the cold cached-result escape test observe the escaped Future again,
+  explicitly requiring a shared cache instead of assuming an unused Future
+  retains a result already extracted by its sole fresh await.
+- [x] Pass `sparrow-core --test future_outcomes` (49/49, including six socket-free
+  std inline tests) in debug and optimized `gate` profiles. Pass all 49 under
+  GC-stress in `gate`, also with `OKKAMA_IR_PASSES=none`. Pass 48/48 selected
+  cases (excluding the std inline runner) in debug GC-stress with
+  `SPARROW_CORE_FRONTEND_MAPS=*`.
+- [x] Pass `sparrow-core --test all_futures` (2/2), `--test compile_cost` (2/2),
+  compiler `--test lowering_ownership` (20/20), and CLI helpers (1/1), cold
+  Futures (8/8), Future outcomes (15/15), intrinsic contracts (2/2) in debug.
+  Helpers (1/1) and cold Futures (8/8) also pass in optimized `gate`.
+- [x] Pass workspace `check --all-targets`, workspace clippy with all targets
+  and denied warnings, and `git diff --check`.
+
+All Cargo commands use `--offline -j 4`. No network server/client, signal test,
+Docker, standalone program, full gate, benchmark, formatter or commit is run.
+The next external gate must verify the four network std modules and two real
+signal tests. The expected conformance result is 1035/1035 also under GC-stress;
+the known locale/collation failure is outside this change.

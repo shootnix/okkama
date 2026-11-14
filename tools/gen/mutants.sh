@@ -13,7 +13,6 @@ trap 'rm -rf "$WORK"' EXIT
 
 # name | file | text | defect
 MUTANTS=(
-    "ir|okkama-rs/crates/okkama-runtime-core/src/integer.rs|(IntValue::from_i64(q), IntValue::from_i64(rest))|(IntValue::from_i64(q), IntValue::from_i64(rest.abs()))"
     "sparrow|okkama-rs/crates/sparrow-core/src/runtime.rs|            &*l * &*r|            &*l * &*r + 1"
     "jvm|okkama-rs/crates/okkama-compiler/src/codegen/jvm/function.rs|IntBinaryOp::Sub => Some(\"subtract\"),|IntBinaryOp::Sub => Some(\"add\"),"
 )

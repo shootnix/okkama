@@ -2,7 +2,7 @@
 //!
 //! `--ocs-capabilities` reports supported modes for OCS_RUST_ENGINE.
 //! `--ocs-request R --ocs-response P` parses/checks the linked source and runs
-//! it with JVM (default, as `okkama run`), IR or serialized Sparrow bytecode.
+//! it with serialized Sparrow bytecode (default, as `okkama run`), or JVM.
 //! Unsupported operations never fall back to another engine. JVM failures
 //! are distinguished from application exit codes via OKKAMA_FAILURE_REPORT.
 
@@ -32,12 +32,13 @@ pub(super) fn capabilities() -> Outcome {
 }
 
 fn engine() -> Result<String, String> {
-    // Как `okkama run` и адаптер: IR по умолчанию, Sparrow и JVM — явно.
-    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "ir".into());
+    // Как `okkama run` и адаптер: Sparrow по умолчанию, JVM — явно.
+    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "sparrow".into());
     match engine.as_str() {
-        "ir" | "sparrow" | "jvm" => Ok(engine),
+        "sparrow" | "jvm" => Ok(engine),
+        "ir" => Err("the IR engine was removed (#584); Sparrow is the only Okkama engine; JVM remains a legacy backend until #585".into()),
         _ => Err(format!(
-            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow or jvm"
+            "unknown OCS_RUST_ENGINE `{engine}`; expected sparrow or jvm"
         )),
     }
 }
@@ -378,7 +379,7 @@ fn run(mode: &str, module: &okkama_compiler::ir::Module, request: &Json) -> Repl
         Err(message) => return Reply::internal(mode, message),
     };
     if engine != "jvm" {
-        return run_native(mode, module, request, &engine);
+        return run_native(mode, module, request);
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),
@@ -443,14 +444,12 @@ fn run(mode: &str, module: &okkama_compiler::ir::Module, request: &Json) -> Repl
     }
 }
 
-/// Execute native IR or serialized Sparrow bytecode, without a JVM fallback.
+/// Execute serialized Sparrow bytecode, without a JVM fallback.
 fn run_native(
     mode: &str,
     module: &okkama_compiler::ir::Module,
     request: &Json,
-    engine: &str,
 ) -> Reply {
-    use okkama_runtime::RuntimeError;
     let args: Vec<String> = request
         .get("args")
         .and_then(Json::as_array)
@@ -462,148 +461,43 @@ fn run_native(
                 .collect()
         })
         .unwrap_or_default();
-    {
-        let exe = std::env::current_exe()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| "okkama".into());
-        let mut command = vec![exe, "run".into()];
-        if let Some(root) = request.get("stdlib_root").and_then(Json::as_str) {
-            command.push("--stdlib".into());
-            command.push(root.to_string());
-        }
-        command.push("--engine".into());
-        command.push(engine.to_string());
-        if mode == "test" {
-            command.push("-t".into());
-        }
-        for source in request
-            .get("sources")
-            .and_then(Json::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Json::as_str)
-        {
-            let absolute = std::fs::canonicalize(source).unwrap_or_else(|_| source.into());
-            command.push(absolute.display().to_string());
-        }
-        if engine == "ir" { okkama_runtime::set_worker_command(command); }
-    }
     if let Some(cwd) = request.get("cwd").and_then(Json::as_str)
         && let Err(error) = std::env::set_current_dir(cwd) {
             return Reply::internal(mode, format!("cannot enter `{cwd}`: {error}"));
         }
-    let result = if engine == "ir" {
-        if mode == "test" {
-            // Отчёт тестов — в stdout процесса; код выхода 0 — все прошли.
-            let mut stdout = okkama_runtime::stdout::Buffered;
-            okkama_runtime::run_tests(module, &mut stdout)
-                .map(|passed| okkama_compiler::ir::IntValue::from_i64(i64::from(!passed)))
-        } else {
-            okkama_runtime::execute_with_arguments(module, args)
-        }
-    } else if engine == "sparrow" {
-        let program = match codegen::sparrow::generate(module) {
-            Ok(program) => program,
-            Err(error) => return Reply::unsupported(mode, "check", error.to_string()),
-        };
-        let bytes = match okkama_sparrow::encode(&program) {
-            Ok(bytes) => bytes,
-            Err(error) => return Reply::internal(mode, error.to_string()),
-        };
-        if mode == "test" {
-            // The report goes to stdout; exit status 0 when every test passed.
-            return match sparrow_core::run_tests(bytes, Box::new(okkama_runtime::stdout::Buffered)) {
-                Ok(passed) => {
-                    let mut reply = Reply::new(mode, "completed", "runtime");
-                    reply.exit_status = Some(u8::from(!passed));
-                    reply.process_exit = u8::from(!passed);
-                    reply
-                }
-                // A test run the program cannot make (no tests) fails at runtime.
-                Err(error) => {
-                    let mut reply = Reply::new(mode, "failed", "runtime");
-                    reply.stderr = format!("RuntimeError: {}\n", error.0);
-                    reply.failure = Some(Failure { stage: "runtime", category: "runtime", error_type: None, message: error.0 });
-                    reply.process_exit = 1;
-                    reply
-                }
-            };
-        }
-        let (command, _file) = match crate::core::workers_for(&program, &bytes) {
-            Ok(workers) => workers,
-            Err(message) => return Reply::internal(mode, message),
-        };
-        let arguments = args.iter().map(|a| a.clone().into_bytes()).collect();
-        return core_reply(mode, sparrow_core::run_reported(bytes, arguments, command));
-    } else {
-        unreachable!("run_native serves the ir and sparrow engines");
+    let program = match codegen::sparrow::generate(module) {
+        Ok(program) => program,
+        Err(error) => return Reply::unsupported(mode, "check", error.to_string()),
     };
-    let message = match result {
-        Ok(value) => match value.to_i64().and_then(|value| u8::try_from(value).ok()) {
-            Some(code) => {
-                let mut reply = Reply::new(mode, "completed", "runtime");
-                reply.exit_status = Some(code);
-                reply.process_exit = code;
-                return reply;
-            }
-            None => "main result must be in 0..255".to_string(),
-        },
-        Err(RuntimeError::Unsupported { message, .. }) => {
-            return Reply::unsupported(mode, "runtime", message);
-        }
-        Err(RuntimeError::Unwind { failure, .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("{failure}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: failure.category(),
-                error_type: match &failure.kind {
-                    okkama_runtime::FailureKind::Thrown { name, .. } => Some(name.clone()),
-                    okkama_runtime::FailureKind::Native(_) => Some("NativeFailure".into()),
-                    _ => None,
-                },
-                message: failure.message().into(),
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
-        Err(RuntimeError::Panic { message, .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("Panic: {message}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: "panic",
-                error_type: None,
-                message,
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
-        Err(RuntimeError::Trap { message, .. }) => message,
-        Err(RuntimeError::NativeFailure { failure, .. }) => {
-            let mut reply = Reply::new(mode, "failed", "runtime");
-            reply.stderr = format!("{failure}\n");
-            reply.failure = Some(Failure {
-                stage: "runtime",
-                category: "runtime",
-                error_type: Some("NativeFailure".into()),
-                message: failure.message,
-            });
-            reply.process_exit = 1;
-            return reply;
-        }
+    let bytes = match okkama_sparrow::encode(&program) {
+        Ok(bytes) => bytes,
         Err(error) => return Reply::internal(mode, error.to_string()),
     };
-    let mut reply = Reply::new(mode, "failed", "runtime");
-    reply.stderr = format!("RuntimeError: {message}\n");
-    reply.failure = Some(Failure {
-        stage: "runtime",
-        category: "runtime",
-        error_type: None,
-        message,
-    });
-    reply.process_exit = 1;
-    reply
+    if mode == "test" {
+        // The report goes to stdout; exit status 0 when every test passed.
+        return match sparrow_core::run_tests(bytes, Box::new(sparrow_core::stdout::Buffered)) {
+            Ok(passed) => {
+                let mut reply = Reply::new(mode, "completed", "runtime");
+                reply.exit_status = Some(u8::from(!passed));
+                reply.process_exit = u8::from(!passed);
+                reply
+            }
+            // A test run the program cannot make (no tests) fails at runtime.
+            Err(error) => {
+                let mut reply = Reply::new(mode, "failed", "runtime");
+                reply.stderr = format!("RuntimeError: {}\n", error.0);
+                reply.failure = Some(Failure { stage: "runtime", category: "runtime", error_type: None, message: error.0 });
+                reply.process_exit = 1;
+                reply
+            }
+        };
+    }
+    let (command, _file) = match crate::core::workers_for(&program, &bytes) {
+        Ok(workers) => workers,
+        Err(message) => return Reply::internal(mode, message),
+    };
+    let arguments = args.iter().map(|a| a.clone().into_bytes()).collect();
+    core_reply(mode, sparrow_core::run_reported(bytes, arguments, command))
 }
 
 /// The core's outcome at the OCS boundary (`sparrow_core::Uncaught`).

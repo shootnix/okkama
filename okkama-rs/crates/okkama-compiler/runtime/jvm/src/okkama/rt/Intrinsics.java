@@ -1095,48 +1095,6 @@ public final class Intrinsics {
         throw Tests.skip((String) reason);
     }
 
-    /** Хранилище экземпляра fake: ключи — значения рантайма. */
-    @SuppressWarnings("unchecked")
-    private static java.util.HashMap<Object, Object> storage(Object self) {
-        Obj object = (Obj) self;
-        if (!(object.intrinsic instanceof java.util.HashMap)) {
-            object.intrinsic = new java.util.HashMap<Object, Object>();
-        }
-        return (java.util.HashMap<Object, Object>) object.intrinsic;
-    }
-
-    public static void fake_storage_set(Object self, Object key, Object value) {
-        storage(self).put(key, value);
-    }
-
-    public static Object fake_storage_get(Object self, Object key) {
-        java.util.HashMap<Object, Object> entries = storage(self);
-        if (!entries.containsKey(key)) {
-            throw Rt.trap("Fake storage has no key " + Tests.show(key));
-        }
-        return entries.get(key);
-    }
-
-    public static Object fake_storage_has(Object self, Object key) {
-        return Boolean.valueOf(storage(self).containsKey(key));
-    }
-
-    public static void fake_storage_remove(Object self, Object key) {
-        java.util.HashMap<Object, Object> entries = storage(self);
-        if (!entries.containsKey(key)) {
-            throw Rt.trap("Fake storage has no key " + Tests.show(key));
-        }
-        entries.remove(key);
-    }
-
-    public static void fake_storage_clear(Object self) {
-        storage(self).clear();
-    }
-
-    public static Object fake_storage_size(Object self) {
-        return BigInteger.valueOf(storage(self).size());
-    }
-
     // ----- массивы -----
 
     /** {@code xs.ordering()}: устойчивая сортировка по {@code order()} элементов. */

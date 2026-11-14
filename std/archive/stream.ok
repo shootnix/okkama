@@ -13,6 +13,7 @@ module archive/stream v1.0.0;
 // ReadingArchive gives members until finished(); WritingArchive takes them and
 // then finish() writes the archive's end. Both are resources: close them.
 
+import "async/atomic" take Atomic;
 import "archive/entry" take ArchiveEntry;
 import "io/stream" take Closing;
 import "io/buffer" take ByteBuffer;
@@ -29,30 +30,35 @@ role ReadingArchive {
     // Whether it is closed.
     closed() is bool;
 
-    // One empty file, then observed EOF. Test storage is per fake instance.
+    // One empty file, then observed EOF. State is per fake instance.
     fake {
+        has stored_read is Atomic<bool> = Atomic(false);
+        has stored_finished is Atomic<bool> = Atomic(false);
+        has stored_closed is Atomic<bool> = Atomic(false);
+
         entry() is ArchiveEntry {
             confirm !self.closed() else throw InvalidState.because("archive reading is closed");
-            if fake.storage.has("read") {
-                fake.storage.set("finished", true);
+            if stored_read.value() {
+                stored_finished.replace(true);
                 throw EndOfArchive.reached;
             }
-            fake.storage.set("read", true);
+            stored_read.replace(true);
             ArchiveEntry.fake();
         }
 
         finished() is bool {
             confirm !self.closed() else throw InvalidState.because("archive reading is closed");
-            fake.storage.has("finished");
+            stored_finished.value();
         }
 
         close() is void {
-            fake.storage.clear();
-            fake.storage.set("closed", true);
+            stored_read.replace(false);
+            stored_finished.replace(false);
+            stored_closed.replace(true);
         }
 
         closed() is bool {
-            fake.storage.has("closed");
+            stored_closed.value();
         }
     }
 }
@@ -72,6 +78,9 @@ role WritingArchive {
 
     // Accepts values and records completion; it does not encode any format.
     fake {
+        has stored_finished is Atomic<bool> = Atomic(false);
+        has stored_closed is Atomic<bool> = Atomic(false);
+
         write(entry is ArchiveEntry) is void {
             confirm !self.finished()
                 else throw InvalidState.because("archive writing has finished");
@@ -80,21 +89,21 @@ role WritingArchive {
         finish() is void {
             confirm !self.finished()
                 else throw InvalidState.because("archive writing has finished");
-            fake.storage.set("finished", true);
+            stored_finished.replace(true);
         }
 
         finished() is bool {
             confirm !self.closed() else throw InvalidState.because("archive writing is closed");
-            fake.storage.has("finished");
+            stored_finished.value();
         }
 
         close() is void {
-            fake.storage.clear();
-            fake.storage.set("closed", true);
+            stored_finished.replace(false);
+            stored_closed.replace(true);
         }
 
         closed() is bool {
-            fake.storage.has("closed");
+            stored_closed.value();
         }
     }
 }

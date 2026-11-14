@@ -1,4 +1,4 @@
-// Book 20.2, 31.5–31.5.2: returned message pins and cancelled undelivered sends.
+// Book 20.2, 31.5–31.5.2: unique temporary await takes and cancelled undelivered sends.
 module ownership v1.0.0;
 
 import "tap" take Tap;
@@ -47,17 +47,17 @@ async main() is int {
         {
             let received = await Work().receive(channel);
             received.label();
-            t.note("returning received value transfers pin beyond helper: " + log.value());
-            t = t.is(log.value(), "", "returning received value transfers pin beyond helper");
+            t.note("temporary await takes the received resource through helper return: " + log.value());
+            t = t.is(log.value(), "", "temporary await takes the received resource through helper return");
         }
 
-        t.note("final receiving scope releases returned pin: " + log.value());
-        t = t.is(log.value(), "R", "final receiving scope releases returned pin");
+        t.note("caller scope destroys the taken resource once: " + log.value());
+        t = t.is(log.value(), "R", "caller scope destroys the taken resource once");
         channel.sending().close();
     }
 
-    t.note("returned message has no residual channel owner: " + log.value());
-    t = t.is(log.value(), "R", "returned message has no residual channel owner");
+    t.note("taken result has no residual channel owner: " + log.value());
+    t = t.is(log.value(), "R", "taken result has no residual channel owner");
     log.replace("");
     {
         let channel is Channel<Res> = Channel(capacity: 0);

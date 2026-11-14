@@ -191,6 +191,10 @@ impl FnBuilder {
     }
 
     pub(super) fn finish(self, params: &[ValueId]) -> Result<FinishedBody, String> {
+        self.finish_mapped(params).map(|(body, _)| body)
+    }
+
+    pub(super) fn finish_mapped(self, params: &[ValueId]) -> Result<(FinishedBody, Vec<ValueId>), String> {
         // Достижимые блоки в reverse postorder: вход первым, каждый блок после
         // своих предшественников по прямым рёбрам, ветви в порядке целей.
         let count = self.blocks.len();
@@ -283,6 +287,6 @@ impl FnBuilder {
             });
         }
         let params = params.iter().map(|param| value_map[param.0]).collect();
-        Ok((types, blocks, params))
+        Ok(((types, blocks, params), value_map))
     }
 }

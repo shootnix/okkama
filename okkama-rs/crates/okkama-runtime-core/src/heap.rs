@@ -1,13 +1,17 @@
-//! Составные значения, общие для исполнителей: объекты, массивы, словари и
-//! линейные сборщики. Значения — счётчики ссылок (`Rc`): недостижимое
-//! освобождается сразу, как сборщиком мусора JVM. Значения неизменяемы, и
-//! цикл ссылок замыкает только изменяемая часть — поле, связанное после ухода
-//! `self` (`obj.init`), состояние intrinsic, исход Future; такие циклы
-//! освобождает сборщик циклов [`crate::gc`]. Освобождение глубоких цепочек
-//! итеративно — стек Rust не растёт с глубиной данных.
-//!
-//! `ArrayHeap` и `ObjectHeap` не хранят состояния: это операции над значениями.
+//! Values used by the Sparrow native bridge and its providers.
+//! Deep value chains are released iteratively. Sparrow owns program lifetimes.
 use crate::{IntValue, Value, ValueError};
+
+// Collection caches distinguish scalar payloads from graphs with identities.
+fn compound(value: &Value) -> bool {
+    match value {
+        Value::Array(array) => array.holds_nodes(),
+        Value::Map(map) => map.holds_nodes(),
+        Value::Object(_) | Value::Fn(_) | Value::Any(_) | Value::Future(_)
+        | Value::Failure(_) | Value::Builder(_) | Value::MapBuilder(_) => true,
+        _ => false,
+    }
+}
 
 /// Размер тестовой структуры: Miri проходит те же пути примерно в тысячу раз
 /// медленнее и получает тысячную часть узлов (#43). Размер стека он не
@@ -16,7 +20,6 @@ use crate::{IntValue, Value, ValueError};
 pub(crate) const fn scaled(n: usize) -> usize {
     if cfg!(miri) { n / 1000 } else { n }
 }
-use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -24,14 +27,13 @@ use std::rc::Rc;
 
 /// Объект: номер объявления и поля. Поле, чей `self` ушёл значением до конца
 /// конструктора, связывается позже ровно один раз (`obj.init`, §11.3).
-/// `serial` — порядок создания, `owner` — регион-владелец (OIR-1 §7).
 #[derive(Debug)]
 pub struct Object {
     pub declaration: usize,
     /// Поля конструктора; несвязанное — `Undef` до `obj.init`.
     fields: Vec<Value>,
+    /// Stable identity for shared diagnostic messages.
     pub serial: u64,
-    owner: Cell<u64>,
     /// Изменяемая часть; у большинства объектов её нет.
     extra: RefCell<Option<Box<Extra>>>,
 }
@@ -42,68 +44,31 @@ pub struct Object {
 pub(crate) struct Extra {
     /// Поля, связанные `obj.init`: (номер поля, значение).
     pub(crate) late: Vec<(usize, Value)>,
-    /// Значения слотов `once let` (#491): (номер поля, `Maybe.some`). Поле
-    /// объекта остаётся `none`, поэтому `==`, хэш и Dumper их не видят.
-    pub(crate) once: Vec<(usize, Value)>,
-    /// Состояние рантайма объекта std с intrinsic-действиями (канал, Event, …).
-    pub(crate) intrinsic: Option<Rc<dyn Any>>,
 }
 
 /// Объявление системного `Cancelled`: его объекты создаёт только рантайм,
 /// исполнитель сопоставляет их объявлению `Cancelled` модуля.
 pub const CANCELLED: usize = usize::MAX;
 
-/// Владелец объекта: свободен, регион с номером или уже уничтожен.
-const FREE: u64 = 0;
-const DEAD: u64 = u64::MAX;
-
-#[cfg(feature = "no-regions-bench")]
-fn regions_disabled() -> bool {
-    thread_local! {
-        static DISABLED: bool = std::env::var("OKKAMA_NO_REGIONS_BENCH").as_deref() == Ok("1");
-    }
-    DISABLED.with(|disabled| *disabled)
-}
-
-#[cfg(feature = "region-walk-stats")]
-mod walk_stats {
-    use std::cell::Cell;
-    struct Stats(Cell<[u64; 9]>);
-    impl Drop for Stats {
-        fn drop(&mut self) {
-            eprintln!("region_walk_stats {:?}", self.0.get());
-        }
-    }
-    thread_local! { static STATS: Stats = const { Stats(Cell::new([0; 9])) }; }
-    // register, transfer, keep roots, collect calls, values popped,
-    // object encounters, owner rejected, duplicate rejected, accepted objects.
-    pub fn add(delta: [u64; 9]) {
-        STATS.with(|stats| {
-            let mut totals = stats.0.get();
-            for (total, increment) in totals.iter_mut().zip(delta) { *total += increment; }
-            stats.0.set(totals);
-        });
-    }
-}
-
 thread_local! {
     static CREATED: Cell<u64> = const { Cell::new(0) };
-    static REGIONS: Cell<u64> = const { Cell::new(0) };
+}
+
+fn next_serial() -> u64 {
+    CREATED.with(|created| {
+        created.set(created.get() + 1);
+        created.get()
+    })
 }
 
 impl Object {
     pub fn new(declaration: usize, fields: Vec<Value>) -> Self {
-        let serial = CREATED.with(|created| {
-            created.set(created.get() + 1);
-            created.get()
-        });
         #[cfg(test)]
         LIVE_OBJECTS.with(|live| live.set(live.get() + 1));
         Self {
             declaration,
             fields,
-            serial,
-            owner: Cell::new(FREE),
+            serial: next_serial(),
             extra: RefCell::new(None),
         }
     }
@@ -134,21 +99,6 @@ impl Object {
             .collect()
     }
 
-    /// Запомненное значение слота `once let` (#491), если оно уже есть.
-    pub fn once(&self, index: usize) -> Option<Value> {
-        let extra = self.extra.borrow();
-        let (_, value) = extra.as_ref()?.once.iter().find(|(field, _)| *field == index)?;
-        Some(value.clone())
-    }
-
-    /// Запомнить значение слота `once let` (#491); поля объекта не меняются.
-    pub fn once_store(&self, index: usize, value: Value) {
-        let mut extra = self.extra.borrow_mut();
-        let once = &mut extra.get_or_insert_default().once;
-        once.retain(|(field, _)| *field != index);
-        once.push((index, value));
-    }
-
     /// `obj.init`: связать поле после ухода `self`.
     pub fn init(&self, index: usize, value: Value) -> Result<(), ValueError> {
         if !matches!(
@@ -164,34 +114,12 @@ impl Object {
         Ok(())
     }
 
-    /// Состояние intrinsic объекта.
-    pub fn intrinsic(&self) -> Option<Rc<dyn Any>> {
-        self.extra.borrow().as_ref()?.intrinsic.clone()
-    }
-
-    /// Связать состояние intrinsic (объект становится кандидатом сборщика циклов).
-    pub fn set_intrinsic(self: &Rc<Self>, state: Rc<dyn Any>) {
-        self.extra.borrow_mut().get_or_insert_default().intrinsic = Some(state);
-        crate::gc::track_object(self);
-    }
-
-    /// Изменяемая часть для обхода сборщиком циклов.
-    pub(crate) fn extra(&self) -> &RefCell<Option<Box<Extra>>> {
-        &self.extra
-    }
-
-    /// Поля конструктора (несвязанные — `Undef`).
-    pub(crate) fn fixed(&self) -> &[Value] {
-        &self.fields
-    }
-
     /// Поля, освобождение которых уходит в глубину, — в `pending` для
     /// итеративного освобождения; остальные освобождаются вместе с объектом.
     fn drain(&mut self, pending: &mut Vec<Value>) {
         take_deep(&mut self.fields, pending);
         if let Some(extra) = self.extra.get_mut().take() {
             pending.extend(extra.late.into_iter().map(|(_, value)| value));
-            pending.extend(extra.once.into_iter().map(|(_, value)| value));
         }
     }
 }
@@ -278,27 +206,10 @@ impl Drop for Buffer {
 }
 
 impl Buffer {
-    /// Записанные значения: рёбра узла для сборщика циклов.
-    pub(crate) fn written(&self) -> Option<std::cell::Ref<'_, [Value]>> {
-        let slots = self.slots.try_borrow().ok()?;
-        let front = self.front.get();
-        Some(std::cell::Ref::map(slots, |slots| &slots[front..]))
-    }
-
-    /// Отдать записанные значения мусорного буфера.
-    pub(crate) fn clear(&self, sink: &mut Vec<Value>) {
-        if let Ok(mut slots) = self.slots.try_borrow_mut() {
-            let front = self.front.get();
-            sink.extend(slots[front..].iter_mut().map(|slot| std::mem::replace(slot, Value::Undef)));
-        }
-    }
-
-    /// Конец записанного: граница добавлений в конец.
     fn back(&self) -> usize {
         self.slots.borrow().len()
     }
 
-    /// Буфер на `capacity` значений с `parts` подряд начиная со слота `front`.
     fn new(parts: &[&[Value]], capacity: usize, front: usize, plain: Option<bool>) -> Rc<Buffer> {
         let mut slots = Vec::with_capacity(capacity);
         slots.resize(front, Value::Undef);
@@ -312,7 +223,7 @@ impl Buffer {
         if let Some(plain) = self.plain.get() {
             return plain;
         }
-        let plain = self.slots.borrow()[self.front.get()..].iter().all(|value| !crate::gc::traced(value));
+        let plain = self.slots.borrow()[self.front.get()..].iter().all(|value| !compound(value));
         self.plain.set(Some(plain));
         plain
     }
@@ -340,9 +251,8 @@ impl Buffer {
         drop(slots);
         // Новое ребро старого буфера может замкнуть цикл через версию,
         // записанную в него; простые значения цикла не замкнут.
-        if items.iter().any(crate::gc::traced) {
+        if items.iter().any(compound) {
             self.plain.set(Some(false));
-            crate::gc::track_buffer(self);
         }
         true
     }
@@ -400,7 +310,7 @@ impl Array {
                 if let Some(plain) = self.1.0.get() {
                     return plain;
                 }
-                let plain = items.iter().all(|value| !crate::gc::traced(value));
+                let plain = items.iter().all(|value| !compound(value));
                 self.1.0.set(Some(plain));
                 plain
             }
@@ -423,7 +333,7 @@ impl Array {
     /// trie (#250), which copies one path per replacement: the first copy
     /// is marked, the next replacement starts the trie.
     pub fn replaced(&self, at: usize, value: Value) -> Value {
-        let plain = self.plain() && !crate::gc::traced(&value);
+        let plain = self.plain() && !compound(&value);
         let tries = shared_arrays() && plain && self.len() >= TRIE_MIN;
         if tries && let Repr::Trie { trie, .. } = &self.0 {
             let trie = trie.set(at, value).expect("index in bounds");
@@ -500,12 +410,13 @@ impl Array {
 
     /// Что ещё держит массив, кроме своих элементов: буфер версии или
     /// источник среза (рёбра узла для сборщика циклов).
+    #[cfg(test)]
     pub(crate) fn storage(&self) -> Storage<'_> {
         match &self.0 {
-            Repr::Flat { items, .. } => Storage::Items(items),
+            Repr::Flat { .. } => Storage::Items,
             Repr::View { buffer, .. } => Storage::Buffer(buffer),
             Repr::Slice { origin, .. } => Storage::Origin(origin),
-            Repr::Trie { .. } => Storage::Items(&[]),
+            Repr::Trie { .. } => Storage::Items,
         }
     }
 
@@ -515,8 +426,9 @@ impl Array {
     }
 }
 
+#[cfg(test)]
 pub(crate) enum Storage<'a> {
-    Items(&'a [Value]),
+    Items,
     Buffer(&'a Rc<Buffer>),
     Origin(&'a Rc<Array>),
 }
@@ -737,11 +649,6 @@ impl Map {
         MapEntries(self.0.borrow())
     }
 
-    /// Записи для сборщика циклов: `None`, если их сейчас читают на запись.
-    pub(crate) fn try_entries(&self) -> Option<MapEntries<'_>> {
-        self.0.try_borrow().ok().map(MapEntries)
-    }
-
     pub fn get(&self, key: &MapKey) -> Option<Value> {
         match &*self.0.borrow() {
             Entries::Tree(map) => map.get(key).cloned(),
@@ -758,7 +665,7 @@ impl Map {
         let plain = self
             .entries()
             .iter()
-            .all(|(key, value)| !matches!(key, MapKey::Object { .. }) && !crate::gc::traced(value));
+            .all(|(key, value)| !matches!(key, MapKey::Object { .. }) && !compound(value));
         self.1.0.set(Some(plain));
         plain
     }
@@ -1036,10 +943,6 @@ fn release_entries(entries: Entries, pending: &mut Vec<Value>) {
 }
 
 /// Освободить значения итеративно (сборщик циклов отдаёт разорванные рёбра).
-pub(crate) fn release_values(pending: Vec<Value>) {
-    release_all(pending);
-}
-
 fn release_all(mut pending: Vec<Value>) {
     while let Some(value) = pending.pop() {
         release(value, &mut pending);
@@ -1445,27 +1348,7 @@ impl ObjectHeap {
             Value::Object(object) => object,
             _ => return Err(invalid("expected object value")),
         };
-        let cyclic = crate::gc::traced(&bound);
         object.init(field, bound)?;
-        // Поздняя ссылка может замкнуть цикл через уже ушедший `self`.
-        if cyclic {
-            crate::gc::track_object(object);
-        }
-        Ok(())
-    }
-
-    /// `once.store` (#491): запомнить значение слота объекта `value`.
-    pub fn once_store(&self, value: &Value, field: usize, bound: Value) -> Result<(), ValueError> {
-        let object = match value {
-            Value::Object(object) => object,
-            _ => return Err(invalid("expected object value")),
-        };
-        let cyclic = crate::gc::traced(&bound);
-        object.once_store(field, bound);
-        // Запомненное значение может замкнуть цикл на сам объект.
-        if cyclic {
-            crate::gc::track_object(object);
-        }
         Ok(())
     }
 
@@ -1491,21 +1374,18 @@ impl ObjectHeap {
     /// при единственной ссылке, без слабых ссылок сборщика, поздних полей и
     /// региона-владельца объект обновляется на месте — без выделения и копии
     /// неизменённых полей. Наблюдаемо это неотличимо от копии: старое значение
-    /// больше никто не видит; новая идентичность получает новый `serial`.
+    /// больше никто не видит.
     /// Поля объекта для обновления на месте, если ссылка `value` единственная
-    /// (условия `successor_owned`); новая идентичность получает новый `serial`.
+    /// (условия `successor_owned`).
     pub fn unique_fields<'a>(&self, value: &'a mut Value) -> Option<&'a mut [Value]> {
         let Value::Object(object) = value else {
             return None;
         };
         let inner = Rc::get_mut(object)?;
-        if inner.extra.get_mut().is_some() || inner.owner.get() != FREE {
+        if inner.extra.get_mut().is_some() {
             return None;
         }
-        inner.serial = CREATED.with(|created| {
-            created.set(created.get() + 1);
-            created.get()
-        });
+        inner.serial = next_serial();
         Some(&mut inner.fields)
     }
 
@@ -1515,445 +1395,15 @@ impl ObjectHeap {
         };
         if let Some(inner) = Rc::get_mut(&mut object)
             && inner.extra.get_mut().is_none()
-            && inner.owner.get() == FREE
             && updates.iter().all(|(field, _)| *field < inner.fields.len())
         {
             for (field, value) in updates {
                 inner.fields[field] = value;
             }
-            inner.serial = CREATED.with(|created| {
-                created.set(created.get() + 1);
-                created.get()
-            });
+            inner.serial = next_serial();
             return Ok(Value::Object(object));
         }
         self.successor(&Value::Object(object), updates)
-    }
-}
-
-/// Регион владения лексической области (OIR-1 §7), как `okkama.rt.Region`:
-/// идентичности регистрируются партиями в порядке создания; закрытие
-/// уничтожает их в обратном порядке регистрации, каждую не более одного раза.
-#[derive(Debug)]
-pub struct Region {
-    id: u64,
-    entries: RefCell<Vec<Rc<Object>>>,
-    known: RefCell<std::collections::HashSet<*const Object>>,
-    /// Самый старый `serial` среди `entries` (`u64::MAX` — записей нет).
-    oldest: Cell<u64>,
-}
-
-impl Default for Region {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Значение без идентичностей: обходить нечего.
-fn plain(value: &Value) -> bool {
-    !matches!(
-        value,
-        Value::Object(_)
-            | Value::Array(_)
-            | Value::Map(_)
-            | Value::Any(_)
-            | Value::Fn(_)
-            | Value::Future(_)
-    )
-}
-
-// Reuse only empty work buffers, never Values or object identities. Take the
-// slot for the duration of a walk so nested/reentrant walks get independent state.
-#[derive(Default)]
-struct WalkScratch {
-    seen: std::collections::HashSet<*const Object>,
-    pending: Vec<Value>,
-    open: Vec<Walked>,
-}
-
-/// Контейнер, элементы которого обходит `collect`: его поддерево пройдено,
-/// когда `pending` вернулся к `base`.
-struct Walked {
-    container: Value,
-    base: usize,
-    steps: usize,
-    events: usize,
-}
-
-/// Шагов обхода под контейнером, ради которых его стоит запомнить: меньший
-/// дешевле обойти заново.
-const SUMMARY_STEPS: usize = 64;
-
-/// Слабая ссылка на запомненный контейнер: пока она жива, его адрес не
-/// достанется другому значению.
-enum Held {
-    Array(std::rc::Weak<Array>),
-    Map(std::rc::Weak<Map>),
-    Fn(std::rc::Weak<Closure>),
-    Any(std::rc::Weak<Value>),
-}
-
-impl Held {
-    fn alive(&self) -> bool {
-        match self {
-            Held::Array(weak) => weak.strong_count() > 0,
-            Held::Map(weak) => weak.strong_count() > 0,
-            Held::Fn(weak) => weak.strong_count() > 0,
-            Held::Any(weak) => weak.strong_count() > 0,
-        }
-    }
-}
-
-/// Адрес контейнера — ключ его сводки.
-fn container_key(value: &Value) -> Option<usize> {
-    Some(match value {
-        Value::Array(array) => Rc::as_ptr(array) as usize,
-        Value::Map(map) => Rc::as_ptr(map) as usize,
-        Value::Fn(closure) => Rc::as_ptr(closure) as usize,
-        Value::Any(value) => Rc::as_ptr(value) as usize,
-        _ => return None,
-    })
-}
-
-/// Контейнеры, обход которых не встретил свободных идентичностей (#9), со
-/// счётчиком идентичностей в тот момент: всё, что они достигают, не новее
-/// его. Освобождение идентичности не новее `summarized` сбрасывает все.
-#[derive(Default)]
-struct Summaries {
-    entries: std::collections::HashMap<usize, (Held, u64)>,
-    summarized: u64,
-    /// Размер `entries` после последней чистки мёртвых.
-    pruned: usize,
-}
-
-thread_local! {
-    static SUMMARIES: RefCell<Summaries> = RefCell::new(Summaries::default());
-}
-
-/// Запомнить, что `container` сейчас не достигает свободных идентичностей.
-fn summarize(container: &Value) {
-    let held = match container {
-        Value::Array(array) => Held::Array(Rc::downgrade(array)),
-        Value::Map(map) => Held::Map(Rc::downgrade(map)),
-        Value::Fn(closure) => Held::Fn(Rc::downgrade(closure)),
-        Value::Any(value) => Held::Any(Rc::downgrade(value)),
-        _ => return,
-    };
-    let Some(key) = container_key(container) else { return };
-    let serial = CREATED.with(Cell::get);
-    let _ = SUMMARIES.try_with(|summaries| {
-        let mut summaries = summaries.borrow_mut();
-        summaries.entries.insert(key, (held, serial));
-        summaries.summarized = summaries.summarized.max(serial);
-        if summaries.entries.len() > 2 * summaries.pruned.max(1024) {
-            summaries.entries.retain(|_, (held, _)| held.alive());
-            summaries.pruned = summaries.entries.len();
-        }
-    });
-}
-
-/// Может ли обход (через регион `via`: его id и самая старая запись)
-/// пропустить `container`?
-fn summary_holds(container: &Value, via: Option<(u64, u64)>) -> bool {
-    let Some(key) = container_key(container) else { return false };
-    let serial = SUMMARIES
-        .try_with(|summaries| summaries.borrow().entries.get(&key).map(|(_, serial)| *serial))
-        .ok()
-        .flatten();
-    match (serial, via) {
-        (None, _) => false,
-        (Some(_), None) => true,
-        (Some(serial), Some((_, oldest))) => serial < oldest,
-    }
-}
-
-/// Свободной снова стала идентичность не новее сводки: сводки могут её
-/// достигать.
-fn freed(serial: u64) {
-    let dropped = SUMMARIES
-        .try_with(|summaries| {
-            let mut summaries = summaries.borrow_mut();
-            if serial > summaries.summarized {
-                return None;
-            }
-            summaries.summarized = 0;
-            summaries.pruned = 0;
-            Some(std::mem::take(&mut summaries.entries))
-        })
-        .ok()
-        .flatten();
-    drop(dropped);
-}
-
-fn has_summaries() -> bool {
-    SUMMARIES.try_with(|summaries| !summaries.borrow().entries.is_empty()).unwrap_or(false)
-}
-
-thread_local! {
-    static WALK_SCRATCH: RefCell<Option<WalkScratch>> = const { RefCell::new(None) };
-}
-
-struct WalkLease(Option<WalkScratch>);
-
-impl WalkLease {
-    fn new() -> Self {
-        let scratch = WALK_SCRATCH.try_with(|slot| slot.borrow_mut().take()).ok().flatten();
-        Self(Some(scratch.unwrap_or_default()))
-    }
-}
-
-impl Drop for WalkLease {
-    fn drop(&mut self) {
-        let Some(mut scratch) = self.0.take() else { return; };
-        // Clear before borrowing the cache: dropping a Value can reenter runtime.
-        scratch.pending.clear();
-        scratch.seen.clear();
-        scratch.open.clear();
-        // Do not retain an unusually large traversal's high-water mark forever.
-        if scratch.pending.capacity() > 1024 || scratch.seen.capacity() > 4096 {
-            return;
-        }
-        let mut available = Some(scratch);
-        let _ = WALK_SCRATCH.try_with(|slot| {
-            if let Ok(mut slot) = slot.try_borrow_mut()
-                && slot.is_none() { *slot = available.take(); }
-        });
-        // Any unused scratch drops outside the cache borrow, including at TLS exit.
-    }
-}
-
-/// Идентичности, достижимые из `value`: свободные, а при `via` (id региона
-/// и его самая старая запись) ещё и принадлежащие `via`. Чужие идентичности
-/// не обходятся. Без рекурсии.
-///
-/// Контейнеры неизменяемы, поэтому всё, что контейнер достигает, не новее
-/// его. Контейнер, обход которого не встретил свободной идентичности (только
-/// чужие, уничтоженные или скаляры), запоминается (#9): следующие обходы его
-/// пропускают, пока не освободится идентичность не новее сводки, а обход
-/// через `via` — пока все записи `via` новее её. Большая структура, которой
-/// владеет открытый регион, обходится один раз, а не на каждое значение,
-/// которое на неё ссылается.
-fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
-    #[cfg(feature = "allocation-scopes")]
-    let _allocation_scope = okkama_allocation_counter::enter(2);
-    #[cfg(feature = "region-walk-stats")]
-    let mut stats = [0, 0, 0, 1, 0, 0, 0, 0, 0];
-    let mut lease = WalkLease::new();
-    let WalkScratch { seen, pending, open } = lease.0.as_mut().expect("walk scratch");
-    pending.push(value.clone());
-    let summaries = has_summaries();
-    // `events` — то, что мешает сводке: свободная идентичность или
-    // идентичность `via`, Future (его исход меняется).
-    let (mut steps, mut events) = (0, 0);
-    loop {
-        while let Some(walked) = open.last()
-            && pending.len() <= walked.base
-        {
-            let walked = open.pop().expect("open container");
-            if walked.events == events && steps - walked.steps >= SUMMARY_STEPS {
-                summarize(&walked.container);
-            }
-        }
-        let Some(value) = pending.pop() else { break };
-        steps += 1;
-        #[cfg(feature = "region-walk-stats")]
-        { stats[4] += 1; }
-        let base = pending.len();
-        match value {
-            Value::Object(object) => {
-                #[cfg(feature = "region-walk-stats")]
-                { stats[5] += 1; }
-                let owner = object.owner.get();
-                if !(owner == FREE || via.is_some_and(|(id, _)| id == owner)) {
-                    #[cfg(feature = "region-walk-stats")]
-                    { stats[6] += 1; }
-                    continue;
-                }
-                events += 1;
-                if !seen.insert(Rc::as_ptr(&object)) {
-                    #[cfg(feature = "region-walk-stats")]
-                    { stats[7] += 1; }
-                    continue;
-                }
-                #[cfg(feature = "region-walk-stats")]
-                { stats[8] += 1; }
-                for index in (0..object.field_count()).rev() {
-                    if let Some(value) = object.field(index)
-                        && !matches!(value, Value::Undef) {
-                            pending.push(value);
-                        }
-                }
-                out.push(object);
-            }
-            // An array of plain values holds no identity to walk (#335).
-            Value::Array(array) if array.plain() => {}
-            Value::Map(map) if map.plain() => {}
-            Value::Array(_) | Value::Map(_) | Value::Any(_) | Value::Fn(_) => {
-                if summaries && summary_holds(&value, via) {
-                    continue;
-                }
-                match &value {
-                    Value::Array(array) => pending.extend(array.items().iter().rev().cloned()),
-                    Value::Map(map) => {
-                        let values: Vec<Value> = map.entries().values().cloned().collect();
-                        pending.extend(values.into_iter().rev());
-                    }
-                    Value::Any(value) => pending.push((**value).clone()),
-                    Value::Fn(closure) => pending.extend(closure.captures.iter().rev().cloned()),
-                    _ => unreachable!("matched above"),
-                }
-                open.push(Walked { container: value, base, steps, events });
-            }
-            Value::Future(future) => {
-                events += 1;
-                pending.extend(future.retained().into_iter().rev());
-            }
-            _ => {}
-        }
-    }
-    #[cfg(feature = "region-walk-stats")]
-    walk_stats::add(stats);
-}
-
-/// Состояние закрытия региона: исполнитель вызывает `destroy` по одному
-/// объекту за шаг, потому что тело `destroy` — обычный вызов программы.
-#[derive(Debug)]
-pub struct Closing {
-    kept: std::collections::HashSet<*const Object>,
-    index: usize,
-}
-
-impl Region {
-    pub fn new() -> Self {
-        #[cfg(feature = "allocation-scopes")]
-        let _allocation_scope = okkama_allocation_counter::enter(1);
-        let id = REGIONS.with(|regions| {
-            regions.set(regions.get() + 1);
-            regions.get()
-        });
-        Self {
-            id,
-            entries: RefCell::new(Vec::new()),
-            known: RefCell::new(std::collections::HashSet::new()),
-            oldest: Cell::new(u64::MAX),
-        }
-    }
-
-    fn remember(&self, object: Rc<Object>) {
-        if self.known.borrow_mut().insert(Rc::as_ptr(&object)) {
-            self.oldest.set(self.oldest.get().min(object.serial));
-            self.entries.borrow_mut().push(object);
-        }
-    }
-
-    fn register(&self, value: &Value, own: bool) {
-        #[cfg(feature = "no-regions-bench")]
-        if regions_disabled() { return; }
-        #[cfg(feature = "allocation-scopes")]
-        let _allocation_scope = okkama_allocation_counter::enter(1);
-        if plain(value) {
-            return;
-        }
-        let mut fresh = Vec::new();
-        #[cfg(feature = "region-walk-stats")]
-        walk_stats::add([1, 0, 0, 0, 0, 0, 0, 0, 0]);
-        collect(value, &mut fresh, None);
-        fresh.sort_by_key(|object| object.serial);
-        for object in fresh {
-            if own {
-                object.owner.set(self.id);
-            }
-            self.remember(object);
-        }
-    }
-
-    /// Владеть свободными идентичностями, достижимыми из `value`.
-    pub fn adopt(&self, value: &Value) {
-        self.register(value, true);
-    }
-
-    /// Учитывать свободные идентичности без владения (временные значения).
-    pub fn track(&self, value: &Value) {
-        self.register(value, false);
-    }
-
-    /// Идентичности `value`, принадлежащие этому региону, — во владение `to`.
-    pub fn transfer(&self, to: &Region, value: &Value) {
-        #[cfg(feature = "no-regions-bench")]
-        if regions_disabled() { return; }
-        #[cfg(feature = "allocation-scopes")]
-        let _allocation_scope = okkama_allocation_counter::enter(1);
-        if self.entries.borrow().is_empty() || plain(value) {
-            return;
-        }
-        let mut reachable = Vec::new();
-        #[cfg(feature = "region-walk-stats")]
-        walk_stats::add([0, 1, 0, 0, 0, 0, 0, 0, 0]);
-        collect(value, &mut reachable, Some((self.id, self.oldest.get())));
-        reachable.sort_by_key(|object| object.serial);
-        for object in reachable {
-            if object.owner.get() != self.id {
-                continue;
-            }
-            object.owner.set(to.id);
-            to.remember(object);
-        }
-    }
-
-    /// Регион без идентичностей: его закрытие ничего не уничтожает и не
-    /// освобождает, поэтому исполнители пропускают `begin_close`.
-    pub fn is_empty(&self) -> bool {
-        self.entries.borrow().is_empty()
-    }
-
-    /// Начать закрытие; идентичности, достижимые из `keep`, освобождаются.
-    pub fn begin_close(&self, keep: &[Value]) -> Closing {
-        #[cfg(feature = "no-regions-bench")]
-        if regions_disabled() {
-            return Closing { kept: std::collections::HashSet::new(), index: 0 };
-        }
-        #[cfg(feature = "allocation-scopes")]
-        let _allocation_scope = okkama_allocation_counter::enter(1);
-        let mut kept = std::collections::HashSet::new();
-        for value in keep {
-            #[cfg(feature = "region-walk-stats")]
-            walk_stats::add([0, 0, 1, 0, 0, 0, 0, 0, 0]);
-            let mut reachable = Vec::new();
-            collect(value, &mut reachable, Some((self.id, self.oldest.get())));
-            kept.extend(reachable.iter().map(Rc::as_ptr));
-        }
-        Closing {
-            kept,
-            index: self.entries.borrow().len(),
-        }
-    }
-
-    /// Следующий объект для `destroy` (уже помечен уничтоженным) или None,
-    /// когда регион закрыт.
-    pub fn next_destroyed(&self, closing: &mut Closing) -> Option<Rc<Object>> {
-        #[cfg(feature = "allocation-scopes")]
-        let _allocation_scope = okkama_allocation_counter::enter(1);
-        while closing.index > 0 {
-            closing.index -= 1;
-            let object = self.entries.borrow()[closing.index].clone();
-            if closing.kept.contains(&Rc::as_ptr(&object)) {
-                if object.owner.get() == self.id {
-                    object.owner.set(FREE);
-                    freed(object.serial);
-                }
-                continue;
-            }
-            let owner = object.owner.get();
-            if owner != self.id && owner != FREE {
-                continue; // принят другим владельцем или уже уничтожен
-            }
-            object.owner.set(DEAD);
-            return Some(object);
-        }
-        self.entries.borrow_mut().clear();
-        self.known.borrow_mut().clear();
-        self.oldest.set(u64::MAX);
-        None
     }
 }
 
@@ -2222,10 +1672,10 @@ mod tests {
         let once = map_merge(&[&mixed, &map(&[(5, 5)])]).unwrap();
         let twice = map_merge(&[&once, &map(&[(6, 6)])]).unwrap();
         assert!(!shared(&mixed) && !shared(&once) && !shared(&twice));
-        assert!(crate::gc::traced(&twice) && !crate::gc::traced(&base) && !crate::gc::traced(&map(&[])));
+        assert!(compound(&twice) && !compound(&base) && !compound(&map(&[])));
         // A plain value written into a persistent map that is not plain: a copy.
         let into = map_merge(&[&base, &maps::from_entries([(int(1), ObjectHeap.allocate(0, vec![]))]).unwrap()]).unwrap();
-        assert!(!shared(&into) && crate::gc::traced(&into) && maps::map(&into).unwrap().len() == 101);
+        assert!(!shared(&into) && compound(&into) && maps::map(&into).unwrap().len() == 101);
     }
 
     /// The raw cost of `keys()` of a large map, of either representation,
@@ -2359,89 +1809,6 @@ mod tests {
         // Equal to a flat array with the same elements.
         let flat = ArrayHeap.allocate((15..70).map(int).collect());
         assert!(crate::ops::equal(&inner, &flat).unwrap());
-    }
-
-    #[test]
-    fn walk_cache_clears_values_on_unwind_and_is_reentrant() {
-        WALK_SCRATCH.with(|slot| *slot.borrow_mut() = None);
-        let object = Rc::new(Object::new(0, vec![]));
-        let weak = Rc::downgrade(&object);
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut outer = WalkLease::new();
-            outer.0.as_mut().unwrap().pending.push(Value::Object(object));
-            let mut inner = WalkLease::new();
-            assert!(inner.0.as_ref().unwrap().pending.is_empty());
-            inner.0.as_mut().unwrap().seen.insert(weak.as_ptr());
-            drop(inner);
-            panic!("exercise traversal cleanup");
-        }));
-        assert!(weak.upgrade().is_none());
-        let next = WalkLease::new();
-        assert!(next.0.as_ref().unwrap().pending.is_empty());
-        assert!(next.0.as_ref().unwrap().seen.is_empty());
-    }
-
-    #[test]
-    fn walk_cache_does_not_retain_large_capacity() {
-        WALK_SCRATCH.with(|slot| *slot.borrow_mut() = None);
-        let mut walk = WalkLease::new();
-        walk.0.as_mut().unwrap().pending.reserve(2048);
-        drop(walk);
-        WALK_SCRATCH.with(|slot| assert!(slot.borrow().is_none()));
-    }
-
-    #[test]
-    fn cold_future_keep_transfers_fresh_dependencies_and_preserves_borrows() {
-        let borrowed = Rc::new(Object::new(0, vec![]));
-        let receiver = Rc::new(Object::new(0, vec![Value::Object(borrowed.clone())]));
-        let argument = Rc::new(Object::new(0, vec![]));
-        let outer = Region::new();
-        outer.adopt(&Value::Object(borrowed.clone()));
-        let make = Region::new();
-        make.track(&Value::Object(receiver.clone()));
-        make.adopt(&Value::Object(argument.clone()));
-        let future = Value::Future(crate::sched::cold(
-            Box::new(|| Ok(Value::Undef)),
-            vec![Value::Object(receiver.clone()), Value::Object(argument.clone()),
-                 Value::Object(receiver.clone()), Value::Object(borrowed.clone())],
-        ));
-        let mut closing = make.begin_close(std::slice::from_ref(&future));
-        assert!(make.next_destroyed(&mut closing).is_none());
-        assert_eq!(receiver.owner.get(), FREE);
-        assert_eq!(argument.owner.get(), FREE);
-        assert_eq!(borrowed.owner.get(), outer.id);
-        let caller = Region::new();
-        caller.adopt(&future);
-        caller.adopt(&future);
-        let mut closing = caller.begin_close(&[]);
-        assert!(Rc::ptr_eq(&caller.next_destroyed(&mut closing).unwrap(), &argument));
-        assert!(Rc::ptr_eq(&caller.next_destroyed(&mut closing).unwrap(), &receiver));
-        assert!(caller.next_destroyed(&mut closing).is_none());
-        let mut closing = outer.begin_close(&[]);
-        assert!(Rc::ptr_eq(&outer.next_destroyed(&mut closing).unwrap(), &borrowed));
-        assert!(outer.next_destroyed(&mut closing).is_none());
-    }
-
-    #[test]
-    fn reused_walks_preserve_ownership_and_destruction_order() {
-        let a = Rc::new(Object::new(0, vec![]));
-        let b = Rc::new(Object::new(0, vec![Value::Object(a.clone())]));
-        let root = Value::Object(b.clone());
-        let first = Region::new();
-        let second = Region::new();
-        first.adopt(&root);
-        first.transfer(&second, &root);
-        let mut closing = first.begin_close(&[]);
-        assert!(first.next_destroyed(&mut closing).is_none());
-        // A cached seen-set must not suppress the same objects in a later walk.
-        let mut preserved = second.begin_close(std::slice::from_ref(&root));
-        assert!(second.next_destroyed(&mut preserved).is_none());
-        let third = Region::new();
-        third.adopt(&root);
-        let mut closing = third.begin_close(&[]);
-        assert!(Rc::ptr_eq(&third.next_destroyed(&mut closing).unwrap(), &b));
-        assert!(Rc::ptr_eq(&third.next_destroyed(&mut closing).unwrap(), &a));
-        assert!(third.next_destroyed(&mut closing).is_none());
     }
 
     #[test]

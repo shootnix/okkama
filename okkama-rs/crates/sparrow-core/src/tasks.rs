@@ -1,8 +1,9 @@
 //! Stackless async: the heap frame of an async call is also its Future.
 //!
 //! Frame words after the header: state, result, failure, waiter, awaiting,
-//! resume point, flags, then every register of the function, an optional driver
-//! slot, and retained copies of the arguments (registers can be reused). An async body is
+//! resume point, flags, outcome ownership region, then every register of the
+//! function, an optional driver slot, and retained copies of the arguments
+//! (registers can be reused). An async body is
 //! compiled as `(ctx, frame) -> 0 | 1` (completed or pending): it starts at
 //! resume point 0 with its parameters in the frame, and a suspended `await` at
 //! `pc` re-enters at `pc + 1` with every register reloaded. Whoever runs a body
@@ -25,6 +26,8 @@ pub const COLD: u64 = 0;
 pub const RUNNING: u64 = 1;
 pub const DONE: u64 = 2;
 pub const FAILURE_STATE: u64 = 3;
+/// A unique await has consumed the cache; it cannot publish another view.
+pub const CONSUMED: u64 = 4;
 
 pub const STATE: u64 = 8;
 pub const RESULT: u64 = 16;
@@ -33,8 +36,9 @@ pub const WAITER: u64 = 32;
 pub const AWAITING: u64 = 40;
 pub const RESUME: u64 = 48;
 pub const FLAGS: u64 = 56;
-pub const REGISTERS: u64 = 64;
-pub const FIXED_WORDS: usize = 7;
+pub const OWNED: u64 = 64;
+pub const REGISTERS: u64 = 72;
+pub const FIXED_WORDS: usize = 8;
 
 const SPAWNED: u64 = 1;
 const OBSERVED: u64 = 2;
@@ -135,6 +139,7 @@ impl Runtime {
             set(frame, REGISTERS + u64::from(param.0) * 8, argument);
             set(frame, (1 + retained + index) as u64 * 8, argument);
         }
+        self.future_created(frame);
         frame
     }
 
@@ -173,6 +178,7 @@ impl Runtime {
         } else {
             set(frame, FAILURE, value);
         }
+        self.own_outcome(frame, state == DONE, value);
         let waiters = get(frame, WAITER);
         set(frame, WAITER, UNBOUND);
         if waiters == UNBOUND {
@@ -519,6 +525,11 @@ pub extern "C" fn rt_await(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
             ctx.scratch = get(future, RESULT);
             AWAIT_READY
         }
+        CONSUMED => {
+            ctx.failure = runtime.failure_new(FailureKind::Panic("await of a consumed Future".into()));
+            ctx.status = FAILED;
+            AWAIT_READY
+        }
         FAILURE_STATE => {
             ctx.failure = get(future, FAILURE);
             ctx.status = FAILED;
@@ -529,6 +540,25 @@ pub extern "C" fn rt_await(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
             AWAIT_PENDING
         }
     }
+}
+
+/// Same suspension/cancellation protocol as borrow-await. Consume only after
+/// settlement was actually delivered; cancellation before delivery leaves the
+/// cache for the Future's normal cleanup. Scratch carries the delivered value
+/// until the JIT stores it; no safepoint intervenes after extraction. Failed
+/// awaits leave their carrier in the cache for normal unwind cleanup.
+#[inline(never)]
+pub extern "C" fn rt_await_take(ctx_ptr: *mut Ctx, this: Word, future: Word) -> u64 {
+    let outcome = rt_await(ctx_ptr, this, future);
+    let (ctx, runtime) = unsafe { parts(ctx_ptr) };
+    let delivered = outcome == AWAIT_READY && get(future, STATE) == DONE && ctx.status == OK;
+    if delivered {
+        runtime.take_outcome(future);
+        set(future, RESULT, UNBOUND);
+        set(future, FAILURE, UNBOUND);
+        set(future, STATE, CONSUMED);
+    }
+    outcome
 }
 
 /// `region.settle` / `region.settle_unwind` from frame `this` (#154): close

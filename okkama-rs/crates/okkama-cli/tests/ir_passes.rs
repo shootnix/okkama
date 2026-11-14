@@ -5,11 +5,11 @@ use std::process::Command;
 
 const PASSES: [&str; 7] = ["all", "none", "tail-calls", "hoist", "regions", "jumps", "undef"];
 
-/// Stdout, stderr and status of `program` on the IR engine with `passes`.
+/// Stdout, stderr and status of `program` on Sparrow with `passes`.
 fn run(program: &str, passes: &str) -> (String, String, Option<i32>) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/ir-passes/{program}.ok"));
     let output = Command::new(env!("CARGO_BIN_EXE_okkama"))
-        .arg("run")
+        .args(["run", "--engine", "sparrow"])
         .arg(&path)
         .env("OKKAMA_IR_PASSES", passes)
         .output()

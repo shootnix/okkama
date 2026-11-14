@@ -1,11 +1,10 @@
 # okkama-rs
 
 Реализация языка Okkama на Rust: компилятор (лексер, парсер, анализ,
-lowering в OIR-1), бэкенды JVM и Sparrow, IR-интерпретатор, VM Sparrow с JIT
+lowering в OIR-1), бэкенды JVM и Sparrow, VM Sparrow с JIT
 (Cranelift) и сборщиком циклов, рантайм и natives std, LSP, форматтер и
-линтер. Все три движка — JVM, IR, Sparrow — исполняют весь язык и std
-одинаково: это проверяют conformance-набор (`../conformance`) и сверка
-движков (`tools/engines/parity.py`).
+линтер. Единственный движок Okkama — Sparrow; JVM-бэкенд сохранён до #585.
+Conformance (`../conformance`) проверяет поведение по общим ожиданиям.
 
 ## Сборка
 
@@ -80,35 +79,25 @@ cargo run --offline -p okkama-cli -- build examples/arithmetic.ok --target sparr
 cargo run --offline -p okkama-cli -- exec out.spb
 ```
 
-IR-интерпретатор и Sparrow исполняют весь язык и всю std с тем же поведением,
-что и JVM-путь: OCS `full-release` 772/772 на каждом движке, все
-детерминированные программы `std` (в тестовом режиме) и `examples` дают те же
-stdout, stderr и код выхода (`tools/engines/parity.py`). Sparrow — регистровая
-VM: OIR компилируется в SPB 9 ([формат и инструкции](docs/sparrow-isa.md)),
-файл несёт программу с импортированной std и исполняется без исходников и
-Java. IR исполняет интерпретатор `okkama-runtime` над `okkama-runtime-core`;
-Sparrow — ядро `sparrow-core` (версия Tomato) со своими значениями, кучей,
-планировщиком, JIT и воркерами `spawn`, которое берёт natives из
-`okkama-runtime-core`. Общими остаются описание native ABI и библиотеки.
-Результат main в 0..255 становится кодом выхода, неперехваченный отказ —
-диагностикой в stderr с кодом 1, как у JVM. IR и Sparrow добавляют к ней место
-отказа (строку исходника) и стек вызовов, `sparrow` и `okkama exec` без
-исходников — стек в терминах Sparrow (функция, номер и текст инструкции);
+Sparrow — регистровая VM: OIR компилируется в SPB 9, файл несёт программу
+с импортированной std и исполняется без исходников и Java. `sparrow-core`
+(версия Tomato) содержит значения, кучу, GC, планировщик, JIT и workers.
+`okkama-runtime-core` сохраняет native-провайдеры и их значения, host context,
+stdout, scheduler bridge, точную арифметику и вычисление констант компилятора.
+Результат main в 0..255 становится кодом выхода; неперехваченный отказ —
+диагностикой в stderr с кодом 1. Запуск исходника добавляет место отказа и
+стек вызовов; `sparrow` и `okkama exec` — стек в терминах Sparrow.
 `OKKAMA_TRACE=off` печатает только сам отказ.
 
-`okkama repl` — интерактивные проверки на IR-интерпретаторе: инструкции,
-выражения (их значение печатает `debug/dumper`), объявления и импорты;
-переменные живут между вводами, а побочные эффекты прошлых вводов не
-повторяются. Замыкания и Future между вводами не переносятся. Команды —
-`:vars`, `:decls`, `:reset`, `:help`, `:quit`. `okkama run` по умолчанию
-исполняет IR-интерпретатором в Rust-процессе; `--engine sparrow|jvm` или
-`OKKAMA_ENGINE=ir|sparrow|jvm` выбирает другой движок.
-Известные границы — в [compatibility.md](docs/compatibility.md#движки-ir-и-sparrow-расхождения-с-jvm).
+IR-интерпретатор и зависевший от него `okkama repl` удалены (#584).
+`--engine ir` и `OKKAMA_ENGINE=ir` возвращают понятную ошибку.
+`--engine sparrow|jvm` и `OKKAMA_ENGINE=sparrow|jvm` выбирают Sparrow или
+временно сохранённый JVM-бэкенд. OIR и его passes остаются частью компилятора.
 
 [План полного рантайма, GC и JIT](docs/sparrow-runtime-roadmap.md).
 
 Приоритет разработки — полнота `conformance`, затем `examples` и всей `std`.
-[Независимые прогоны IR/Sparrow, исходные результаты и очередь реализации](docs/conformance-progress.md).
+[История независимых прогонов, исходные результаты и очередь реализации](docs/conformance-progress.md).
 
 Sparrow также собирается отдельным бинарником, без зависимости от компилятора:
 
@@ -347,7 +336,7 @@ okkama-rs/
   crates/blade-cli/           бинарник `blade`
   examples/                   небольшие корректные программы на Okkama
   docs/                       architecture.md, syntax-coverage.md, compatibility.md
-  tools/engines/              сверка движков IR и Sparrow с JVM
+  tools/engines/              сверка Sparrow с JVM
   tools/jvm-runtime/          сборка Java-рантайма okkama.rt и его данных
 ```
 

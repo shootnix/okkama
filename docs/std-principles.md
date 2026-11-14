@@ -205,7 +205,7 @@ As in Chapter 21 of the Bible:
   pin its current behaviour.
 - **Every public object** has at least one inline `test`; 180 code modules
   have none today.
-- **Gate.** The std tests run in the gate on the IR engine and Sparrow
+- **Gate.** The std tests run in the gate on Sparrow
   (`tools/gate/known-failures.txt` lists the known failures).
 - **Network and async tests talk to loopback** inside the test: a
   `TcpListening` on 127.0.0.1 port 0 stands in for the peer

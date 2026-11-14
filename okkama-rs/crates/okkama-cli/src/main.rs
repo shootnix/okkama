@@ -27,7 +27,7 @@ mod import_paths;
 mod lsp;
 mod man;
 mod ocs;
-mod repl;
+mod trace;
 
 use blade::manifest;
 use okkama_compiler::codegen::{self, Backend, Options as CodegenOptions};
@@ -57,14 +57,13 @@ USAGE:
     okkama lint <FILE>...
     okkama man [MODULE [NAME | NAME.ACTION]] [--format text|markdown]
     okkama lsp
-    okkama repl
     okkama env
     okkama ir <FILE|-> [--format text]
     okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
     okkama exec [BUDGETS] <FILE.spb>
     okkama run [-t [--filter TEXT]...] <FILE> [FILE.ok...] [ARGS...]
-    okkama run --engine ir|sparrow <FILE> [FILE.ok...]
+    okkama run --engine sparrow|jvm <FILE> [FILE.ok...]
     okkama <FILE.ok> [FILE.ok...]
     okkama help [COMMAND]
     okkama --version
@@ -79,13 +78,10 @@ COMMANDS:
               from its doc comments; without MODULE, the index of std
     env       Show where okkama finds std, the native library, ICU and Java
     lsp       Run the language server (LSP over stdio) for editors
-    repl      Read-eval-print loop on the IR engine: statements, expressions,
-              declarations and imports; variables live on between inputs
     ir        Lower a source module to IR and print its functions
     build     Lower a source module and invoke the selected backend
     exec      Execute a Sparrow bytecode file in this process
-    run       Run a program: the IR interpreter by default, `--engine sparrow`
-              (VM with JIT) or `--engine jvm` (build classes and run `java`)
+    run       Run a program on Sparrow (JIT); `--engine jvm` builds and runs Java
 
 Use `-` as FILE to read the source from standard input. `check`, `ir` and
 `build` accept several FILE paths: the files of one module (spec §5.1) share
@@ -114,12 +110,11 @@ BUILD OPTIONS:
     --budgeted            JVM: count steps (`java -Dokkama.steps=N`)
 
 RUN OPTIONS:
-    --engine ir           Execute IR inside the Rust process (default)
-    --engine sparrow      Compile to Sparrow and execute it on the core (JIT)
+    --engine sparrow      Compile to Sparrow and execute it with JIT (default)
     --engine jvm          Compile to JVM classes and execute them with `java`
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
-                          OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
+                          OKKAMA_ENGINE=sparrow|jvm sets the default.
     --filter TEXT         With -t: run only the tests whose name contains
                           TEXT (literally, case-sensitive); repeated, the
                           tests that contain any of the texts
@@ -135,7 +130,7 @@ RUN OPTIONS:
     --timeout SECONDS     Interrupt the run after SECONDS of wall-clock time
                           Running out exits 1: \"Execution budget exhausted:
                           steps|memory|output\" or \"Execution interrupted\".
-                          An uncaught failure on ir and sparrow also
+                          An uncaught failure on Sparrow also
                           prints its source line and the call stack;
                           OKKAMA_TRACE=off prints the failure alone.
 
@@ -305,7 +300,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
 
 /// A test-profile program on the core: the report goes to stdout.
 fn core_tests(bytes: Vec<u8>) -> Outcome {
-    match sparrow_core::run_tests(bytes, Box::new(okkama_runtime::stdout::Buffered)) {
+    match sparrow_core::run_tests(bytes, Box::new(okkama_runtime_core::stdout::Buffered)) {
         Ok(passed) => Outcome { stdout: String::new(), stderr: String::new(), code: u8::from(!passed) },
         Err(error) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
     }
@@ -332,9 +327,9 @@ fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
-        okkama_runtime::stdout::try_flush();
+        okkama_runtime_core::stdout::try_flush();
         let _ = io::stdout().flush();
-        let _ = writeln!(io::stderr(), "{}", okkama_runtime::budget::Exhausted::Interrupted.message());
+        let _ = writeln!(io::stderr(), "{}", sparrow_core::budget::Exhausted::Interrupted.message());
         std::process::exit(1);
     });
 }
@@ -359,29 +354,6 @@ fn with_trace(mut outcome: Outcome, trace: impl FnOnce() -> String) -> Outcome {
         outcome.stderr.push_str(&trace());
     }
     outcome
-}
-
-/// Исход программы IR/Sparrow — как у JVM-рантайма (`Rt.exit`, `Rt.report`):
-/// код `main`, а отказ — диагностика в stderr и код 1. Ограничение
-/// реализации — диагностика `okkama:`.
-fn native_outcome(result: Result<ir::IntValue, okkama_runtime::RuntimeError>) -> Outcome {
-    match result {
-        Ok(value) => match value.to_i64().and_then(|code| u8::try_from(code).ok()) {
-            Some(code) => Outcome {
-                stdout: String::new(),
-                stderr: String::new(),
-                code,
-            },
-            None => Outcome::failure(
-                format!("RuntimeError: main() must return an int in 0..255, got {value}\n"),
-                1,
-            ),
-        },
-        Err(error) => match okkama_runtime::report(&error) {
-            Some(text) => Outcome::failure(text, 1),
-            None => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        },
-    }
 }
 
 /// A finished command: what to print and how to exit.
@@ -421,23 +393,18 @@ fn main() -> ExitCode {
     let _allocation_report = allocation_stats::Report;
     #[cfg(not(feature = "allocation-stats"))]
     sparrow_core::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
-    okkama_runtime::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Сервер языка владеет stdin/stdout сам.
     if args.first().map(String::as_str) == Some("lsp") {
         return lsp::run();
-    }
-    // REPL читает stdin построчно и печатает по ходу.
-    if args.first().map(String::as_str) == Some("repl") {
-        return repl::run();
     }
     let outcome = run(&args);
     // The program's buffered output goes before the command's own and before
     // a failure report (#132). A closed stdout (`okkama ast big.ok | head`) is
     // not an error worth a panic; anything printed so far is all the reader
     // wanted.
-    let _ = okkama_runtime::stdout::write(outcome.stdout.as_bytes());
-    let _ = okkama_runtime::stdout::flush();
+    let _ = okkama_runtime_core::stdout::write(outcome.stdout.as_bytes());
+    let _ = okkama_runtime_core::stdout::flush();
     let _ = io::stderr().lock().write_all(outcome.stderr.as_bytes());
     ExitCode::from(outcome.code)
 }
@@ -760,7 +727,7 @@ fn ir_command(args: &[String]) -> Outcome {
                     let Some(at) = lowering::PASSES.iter().position(|pass| pass == value) else {
                         return Outcome::usage(&format!("unknown pass `{value}` (passes: {})", lowering::PASSES.join(", ")));
                     };
-                    
+
                     lowering::PASSES[..=at].join(",")
                 };
                 lowering::select_passes(&spec);
@@ -1404,8 +1371,7 @@ fn build_command(args: &[String]) -> Outcome {
     }
 }
 
-/// `okkama run`: по умолчанию IR-интерпретатор в процессе (все три движка
-/// исполняют язык и std одинаково; `OKKAMA_ENGINE` меняет умолчание);
+/// `okkama run`: Sparrow (JIT) в процессе; `OKKAMA_ENGINE` меняет умолчание;
 /// --engine jvm собирает классы и запускает java с потоками и кодом выхода
 /// программы. Файлы модуля — первый и следующие
 /// за ним существующие `.ok`; остальное (после необязательного `--`) —
@@ -1418,10 +1384,10 @@ fn run_command(args: &[String]) -> Outcome {
     let mut limits = sparrow_core::budget::Limits::default();
     let mut budgeted = false;
     let mut engine = match default.as_str() {
-        "ir" => "ir",
         "sparrow" => "sparrow",
+        "ir" => "ir",
         "jvm" => "jvm",
-        _ => "ir",
+        _ => "sparrow",
     };
     while let Some(first) = rest.first() {
         match first.as_str() {
@@ -1435,10 +1401,13 @@ fn run_command(args: &[String]) -> Outcome {
             }
             "--engine" => {
                 let Some(value) = rest.get(1) else {
-                    return Outcome::usage("--engine needs a value: ir, sparrow or jvm");
+                    return Outcome::usage("--engine needs a value: sparrow or jvm");
                 };
-                if !matches!(value.as_str(), "ir" | "sparrow" | "jvm") {
-                    return Outcome::usage("unknown engine (use ir, sparrow or jvm)");
+                if value == "ir" {
+                    return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow); JVM remains a legacy backend until #585");
+                }
+                if !matches!(value.as_str(), "sparrow" | "jvm") {
+                    return Outcome::usage("unknown engine (use sparrow or jvm)");
                 }
                 engine = value;
                 rest = &rest[1..];
@@ -1474,11 +1443,14 @@ fn run_command(args: &[String]) -> Outcome {
         }
         rest = &rest[1..];
     }
+    if engine == "ir" {
+        return Outcome::usage("the IR engine was removed (#584); Sparrow is the only Okkama engine (use --engine sparrow); JVM remains a legacy backend until #585");
+    }
     if !filters.is_empty() && !tests {
         return Outcome::usage("--filter selects tests: use it with -t");
     }
-    if budgeted && !matches!(engine, "sparrow" | "ir" | "jvm") {
-        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow, ir or jvm");
+    if budgeted && !matches!(engine, "sparrow" | "jvm") {
+        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow or jvm");
     }
     let Some((input, mut program_args)) = rest.split_first() else {
         return Outcome::usage("missing input file");
@@ -1523,42 +1495,8 @@ fn run_command(args: &[String]) -> Outcome {
     if engine != "jvm" && std::env::var_os("OKKAMA_ICU_LIBDIR").is_none() {
         // Как у JVM-запуска: программа видит закреплённую ICU в окружении.
         if let Some(icu) = pinned_icu() {
-            if engine == "sparrow" {
-                sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
-            } else {
-                okkama_runtime::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
-            }
+            sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
         }
-    }
-    if engine == "ir" {
-        okkama_runtime::set_worker_command(worker_command("ir", tests, &line));
-        if tests {
-            // The report shares the program's buffer, so their order holds (#132).
-            let mut stdout = okkama_runtime::stdout::Buffered;
-            return match okkama_runtime::run_tests(&module, &mut stdout) {
-                Ok(passed) => Outcome {
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    code: u8::from(!passed),
-                },
-                Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-            };
-        }
-        let arguments = program_args.to_vec();
-        let budget = okkama_runtime::budget::Limits {
-            steps: limits.steps,
-            memory: limits.memory,
-            output: limits.output,
-            interrupt: limits.interrupt.clone(),
-            ..Default::default()
-        };
-        if limits.interrupt.is_some() {
-            // A run blocked in a native (sleeping, waiting for input) does not
-            // step: it is stopped a second after the flag is raised.
-            watchdog(limits.interrupt.clone().expect("flag"));
-        }
-        let (result, trace) = okkama_runtime::execute_limited(&module, arguments, &budget);
-        return with_trace(native_outcome(result), || okkama_runtime::render_trace(&module, &trace));
     }
     if engine == "sparrow" {
         let program = match codegen::sparrow::generate(&module) {
@@ -1582,7 +1520,7 @@ fn run_command(args: &[String]) -> Outcome {
         }
         // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
         let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
-        return with_trace(outcome, || okkama_runtime::render_trace(&module, &trace));
+        return with_trace(outcome, || trace::render_trace(&module, &trace));
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),
@@ -1679,10 +1617,10 @@ fn jvm_budgeted(
     let stderr = copy(Box::new(child.stderr.take().expect("piped")), || Box::new(io::stderr()));
     let report = loop {
         if exceeded.load(Ordering::SeqCst) {
-            break Some(okkama_runtime::budget::Exhausted::Output);
+            break Some(sparrow_core::budget::Exhausted::Output);
         }
         if interrupt.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            break Some(okkama_runtime::budget::Exhausted::Interrupted);
+            break Some(sparrow_core::budget::Exhausted::Interrupted);
         }
         match child.try_wait() {
             Ok(Some(_)) => break None,
@@ -1702,7 +1640,7 @@ fn jvm_budgeted(
     let _ = stderr.join();
     // The last bytes may have run past the limit after the program ended.
     if exceeded.load(Ordering::SeqCst) {
-        return Outcome::failure(format!("{}\n", okkama_runtime::budget::Exhausted::Output.message()), 1);
+        return Outcome::failure(format!("{}\n", sparrow_core::budget::Exhausted::Output.message()), 1);
     }
     let code = status.ok().and_then(|status| status.code()).map_or(1, |code| u8::try_from(code).unwrap_or(1));
     Outcome { stdout: String::new(), stderr: String::new(), code }
@@ -2007,30 +1945,6 @@ fn pinned_icu() -> Option<PathBuf> {
     ]
     .into_iter()
     .find(|dir| dir.is_dir())
-}
-
-/// Команда процесса-воркера `spawn`: та же программа тем же движком.
-pub(crate) fn worker_command(engine: &str, tests: bool, line: &CommandLine) -> Vec<String> {
-    let exe = std::env::current_exe()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|_| "okkama".into());
-    let stdlib = std::fs::canonicalize(stdlib_dir()).unwrap_or_else(|_| stdlib_dir());
-    let mut command = vec![
-        exe,
-        "run".into(),
-        "--stdlib".into(),
-        stdlib.display().to_string(),
-        "--engine".into(),
-        engine.into(),
-    ];
-    if tests {
-        command.push("-t".into());
-    }
-    for input in line.input.iter().chain(&line.more_inputs) {
-        let absolute = std::fs::canonicalize(input).unwrap_or_else(|_| PathBuf::from(input));
-        command.push(absolute.display().to_string());
-    }
-    command
 }
 
 /// Основная версия `java` из `java -version` (0, если не узнать).

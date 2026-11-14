@@ -51,8 +51,8 @@ async main() is int {
         t.note("loser is fully cleaned before winning resource is published: " + log.value());
         t = t.is(log.value(), "dL", "loser is fully cleaned before winning resource is published");
         result.label();
-        t.note("winning resource remains owned by awaiting scope: " + log.value());
-        t = t.is(log.value(), "dL", "winning resource remains owned by awaiting scope");
+        t.note("winning resource remains owned by input Future: " + log.value());
+        t = t.is(log.value(), "dL", "winning resource remains owned by input Future");
     }
 
     t.note("winner closes after loser cleanup: " + log.value());
@@ -64,7 +64,7 @@ async main() is int {
         result.label();
     }
 
-    t.note("single-input race transfers resource normally: " + log.value());
-    t = t.is(log.value(), "W", "single-input race transfers resource normally");
+    t.note("single-input race destroys input Future outcome once: " + log.value());
+    t = t.is(log.value(), "W", "single-input race destroys input Future outcome once");
     t.done();
 }

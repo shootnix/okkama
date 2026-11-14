@@ -324,36 +324,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     .emit_void(InstKind::Call { func, args: values }, span);
                 Ok(Out::Unit)
             }
-            Callee::FakeStorage(op) => {
-                let (Some(receiver), Some(object)) = (self.self_value, self.object) else {
-                    return Err(LoweringError::invalid(
-                        span,
-                        "internal compiler error: fake.storage outside a fake action",
-                    ));
-                };
-                let Some(values) = self.arguments(args, span)? else {
-                    return Ok(Out::Diverged);
-                };
-                let mut types = vec![Type::Object(object)];
-                types.extend(values.iter().map(|value| self.b.value_type(*value).clone()));
-                let result = match &expr.ty {
-                    Some(_) => ir::ResultType::Value(self.expr_type(expr)?),
-                    None => ir::ResultType::Void,
-                };
-                let func =
-                    self.ctx
-                        .runtime_intrinsic(&format!("okkama.fake.storage.{op}"), types, result);
-                let mut call_args = vec![receiver];
-                call_args.extend(values);
-                self.finish_call(
-                    InstKind::Call {
-                        func,
-                        args: call_args,
-                    },
-                    expr,
-                    span,
-                )
-            }
         }
     }
 

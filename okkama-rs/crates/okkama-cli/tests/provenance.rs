@@ -26,8 +26,6 @@ fn every_consumer_rejects_corrupted_ir() {
     let options = Options { artifact_name: "Corrupted".into(), ..Default::default() };
     assert!(codegen::generate(&corrupted, Backend::Jvm, &options).is_err());
     assert!(codegen::generate(&corrupted, Backend::Sparrow, &options).is_err());
-    assert!(okkama_runtime::execute(&corrupted).is_err());
-    assert!(okkama_runtime::run_tests(&corrupted, &mut std::io::sink()).is_err());
 }
 
 #[test]

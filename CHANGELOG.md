@@ -6,6 +6,55 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- **Group-owned Futures and safe suspension snapshots on Sparrow (#581).**
+  FutureGroup retains registered Futures, their caches and transferred fresh
+  dependencies after a registering call or lexical binding exits. Duplicate
+  registration, multiple groups and surviving lexical owners release the cache
+  once at its final owner; internal FutureScope groups settle their children
+  before cleanup and preserve the body result. Lowering and region elision
+  account for these hidden ownership edges, including async destroys. This
+  prevents accepted HTTP connections from closing before dispatch. Suspended
+  frames now save live registers and clear dead ones instead of resurrecting
+  reclaimed pointers, fixing the SQLite throughput lifetime GC-stress crash.
+
+- **Unique await and escaping cache results on Sparrow (#581).** In addition to
+  direct async calls, `await.take` now accepts proven fresh results of plain
+  Future factories, fresh Future outcomes returned by async actions, and exclusive
+  local bindings. The proof rejects publication, aliases, repeated observations
+  and loop reuse; bound extraction preserves the original cleanup boundary and
+  never gains fresh argument admission. Scope `keep` also carries escaping views
+  out of dying local caches, including nested Futures, while external borrows
+  retain their owners. Rehomed cache resources keep scope ownership instead of
+  becoming fresh call arguments. This fixes pooled SQLite leases and early
+  body/connection cleanup in the HTTP/web stack.
+
+- **CLI tests follow the removed IR engine (#584).** Help expectations use the
+  Sparrow/JVM engine list and current JIT wording; the obsolete REPL test is gone.
+
+- **Future-owned cached outcomes (#581).** On IR and Sparrow, ordinary await borrows
+  a Future's result. Repeated awaits and duplicate collector inputs keep one
+  owner; destroying that Future releases its fresh outcome exactly once in
+  reverse creation order. Retained inputs still follow escaping Futures (#578),
+  and tracking awaited values remains safe (#579). The ownership corpus restores
+  the #579–#581 checks and makes returned await aliases explicit borrows.
+
+### Removed
+
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
+Removed hidden fake storage from the test profile, including its six operations,
+compiler checks and runtime support on IR, Sparrow and JVM (#583). Use `Cell`
+for mutable synchronous test values and `Atomic` for async code or object and
+fake fields; role fakes and their ordinary typed fields remain available.
+
 ### Added
 
 - **Ownership tools for the 0.6.0 rebuild (#553, #555, #560).** Three
@@ -5385,6 +5434,14 @@ moved out.
 
 ### Removed
 
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
 - `sparrow-engine` and `sparrow-proto`, the intermediate runtimes of the core rebuild,
   and the `sparrow-next` binary (the core is `sparrow`).
 - **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors
@@ -5619,6 +5676,14 @@ the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
 
 ### Removed
 
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
 - `conformance/contracts/stdlib-inventory.json`: the snapshot of the std public surface had
   fallen far behind `std/` and nothing read it. `tools/inventory_std.py` now writes only
   the per-module coverage contracts in `contracts/stdlib.json`.
@@ -5725,6 +5790,14 @@ the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
   clear error instead of an internal compiler error.
 
 ### Removed
+
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
 
 - **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
   `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of

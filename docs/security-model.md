@@ -73,11 +73,11 @@ separate process with an OS memory limit.
 ## 3. Programs
 
 **Guaranteed.**
-- On every engine (Tomato, IR and the JVM), `--max-steps`, `--max-memory`,
+- On Sparrow and the legacy JVM backend, `--max-steps`, `--max-memory`,
   `--max-output` and `--timeout` stop a runaway program with its own report,
   which `catch` cannot intercept; without them nothing changes and nothing is
   spent ([#21], [#71], [#237]). Steps are counted alike on all three.
-- Value graphs of the IR engine are freed without recursion ([#28]).
+- Shared native value graphs are freed without recursion ([#28]).
 - A cancelled SQLite query never reaches a closed connection ([#18]); X.509
   path search is bounded ([#17]).
 - Private RSA operations (key generation, PSS and PKCS#1 v1.5 signing, OAEP
@@ -117,9 +117,7 @@ passed on the same commit ([#26]).
   counting allocator for others). With `memory_scope: MemoryScope::Runtime`
   it measures one runtime instead, so that runtimes in one process keep
   budgets of their own ([#269]): on Tomato its heap (pages, large objects and
-  the Rust memory its objects own), which needs no probe; on the IR engine
-  what the run's thread holds through `Counted`, which must then be the
-  global allocator. Memory a runtime cannot see (native libraries, other
+  the Rust memory its objects own), which needs no probe. Memory a runtime cannot see (native libraries, other
   threads) does not count against it.
 
 **Not guaranteed.**

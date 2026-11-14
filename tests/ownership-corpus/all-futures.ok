@@ -46,9 +46,28 @@ object Work {
 }
 
 async main() is int {
-    let t = Tap(3);
+    let t = Tap(6);
     let log = Atomic("");
     defer log.close();
+    {
+        let first = Work().make("A", log);
+        let second = Work().make("B", log);
+        let origins is @Future<Res> = [first, second, first];
+        let collector is AllFutures<Res> = AllFutures(origins: origins);
+        let results = await collector.results();
+        results.item(0).label();
+        results.item(2).label();
+        t.note("all futures retains result graph including duplicate positions: " + log.value());
+        t = t.is(log.value(), "", "all futures retains result graph including duplicate positions");
+        let again = await collector.results();
+        again.item(1).label();
+        t.note("repeated collection shares settled values: " + log.value());
+        t = t.is(log.value(), "", "repeated collection shares settled values");
+    }
+
+    t.note("duplicate future result closes once in reverse creation order: " + log.value());
+    t = t.is(log.value(), "BA", "duplicate future result closes once in reverse creation order");
+    log.replace("");
     {
         let origins is @Future<Res> = [];
         let empty = await AllFutures(origins: origins).results();

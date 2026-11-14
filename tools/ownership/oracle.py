@@ -25,7 +25,7 @@ SPECIAL = {
                               r'[ \t]+Cleanup: Cleanup\.second\nSecondary cleanup failure:\n'
                               r'[ \t]+Cleanup: Cleanup\.first$'),
 }
-INSTRUMENTATION = ('OKKAMA_TRACE_DESTROY', 'SPARROW_TRACE_DESTROY',
+INSTRUMENTATION = ('SPARROW_TRACE_DESTROY',
                    'OKKAMA_OWNERSHIP_REPORT', 'SPARROW_CORE_STATS')
 
 
@@ -273,15 +273,15 @@ def process(item, args, output, environments):
     if any(not healthy(b) or b['code'] != 0 for b in builds):
         result['status'] = 'build-fail'
         return result
-    labels = [('ir', 'A'), ('sparrow', 'A')] if args.mode in ('engines', 'tap') else [('A', 'A'), ('A2', 'A'), ('B', 'B')]
+    labels = [('source', 'A'), ('sparrow', 'A')] if args.mode in ('engines', 'tap') else [('A', 'A'), ('A2', 'A'), ('B', 'B')]
     for label, variant in labels:
         trace = folder / (label + '.trace')
         trace.touch()
-        env = dict(environments[variant], OKKAMA_TRACE_DESTROY=str(trace), SPARROW_TRACE_DESTROY=str(trace))
+        env = dict(environments[variant], SPARROW_TRACE_DESTROY=str(trace))
         if args.mode == 'stats':
             env['SPARROW_CORE_STATS'] = '1'
         program_args = args.program_arg if item['corpus'] == 'bench' else []
-        command = ([ok, 'run', '--engine', 'ir', *flags, source, *program_args] if label == 'ir' else
+        command = ([ok, 'run', '--engine', 'sparrow', *flags, source, *program_args] if label == 'source' else
                    [sp, *(['test'] if item['tests'] else []), folder / (variant + '.spb'), *program_args])
         run = execute(command, env, source.parent, folder / label, args.timeout)
         run['trace'] = str(trace)
@@ -300,7 +300,7 @@ def process(item, args, output, environments):
         result['differences'] = compare(runs['A'], runs['B'])
         result['status'] = 'nondeterministic' if result['determinism_diff'] else ('DIFF' if result['differences'] else 'same')
     else:
-        result['differences'] = compare(runs['ir'], runs['sparrow'])
+        result['differences'] = compare(runs['source'], runs['sparrow'])
         result['status'] = 'DIFF' if result['differences'] else 'same'
     if args.mode == 'stats':
         for variant in variants:

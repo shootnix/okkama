@@ -1,5 +1,5 @@
 //! Call stacks of uncaught failures on the Sparrow core (#10): `okkama run`
-//! maps them to source exactly as the IR engine does, `okkama exec` and
+//! maps them to source, `okkama exec` and
 //! `sparrow` print them in Sparrow terms, `OKKAMA_TRACE=off` leaves them out.
 
 use std::path::{Path, PathBuf};
@@ -32,23 +32,20 @@ fn place_and_stack(text: &str) -> &str {
 const REPORTED: [&str; 9] = ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep", "collect"];
 
 #[test]
-fn the_core_and_the_ir_engine_print_the_same_report() {
+fn sparrow_reports_failures_causes_and_cleanup() {
     // The whole report: the failure, its secondary cleanup failures and its
     // causes (#270), then the place and the stack.
     for name in REPORTED {
         let path = program(name);
-        let ir = okkama(&["run", "--engine", "ir"], &path, true);
         let core = okkama(&["run", "--engine", "sparrow"], &path, true);
-        assert_eq!(ir.status.code(), Some(1), "{name}: {}", stderr(&ir));
         assert_eq!(core.status.code(), Some(1), "{name}: {}", stderr(&core));
-        let (ir, core) = (stderr(&ir), stderr(&core));
+        let core = stderr(&core);
         assert!(core.contains("Stack trace (most recent call first):\n"), "{name}:\n{core}");
         assert!(place_and_stack(&core).len() < core.len(), "{name}");
-        assert_eq!(core, ir, "{name}");
     }
-    let cause = stderr(&okkama(&["run", "--engine", "ir"], &program("cause"), true));
+    let cause = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cause"), true));
     assert!(cause.starts_with("OrderError: OrderError.failed(7)\nCaused by:\n  StoreError: StoreError.closed\n"), "{cause}");
-    let cleanup = stderr(&okkama(&["run", "--engine", "ir"], &program("cleanup"), true));
+    let cleanup = stderr(&okkama(&["run", "--engine", "sparrow"], &program("cleanup"), true));
     assert!(
         cleanup.starts_with(
             "JobError: JobError.broken\nSecondary cleanup failure:\n  CloseError: CloseError.stuck(\"b\")\n\

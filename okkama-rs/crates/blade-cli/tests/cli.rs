@@ -132,15 +132,11 @@ fn blade_toml_decides_what_builds_and_runs() {
     assert_eq!(tree.calls(), ["build main.ok more.ok --target jvm -o out/p.jar"]);
     assert!(tree.0.join("p/out/p.jar").is_file());
 
-    tree.write(
-        "p/blade.toml",
-        "[module]\nname = \"p\"\n\n[build]\nentry = \"main.ok\"\n\n[run]\nengine = \"ir\"\nargs = [\"x\"]\nenv = { GREETING = \"hi\" }\n",
-    );
-    let ran = tree.blade("p", &["run", "--", "y"]);
-    assert_eq!(ran.status.code(), Some(7));
-    assert_eq!(text(&ran.stdout), "ran run --engine ir main.ok x y greeting=hi\n");
-    // IR runs the sources: nothing is built.
-    assert_eq!(tree.calls(), ["run --engine ir main.ok x y"]);
+    tree.write("p/blade.toml", "[run]\nengine = \"ir\"\n");
+    let ran = tree.blade("p", &["run"]);
+    assert!(!ran.status.success());
+    assert!(text(&ran.stderr).contains("Sparrow is the only"));
+    assert!(tree.calls().is_empty());
 }
 
 #[test]
@@ -148,7 +144,7 @@ fn errors_name_the_problem_and_fail() {
     let tree = Tree::new("errors");
     let cases = [
         ("[build]\nentrance = \"main.ok\"\n", "unknown key \"entrance\" in [build]"),
-        ("[run]\nengine = \"llvm\"\n", "[run] engine \"llvm\" is not sparrow, ir or jvm"),
+        ("[run]\nengine = \"llvm\"\n", "[run] engine \"llvm\" is not sparrow or jvm"),
         ("[build]\ntarget = \"jvm\"\n[run]\nengine = \"sparrow\"\n", "engine \"sparrow\" needs [build] target \"sparrow\""),
         ("[build]\nentry = \"missing.ok\"\n", "[build] entry \"missing.ok\" does not exist"),
         ("[build]\nentry = \"bad.ok\"\n", "build failed"),

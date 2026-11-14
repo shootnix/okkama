@@ -157,7 +157,7 @@ pub fn java_double(value: f64) -> String {
 
 
 // ----- test.close, test.text, test.bytes (#187) -----
-// The IR engine and Sparrow write these messages; Tests.java on the JVM
+// Sparrow and shared native providers write these messages; Tests.java on the JVM
 // writes the same.
 
 /// `test.close(actual, expected, tolerance)`: within `tolerance` of each

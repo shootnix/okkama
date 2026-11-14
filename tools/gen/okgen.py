@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generated Okkama programs compared across engines (hardening H-18).
 
-    tools/gen/okgen.py run [--seeds N] [--first S] [--engines ir,sparrow,jvm] [--out DIR]
+    tools/gen/okgen.py run [--seeds N] [--first S] [--engines sparrow,jvm] [--out DIR]
     tools/gen/okgen.py show SEED
 
 Each seed makes one terminating, deterministic program: exact integers with
@@ -198,7 +198,7 @@ def main():
     runner = sub.add_parser("run")
     runner.add_argument("--seeds", type=int, default=50)
     runner.add_argument("--first", type=int, default=1)
-    runner.add_argument("--engines", default="ir,sparrow,jvm")
+    runner.add_argument("--engines", default="sparrow,jvm")
     runner.add_argument("--out", default=os.path.join(ROOT, "conformance", "reports", "runs", "okgen"))
     show = sub.add_parser("show")
     show.add_argument("seed", type=int)
@@ -207,6 +207,8 @@ def main():
         print(program(args.seed)[0], end="")
         return 0
     engines = args.engines.split(",")
+    if any(engine not in ("sparrow", "jvm") for engine in engines):
+        parser.error("IR engine removed (#584); use sparrow,jvm (JVM stays until #585)")
     found = 0
     for seed in range(args.first, args.first + args.seeds):
         text, count = program(seed)

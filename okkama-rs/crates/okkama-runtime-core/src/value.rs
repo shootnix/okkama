@@ -35,8 +35,6 @@ pub enum Value {
     Builder(Rc<crate::heap::ArrayBuilder>),
     /// Служебный линейный сборщик словаря.
     MapBuilder(Rc<crate::heap::MapBuilder>),
-    /// Регион владения вызова (служебное значение `region`).
-    Region(Rc<crate::heap::Region>),
     /// Значение-функция: замыкание или связанный action; равенство — по
     /// идентичности, как у `okkama.rt.Fn` JVM.
     Fn(Rc<crate::heap::Closure>),

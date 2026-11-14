@@ -80,7 +80,7 @@ pub enum Type {
 
 /// Закрытый перечень intrinsics `okkama-rs` (§14.2): действия объектов std
 /// `async/*`, чьё состояние держит рантайм.
-pub const INTRINSICS: [&str; 92] = [
+pub const INTRINSICS: [&str; 86] = [
     "okkama.timeout.Within.outcome",
     "okkama.timeout.Before.outcome",
     "okkama.scope.FutureScope.outcome",
@@ -130,12 +130,6 @@ pub const INTRINSICS: [&str; 92] = [
     "okkama.int.clamp",
     "okkama.test.fail",
     "okkama.test.skip",
-    "okkama.fake.storage.set",
-    "okkama.fake.storage.get",
-    "okkama.fake.storage.has",
-    "okkama.fake.storage.remove",
-    "okkama.fake.storage.clear",
-    "okkama.fake.storage.size",
     "okkama.channel.Channel.new_capacity",
     "okkama.channel.Channel.sending",
     "okkama.channel.Channel.receiving",
@@ -1086,6 +1080,8 @@ pub enum InstKind {
     },
     /// `await %fu` (§13.1): только в `[async]`; результат — `R` future<R>.
     Await(ValueId),
+    /// Unique temporary Future: consume its cache into the awaiting scope.
+    AwaitTake(ValueId),
     /// `fut.spawn %fu`: запустить сейчас; результат — тот же Future.
     FutSpawn(ValueId),
     /// `worker.spawn %f(%a…)` (§18.1): синхронный action в отдельном
@@ -1550,7 +1546,7 @@ impl InstKind {
             InstKind::RatSign(value) | InstKind::RatPart { value, .. } => vec![*value],
             InstKind::RangeNew { start, end, .. } => vec![*start, *end],
             InstKind::FnClosure { captures, .. } => captures.clone(),
-            InstKind::Await(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
                 vec![*future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![*owner],
@@ -1679,7 +1675,7 @@ impl InstKind {
             InstKind::RatSign(value) | InstKind::RatPart { value, .. } => vec![value],
             InstKind::RangeNew { start, end, .. } => vec![start, end],
             InstKind::FnClosure { captures, .. } => captures.iter_mut().collect(),
-            InstKind::Await(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
+            InstKind::Await(future) | InstKind::AwaitTake(future) | InstKind::FutSpawn(future) | InstKind::Fut { future, .. } => {
                 vec![future]
             }
             InstKind::CapMake(owner) | InstKind::CallCap { cap: owner, .. } => vec![owner],
