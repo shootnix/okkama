@@ -271,8 +271,7 @@ hidden object CorsMarking does Surrounding {
 //     WebRoutes(Around(Compression()), Get(path: "/notes", endpoint: notes.list))
 //
 // Brotli (br, level 5) goes to a client that takes it at least as gladly as
-// gzip, whatever order it lists them in; gzip to the others. The JVM engine
-// has no Brotli codec and sends gzip only.
+// gzip, whatever order it lists them in; gzip to the others.
 //
 // A reply in memory is compressed whole and keeps a Content-Length; a streamed
 // one is compressed as it goes. A compressed reply says Vary: Accept-Encoding,
@@ -420,7 +419,7 @@ object Compression does Surrounding {
     }
 }
 
-// Which codecs this engine has: the JVM has no Brotli (#184).
+// Which codecs are available to the application.
 hidden object CompressionCodecs {
     CompressionCodecs() {}
 

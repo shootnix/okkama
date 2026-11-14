@@ -35,7 +35,7 @@ fn integer_bitwise_operations_use_signed_words_and_exact_shift_counts() {
         check(&lower("", &format!("{expression};")), expected);
     }
     // R01: int точный, а битовые операции — над словом signed-64; больший
-    // операнд — ошибка, как в JVM-рантайме.
+    // операнд — ошибка.
     for expression in [
         "18446744073709551616 | 1",
         "9223372036854775808 >> 63",

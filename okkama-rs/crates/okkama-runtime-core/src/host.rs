@@ -1,4 +1,4 @@
-//! Состояние хоста для providers, как `okkama.rt.Host` JVM: текущий каталог
+//! Состояние хоста для providers: текущий каталог
 //! программы виртуальный (процесс не меняет свой cwd, `chdir` программы меняет
 //! копию, от неё разрешаются относительные пути natives), окружение — копия,
 //! которую получают дочерние процессы; переносимые коды отказов ввода-вывода.
@@ -43,7 +43,7 @@ thread_local! {
 }
 
 /// Переменные, которые запускающий добавляет в окружение программы, если их
-/// нет у процесса (как `okkama run` передаёт `OKKAMA_ICU_LIBDIR` JVM).
+/// нет у процесса (включая `OKKAMA_ICU_LIBDIR` от `okkama run`).
 static DEFAULTS: std::sync::Mutex<BTreeMap<String, String>> = std::sync::Mutex::new(BTreeMap::new());
 
 pub fn default_environment(name: &str, value: &str) {
@@ -174,7 +174,7 @@ pub fn code(error: &std::io::Error) -> &'static str {
     }
 }
 
-/// Текст `strerror` ошибки, как причина `FileSystemException` JVM.
+/// Текст `strerror` ошибки файловой системы.
 pub fn strerror(error: &std::io::Error) -> String {
     let text = error.to_string();
     match text.rfind(" (os error ") {
@@ -183,7 +183,7 @@ pub fn strerror(error: &std::io::Error) -> String {
     }
 }
 
-/// Код и текст ошибки, как `_errno` Perl (`SystemNatives.reason` JVM).
+/// Код и текст ошибки, как `_errno` Perl.
 pub fn reason(error: &std::io::Error) -> (&'static str, String) {
     let code = code(error);
     let text = match code {
@@ -206,7 +206,7 @@ pub fn readable(path: &std::path::Path) -> bool {
     unsafe { libc::access(text.as_ptr(), libc::R_OK) == 0 }
 }
 
-/// Сигнал процессу-потомку (`Process.destroy` JVM).
+/// Сигнал процессу-потомку.
 pub fn signal(pid: u32, number: i32) -> bool {
     // SAFETY: kill(2) по идентификатору потомка.
     unsafe { libc::kill(pid as i32, number) == 0 }

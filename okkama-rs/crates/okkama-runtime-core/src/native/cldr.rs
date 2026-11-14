@@ -1,6 +1,6 @@
 //! `runtime/cldr`: таблицы CLDR как данные рантайма (#223). Генераторы
 //! `tools/generate-cldr*.py` пишут их в `cldr-<семейство>.dat` (gzip текста,
-//! общий с JVM); файл распаковывается и индексируется при первом обращении к
+//! из `data/`); файл распаковывается и индексируется при первом обращении к
 //! любой его таблице. Строка файла — таблица, ключ и поля через табуляцию;
 //! имя таблицы начинается с семейства и точки (`numbers.row`). Sparrow берёт
 //! этот native через мост (`native_origin`).
@@ -49,7 +49,7 @@ fn index(family: &str) -> Option<&'static Index> {
                     Some(INDEX.get_or_init(|| {
                         build(TEXT.get_or_init(|| {
                             String::from_utf8(gunzip(include_bytes!(concat!(
-                                "../../../okkama-compiler/runtime/jvm/src/okkama/rt/",
+                                "../../../okkama-runtime-core/data/",
                                 $file
                             ))))
                             .expect("UTF-8 CLDR table")

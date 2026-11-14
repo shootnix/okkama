@@ -4,14 +4,8 @@
 //! [`generate`] проверяет модуль, направляет его выбранному генератору и
 //! возвращает [`Artifact`] (основной файл и вспомогательные) либо ошибку.
 //! Запись файлов и параметры командной строки остаются в CLI.
-//!
-//! JVM backend генерирует главный класс и по классу на каждый объект Okkama.
 
-mod jar;
-pub mod jvm;
 pub mod sparrow;
-
-pub use jar::JarError;
 
 use std::fmt;
 
@@ -19,14 +13,12 @@ use crate::ir;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Backend {
-    Jvm,
     Sparrow,
 }
 
 impl Backend {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
-            "jvm" => Some(Self::Jvm),
             "sparrow" => Some(Self::Sparrow),
             _ => None,
         }
@@ -34,7 +26,6 @@ impl Backend {
 
     pub fn name(self) -> &'static str {
         match self {
-            Self::Jvm => "jvm",
             Self::Sparrow => "sparrow",
         }
     }
@@ -58,16 +49,11 @@ impl fmt::Display for CodegenError {
 impl std::error::Error for CodegenError {}
 
 /// Логическое имя выходного артефакта, без каталога и расширения.
-/// JVM использует его как имя класса, независимо от имени модуля Okkama.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     pub artifact_name: String,
-    /// JVM: счётчик шагов `--max-steps` (#237) на входах в функции и обратных
-    /// переходах, `okkama.rt.Rt.step`; без него байткод прежний.
-    pub budgeted: bool,
 }
 
-/// Общая развилка: новый backend добавляется рядом с `jvm` и в этот match.
 /// Один выходной файл backend: имя относительно каталога основного артефакта.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtifactFile {
@@ -75,8 +61,7 @@ pub struct ArtifactFile {
     pub bytes: Vec<u8>,
 }
 
-/// Результат генерации: основной файл первым, затем вспомогательные
-/// (для JVM — классы объектов рядом с главным классом).
+/// Результат генерации: основной файл первым, затем вспомогательные.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Artifact {
     pub files: Vec<ArtifactFile>,
@@ -95,7 +80,6 @@ pub fn generate(
     options: &Options,
 ) -> Result<Artifact, CodegenError> {
     let files = match backend {
-        Backend::Jvm => jvm::generate(module, &options.artifact_name, options.budgeted)?,
         Backend::Sparrow => {
             let program =
                 sparrow::generate(module).map_err(|error| CodegenError::InvalidInput {

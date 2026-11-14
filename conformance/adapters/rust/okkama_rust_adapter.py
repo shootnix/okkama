@@ -61,8 +61,8 @@ def source_fingerprint(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in ("target", ".git"))
         for fname in sorted(filenames):
-            # Embedded runtime class files (include_bytes!) are build inputs too.
-            if fname.endswith((".rs", ".toml", ".lock", ".class")):
+            # Embedded runtime data (include_bytes!) are build inputs too.
+            if fname.endswith((".rs", ".toml", ".lock", ".dat")):
                 full = os.path.join(dirpath, fname)
                 h.update(os.path.relpath(full, root).encode() + b"\0")
                 with open(full, "rb") as fh:
@@ -83,8 +83,8 @@ def probe():
     cache = os.path.join(target_dir(), "ocs-probe.json")
     fingerprint = source_fingerprint(root) if os.path.isdir(root) else None
     engine = os.environ.get("OCS_RUST_ENGINE", "sparrow")
-    if engine not in ("sparrow", "jvm"):
-        raise SystemExit("IR engine removed (#584); Sparrow is the only Okkama engine; JVM remains until #585")
+    if engine != "sparrow":
+        raise SystemExit("Sparrow is the only Okkama engine; the requested engine was removed")
     with open(os.path.join(target_dir(), "ocs-probe.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         engines = {}

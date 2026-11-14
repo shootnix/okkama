@@ -1,5 +1,5 @@
 //! Состояние текущего теста (§14), общее для исполнителя тестов, intrinsics
-//! утверждений и natives `runtime/testing` — как `Tests.current` JVM.
+//! утверждений и natives `runtime/testing`.
 use crate::failure::{Failure, Kind};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -74,7 +74,7 @@ impl std::fmt::Debug for Names<'_> {
 }
 
 /// Текст значения в сообщении утверждения: строка — в кавычках, остальное —
-/// как `String.valueOf` коллекционного представления JVM.
+/// в коллекционном представлении значений.
 pub fn show(names: &Names<'_>, value: &Value) -> String {
     match value {
         Value::Str(text) => format!("\"{text}\""),
@@ -157,8 +157,7 @@ pub fn java_double(value: f64) -> String {
 
 
 // ----- test.close, test.text, test.bytes (#187) -----
-// Sparrow and shared native providers write these messages; Tests.java on the JVM
-// writes the same.
+// Sparrow and shared native providers write these messages.
 
 /// `test.close(actual, expected, tolerance)`: within `tolerance` of each
 /// other. A NaN is never close; a negative or NaN tolerance is a failure.

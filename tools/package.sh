@@ -17,7 +17,6 @@
 #     okkama-<версия>-<платформа>/
 #         bin/okkama bin/sparrow bin/blade
 #         lib/okkama/std/
-#         lib/okkama/native/<os>-<arch>/libokkama_native.{dylib,so}
 #         install.sh README.md LICENSE
 
 set -euo pipefail
@@ -46,10 +45,10 @@ done
 # Платформа архива: из тройки cargo или с этой машины.
 triple="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 case "$triple" in
-    aarch64-apple-darwin) PLATFORM=macos-aarch64; NATIVE=libokkama_native.dylib ;;
-    x86_64-apple-darwin) PLATFORM=macos-x86_64; NATIVE=libokkama_native.dylib ;;
-    x86_64-unknown-linux-gnu) PLATFORM=linux-x86_64; NATIVE=libokkama_native.so ;;
-    aarch64-unknown-linux-gnu) PLATFORM=linux-aarch64; NATIVE=libokkama_native.so ;;
+    aarch64-apple-darwin) PLATFORM=macos-aarch64 ;;
+    x86_64-apple-darwin) PLATFORM=macos-x86_64 ;;
+    x86_64-unknown-linux-gnu) PLATFORM=linux-x86_64 ;;
+    aarch64-unknown-linux-gnu) PLATFORM=linux-aarch64 ;;
     *) echo "package.sh: unsupported target $triple" >&2; exit 1 ;;
 esac
 
@@ -63,7 +62,7 @@ fi
 
 if [[ $BUILD -eq 1 ]]; then
     (cd "$ROOT/okkama-rs" && cargo build --release --locked "${CARGO_TARGET[@]}" \
-        -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli)
+        -p okkama-cli -p sparrow-cli -p blade-cli)
 fi
 
 VERSION="${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/okkama-rs/Cargo.toml" | head -1)}"
@@ -72,11 +71,10 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 DEST="$STAGE/$NAME"
 
-mkdir -p "$DEST/bin" "$DEST/lib/okkama/native/$PLATFORM"
+mkdir -p "$DEST/bin" "$DEST/lib/okkama"
 for tool in okkama sparrow blade; do
     install -m 755 "$RELEASE/$tool" "$DEST/bin/$tool"
 done
-install -m 644 "$RELEASE/$NATIVE" "$DEST/lib/okkama/native/$PLATFORM/$NATIVE"
 cp -R "$ROOT/std" "$DEST/lib/okkama/std"
 printf '%s\n' "$VERSION" > "$DEST/lib/okkama/VERSION"
 # The compiler the binaries were built with (#41).
@@ -164,11 +162,10 @@ Maintainer: Alexander Ponomarev <shootnix@users.noreply.github.com>
 Section: devel
 Priority: optional
 Depends: libc6 (>= 2.17)
-Suggests: libsqlite3-0 (>= 3.41), openjdk-21-jdk-headless
+Suggests: libsqlite3-0 (>= 3.41)
 Homepage: https://github.com/shootnix/okkama
 Description: Okkama programming language
- Compiler and runner for Okkama (Sparrow VM with JIT,
- JVM backend), the standard library, the language server, the formatter
+ Compiler and runner for Okkama (Sparrow VM with JIT), the standard library, the language server, the formatter
  and the blade project tool.
 CONTROL
             # xz, not the zstd Ubuntu's dpkg-deb picks by default: dpkg before
@@ -197,15 +194,13 @@ URL: https://github.com/shootnix/okkama
 BuildArch: $RPM_ARCH
 Requires: glibc >= 2.17
 Recommends: sqlite-libs
-Suggests: java-21-openjdk-headless
 AutoReqProv: no
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %global _build_id_links none
 
 %description
-Compiler and runner for Okkama (Sparrow VM with JIT,
-JVM backend), the standard library, the language server, the formatter
+Compiler and runner for Okkama (Sparrow VM with JIT), the standard library, the language server, the formatter
 and the blade project tool.
 
 %install

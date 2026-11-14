@@ -1,6 +1,6 @@
 //! `runtime/hex`, `runtime/base32`, `runtime/base64`, `runtime/base85`,
 //! `runtime/quoted_printable`, `runtime/single_byte` — перенос
-//! `EncodingNatives`/`TextNatives` JVM-рантайма один к одному. Смещения в
+//! Смещения в
 //! строках — в кодовых точках. Сбой provider (неверный алфавит, недопустимый
 //! вход декодера) — `Native invocation "…" failed`.
 
@@ -444,7 +444,7 @@ fn prefix(text: &str, maximum: u32) -> i64 {
         .count() as i64
 }
 
-/// Байты по кодовым точкам (младший байт, как `(byte) scalar` JVM).
+/// Байты по кодовым точкам (младший байт).
 fn single_byte_encoded(text: &str) -> Vec<u8> {
     text.chars().map(|ch| u32::from(ch) as u8).collect()
 }

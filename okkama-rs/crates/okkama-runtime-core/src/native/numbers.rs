@@ -1,5 +1,5 @@
 //! `runtime/bigint` и `runtime/decimal` — перенос `BigIntNatives` и части
-//! `ValueNatives` JVM-рантайма. Целые произвольной точности — свой `Big`
+//! Целые произвольной точности — свой `Big`
 //! (основание 10^9), без внешних зависимостей. Неверная запись операнда —
 //! `Native invocation "…" failed`; ожидаемые сбои — `NativeFailure`
 //! (`core.bigint`).
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn decimal_components_match_the_jvm_parser() {
+    fn decimal_components_follow_java_semantics() {
         let parts = components("-001.2000").unwrap();
         assert_eq!((parts.coefficient.as_str(), parts.exponent), ("-12", -1));
         let parts = components("1000").unwrap();

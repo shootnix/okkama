@@ -124,13 +124,13 @@ fn blade_toml_decides_what_builds_and_runs() {
     tree.write("p/more.ok", "module p;\n");
     tree.write(
         "p/blade.toml",
-        "[module]\nname = \"p\"\n\n[build]\nentry = [\"main.ok\", \"more.ok\"]\ntarget = \"jvm\"\noutput = \"out/p.jar\"\n\n\
+        "[module]\nname = \"p\"\n\n[build]\nentry = [\"main.ok\", \"more.ok\"]\ntarget = \"sparrow\"\noutput = \"out/p.spb\"\n\n\
          [run]\nargs = [\"x\"]\nenv = { GREETING = \"hi\" }\n",
     );
     let built = tree.blade("p", &["build"]);
     assert!(built.status.success(), "{}", text(&built.stderr));
-    assert_eq!(tree.calls(), ["build main.ok more.ok --target jvm -o out/p.jar"]);
-    assert!(tree.0.join("p/out/p.jar").is_file());
+    assert_eq!(tree.calls(), ["build main.ok more.ok --target sparrow -o out/p.spb"]);
+    assert!(tree.0.join("p/out/p.spb").is_file());
 
     tree.write("p/blade.toml", "[run]\nengine = \"ir\"\n");
     let ran = tree.blade("p", &["run"]);
@@ -144,8 +144,7 @@ fn errors_name_the_problem_and_fail() {
     let tree = Tree::new("errors");
     let cases = [
         ("[build]\nentrance = \"main.ok\"\n", "unknown key \"entrance\" in [build]"),
-        ("[run]\nengine = \"llvm\"\n", "[run] engine \"llvm\" is not sparrow or jvm"),
-        ("[build]\ntarget = \"jvm\"\n[run]\nengine = \"sparrow\"\n", "engine \"sparrow\" needs [build] target \"sparrow\""),
+        ("[run]\nengine = \"llvm\"\n", "[run] engine \"llvm\" is not sparrow"),
         ("[build]\nentry = \"missing.ok\"\n", "[build] entry \"missing.ok\" does not exist"),
         ("[build]\nentry = \"bad.ok\"\n", "build failed"),
         ("[build]\nentry = \"main.ok\"\n[dependencies]\nweb = { path = \"../web\" }\n", "dependency \"web\" is not installed"),

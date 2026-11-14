@@ -10,11 +10,11 @@
 //!   canonical text form and the verifier (`docs/compiler/OIR-1.md`);
 //! * [`lowering`] — typed AST-to-OIR lowering of the supported subset:
 //!   scalars, control flow, loops, objects, constructors, actions, successors;
-//! * [`codegen`] — backend selection and direct JVM class-file generation.
+//! * [`codegen`] — Sparrow bytecode generation.
 //!
 //! The later pipeline stages are present only as documented module
 //! boundaries: [`analysis`] and [`jit`]. General analysis and a native-code
-//! backend are not implemented yet. JVM-generated programs run on a JVM.
+//! backend are not implemented yet. Programs run on Sparrow.
 //!
 //! The library never reads command-line arguments, never prints and never
 //! terminates the process. Callers receive values and diagnostics and decide

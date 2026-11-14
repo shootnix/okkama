@@ -1,7 +1,7 @@
-//! Числовые natives — перенос `MathNatives` JVM: `runtime/format::sprintf_values`
+//! Числовые natives: `runtime/format::sprintf_values`
 //! (printf Perl), `runtime/statistics`, генератор PCG `runtime/random` и
 //! `runtime/random_distribution`. Тексты отказов — как у Perl-provider.
-//! Элементарные функции (`ln`, `exp`, `cos`, …) — libm хоста; JVM допускает
+//! Элементарные функции (`ln`, `exp`, `cos`, …) — libm хоста; контракт допускает
 //! для `Math` погрешность в 1 ulp, так что последний бит может различаться.
 use super::support::{
     array, byte_array, failed, failure, float, handle, int, items, new_handle, string, text,

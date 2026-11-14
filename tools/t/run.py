@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """The t/ suite (#245): self-checking Okkama programs that print TAP.
 
-    tools/t/run.py [--configs sparrow,jvm] [--jobs N] [--cage] [FILE|DIR ...]
+    tools/t/run.py [--configs sparrow] [--jobs N] [--cage] [FILE|DIR ...]
 
 Every file under t/ (or the ones given) runs on every configuration:
 
     sparrow         okkama run --engine sparrow
-    jvm             okkama run --engine jvm
     sparrow-passes-off Sparrow with OKKAMA_IR_PASSES=none
     sparrow-gc-stress  Sparrow with SPARROW_CORE_GC_STRESS=1 (a collection
                     at every safepoint, freed cells poisoned)
@@ -17,8 +16,7 @@ order; `# ...` lines are diagnostics. It fails on any `not ok`, a missing or
 wrong plan, a check out of order, a non-zero exit, a budget stop, or a TAP
 stream that differs from the first configuration's. Runs are bounded by
 `--timeout` and `--max-memory`. `--cage` wraps sparrow runs in
-okkama-rs/tools/new-runtime/caged.py for local use (the JVM cannot run there:
-it starts `java`). Files import the modules of `t/support/` (the TAP helper
+okkama-rs/tools/new-runtime/caged.py for local use. Files import the modules of `t/support/` (the TAP helper
 `tap.ok` and modules for t/lang) through OKKAMA_IMPORT_DIRS; they are not
 tests themselves.
 
@@ -42,7 +40,6 @@ CAGE = os.path.join(ROOT, "okkama-rs", "tools", "new-runtime", "caged.py")
 
 CONFIGS = {
     "sparrow": ("sparrow", {}),
-    "jvm": ("jvm", {}),
     "sparrow-passes-off": ("sparrow", {"OKKAMA_IR_PASSES": "none"}),
     "sparrow-gc-stress": ("sparrow", {"SPARROW_CORE_GC_STRESS": "1"}),
 }
@@ -91,7 +88,7 @@ def run(job, args):
     engine, extra = CONFIGS[config]
     command = [args.okkama, "run", "--engine", engine, "--timeout", str(args.timeout),
                "--max-memory", args.max_memory, path]
-    if args.cage and engine != "jvm":
+    if args.cage:
         command = [sys.executable, CAGE, "--cpu-seconds", str(args.timeout), "--timeout", str(args.timeout + 30),
                    "--memory-mb", "2048", "--writable", os.path.dirname(path), "--"] + command
     env = dict(os.environ, OKKAMA_IMPORT_DIRS=SUPPORT, OKKAMA_STDLIB_DIR=os.path.join(ROOT, "std"),
@@ -111,7 +108,7 @@ def run(job, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("paths", nargs="*")
-    parser.add_argument("--configs", default="sparrow,jvm")
+    parser.add_argument("--configs", default="sparrow")
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     parser.add_argument("--okkama", default=OKKAMA)
     parser.add_argument("--timeout", type=int, default=60)

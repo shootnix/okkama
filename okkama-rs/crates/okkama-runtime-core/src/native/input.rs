@@ -1,5 +1,5 @@
 //! `runtime/input_state` (буфер UTF-8 ввода) и `runtime/process::process_arguments`
-//! — часть `Natives` JVM.
+//! для Sparrow.
 use super::support::{array, byte_array, bytes, failure, handle, int, int_value, new_handle};
 use super::{Context, Error};
 use crate::{Value, abi::Native};

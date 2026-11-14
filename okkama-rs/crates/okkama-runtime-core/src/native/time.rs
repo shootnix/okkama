@@ -1,5 +1,5 @@
 //! `runtime/time_format` (шаблоны `%Y-%m-%d …`) и `runtime/time_zone`
-//! (встроенный tzdb 2026c, `tzdb.dat`) — перенос `TimeNatives` JVM, включая
+//! (встроенный tzdb 2026c, `tzdb.dat`), включая
 //! правило POSIX после последнего перехода.
 use super::support::{array, failed, int, int_value, java_long, string, text};
 use super::Error;

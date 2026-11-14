@@ -14,10 +14,7 @@ use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration, Instant};
 
 fn engines() -> Vec<&'static str> {
-    let mut engines = vec!["sparrow"];
-    if Command::new("java").arg("-version").output().is_ok() {
-        engines.push("jvm");
-    }
+    let engines = vec!["sparrow"];
     engines
 }
 

@@ -168,7 +168,7 @@ pub(crate) struct Budget {
     /// Steps left in the current slice; machine code polls below zero.
     pub fuel: crate::budget::Fuel,
     /// The memory budget caps the machine stack: overflowing it is running
-    /// out of memory, as on the IR engine and the JVM (#241).
+    /// out of memory (#241).
     pub stack_capped: bool,
 }
 

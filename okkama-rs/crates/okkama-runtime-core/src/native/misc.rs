@@ -1,4 +1,4 @@
-//! Небольшие natives std — перенос `MiscNatives` JVM: `runtime/crypto`,
+//! Небольшие natives std: `runtime/crypto`,
 //! `runtime/secret`, `runtime/debug`, `runtime/diff`, `runtime/math_aggregate`,
 //! `runtime/url_text`, `runtime/layout`. Тексты отказов — как у Perl-provider.
 use super::support::{

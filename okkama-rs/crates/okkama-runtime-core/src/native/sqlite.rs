@@ -1,5 +1,5 @@
 //! `runtime/database` (provider `optional.sqlite`) — перенос `SqliteNatives`
-//! JVM contract, backed by rusqlite and its bundled SQLite. Each connection
+//! Shared native contract, backed by rusqlite and its bundled SQLite. Each connection
 //! обслуживает свой рабочий поток; операции идут по очереди, их исход
 //! приходит событием цикла. Ответ — `ok` и данные либо отказ `kind`/`code`.
 #![allow(unsafe_code)]

@@ -1,6 +1,6 @@
 //! `runtime/fs_root` (доступ под корнем без следования ссылкам),
 //! `runtime/snapshot` (атомарная замена файла) и `runtime/environment` —
-//! перенос `SystemNatives` JVM. Каждый компонент пути проверяется без
+//! Каждый компонент пути проверяется без
 //! следования ссылкам (как NIO `NOFOLLOW_LINKS`).
 use super::support::{
     array, byte_array, bytes, entries, failure, handle, int, int_map, items, new_handle, string,
