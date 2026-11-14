@@ -7,26 +7,29 @@ object Session {
     field connection: Connection
 }
 scope S action in @main
-func @main(%session: Session, %full: deps; %q: scope<S>) -> (Connection, own, deps) {
+summary Mverify1 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[field(parameter=0, field=field_ref(declaration=Session, index=0))], external_deps=[0], provenance=unbound_result)] contract call_contract(results=[Connection], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @main(%session: Session facts(managed(deps=dfull_session)), %full: deps; %q: scope<S>) -> (Connection, own, deps) [method Session, async] summary(Mverify1) {
+    dependency dfull_session: dependency = retention(value=%session, selection=selection(%session))
+    dependency dfull_result: dependency = retention(value=%result, selection=selection(%result))
     boundary B0 lexical in S
-    key k0: key = runtime(%session)
-    dependency d0: dependency = key(k0)
+    key k0: key = created(site=0, instance=%session)
+    dependency d0: dependency = retention(value=%child, selection=selection(%child))
 ^entry in S:
     %child: Connection facts(managed(deps=d0)) = obj.get %session, connection
     invoke.own scope.split %q, selection(%child)
         normal ^prepare($state, $selected, $external_deps)
         unwind ^split_failed($state, $failure)
 ^split_failed(%original: scope<S>, %split_error: failure) in S:
-    %final: failure = scope.unwind %original, %split_error
+    %final: failure = scope.unwind %original, %split_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^prepare(%rest: scope<S>, %selected: own, %external: deps) in S:
     %pending: pending = exit.prepare return %child, %selected, deps(%full) at B0
-    invoke.own scope.end %rest, reserve %pending
+    invoke.own scope.end %rest, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
-        unwind ^failed($closed, $failure, $pending)
+        unwind ^failed($closed, $failure)
 ^commit(%closed: closed, %reservation: pending) in S:
-    (%result: Connection, %out: own, %deps: deps) = exit.commit %reservation, destination caller, result Connection
+    (%result: Connection facts(managed(deps=dfull_result)), %out: own, %deps: deps) = exit.commit %reservation, destination caller, result Connection
     ret %result, %out, %deps
-^failed(%closed2: closed, %failure: failure, %outer_reserve: pending) in S:
+^failed(%closed2: closed, %failure: failure) in S:
     raise %failure
 }

@@ -1,0 +1,10 @@
+oir 2 high
+// expect OIR2-H2 value:0:0
+module verify
+requires core
+scope S action in @f
+func @f() -> void {
+^entry in S:
+    %p: own = own.empty
+    ret
+}

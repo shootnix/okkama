@@ -155,6 +155,13 @@ impl Reader<'_> {
         while !self.is("]") {
             let tag = self.next()?;
             let attr = match tag.text.as_str() {
+                "defer" => {
+                    self.expect("(")?;
+                    let replacements = Codec::read_field(self, "replacements")?;
+                    self.expect(")")?;
+                    FunctionAttr::DeferEntry { replacements }
+                }
+                "cleanup" => FunctionAttr::Cleanup,
                 "entry" => FunctionAttr::Entry,
                 "async" => FunctionAttr::Async,
                 "private" => FunctionAttr::Hidden,
@@ -272,6 +279,7 @@ impl Reader<'_> {
     }
 
     pub(super) fn protocol(&mut self) -> Result<ProtocolDecl, Diagnostic> {
+        let kind = if self.eat("kind") { ProtocolKind::read(self)? } else { ProtocolKind::Storage };
         let holders = if self.eat("holders") {
             Vec::read(self)?
         } else {
@@ -287,7 +295,7 @@ impl Reader<'_> {
         } else {
             vec![]
         };
-        Ok(ProtocolDecl { holders, rules, roots })
+        Ok(ProtocolDecl { kind, holders, rules, roots })
     }
 
     pub(super) fn binding(&mut self) -> Result<BindingDecl, Diagnostic> {
@@ -522,6 +530,8 @@ impl Writer<'_> {
                 self.push(", ");
             }
             match attr {
+                FunctionAttr::DeferEntry { .. } => attr.write(self)?,
+                FunctionAttr::Cleanup => self.push("cleanup"),
                 FunctionAttr::Entry => self.push("entry"),
                 FunctionAttr::Async => self.push("async"),
                 FunctionAttr::Hidden => self.push("private"),

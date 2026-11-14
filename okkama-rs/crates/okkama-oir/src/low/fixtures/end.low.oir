@@ -1,0 +1,58 @@
+oir 2 low
+module end
+scope S0 action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract
+    call_contract(failures=[thrown, program, panic, native], publication=atomic)
+
+func @main(%0: int) -> void summary(M0) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S0), after_defers=^b0,
+        effects=scope_effects(failures=[], suspends=false, cancel=false)), ], schedules=[cleanup_schedule(close=0), ],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory]), ], roots=[root_requirement(boundary=terminator(^b0),
+        bindings=[root_binding(value=%4, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i3),
+        bindings=[root_binding(value=%4, trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i3),
+        bindings=[root_binding(value=%3, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i2),
+        bindings=[root_binding(value=%3, trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i2),
+        bindings=[root_binding(value=%2, trace=cleanup_activation)]), root_requirement(boundary=after_instruction(i1),
+        bindings=[root_binding(value=%2, trace=cleanup_activation)]), root_requirement(boundary=before_instruction(i1),
+        bindings=[root_binding(value=%1, trace=scope_inventory)]), root_requirement(boundary=after_instruction(i0),
+        bindings=[root_binding(value=%1, trace=scope_inventory)]), root_requirement(boundary=before_instruction(i0)),
+        root_requirement(boundary=entry(^b0), bindings=[root_binding(value=%0, trace=value(int))]),
+        root_requirement(boundary=terminator(^b1)), root_requirement(boundary=entry(^b1)),
+        root_requirement(boundary=terminator(^b2), bindings=[root_binding(value=%6, trace=cleanup_activation)]),
+        root_requirement(boundary=entry(^b2), bindings=[root_binding(value=%6, trace=cleanup_activation)]),
+        root_requirement(boundary=terminator(^b3), bindings=[root_binding(value=%9, trace=cleanup_activation),
+        root_binding(value=%10, trace=failure_graph)]), root_requirement(boundary=after_instruction(i4),
+        bindings=[root_binding(value=%9, trace=cleanup_activation), root_binding(value=%10, trace=failure_graph)]),
+        root_requirement(boundary=before_instruction(i4), bindings=[root_binding(value=%7, trace=cleanup_activation)]),
+        root_requirement(boundary=entry(^b3), bindings=[root_binding(value=%7, trace=cleanup_activation)]),
+        root_requirement(boundary=terminator(^b4), bindings=[root_binding(value=%13, trace=cleanup_activation)]),
+        root_requirement(boundary=after_instruction(i5), bindings=[root_binding(value=%13, trace=cleanup_activation)]),
+        root_requirement(boundary=before_instruction(i5), bindings=[root_binding(value=%11, trace=cleanup_activation),
+        root_binding(value=%12, trace=failure_graph)]), root_requirement(boundary=entry(^b4),
+        bindings=[root_binding(value=%11, trace=cleanup_activation), root_binding(value=%12, trace=failure_graph)]),
+        root_requirement(boundary=terminator(^b5), bindings=[root_binding(value=%16, trace=failure_graph),
+        root_binding(value=%17, trace=exit_reserve)]), root_requirement(boundary=after_instruction(i6),
+        bindings=[root_binding(value=%16, trace=failure_graph), root_binding(value=%17, trace=exit_reserve)]),
+        root_requirement(boundary=before_instruction(i6), bindings=[root_binding(value=%14, trace=cleanup_activation)]),
+        root_requirement(boundary=entry(^b5), bindings=[root_binding(value=%14, trace=cleanup_activation)]), ],
+        proofs=[])
+    ^b0 in S0:
+    [i0] %1: scope<S0> = scope.begin S0
+    [i1] %2: cleanup-state = cleanup.begin %1, close 0, effects scope_effects(failures=[], suspends=false, cancel=false)
+    [i2] %3: cleanup-state = cleanup.settle.empty %2, schedule 0
+    [i3] %4: cleanup-state = cleanup.plan %3, plan 0
+    br ^b2(%4)
+    ^b1(%5: closed) in S0:
+    ret
+    ^b2(%6: cleanup-state) in S0:
+    cleanup.next %6 selected ^b3($state, $selected) done ^b5($state)
+    ^b3(%7: cleanup-state, %8: stable-key) in S0:
+    [i4] (%9: cleanup-state, %10: failure-state) = cleanup.destroy %7, %8
+    failure.dispatch %10 none ^b2(%9) some ^b4(%9, $failure)
+    ^b4(%11: cleanup-state, %12: failure) in S0:
+    [i5] %13: cleanup-state = cleanup.failure %11, %12
+    br ^b2(%13)
+    ^b5(%14: cleanup-state) in S0:
+    [i6] (%15: closed, %16: failure-state, %17: exit-state) = cleanup.finish %14
+    exit.dispatch 0 %15 %16 %17 success ^b1($closed)
+}

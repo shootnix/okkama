@@ -1,0 +1,10 @@
+oir 2 own
+module snapshots
+scope S action in @f
+summary Mf internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[program], publication=atomic)
+func @f(%key: stable-key, %other: stable-key, %owner: owner, %holder: holder, %authority: int) -> void summary(Mf) {
+^entry in S:
+    %snapshot: owner-snapshot = dynamic.refresh %key, access access_context(owner=%owner, holder=%holder, authority=%authority)
+    dynamic.check %key, %snapshot
+    ret
+}

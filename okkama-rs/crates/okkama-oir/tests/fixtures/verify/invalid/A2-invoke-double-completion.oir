@@ -1,0 +1,21 @@
+oir 2 own
+// expect OIR2-A2 instruction:0:3
+module invoke_constructor
+object C {
+    field $pending: bool
+}
+scope S action in @f
+summary M0 internal results [result_relation(provenance=unbound_result)] contract call_contract(results=[C], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f() -> C [ctor C] summary(M0) {
+^entry in S:
+    %p: bool = undef ty bool
+    invoke.own obj.new C { $pending: %p } construction incomplete
+        normal ^finish($value)
+        unwind ^failed($failure)
+^finish(%v: C) in S:
+    obj.init %v, false, field field_ref(declaration=C, index=0)
+    obj.init %v, false, field field_ref(declaration=C, index=0)
+    ret %v
+^failed(%e: failure) in S:
+    raise %e
+}

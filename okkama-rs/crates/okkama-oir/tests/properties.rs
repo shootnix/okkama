@@ -42,7 +42,8 @@ fn generated(seed: u64) -> Module {
     }
     b.switch_to(exit).unwrap();
     let answer = b.block_params(exit).unwrap()[0]; let q = b.block_params(exit).unwrap()[1];
-    let ends = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state: q, reserve: None }), scope, scope).unwrap();
+    let ends = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state: q, reserve: None,
+        effects: ScopeEffectEnvelope::conservative() }), scope, scope).unwrap();
     b.switch_to(ends.normal).unwrap(); b.terminate(TermKind::Ret { values: vec![answer] }).unwrap();
     b.switch_to(ends.unwind).unwrap(); b.terminate(TermKind::Raise(b.block_params(ends.unwind).unwrap()[1])).unwrap();
     let body = b.finish().unwrap(); m.define_function(f, body).unwrap(); m.finish().unwrap()

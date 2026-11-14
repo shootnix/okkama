@@ -1,0 +1,15 @@
+oir 2 own
+module final_cancel
+scope S action in @f
+summary M0 internal contract call_contract(failures=[cancelled], publication=atomic)
+func @f() -> void [async] summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    invoke.own scope.end %q, effects scope_effects(failures=[], suspends=false, cancel=true)
+        normal ^ok($closed)
+        unwind ^failed($closed, $failure)
+^ok(%closed: closed) in S:
+    ret
+^failed(%closed2: closed, %error: failure) in S:
+    raise %error
+}

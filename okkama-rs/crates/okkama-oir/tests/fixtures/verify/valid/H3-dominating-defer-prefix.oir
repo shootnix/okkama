@@ -1,0 +1,20 @@
+oir 2 high
+module verify
+requires core
+scope SD action in @d
+func @d() -> void {
+^entry in SD:
+    ret
+}
+scope S action in @f
+func @f(%c: bool) -> void {
+^entry in S:
+    defer.register S, action defer_action(function=@d)
+    cond %c, ^left, ^right
+^left in S:
+    br ^merge
+^right in S:
+    br ^merge
+^merge in S:
+    ret
+}

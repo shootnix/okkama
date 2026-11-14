@@ -1,0 +1,11 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+func @f(%x: int) -> void {
+    binding b0 "x": int in S
+^entry in S:
+    bind %x, binding b0
+    rebind %x, binding b0, target S
+    ret
+}

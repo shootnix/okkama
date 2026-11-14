@@ -1,0 +1,79 @@
+oir 2 own
+// S(1), P(2), J1(3), J2(4): P is admitted last; both protocol outcomes destroy J2 J1 P S.
+module mixed_protocol
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+object Other {
+    destroy @destroy_other
+}
+summary Mdo internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(publication=atomic)
+func @destroy_other(%self: Other) -> void [extern "fixture.destroy_other", destroy Other] summary(Mdo);
+summary Mno call-boundary results [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Other], publication=atomic)
+func @new_other() -> (Other, own, deps) [extern "fixture.new_other"] summary(Mno);
+summary Mn call-boundary results [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], publication=atomic)
+func @new() -> (Res, own, deps) [extern "fixture.new"] summary(Mn);
+protocol P kind storage holders [scope, packet] rules [protocol_rule(transition=dynamic,
+    from=packet, to=scope, checks=[owner, live_dependencies, snapshot, transferable],
+    normal=protocol_poststate(holder=scope, state=open),
+    unwind=some(protocol_poststate(holder=packet, state=unaccepted)))] roots [operands]
+scope S action in @main
+scope SI iteration in @main parent S
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none),
+    parameter_effect(convention=borrow, destination=none)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @main(%out: Res facts(managed(deps=dout)), %again: bool) -> Res [ctor Res] summary(M0) {
+    binding bx "x": Res in S
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    dependency ds: dependency = retention(value=%static, selection=selection(%static))
+    dependency dp: dependency = retention(value=%protocol, selection=selection(%protocol))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %descriptor: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, async_destroy=false, summary=Md)
+    (%static: Res facts(managed(deps=ds)), %ps: own, %ds: deps) = call @new(; own.empty)
+    %with_static: scope<S> = own.admit %q0, %ps
+    (%protocol: Other facts(managed(deps=dp)), %pp: own, %dp: deps) = call @new_other(; own.empty)
+    %initial_packet: own = own.empty
+    %initial: scope<S> = own.bind binding elaborated_binding(binding=bx,
+        resource=resource_value(value=%out, packet=%initial_packet), state=%with_static, original_scope=S)
+    br ^iteration(%initial)
+^iteration(%current: scope<S>) in SI:
+    %ea: own = own.empty
+    invoke.own obj.new Res {; %ea} construction complete
+        normal ^a($value, $packet, %current)
+        unwind ^create_failed($packet, $failure, %current)
+^a(%a: Res facts(managed(deps=da)), %pa: own, %qa: scope<S>) in SI:
+    %q1: scope<S> = own.rebind binding elaborated_binding(binding=bx,
+        resource=resource_value(value=%a, packet=%pa), state=%qa, original_scope=S)
+    cond %again, ^iteration(%q1), ^close(%q1)
+^close(%closing: scope<S>) in S:
+    invoke.own own.dynamic %closing, %pp, target S, reason merge, protocol P
+        normal ^merged($state)
+        unwind ^protocol_failed($state, $packet, $failure)
+^merged(%merged: scope<S>) in S:
+    invoke.own scope.end %merged, effects scope_effects(failures=[thrown])
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^create_failed(%rest: own, %error: failure, %open: scope<S>) in S:
+    %restored: scope<S> = own.admit %open, %rest
+    %protocol_restored: scope<S> = own.accept %restored, %pp
+    %combined: failure = scope.unwind %protocol_restored, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^protocol_failed(%protocol_open: scope<S>, %unaccepted: own, %protocol_error: failure) in S:
+    %accepted: scope<S> = own.accept %protocol_open, %unaccepted
+    %protocol_combined: failure = scope.unwind %accepted, %protocol_error, effects scope_effects(failures=[thrown])
+    raise %protocol_combined
+^done(%closed: closed) in S:
+    ret %out
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+}

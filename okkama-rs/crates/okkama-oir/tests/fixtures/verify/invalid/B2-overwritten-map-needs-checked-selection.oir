@@ -1,0 +1,61 @@
+oir 2 own
+// expect OIR2-B2.2 instruction:2:8
+module builder_overwrite_retention
+object R {
+    destroy @destroy
+}
+scope S action in @main
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mn call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+summary M0 call-boundary contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R) -> void [extern "fixture.destroy", destroy R] summary(Md);
+func @new(%name: str; %input: own) -> (R, own, deps) [extern "fixture.new"] summary(Mn);
+func @main() -> void summary(M0) {
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    dependency db: dependency = retention(value=%b, selection=selection(%b))
+    dependency dm: dependency = retention(value=%map, selection=selection(%map))
+    boundary B0 call in S
+^entry in S:
+    %e0: own = own.empty
+    %label: str = const "resource"
+    (%a: R facts(managed(deps=da)), %pa: own, %da: deps) = call @new(%label; %e0)
+    %e1: own = own.empty
+    (%b: R facts(managed(deps=db)), %pb: own, %db: deps) = call @new(%label; %e1)
+    %buffer: mbuilder<str, R> = mbuilder.new key str, value R
+    %key: str = const "same-key"
+    %journal: own = own.join [%pa, %pb]
+    invoke.own mbuilder.put %buffer, %key, %a, packet %journal
+        normal ^overwrite($buffer, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^overwrite(%first: mbuilder<str, R>, %p1: own) in S:
+    invoke.own mbuilder.put %first, %key, %b, packet %p1
+        normal ^finish($buffer, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^finish(%second: mbuilder<str, R>, %p2: own) in S:
+    invoke.own mbuilder.finish %second, packet %p2
+        normal ^split($value, $packet)
+        unwind ^abandon($buffer, $packet, $failure)
+^split(%map: map<str, R> facts(managed(deps=dm)), %p3: own) in S:
+    (%probe_rest: own, %probe_selected: own, %probe_deps: deps) = own.split %p3, selection(%map)
+    %probe: own = own.join [%probe_rest, %probe_selected]
+    invoke.own own.split.checked %probe, selection(%map)
+        normal ^close_rest($rest, $selected, $external_deps)
+        unwind ^split_failed($packet, $failure)
+^close_rest(%rest: own, %selected: own, %external: deps) in S:
+    invoke.own end %rest, boundary B0
+        normal ^use(%selected)
+        unwind ^rest_failed($failure, %selected)
+^use(%current: own) in S:
+    %length: int = map.len %map
+    %closed: closed = end %current, boundary B0
+    ret
+^rest_failed(%error: failure, %remaining: own) in S:
+    %closed2: closed = end %remaining, boundary B0
+    raise %error
+^abandon(%old_buffer: mbuilder<str, R>, %old_journal: own, %failure: failure) in S:
+    %all: own = mbuilder.abandon %old_buffer, packet %old_journal
+    br ^split_failed(%all, %failure)
+^split_failed(%original: own, %failure2: failure) in S:
+    %closed3: closed = end %original, boundary B0
+    raise %failure2
+}

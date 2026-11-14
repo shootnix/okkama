@@ -1,0 +1,13 @@
+oir 2 high
+// expect OIR2-T6 Declaration(DeclId(1))
+module verify
+object Payload {
+    field code: array<int>
+}
+variant Problem is Error = (failed: Payload)
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.add %x, %x
+    ret
+}

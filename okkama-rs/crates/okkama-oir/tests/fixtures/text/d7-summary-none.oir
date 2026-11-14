@@ -8,5 +8,6 @@ func @callee() -> int summary(M0);
 func @main() -> int {
     ^b0 in S0:
     %0: int = call @callee() summary(none)
+    result.exit edge normal(0), value %0, demand want, prepare none
     ret %0
 }

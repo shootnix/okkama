@@ -1,0 +1,10 @@
+oir 2 high
+// expect OIR2-H4 terminator:0:0
+module valued
+scope S action in @f
+func @f(%v: int) -> int {
+    boundary B0 lexical in S
+^entry in S:
+    result.exit edge normal(0), value %v, demand want, prepare none
+    ret %v
+}

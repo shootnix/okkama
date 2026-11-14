@@ -1,0 +1,16 @@
+oir 2 high
+// expect OIR2-B11.3 instruction:0:0
+module worker_boundary
+object R {
+    field x: int
+}
+scope S action in @f
+func @f(%entry: fn(array<R>) -> void, %arg: array<R>) -> void {
+^entry in S unwind ^failed:
+    %future: future<void> = worker.spawn %entry, [%arg], direct true
+    discard %future
+    result.exit edge normal(0), value %future, demand discard, prepare none
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

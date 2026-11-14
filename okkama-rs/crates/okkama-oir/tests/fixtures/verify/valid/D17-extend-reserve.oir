@@ -1,0 +1,17 @@
+oir 2 own
+module extend_reserve
+scope S action in @f
+summary M0 internal contract call_contract(publication=atomic)
+func @f(%active: failure) -> failure summary(M0) {
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %value: int = const 1
+    %empty: own = own.empty
+    (%left: own, %right: own, %deps: deps) = own.split %empty, selection(%value)
+    %part: own = own.join [%left, %right]
+    %p: pending = exit.prepare return %value, own.empty, deps(%deps) at B0
+    %next: pending = exit.extend %p, %part
+    %failure: failure = scope.unwind %q, %active, reserve %next, effects scope_effects(failures=[], suspends=false, cancel=false)
+    ret %failure
+}

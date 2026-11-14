@@ -1,0 +1,13 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+func @f(%x: int, %c: bool) -> void {
+^entry in S:
+    br ^loop(%x)
+^loop(%n: int) in S:
+    %m: int = int.add %n, %n
+    cond %c, ^loop(%m), ^done
+^done in S:
+    ret
+}

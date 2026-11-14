@@ -28,6 +28,7 @@ func @main() -> future<str> {
     %receiver: Res = call @new("R")
     %arg: Res = call @new("A")
     %fu: future<str> = call @read(%receiver, %arg)
+    result.exit edge normal(0), value %fu, demand want, prepare none
     ret %fu
 ^failed(%failure: failure) in S:
     raise %failure

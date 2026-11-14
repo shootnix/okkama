@@ -1,0 +1,62 @@
+oir 2 own
+// expect OIR2-B4.2 instruction:2:8
+module resources
+object R {
+    field x: int
+    destroy @destroy
+}
+scope Sd action in @destroy
+scope S action in @f
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 internal contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+scope Sc action in @create
+summary Mc internal results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
+    key kc: key = created(site=0, instance=%made)
+    dependency dc: dependency = key(kc)
+    boundary Bc call in Sc
+^entry in Sc:
+    invoke.own obj.new R { x: 1; %input }
+        normal ^ok($value, $packet)
+        unwind ^bad($packet, $failure)
+^ok(%made: R facts(managed(deps=dc)), %packet: own) in Sc:
+    ret %made, %packet
+^bad(%rest: own, %failure: failure) in Sc:
+    %closed: closed = end %rest, boundary Bc
+    raise %failure
+}
+func @f() -> void summary(M0) {
+    key k0: key = created(site=0, instance=%r)
+    dependency d0: dependency = key(k0)
+    dependency dempty: dependency = empty
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    invoke.own call @create(; own.empty)
+        normal ^have($value, $packet, %q)
+        unwind ^creation_failed($failure, %q)
+^have(%r: R facts(managed(deps=d0)), %packet: own, %state: scope<S>) in S:
+    %moved: own = own.move %packet
+    %alias: R facts(managed(deps=d0)) = retag %r, ty R
+    %admitted: scope<S> = own.admit %state, %moved
+    invoke.own scope.end %admitted, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^done($closed)
+        unwind ^close_failed($closed, $failure)
+^creation_failed(%failure0: failure, %open0: scope<S>) in S:
+    %empty0: own = own.empty
+    br ^failed(%empty0, %failure0, %open0)
+^failed(%rest: own, %failure: failure, %open: scope<S>) in S:
+    %joined: scope<S> = own.admit %open, %rest
+    %f: failure = scope.unwind %joined, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %f
+^close_failed(%cf: closed, %error: failure) in S:
+    raise %error
+^done(%c: closed) in S:
+    %work: int = const 9
+    ret
+}

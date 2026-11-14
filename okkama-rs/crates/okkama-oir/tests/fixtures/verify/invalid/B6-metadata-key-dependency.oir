@@ -1,0 +1,18 @@
+oir 2 own
+// expect OIR2-B6.1 instruction:0:2
+module verify
+requires core
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+scope S action in @f
+func @f(%x: int) -> void summary(M0) {
+    selection s0: selection = value(%x)
+    key k0: key = created(site=0, instance=%local)
+    dependency d0: dependency = key(k0)
+^entry in S unwind ^failed:
+    %local: int = int.add %x, %x
+    %n: int = int.mod %x, %x
+    ret
+^failed(%e: failure) in S:
+    %a: int = int.add %x, %x facts(retention=[s0], result_deps=[(0, d0)])
+    raise %e
+}

@@ -1,0 +1,20 @@
+oir 2 coro
+// expect OIR2-B9.5 instruction:1:2
+module frame_slots
+scope ST action in @target
+scope S action in @f
+summary Mt internal contract call_contract(publication=atomic)
+summary Mf internal results [result_relation(provenance=bound)] contract call_contract(results=[frame<@target>], failures=[thrown, program, panic, native], publication=atomic)
+func @target() -> void summary(Mt) {
+^entry in ST:
+    ret
+}
+func @f() -> (frame<@target>, own) summary(Mf) {
+    boundary B0 call in S
+^entry in S:
+    %frame: frame<@target> = frame.alloc @target
+    %p: own = own.empty
+    %saved: frame<@target> = frame.save %frame, slots [frame_slot(slot=0, value=%p, mode=observe)], continuation 1
+    (%resumed: frame<@target>, %part: own) = frame.resume %saved, slots [saved_slot(slot=0, ty=own, linear=true)]
+    ret %resumed, %part
+}

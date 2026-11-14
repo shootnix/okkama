@@ -1,0 +1,38 @@
+oir 2 own
+// Independent creation events a then b: destroy b then a (Champ G1 7.3).
+module singleton
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @main(%out: Res facts(managed(deps=dout))) -> Res [ctor Res] summary(M0) {
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %descriptor: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, async_destroy=false, summary=Md)
+    %ea: own = own.empty
+    invoke.own obj.new Res {; %ea} construction complete
+        normal ^a($value, $packet, %q0)
+        unwind ^create_failed($packet, $failure, %q0)
+^a(%a: Res facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %q1: scope<S> = own.admit %qa, %pa
+    invoke.own scope.end %q1, effects scope_effects(failures=[thrown])
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^create_failed(%rest: own, %error: failure, %open: scope<S>) in S:
+    %restored: scope<S> = own.admit %open, %rest
+    %combined: failure = scope.unwind %restored, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed) in S:
+    ret %out
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+}

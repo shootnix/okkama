@@ -26,6 +26,7 @@ func @Atomic.cas(%storage: Atomic, %expected: Res, %revised: Res) -> bool summar
 func @main(%storage: Atomic, %expected: Res, %revised: Res) -> bool {
 ^entry in S unwind ^failed:
     %success: bool = call @Atomic.cas(%storage, %expected, %revised)
+    result.exit edge normal(0), value %success, demand want, prepare none
     ret %success
 ^failed(%failure: failure) in S:
     raise %failure

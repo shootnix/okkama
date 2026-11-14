@@ -1,0 +1,10 @@
+oir 2 high
+module verify
+requires core
+scope S action in @f
+func @f(%c: bool, %x: int) -> void {
+^entry in S:
+    cond %c, ^end(%x), ^end(%x)
+^end(%p: int) in S:
+    ret
+}

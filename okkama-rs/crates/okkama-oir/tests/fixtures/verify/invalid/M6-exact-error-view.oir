@@ -1,0 +1,12 @@
+oir 2 own
+// expect OIR2-B10.4 instruction:0:2
+module typed_cleanup
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f(%primary: failure, %other: failure) -> failure summary(Mf) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %combined: failure = scope.unwind %q, %primary, effects scope_effects(failures=[], suspends=false, cancel=false)
+    %with_secondary: failure = fail.secondary %other, %combined
+    ret %with_secondary
+}

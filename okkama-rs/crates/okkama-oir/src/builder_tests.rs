@@ -97,10 +97,14 @@ fn invoke_successors_match_split_close_buffer_call_and_await_schemas() -> Result
         let selection = b.declare_selection(SelectionExpr::Value(value))?;
         let op = match case {
             0 => Operation::Ownership(OwnershipOp::SplitChecked { packet, selection }),
-            1 => { let state = LoweringBuilder::new(&mut b).scope_begin(scope)?; Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }) }
+            1 => { let state = LoweringBuilder::new(&mut b).scope_begin(scope)?;
+                Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None,
+                effects: ScopeEffectEnvelope::conservative() }) }
             2 => { let buffer = b.emit_schema(Operation::Collection(CollectionOp::BuilderNew { element: int_ty }))?[0];
                 Operation::Collection(CollectionOp::BuilderPush { buffer, value, packet: Some(packet) }) }
-            3 => Operation::Call(CallOp::Direct { function, call: CallSite { args: vec![], packet: Some(packet), deps: vec![], descriptors: vec![], type_args: vec![], summary: Some(summary) } }),
+            3 => Operation::Call(CallOp::Direct { function, call: CallSite { cleanup: CallCleanupMode::Ordinary,
+                args: vec![], packet: Some(packet), deps: vec![], descriptors: vec![], type_args: vec![],
+                summary: Some(summary) } }),
             _ => Operation::Async(AsyncOp::Await { future: b.block_params(b.entry())?[0], result: Some(int_ty) }),
         };
         let contract = ContractRegistry::new(b.module()).lookup(&op)?;
@@ -174,7 +178,8 @@ fn high_wrappers_record_intent_and_own_wrappers_follow_registry() -> Result<(), 
     let next = b.create_block(scope, &[])?;
     b.terminate(TermKind::Br(Target { block: next, args: vec![] }))?;
     b.switch_to(next)?;
-    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }), scope, scope)?;
+    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None,
+        effects: ScopeEffectEnvelope::conservative() }), scope, scope)?;
     b.switch_to(edges.normal)?; b.terminate(TermKind::Ret { values: vec![] })?;
     b.switch_to(edges.unwind)?; b.terminate(TermKind::Raise(edges.unwind_params[1]))?;
     let body = b.finish()?;
@@ -205,7 +210,8 @@ fn checked_scope_split_wrapper_uses_entry_unwind_and_blocks_stale_state() -> Res
     let next = b.create_block(scope, &[])?;
     b.terminate(TermKind::Br(Target { block: next, args: vec![] }))?;
     b.switch_to(next)?;
-    assert_eq!(b.emit_schema(Operation::Ownership(OwnershipOp::ScopeEnd { state: split.state, reserve: None })), Err(BuildError::NeedsInvoke));
+    assert_eq!(b.emit_schema(Operation::Ownership(OwnershipOp::ScopeEnd { state: split.state, reserve: None,
+        effects: ScopeEffectEnvelope::conservative() })), Err(BuildError::NeedsInvoke));
     b.terminate(TermKind::Unreachable)?;
     b.switch_to(failed)?; b.terminate(TermKind::Raise(b.block_params(failed)?[1]))?;
     b.finish()?;
@@ -349,7 +355,8 @@ fn editor_preserves_unwind_and_checks_invoke_edge_results() -> Result<(), BuildE
     b.set_unwind(Some(BlockUnwind { target: Target { block: failed, args: vec![inputs[0]] } }))?;
     b.emit_schema(Operation::Core(CoreOp::IntDiv { left: inputs[0], right: inputs[1] }))?;
     let state = LoweringBuilder::new(&mut b).scope_begin(scope)?;
-    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None }), scope, scope)?;
+    let edges = b.invoke_own_successors(Operation::Ownership(OwnershipOp::ScopeEnd { state, reserve: None,
+        effects: ScopeEffectEnvelope::conservative() }), scope, scope)?;
     b.switch_to(failed)?; b.terminate(TermKind::Raise(b.block_params(failed)?[1]))?;
     b.switch_to(edges.normal)?; b.terminate(TermKind::Ret { values: vec![] })?;
     b.switch_to(edges.unwind)?; b.terminate(TermKind::Raise(edges.unwind_params[1]))?;
@@ -492,7 +499,8 @@ fn high_calls_without_summaries_use_typed_shapes_without_inventing_contracts() -
         let mut callee = declaration(vec![], vec![int_ty]); callee.symbol = "callee".into();
         let callee = m.declare_function(callee)?;
         let mut b = m.function_builder(f, scope)?;
-        let call = CallSite { args: vec![], packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: None };
+        let call = CallSite { cleanup: CallCleanupMode::Ordinary,  args: vec![], packet: None, deps: vec![],
+            descriptors: vec![], type_args: vec![], summary: None };
         let op = Operation::Call(if indirect { CallOp::Closure { callee: CallArgument { value: b.block_params(b.entry())?[0], convention: OperandConvention::Borrow }, call } } else { CallOp::Direct { function: callee, call } });
         assert_eq!(ContractRegistry::new(b.module()).lookup(&op), Err(ContractError::MissingSummary));
         let successors = b.invoke_own_successors(op, scope, scope)?;

@@ -24,6 +24,7 @@ func @main() -> any {
 ^entry in S unwind ^failed:
     %r: Res = call @new("R")
     %value: any = any.box %r, ty any
+    result.exit edge normal(0), value %value, demand want, prepare none
     ret %value
 ^failed(%failure: failure) in S:
     raise %failure

@@ -3,11 +3,12 @@ oir 2 low
 module 09-service-settle-a-b
 requires core
 scope S action in @main
-protocol group holders [frame, scope] rules [protocol_rule(transition=settle, from=frame, to=scope, normal=protocol_poststate(holder=scope, state=settled))] roots [frame_slots]
+protocol group holders [frame, scope] rules [protocol_rule(transition=settle, from=frame, to=scope,
+    normal=protocol_poststate(holder=scope, state=settled))] roots [frame_slots]
 func @main(%cleanup: cleanup-state, %a: task-state, %b: task-state) -> cleanup-state {
 ^entry in S:
     %first: cleanup-state = cleanup.settle %cleanup, %a, protocol group
     %second: cleanup-state = cleanup.settle %first, %b, protocol group
-    %plan: cleanup-state = cleanup.plan %second
+    %plan: cleanup-state = cleanup.plan %second, plan 0
     ret %plan
 }

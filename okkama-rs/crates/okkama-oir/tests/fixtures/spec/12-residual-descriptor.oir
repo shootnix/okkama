@@ -24,5 +24,6 @@ func @main<T>(%value: T, %dictionary: type) -> type {
     selection s0: selection = descriptor(descriptor=%dictionary, value=%value)
 ^entry in S:
     %descriptor: type = type.of ty T, descriptor descriptor_contract(managed=runtime, retention=descriptor(0), cleanup=@destroy, async_destroy=true, summary=Mlabel)
+    result.exit edge normal(0), value %descriptor, demand want, prepare none
     ret %descriptor
 }

@@ -30,6 +30,6 @@ func @main(%q: scope<S>, %p: own) -> scope<S> {
     ret %q1
 ^bad(%original: scope<S>, %packet: own, %failure: failure) in S:
     %q2: scope<S> = own.admit %original, %packet
-    %final: failure = scope.unwind %q2, %failure
+    %final: failure = scope.unwind %q2, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 }

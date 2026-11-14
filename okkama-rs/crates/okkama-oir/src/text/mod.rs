@@ -11,6 +11,7 @@ mod diagnostic;
 mod surface;
 mod types;
 mod declarations;
+mod elaboration;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind, Span, PrintError, print_diagnostic};
 pub use parser::{parse, parse_with_limits};
@@ -527,6 +528,8 @@ variants!(FunctionAttr {
     Hidden => "hidden",
     Intrinsic { name, objects, helpers } => "intrinsic",
     Async => "async",
+    DeferEntry { replacements } => "defer",
+    Cleanup => "cleanup",
     Lambda { captures, owner } => "lambda"
 });
 record!(ScopeDecl, "scope_decl", { function, parent, kind, loc });
@@ -578,7 +581,15 @@ record!(TypeParameter, "type_parameter", { name, bounds });
 variants!(Outcome {
     Normal => "normal",
     Unwind => "unwind",
-    Cancel => "cancel"
+    Cancel => "cancel",
+    CleanupSelected => "cleanup_selected",
+    CleanupDone => "cleanup_done",
+    ExitSuccess => "exit_success",
+    ExitPending => "exit_pending",
+    ExitFailure => "exit_failure",
+    FailureSome => "failure_some",
+    DeferContinue => "defer_continue",
+    DeferReplace(index) => "defer_replace"
 });
 record!(EdgeResult, "edge_result", { outcome, slot });
 impl Codec for SwitchCase {
@@ -780,7 +791,7 @@ variants!(ProvenanceTransition {
 });
 record!(OutcomeContract, "outcome_contract", { results, transfers, postconditions, retention });
 variants!(TransferRule {
-    CloseReserve { scope, reserve, output, merge_scope_part } => "close_reserve",
+    CloseReserve { scope, reserve, output } => "close_reserve",
     Preserve { input, output } => "preserve",
     Move { inputs, outputs } => "move",
     Partition { input, selection, rest, selected } => "partition",
@@ -792,14 +803,20 @@ variants!(TransferRule {
     Publish { input, holder, provenance } => "publish",
     Extract { future, capability, boundary } => "extract",
     Reserve { packet, boundary } => "reserve",
+    ExtendReservation { pending, packet } => "extend_reservation",
     ReplaceReservation { pending, packet } => "replace_reservation",
-    AbortReservation { pending, cleanup, phase } => "abort_reservation",
+    AbortReservation { pending, cleanup } => "abort_reservation",
     FrameSave { frame, values } => "frame_save",
     FrameResume { frame, slots } => "frame_resume",
     CompleteIdentity { identity, state, output } => "complete_identity"
 });
 variants!(Postcondition {
-    ReserveRemainder { scope, reserve, merged } => "reserve_remainder",
+    CleanupOwnsReserve => "cleanup_owns_reserve",
+    FirstFailureAbortsWholeReserveIntoSuffix => "first_failure_aborts_whole_reserve_into_suffix",
+    FailurePriorityPreserved => "failure_priority_preserved",
+    CleanupDrained => "cleanup_drained",
+    FailedExitHasNoPending => "failed_exit_has_no_pending",
+    OwnerServiceDuty { value, owner, kind } => "owner_service_duty",
     Closed(x0) => "closed",
     CacheConsumed(x0) => "cache_consumed",
     AdmissionStaysCaller => "admission_stays_caller",
@@ -882,6 +899,7 @@ record!(ParameterEffect, "parameter_effect", { convention, retention, deps, dest
 variants!(SummarySelection {
     Parameter(x0) => "parameter",
     Field { parameter, field } => "field",
+    Path { parameter, fields } => "path",
     OwnerGraph(x0) => "owner_graph",
     Descriptor(x0) => "descriptor",
     Union(x0) => "union"
@@ -951,7 +969,49 @@ variants!(ProtocolCheck {
 });
 record!(ProtocolPoststate, "protocol_poststate", { holder, state });
 record!(ProtocolRule, "protocol_rule", { transition, from, to, checks, normal, unwind, cancel });
-record!(ProtocolDecl, "protocol_decl", { holders, rules, roots });
+record!(ProtocolDecl, "protocol_decl", { kind, holders, rules, roots });
+variants!(ProtocolKind {
+    Storage => "storage", Callable => "callable", Atomic => "atomic", Cell => "cell",
+    Channel => "channel", Group => "group", Any => "any", Closure => "closure", Services => "services"
+});
+impl Codec for ScopeEffectEnvelope {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("scope_effects")?;
+        r.expect("(")?;
+        let failures = Codec::read_field(r, "failures")?;
+        let suspends = Codec::read_field(r, "suspends")?;
+        let cancel = Codec::read_field(r, "cancel")?;
+        r.expect(")")?;
+        Ok(Self { failures, suspends, cancel })
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("scope_effects(failures=");
+        self.failures.write(w)?;
+        w.push(", suspends=");
+        self.suspends.write(w)?;
+        w.push(", cancel=");
+        self.cancel.write(w)?;
+        w.push(")");
+        Ok(())
+    }
+}
+variants!(FutureEnvironment {
+    Deferred { function, arguments, descriptors } => "deferred", Frame(value) => "frame"
+});
+impl Codec for CallCleanupMode {
+    fn default_value() -> Option<Self> { Some(Self::Ordinary) }
+    fn is_default(&self) -> bool { *self == Self::Ordinary }
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        if r.eat("ordinary") { return Ok(Self::Ordinary); }
+        r.expect("shielded")?;
+        Ok(Self::Shielded)
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push(if *self == Self::Ordinary { "ordinary" } else { "shielded" });
+        Ok(())
+    }
+}
+
 record!(DescriptorContract, "descriptor_contract", { managed, retention, cleanup, async_destroy, summary });
 variants!(DescriptorManaged {
     Plain => "plain",
@@ -973,12 +1033,16 @@ variants!(ConstructionStatus {
 });
 record!(ConstructionCompletion, "construction_completion", { state });
 record!(CallArgument, "call_argument", { value, convention });
-record!(CallSite, "call_site", { args, packet, deps, descriptors, type_args, summary });
+record!(CallSite, "call_site", { args, packet, deps, descriptors, type_args, summary, cleanup });
 variants!(ResultDemand {
     Want => "want",
     Discard => "discard"
 });
-record!(DeferAction, "defer_action", { function, captures, bindings });
+record!(DeferAction, "defer_action", { function, captures, bindings, replacements });
+record!(DeferLabel, "defer_label", { label, result });
+record!(DeferRegistration, "defer_registration", { label, kind, boundary });
+variants!(HighEdgeSelector { Normal(index) => "normal", Unwind => "unwind" });
+
 variants!(TransferStates {
     Same(x0) => "same",
     Between { from, to } => "between"
@@ -1023,10 +1087,6 @@ variants!(ExitDestination {
     Caller => "caller",
     Loop(x0) => "loop",
     Scope(x0) => "scope"
-});
-variants!(AbortPhase {
-    BeforeDestroy => "before_destroy",
-    AfterExecutedPrefix => "after_executed_prefix"
 });
 record!(PreparedExit, "prepared_exit", { kind, value, packet, deps, selection, boundary });
 opcodes!(CoreOp {
@@ -1257,8 +1317,8 @@ opcodes!(OwnershipOp {
     Dynamic { state, packet, target, reason, protocol } => "own.dynamic",
     DynamicCheck { key, snapshot } => "dynamic.check",
     DynamicRefresh { key, access } => "dynamic.refresh",
-    ScopeEnd { state, reserve } => "scope.end",
-    ScopeUnwind { state, failure, reserve } => "scope.unwind",
+    ScopeEnd { state, reserve, effects } => "scope.end",
+    ScopeUnwind { state, failure, reserve, effects } => "scope.unwind",
     End { packet, boundary } => "end",
 });
 opcodes!(AsyncOp {
@@ -1271,7 +1331,7 @@ opcodes!(AsyncOp {
     FutureCancel { future } => "fut.cancel",
     FutureDone { future } => "fut.done",
     FutureCancelled { future } => "fut.cancelled",
-    FutureNew { frame, result, packet, deps, owner, owner_state } => "fut.new",
+    FutureNew { packet, deps, owner_state, environment, result, owner } => "fut.new",
     FuturePublish { task, cache, value, packet, deps, failure, protocol } => "fut.publish",
     FutureSettle { task, protocol } => "fut.settle",
     FrameAlloc { function } => "frame.alloc",
@@ -1297,14 +1357,16 @@ opcodes!(ExitOp {
     Prepare { exit } => "exit.prepare",
     Replace { pending, replacement } => "exit.replace",
     Commit { pending, destination, result } => "exit.commit",
-    Abort { pending, cleanup, phase } => "exit.abort",
+    Extend { pending, packet } => "exit.extend",
+    Abort { pending, cleanup } => "exit.abort",
 });
 opcodes!(CleanupOp {
-    Begin { state, pending, failure, schedule } => "cleanup.begin",
+    Begin { state, pending, failure, close, effects } => "cleanup.begin",
     Defer { cleanup, action } => "cleanup.defer",
     Settle { cleanup, holder, protocol } => "cleanup.settle",
-    Plan { cleanup } => "cleanup.plan",
-    Next { cleanup } => "cleanup.next",
+    Plan { cleanup, plan } => "cleanup.plan",
+    SettleEmpty { cleanup, schedule } => "cleanup.settle.empty",
+    Destroy { cleanup, key } => "cleanup.destroy",
     DestroyDirect { cleanup, identity, descriptor, destroy } => "destroy.direct",
     RecordFailure { cleanup, failure } => "cleanup.failure",
     Shield { cleanup } => "cleanup.shield",
@@ -1591,3 +1653,95 @@ fn value_default(profile: Profile, ty: Option<&Type>) -> ValueFacts {
         _ => ValueFacts::Unelaborated,
     }
 }
+
+macro_rules! cleanup_id_codec {
+    ($($ty:ty),*) => {$(
+        impl Codec for $ty {
+            fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+                Ok(Self::from_u32(u32::read(r)?))
+            }
+            fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { self.as_u32().write(w) }
+        }
+    )*};
+}
+cleanup_id_codec!(CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId, CleanupOrderProofId);
+impl<I: ArenaId, T: Codec> Codec for Arena<I, T> {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        let mut arena = Self::new();
+        for value in Vec::<T>::read(r)? {
+            arena.alloc(value).map_err(|e| r.error(DiagnosticKind::Limit, e.to_string()))?;
+        }
+        Ok(arena)
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("[");
+        for (_, value) in self.iter() {
+            value.write(w)?;
+            w.push(", ");
+        }
+        w.push("]");
+        Ok(())
+    }
+}
+impl Codec for CleanupMetadata {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        r.expect("cleanup_metadata")?;
+        r.expect("(")?;
+        let closes = Codec::read_field(r, "closes")?;
+        let schedules = Codec::read_field(r, "schedules")?;
+        let plans = Codec::read_field(r, "plans")?;
+        let roots = Codec::read_field(r, "roots")?;
+        let proofs = if r.is("proofs") {
+            Codec::read_field(r, "proofs")?
+        } else {
+            Arena::new()
+        };
+        r.expect(")")?;
+        Ok(Self { closes, schedules, plans, roots, proofs })
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("cleanup_metadata(");
+        self.closes.write_field(w, "closes")?;
+        self.schedules.write_field(w, "schedules")?;
+        self.plans.write_field(w, "plans")?;
+        self.roots.write_field(w, "roots")?;
+        self.proofs.write_field(w, "proofs")?;
+        w.close_record();
+        Ok(())
+    }
+}
+record!(CleanupClose, "cleanup_close", { source, after_defers, reserve, active_failure, effects });
+record!(CleanupSchedule, "cleanup_schedule", { close, holders, dictionary, protocol });
+record!(CleanupPlan, "cleanup_plan", { close, sources, direct });
+record!(RootRequirement, "root_requirement", { boundary, bindings, through_suspend });
+record!(RootBinding, "root_binding", { value, trace });
+variants!(CleanupSource { Scope(value) => "scope", Packet(value) => "packet" });
+variants!(MergeSource {
+    ScopeInventory => "scope_inventory", PacketInventory => "packet_inventory",
+    WholeReserveOnFailure => "whole_reserve_on_failure"
+});
+variants!(RootBoundary {
+    BeforeInstruction(value) => "before_instruction", AfterInstruction(value) => "after_instruction",
+    Terminator(value) => "terminator", Entry(value) => "entry"
+});
+variants!(RootTrace {
+    Value(value) => "value", Descriptor(value) => "descriptor", FullDependencies => "full_dependencies",
+    CleanupActivation => "cleanup_activation", ScopeInventory => "scope_inventory",
+    PacketInventory => "packet_inventory", PendingValueReserveDeps => "pending_value_reserve_deps",
+    FailureGraph => "failure_graph", ExitReserve => "exit_reserve"
+});
+
+record!(DirectSlot, "direct_slot", { identity, descriptor, destroy, origin, active_at });
+record!(PreserveWitness, "preserve", { from, to });
+record!(JoinWitness, "join", { state, predecessors });
+record!(CleanupSuffix, "suffix", { completed, remaining, roots });
+record!(CleanupOrderProof, "order_proof", { state, slots, preserves, joins, suffixes, reserve_empty });
+variants!(CreationWitness {
+    Singleton => "singleton",
+    Create { site } => "create",
+    FreshResult { site, callee, summary } => "fresh_result"
+});
+
+variants!(HighOperationSite {
+    Instruction(value) => "instruction", Terminator(value) => "terminator"
+});

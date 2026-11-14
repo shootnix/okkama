@@ -137,7 +137,7 @@ pub enum OwnershipAbi {
     Observation,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FunctionAttr {
     Entry,
     Method(DeclId),
@@ -149,6 +149,8 @@ pub enum FunctionAttr {
     Hidden,
     Intrinsic { name: String, objects: Vec<DeclId>, helpers: Vec<FuncId> },
     Async,
+    DeferEntry { replacements: Vec<DeferLabel> },
+    Cleanup,
     Lambda { captures: u32, owner: Option<DeclId> },
 }
 
@@ -171,4 +173,30 @@ pub struct BindingDecl {
     pub scope: ScopeId,
     pub ty: TypeId,
     pub loc: Option<DebugLoc>,
+}
+
+/// Labels are local to a defer entry and keep declaration order.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DeferLabel {
+    pub label: String,
+    pub result: Option<TypeId>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeferRegistration {
+    pub label: String,
+    pub kind: crate::ExitKind,
+    pub boundary: crate::BoundaryId,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DescriptorBinding {
+    pub dictionary: crate::ValueId,
+    pub contract: crate::DescriptorContract,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServiceSchedule {
+    pub dictionary: Option<crate::ValueId>,
+    pub duties: Vec<crate::ValueId>,
+    pub name: String,
+    pub owner: ScopeId,
+    pub protocol: crate::ProtocolId,
 }

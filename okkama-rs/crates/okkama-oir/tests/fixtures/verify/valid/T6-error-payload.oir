@@ -1,0 +1,12 @@
+oir 2 high
+module verify
+object Payload {
+    field code: int
+}
+variant Problem is Error = (failed: Payload)
+scope S action in @f
+func @f(%x: int) -> void {
+^entry in S:
+    %v: int = int.add %x, %x
+    ret
+}

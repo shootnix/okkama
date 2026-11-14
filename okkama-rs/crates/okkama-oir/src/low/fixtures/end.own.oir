@@ -1,0 +1,12 @@
+oir 2 own
+// Concrete synchronous D3 inventory; no opaque scope or pending parameters.
+module end
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @main(%seed: int) -> void summary(M0) {
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %closed: closed = scope.end %q0, effects scope_effects()
+    ret
+}

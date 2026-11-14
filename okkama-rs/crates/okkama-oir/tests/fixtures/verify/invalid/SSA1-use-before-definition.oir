@@ -1,0 +1,11 @@
+oir 2 high
+// expect OIR2-SSA1 instruction:0:0
+module verify
+requires core
+scope S action in @f
+func @f() -> void {
+^entry in S:
+    %a: int = int.add %b0, %b0
+    %b0: int = const 1
+    ret
+}

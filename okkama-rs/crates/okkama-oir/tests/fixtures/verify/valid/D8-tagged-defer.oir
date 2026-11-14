@@ -1,0 +1,29 @@
+oir 2 own
+module tagged_defer
+scope SD action in @d
+scope S action in @f
+summary Md internal contract call_contract(failures=[thrown], publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @d(%input: own, %deps: deps) -> void [defer(replacements=[defer_label(label="return", result=some(int)), defer_label(label="last")])] summary(Md) {
+^entry in SD:
+    ret defer replace return, 7, %input, %deps
+}
+func @f(%deps: deps) -> void summary(Mf) {
+    boundary B0 call in S
+^entry in S:
+    invoke.defer @d(; own.empty) deps [%deps] summary(Md)
+        continue ^next()
+        replace return ^replacement($value, $packet, $deps)
+        replace last ^void_replacement($packet, $deps)
+        unwind ^failed($failure)
+^next in S:
+    ret
+^replacement(%value: int, %packet: own, %full: deps) in S:
+    %closed: closed = end %packet, boundary B0
+    ret
+^void_replacement(%packet2: own, %full2: deps) in S:
+    %closed2: closed = end %packet2, boundary B0
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

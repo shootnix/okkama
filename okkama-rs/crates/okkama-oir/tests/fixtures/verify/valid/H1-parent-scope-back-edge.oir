@@ -1,0 +1,17 @@
+oir 2 high
+module parent_loop
+scope S action in @f
+scope SI iteration in @f parent S
+scope SB block in @f parent SI
+func @f(%c: bool) -> void {
+^entry in S:
+    br ^iteration
+^iteration in SI:
+    br ^child
+^child in SB:
+    br ^step
+^step in S:
+    cond %c, ^iteration, ^out
+^out in S:
+    ret
+}

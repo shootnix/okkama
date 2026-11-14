@@ -1,0 +1,17 @@
+oir 2 own
+// expect OIR2-B4.1 instruction:0:1
+module core
+scope S action in @f
+summary M0 internal   contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f() -> void summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    invoke.own scope.end %q, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^done($closed)
+        unwind ^failed($closed, $failure)
+^done(%c: closed) in S:
+    %again: closed = scope.end %q, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    ret
+^failed(%cf: closed, %failure: failure) in S:
+    raise %failure
+}

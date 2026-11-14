@@ -1,0 +1,28 @@
+oir 2 high
+module constructor
+object C {
+    field x: int
+    field $pending: bool
+}
+scope S action in @f
+func @f(%choose: bool) -> C [ctor C] {
+    boundary B0 lexical in S
+^entry in S unwind ^failed:
+    %u: int = undef ty int
+    %p: bool = undef ty bool
+    %o: C = obj.new C { x: %u, $pending: %p } construction incomplete
+    cond %choose, ^left(%o), ^right(%o)
+^left(%a: C) in S:
+    obj.init %a, 1, field field_ref(declaration=C, index=0)
+    br ^merge(%a)
+^right(%b: C) in S:
+    obj.init %b, 2, field field_ref(declaration=C, index=0)
+    br ^merge(%b)
+^merge(%joined: C) in S:
+    obj.init %joined, false, field field_ref(declaration=C, index=1)
+    [iprep0] exit.prepare return %joined at B0
+    result.exit edge normal(0), value %joined, demand want, prepare iprep0
+    ret %joined
+^failed(%e: failure) in S:
+    raise %e
+}

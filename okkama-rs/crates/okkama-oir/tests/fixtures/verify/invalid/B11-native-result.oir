@@ -1,0 +1,16 @@
+oir 2 own
+// expect OIR2-B11.3 instruction:1:0
+module native_result
+object R {
+    field x: int
+}
+scope S action in @f
+summary Mn internal results [result_relation(provenance=bound)] contract call_contract(results=[array<R>], publication=atomic)
+summary Mf internal contract call_contract(publication=atomic)
+func @native() -> array<R> [extern "fixture.scalar"] summary(Mn);
+func @f() -> void summary(Mf) {
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+^entry in S:
+    %out: array<R> facts(managed(deps=dout)) = call.native @native() summary(Mn)
+    ret
+}

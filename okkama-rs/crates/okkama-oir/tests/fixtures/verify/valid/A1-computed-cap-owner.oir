@@ -1,0 +1,17 @@
+oir 2 high
+module authority
+object C {
+    field x: int
+}
+cap C :: View {
+    field x = @f
+}
+scope S action in @f
+func @f(%o: C) -> int {
+    boundary B0 lexical in S
+^entry in S:
+    %x: int = obj.get %o, x
+    [iprep0] exit.prepare return %x at B0
+    result.exit edge normal(0), value %x, demand want, prepare iprep0
+    ret %x
+}

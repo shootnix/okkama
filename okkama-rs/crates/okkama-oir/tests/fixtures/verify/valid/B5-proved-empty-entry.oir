@@ -1,0 +1,9 @@
+oir 2 own
+module empty_entry_specialization
+scope S action in @f
+summary M0 call-boundary contract call_contract(publication=atomic)
+func @f(%input: own) -> own abi explicit(input_packet=0, output_packet=0) summary(M0) {
+^entry in S:
+    %out: own = own.move %input
+    ret %out
+}

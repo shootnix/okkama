@@ -1,0 +1,55 @@
+oir 2 own
+// Independent creation events a then b: destroy b then a (Champ G1 7.3).
+module reserve_throwing
+object Res {
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=bound)]
+    contract call_contract(results=[Res], failures=[thrown, program, panic, native], publication=atomic)
+func @main(%out: Res facts(managed(deps=dout))) -> (Res, pending) [ctor Res] summary(M0) {
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    boundary B0 lexical in S
+    dependency db: dependency = retention(value=%b, selection=selection(%b))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %descriptor: type = type.of ty Res, descriptor descriptor_contract(managed=managed, retention=parameter(0),
+        cleanup=@destroy, async_destroy=false, summary=Md)
+    %ea: own = own.empty
+    invoke.own obj.new Res {; %ea} construction complete
+        normal ^a($value, $packet, %q0)
+        unwind ^create_failed($packet, $failure, %q0)
+^a(%a: Res facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %q1: scope<S> = own.admit %qa, %pa
+    %eb: own = own.empty
+    invoke.own obj.new Res {; %eb} construction complete
+        normal ^b($value, $packet, %q1)
+        unwind ^create_failed($packet, $failure, %q1)
+^b(%b: Res facts(managed(deps=db)), %pb: own, %qb: scope<S>) in S:
+    %with_b: scope<S> = own.admit %qb, %pb
+    invoke.own scope.split %with_b, selection(%b)
+        normal ^extracted($state, $selected)
+        unwind ^extract_failed($state, $failure)
+^extracted(%closing: scope<S>, %reserved: own) in S:
+    %pending: pending = exit.prepare return %b, %reserved at B0
+    invoke.own scope.end %closing, reserve %pending, effects scope_effects(failures=[thrown])
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure)
+^create_failed(%rest: own, %error: failure, %open: scope<S>) in S:
+    %restored: scope<S> = own.admit %open, %rest
+    %combined: failure = scope.unwind %restored, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+^done(%closed: closed, %returned: pending) in S:
+    ret %out, %returned
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+^extract_failed(%extract_open: scope<S>, %extract_error: failure) in S:
+    %extract_combined: failure = scope.unwind %extract_open, %extract_error, effects scope_effects(failures=[thrown,
+        program, panic, native])
+    raise %extract_combined
+}

@@ -41,12 +41,12 @@ func @main(%primary: failure, %secondary: failure, %handled: failure, %packet: o
         normal ^released($closed, $to)
         unwind ^old_carrier($state, $to, $failure)
 ^released(%closed: closed, %owner3: scope<S>) in S:
-    invoke.own scope.end %owner3
+    invoke.own scope.end %owner3, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^done($closed)
         unwind ^failed($closed, $failure)
 ^attach_failed(%original: own, %owner4: scope<S>, %failure: failure) in S:
     %admitted: scope<S> = own.admit %owner4, %original
-    %final: failure = scope.unwind %admitted, %failure
+    %final: failure = scope.unwind %admitted, %failure, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %final
 ^old_carrier(%old: carrier-state, %owner5: scope<S>, %failure2: failure) in S:
     raise %failure2

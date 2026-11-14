@@ -18,6 +18,6 @@ func @main(%p: str) -> int {
     (%t: FileText, %pt: own) = call @File.text(%f; own.empty)
     %q2: scope<S> = own.admit %q1, %pt
     %n: int = call @FileText.size(%t; own.empty)
-    scope.end %q2
+    scope.end %q2, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     ret %n
 }

@@ -1,0 +1,11 @@
+oir 2 high
+module authority
+object C {
+    field $pending: bool
+}
+scope S action in @f
+func @f(%o: C) -> void {
+^entry in S:
+    %x: bool = obj.pending %o, $pending
+    ret
+}

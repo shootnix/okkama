@@ -1,0 +1,10 @@
+oir 2 own
+// expect OIR2-B4.1 terminator:0:0
+module core
+scope S action in @f
+summary M0 internal   contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @f() -> void summary(M0) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    ret
+}

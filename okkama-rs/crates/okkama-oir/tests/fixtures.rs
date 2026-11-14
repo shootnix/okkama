@@ -37,34 +37,73 @@ fn manifest_lists_every_fixture_and_keeps_historical_and_frontend_cases_separate
     use std::collections::BTreeSet;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let manifest = fs::read_to_string(root.join("spec/manifest.tsv")).unwrap();
-    let mut ids = BTreeSet::new(); let mut files = BTreeSet::new(); let mut sections = BTreeSet::new();
-    let mut pairs = BTreeSet::new(); let mut rules = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    let mut files = BTreeSet::new();
+    let mut sections = BTreeSet::new();
+    let mut pairs = BTreeSet::new();
+    let mut rules = BTreeSet::new();
     for row in manifest.lines().skip(1) {
-        let fields: Vec<_> = row.split('\t').collect(); assert_eq!(fields.len(), 8, "{row}");
+        let fields: Vec<_> = row.split('\t').collect();
+        assert_eq!(fields.len(), 12, "{row}");
         assert!(ids.insert(fields[0]), "duplicate manifest id {}", fields[0]);
-        for section in fields[1].split(';') { sections.insert(section); }
-        let path = root.join(fields[3]); assert!(path.is_file(), "{row}");
+        sections.extend(fields[1].split(';'));
+        let path = root.join(fields[3]);
+        assert!(path.is_file(), "{row}");
         files.insert(path.clone());
         let source = fs::read_to_string(&path).unwrap();
         match fields[2] {
             "v2" | "accept" | "semantic-reject" => {
                 assert!(source.starts_with(&format!("oir 2 {}\n", fields[4])), "{row}");
                 assert!(!source.contains('…') && !source.contains("..."), "unexpanded fragment {row}");
-                if fields[2] == "semantic-reject" { assert!(source.lines().nth(1).unwrap().contains(fields[6]), "missing expected rule: {row}"); rules.insert(fields[6].split('.').next().unwrap()); }
-                if fields[0].starts_with('M') { pairs.insert((fields[0].split('-').next().unwrap(), fields[2])); }
+                if fields[2] == "semantic-reject" {
+                    assert!(source.lines().nth(1).unwrap().contains(fields[6]), "missing expected rule: {row}");
+                    rules.insert(fields[6].split('.').next().unwrap());
+                }
+                if fields[0].starts_with('M') {
+                    pairs.insert((fields[0].split('-').next().unwrap(), fields[2]));
+                }
             }
-            "historical" => { assert_eq!(path.extension().unwrap(), "oir1"); assert!(source.contains("historical")); }
-            "frontend-reject" => { assert_eq!(path.extension().unwrap(), "ok"); assert!(source.contains("frontend-reject")); }
-            "parse-reject" => { assert_eq!(format!("{:?}", text::parse(&source).unwrap_err().kind), fields[6]); }
+            "historical" => {
+                assert_eq!(path.extension().unwrap(), "oir1");
+                assert!(source.contains("historical"));
+            }
+            "frontend-reject" => {
+                assert_eq!(path.extension().unwrap(), "ok");
+                assert!(source.contains("frontend-reject"));
+            }
+            "parse-reject" => {
+                assert_eq!(format!("{:?}", text::parse(&source).unwrap_err().kind), fields[6]);
+            }
             other => panic!("unknown manifest classification {other}"),
         }
-        if fields[7] != "-" { assert!(root.join(fields[7]).is_file(), "missing expectations: {row}"); }
-        if fields[5] != "-" { assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/ownership/model").join(fields[5]).is_file(), "missing model fixture: {row}"); }
+        if fields[7] != "-" {
+            assert!(root.join(fields[7]).is_file(), "missing expectations: {row}");
+        }
+        if fields[5] != "-" {
+            let model = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tools/ownership/model");
+            assert!(model.join(fields[5]).is_file(), "missing model fixture: {row}");
+        }
     }
-    for dir in ["spec", "invalid"] { for path in paths(&root.join(dir)) { assert!(files.contains(&path), "unlisted fixture {}", path.display()); } }
-    for section in ["3.3", "4.2", "5.1", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "7.1", "7.2", "7.3", "8", "9.1", "9.2", "9.3", "9.4", "9.5", "10.1", "10.2", "10.3", "10.4", "10.5", "10.6", "11", "12", "15.1", "15.2", "16.1", "16.2", "16.3", "16.4", "16.5", "16.6"] { assert!(sections.contains(section), "uncovered normative section {section}"); }
-    for n in 1..=9 { for classification in ["accept", "semantic-reject"] { assert!(pairs.contains(&(format!("M{n}").as_str(), classification)), "M{n} missing {classification}"); } }
-    for n in 1..=11 { assert!(rules.contains(format!("OIR2-B{n}").as_str()), "B{n} missing negative"); }
+    for dir in ["spec", "invalid"] {
+        for path in paths(&root.join(dir)) {
+            assert!(files.contains(&path), "unlisted fixture {}", path.display());
+        }
+    }
+    for section in [
+        "3.3", "4.2", "5.1", "5.2", "6.1", "6.2", "6.3", "6.4", "6.5", "7.1", "7.2", "7.3", "8",
+        "9.1", "9.2", "9.3", "9.4", "9.5", "10.1", "10.2", "10.3", "10.4", "10.5", "10.6", "11", "12",
+        "15.1", "15.2", "16.1", "16.2", "16.3", "16.4", "16.5", "16.6",
+    ] {
+        assert!(sections.contains(section), "uncovered normative section {section}");
+    }
+    for n in 1..=9 {
+        for class in ["accept", "semantic-reject"] {
+            assert!(pairs.contains(&(format!("M{n}").as_str(), class)), "M{n} missing {class}");
+        }
+    }
+    for n in 1..=11 {
+        assert!(rules.contains(format!("OIR2-B{n}").as_str()), "B{n} missing negative");
+    }
 }
 
 fn roundtrip_file(name: &str) -> Module {
