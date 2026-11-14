@@ -1,0 +1,11 @@
+oir 2 own
+// D3: unwind; oracle: two-scope reserve abort in Champ G1 section 6.5.
+module unwind
+scope S action in @main
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @main(%q: scope<S>, %active: failure) -> failure summary(M0) {
+^entry in S:
+    %combined: failure = scope.unwind %q, %active, effects scope_effects(failures=[thrown], suspends=false,
+        cancel=false)
+    ret %combined
+}

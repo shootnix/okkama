@@ -56,6 +56,24 @@ impl Reader for References<'_, '_> {
         block: BlockId => blocks, binding: BindingId => bindings,
         boundary: BoundaryId => boundaries, dependency: DepExprId => deps,
         key: KeyExprId => keys, selection: SelectionId => selections);
+    fn cleanup_close(&mut self, id: &CleanupCloseId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.closes.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup close reference");
+        }
+    }
+    fn cleanup_plan(&mut self, id: &CleanupPlanId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.plans.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup plan reference");
+        }
+    }
+    fn cleanup_schedule(&mut self, id: &CleanupScheduleId) {
+        if !self.state.step(1) { return; }
+        if self.body.is_none_or(|body| body.cleanup.schedules.get(*id).is_err()) {
+            self.invalid(RuleId::S3, "invalid cleanup schedule reference");
+        }
+    }
     fn scope(&mut self, id: &ScopeId) {
         if !self.state.step(1) { return; }
         match self.module.scopes.get(*id) {

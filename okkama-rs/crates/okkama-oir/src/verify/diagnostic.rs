@@ -7,7 +7,7 @@ pub enum RuleId {
     SSA1, SSA2,
     A1, A2, A3,
     B51, B61, B62,
-    B11, B12, B21, B22, B23, B31, B32, B41, B42, B43, B52, B53, B54, B63, B81, B82, B101,
+    B11, B12, B21, B22, B23, B31, B32, B41, B42, B43, B52, B53, B54, B63, B81, B82, B101, B114,
     H1, H2, H3, H4, H5, H6, H7, H8, H9,
 }
 
@@ -44,6 +44,7 @@ impl RuleId {
             Self::B63 => "OIR2-B6.3",
             Self::B81 => "OIR2-B8.1",
             Self::B82 => "OIR2-B8.2",
+            Self::B114 => "OIR2-B11.4",
             Self::B101 => "OIR2-B10.1",
             Self::B51 => "OIR2-B5.1",
             Self::B61 => "OIR2-B6.1",

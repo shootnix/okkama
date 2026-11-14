@@ -582,6 +582,12 @@ variants!(Outcome {
     Normal => "normal",
     Unwind => "unwind",
     Cancel => "cancel",
+    CleanupSelected => "cleanup_selected",
+    CleanupDone => "cleanup_done",
+    ExitSuccess => "exit_success",
+    ExitPending => "exit_pending",
+    ExitFailure => "exit_failure",
+    FailureSome => "failure_some",
     DeferContinue => "defer_continue",
     DeferReplace(index) => "defer_replace"
 });
@@ -799,12 +805,17 @@ variants!(TransferRule {
     Reserve { packet, boundary } => "reserve",
     ExtendReservation { pending, packet } => "extend_reservation",
     ReplaceReservation { pending, packet } => "replace_reservation",
-    AbortReservation { pending, cleanup, phase } => "abort_reservation",
+    AbortReservation { pending, cleanup } => "abort_reservation",
     FrameSave { frame, values } => "frame_save",
     FrameResume { frame, slots } => "frame_resume",
     CompleteIdentity { identity, state, output } => "complete_identity"
 });
 variants!(Postcondition {
+    CleanupOwnsReserve => "cleanup_owns_reserve",
+    FirstFailureAbortsWholeReserveIntoSuffix => "first_failure_aborts_whole_reserve_into_suffix",
+    FailurePriorityPreserved => "failure_priority_preserved",
+    CleanupDrained => "cleanup_drained",
+    FailedExitHasNoPending => "failed_exit_has_no_pending",
     OwnerServiceDuty { value, owner, kind } => "owner_service_duty",
     Closed(x0) => "closed",
     CacheConsumed(x0) => "cache_consumed",
@@ -1351,13 +1362,15 @@ opcodes!(ExitOp {
     Replace { pending, replacement } => "exit.replace",
     Commit { pending, destination, result } => "exit.commit",
     Extend { pending, packet } => "exit.extend",
-    Abort { pending, cleanup, phase } => "exit.abort",
+    Abort { pending, cleanup } => "exit.abort",
 });
 opcodes!(CleanupOp {
-    Begin { state, pending, failure, schedule } => "cleanup.begin",
+    Begin { state, pending, failure, close, effects } => "cleanup.begin",
     Defer { cleanup, action } => "cleanup.defer",
     Settle { cleanup, holder, protocol } => "cleanup.settle",
-    Plan { cleanup } => "cleanup.plan",
+    Plan { cleanup, plan } => "cleanup.plan",
+    SettleEmpty { cleanup, schedule } => "cleanup.settle.empty",
+    Destroy { cleanup, key } => "cleanup.destroy",
     Next { cleanup } => "cleanup.next",
     DestroyDirect { cleanup, identity, descriptor, destroy } => "destroy.direct",
     RecordFailure { cleanup, failure } => "cleanup.failure",
@@ -1645,3 +1658,54 @@ fn value_default(profile: Profile, ty: Option<&Type>) -> ValueFacts {
         _ => ValueFacts::Unelaborated,
     }
 }
+
+macro_rules! cleanup_id_codec {
+    ($($ty:ty),*) => {$(
+        impl Codec for $ty {
+            fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+                Ok(Self::from_u32(u32::read(r)?))
+            }
+            fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> { self.as_u32().write(w) }
+        }
+    )*};
+}
+cleanup_id_codec!(CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId);
+impl<I: ArenaId, T: Codec> Codec for Arena<I, T> {
+    fn read(r: &mut Reader<'_>) -> Result<Self, Diagnostic> {
+        let mut arena = Self::new();
+        for value in Vec::<T>::read(r)? {
+            arena.alloc(value).map_err(|e| r.error(DiagnosticKind::Limit, e.to_string()))?;
+        }
+        Ok(arena)
+    }
+    fn write(&self, w: &mut Writer<'_>) -> Result<(), PrintError> {
+        w.push("[");
+        for (_, value) in self.iter() {
+            value.write(w)?;
+            w.push(", ");
+        }
+        w.push("]");
+        Ok(())
+    }
+}
+record!(CleanupMetadata, "cleanup_metadata", { closes, schedules, plans, roots });
+record!(CleanupClose, "cleanup_close", { source, after_defers, reserve, active_failure, effects });
+record!(CleanupSchedule, "cleanup_schedule", { close, holders });
+record!(CleanupPlan, "cleanup_plan", { close, sources });
+record!(RootRequirement, "root_requirement", { boundary, bindings });
+record!(RootBinding, "root_binding", { value, trace });
+variants!(CleanupSource { Scope(value) => "scope", Packet(value) => "packet" });
+variants!(MergeSource {
+    ScopeInventory => "scope_inventory", PacketInventory => "packet_inventory",
+    WholeReserveOnFailure => "whole_reserve_on_failure"
+});
+variants!(RootBoundary {
+    BeforeInstruction(value) => "before_instruction", AfterInstruction(value) => "after_instruction",
+    Terminator(value) => "terminator", Entry(value) => "entry"
+});
+variants!(RootTrace {
+    Value(value) => "value", Descriptor(value) => "descriptor", FullDependencies => "full_dependencies",
+    CleanupActivation => "cleanup_activation", ScopeInventory => "scope_inventory",
+    PacketInventory => "packet_inventory", PendingValueReserveDeps => "pending_value_reserve_deps",
+    FailureGraph => "failure_graph", ExitReserve => "exit_reserve"
+});

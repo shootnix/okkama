@@ -132,10 +132,11 @@ fn public_apis_are_read_only_and_require_exact_profiles() {
         match profile {
             Profile::Own => { verify_own(&module).unwrap(); }
             Profile::Coro => { verify_coro(&module).unwrap(); }
-            Profile::Low => { verify_low(&module).unwrap(); }
+            Profile::Low => { rejected(&module, RuleId::B114); }
             Profile::High => unreachable!(),
         }
     }
+    module.profile = Profile::Own;
     let report = verify_function(&module, fid(), VerifyContext::default(), &VerifyOptions::default());
     assert_eq!(report.failure, None);
     let report = verify_function(&module, FuncId::from_u32(99), VerifyContext::default(), &VerifyOptions::default());
@@ -673,7 +674,7 @@ fn operand_families_accept_builders_and_reject_each_changed_operand() {
                 pending: v(0), destination: ExitDestination::Caller, result: Some(int),
             })),
             29 => (vec![pending, cleanup], Operation::Exit(ExitOp::Abort {
-                pending: v(0), cleanup: v(1), phase: AbortPhase::BeforeDestroy,
+                pending: v(0), cleanup: v(1),
             })),
             30 => (vec![cleanup], Operation::Cleanup(CleanupOp::Next { cleanup: v(0) })),
             31 => (vec![cleanup], Operation::Cleanup(CleanupOp::Finish { cleanup: v(0) })),

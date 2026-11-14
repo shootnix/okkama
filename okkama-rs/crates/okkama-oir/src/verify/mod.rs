@@ -10,6 +10,7 @@ mod types;
 mod expressions;
 pub(crate) mod read;
 mod later;
+mod low_phases;
 mod linearity;
 mod graph;
 mod dominance;
@@ -226,7 +227,8 @@ fn run<'m>(
     summaries::check(module, function, &mut state);
     high::check(module, function, &mut state);
     linearity::check(module, function, &mut state);
-    later::async_cleanup_and_profiles(module, &mut state);
+    low_phases::check(module, function, &mut state);
+    later::async_cleanup_and_profiles(module, function, &mut state);
     order_diagnostics(module, &mut state);
     // Passes emit in traversal order: module arenas, function/block arenas,
     // instruction positions, then operands/slots. No hash iteration controls diagnostics.

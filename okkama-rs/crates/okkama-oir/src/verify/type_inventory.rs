@@ -256,6 +256,8 @@ pub(super) const TYPE_RULES: &[&str] = &[
     "exit.extend",
     "exit.abort",
     "cleanup.begin",
+    "cleanup.destroy",
+    "cleanup.settle.empty",
     "cleanup.defer",
     "cleanup.settle",
     "cleanup.plan",

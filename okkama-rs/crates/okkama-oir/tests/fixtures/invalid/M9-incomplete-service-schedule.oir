@@ -24,6 +24,6 @@ protocol group holders [frame, scope] rules [protocol_rule(transition=settle, fr
 func @main(%cleanup: cleanup-state, %a: task-state, %b: task-state) -> (cleanup-state, task-state) {
 ^entry in S:
     %settled_a: cleanup-state = cleanup.settle %cleanup, %a, protocol group
-    %plan: cleanup-state = cleanup.plan %settled_a
+    %plan: cleanup-state = cleanup.plan %settled_a, plan 0
     ret %plan, %b
 }

@@ -1,0 +1,15 @@
+oir 2 own
+// D3: end-reserve; oracle: two-scope reserve abort in Champ G1 section 6.5.
+module end-reserve
+scope S action in @main
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @main(%q: scope<S>, %p: pending) -> pending summary(M0) {
+^entry in S:
+    invoke.own scope.end %q, reserve %p, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure)
+^done(%closed: closed, %returned: pending) in S:
+    ret %returned
+^failed(%closed_failed: closed, %error: failure) in S:
+    raise %error
+}

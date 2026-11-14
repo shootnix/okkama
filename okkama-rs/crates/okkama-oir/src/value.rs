@@ -2,6 +2,7 @@ use crate::{Arena, BindingDecl, BindingId, BlockId, DebugLoc, InstId, Operation,
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Body {
+    pub cleanup: crate::CleanupMetadata,
     pub high_results: Vec<HighResultExit>,
     pub high_effects: Vec<HighEffectRecord>,
     pub descriptor_bindings: Vec<crate::DescriptorBinding>,
@@ -60,7 +61,10 @@ pub struct BlockUnwind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome { Normal, Unwind, Cancel, DeferContinue, DeferReplace(u16) }
+pub enum Outcome {
+    Normal, Unwind, Cancel, DeferContinue, DeferReplace(u16),
+    ExitSuccess, ExitPending, ExitFailure, FailureSome, CleanupSelected, CleanupDone,
+}
 
 /// An invoke result belongs only to its edge, never to the source block's SSA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +94,18 @@ pub struct Terminator {
 /// Edge results are interpreted with the invoked operation contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TermKind {
+    /// Runtime serial selector. Selection never executes destroy.
+    CleanupNext { cleanup: ValueId, selected: InvokeEdge, done: InvokeEdge },
+    ExitDispatch {
+        close: crate::CleanupCloseId,
+        closed: ValueId,
+        failure: ValueId,
+        exit: ValueId,
+        success: Option<InvokeEdge>,
+        pending: Option<InvokeEdge>,
+        failed: Option<InvokeEdge>,
+    },
+    FailureDispatch { failure: ValueId, none: Target, some: InvokeEdge },
     Br(Target),
     Cond { condition: ValueId, yes: Target, no: Target },
     Switch { value: ValueId, cases: Vec<SwitchCase>, default: Target },

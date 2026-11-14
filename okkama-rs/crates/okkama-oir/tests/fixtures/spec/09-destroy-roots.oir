@@ -23,7 +23,7 @@ scope S action in @main
 func @main(%cleanup: cleanup-state, %self: Res, %descriptor: type) -> void {
 ^entry in S:
     (%next: cleanup-state, %failures: failure-state) = destroy.direct %cleanup, %self, %descriptor, destroy @destroy
-    %plan: cleanup-state = cleanup.plan %next
+    %plan: cleanup-state = cleanup.plan %next, plan 0
     (%state: cleanup-state, %key: stable-key, %has: bool) = cleanup.next %plan
     (%closed: closed, %final_failures: failure-state, %exit: exit-state) = cleanup.finish %state
     ret

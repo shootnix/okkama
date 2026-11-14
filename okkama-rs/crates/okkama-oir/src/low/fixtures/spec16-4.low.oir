@@ -1,0 +1,95 @@
+oir 2 low
+// Spec 16.4: reached defer on both risky-call outcomes, none on creation failure.
+module risky_defer
+object Res {
+    field name: str
+    destroy @destroy
+}
+scope S action in @main
+summary Mnew call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results
+        [result_relation(fresh=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown], publication=atomic)
+summary Mvoid call-boundary contract call_contract(failures=[thrown], publication=atomic)
+summary Mdefer internal contract call_contract(failures=[thrown], publication=atomic)
+summary Mdestroy internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @new(%name: str; %packet: own) -> (Res, own, deps) [extern "fixture.new"] summary(Mnew);
+func @risky(%packet: own) -> (own, deps) [extern "fixture.risky"] summary(Mvoid);
+func @log(%packet: own) -> void [extern "fixture.log", defer(replacements=[])] summary(Mdefer);
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mdestroy);
+summary Mmain internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(failures=[thrown], publication=atomic)
+func @main(%name: str) -> void summary(Mmain) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^close, reserve=false,
+        active_failure=false, effects=scope_effects(failures=[thrown])),
+        cleanup_close(source=scope(S), after_defers=^unwind, reserve=false, active_failure=true,
+        effects=scope_effects(failures=[thrown]))],
+        schedules=[cleanup_schedule(close=0, holders=[]), cleanup_schedule(close=1, holders=[])],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory]), cleanup_plan(close=1, sources=[scope_inventory])],
+        roots=[])
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %empty: own = own.empty
+    invoke.own call @new(%name; %empty)
+        normal ^have($value, $packet, $deps, %q0)
+        unwind ^unwind(%q0, $failure)
+^have(%r: Res facts(managed(deps=dr)), %packet: own, %deps: deps, %q1: scope<S>) in S:
+    %q2: scope<S> = own.admit %q1, %packet
+    %empty_risky: own = own.empty
+    invoke.own call @risky(; %empty_risky)
+        normal ^normal_defer(%q2, $packet, $deps)
+        unwind ^failure_defer(%q2, $failure)
+^normal_defer(%q3: scope<S>, %post: own, %post_deps: deps) in S:
+    %q4: scope<S> = own.admit %q3, %post
+    %empty_defer: own = own.empty
+    invoke.defer @log(; %empty_defer) summary(Mdefer)
+        continue ^close(%q4)
+        unwind ^unwind(%q4, $failure)
+^failure_defer(%q5: scope<S>, %primary: failure) in S:
+    %empty_failed_defer: own = own.empty
+    invoke.defer @log(; %empty_failed_defer) summary(Mdefer)
+        continue ^unwind(%q5, %primary)
+        unwind ^secondary(%q5, %primary, $failure)
+^secondary(%q6: scope<S>, %first: failure, %second: failure) in S:
+    %joined: failure = fail.secondary %first, %second
+    br ^unwind(%q6, %joined)
+^close(%q7: scope<S>) in S:
+    %c00: cleanup-state = cleanup.begin %q7, close 0, effects scope_effects(failures=[thrown])
+    %c10: cleanup-state = cleanup.settle.empty %c00, schedule 0
+    %c20: cleanup-state = cleanup.plan %c10, plan 0
+    br ^next0(%c20)
+^unwind(%q8: scope<S>, %active: failure) in S:
+    %c01: cleanup-state = cleanup.begin %q8, failure %active, close 1, effects scope_effects(failures=[thrown])
+    %c11: cleanup-state = cleanup.settle.empty %c01, schedule 1
+    %c21: cleanup-state = cleanup.plan %c11, plan 1
+    br ^next1(%c21)
+^done(%closed: closed) in S:
+    ret
+^failed(%closed2: closed, %failure: failure) in S:
+    raise %failure
+^next0(%cn0: cleanup-state) in S:
+    cleanup.next %cn0 selected ^destroy0($state, $selected) done ^finish0($state)
+^destroy0(%cd0: cleanup-state, %selected0: stable-key) in S:
+    (%dead0: cleanup-state, %captured0: failure-state) = cleanup.destroy %cd0, %selected0
+    failure.dispatch %captured0 none ^next0(%dead0) some ^record0(%dead0, $failure)
+^record0(%cr0: cleanup-state, %new_failure0: failure) in S:
+    %recorded0: cleanup-state = cleanup.failure %cr0, %new_failure0
+    br ^next0(%recorded0)
+^finish0(%cf0: cleanup-state) in S:
+    (%closed_final0: closed, %failures0: failure-state, %exit0: exit-state) = cleanup.finish %cf0
+    exit.dispatch 0 %closed_final0 %failures0 %exit0 success ^done($closed) failure ^failed($closed, $failure)
+^continued1(%combined: failure) in S:
+    raise %combined
+^next1(%cn1: cleanup-state) in S:
+    cleanup.next %cn1 selected ^destroy1($state, $selected) done ^finish1($state)
+^destroy1(%cd1: cleanup-state, %selected1: stable-key) in S:
+    (%dead1: cleanup-state, %captured1: failure-state) = cleanup.destroy %cd1, %selected1
+    failure.dispatch %captured1 none ^next1(%dead1) some ^record1(%dead1, $failure)
+^record1(%cr1: cleanup-state, %new_failure1: failure) in S:
+    %recorded1: cleanup-state = cleanup.failure %cr1, %new_failure1
+    br ^next1(%recorded1)
+^finish1(%cf1: cleanup-state) in S:
+    (%closed_final1: closed, %failures1: failure-state, %exit1: exit-state) = cleanup.finish %cf1
+    exit.dispatch 1 %closed_final1 %failures1 %exit1 failure ^continued1($failure)
+}

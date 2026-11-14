@@ -778,6 +778,42 @@ fn terminator<'a>(
     let before = checker.state.diagnostics.len();
     let mut check = || -> Checked<()> {
         match &block.term.kind {
+            TermKind::CleanupNext { cleanup, .. } => {
+                checker.require(module.profile == Profile::Low, "cleanup.next requires Low");
+                checker.service(*cleanup, ServiceType::CleanupState)?;
+                for (outcome, edge) in dispatch_edges(&block.term.kind) {
+                    at_edge(function, block_id, next_edge, checker.state);
+                    invoke_target(module, body, edge, outcome, &dispatch_slots(outcome), &sub, checker.state);
+                }
+            }
+            TermKind::ExitDispatch { close, closed, failure, exit, success, pending, failed } => {
+                checker.require(module.profile == Profile::Low, "exit.dispatch requires Low");
+                checker.service(*closed, ServiceType::Closed)?;
+                checker.service(*failure, ServiceType::FailureState)?;
+                checker.service(*exit, ServiceType::ExitState)?;
+                if let Ok(descriptor) = body.cleanup.closes.get(*close) {
+                    checker.require(success.is_some() == (!descriptor.active_failure && !descriptor.reserve),
+                        "success arm differs from close contract");
+                    checker.require(pending.is_some() == (!descriptor.active_failure && descriptor.reserve),
+                        "pending arm differs from close contract");
+                    let may_fail = descriptor.active_failure || !descriptor.effects.failures.is_empty();
+                    checker.require(failed.is_some() == may_fail,
+                        "failure arm differs from D18 close contract");
+                } else { checker.report(R::T3, "invalid cleanup close ID"); }
+                for (outcome, edge) in dispatch_edges(&block.term.kind) {
+                    at_edge(function, block_id, next_edge, checker.state);
+                    invoke_target(module, body, edge, outcome, &dispatch_slots(outcome), &sub, checker.state);
+                }
+            }
+            TermKind::FailureDispatch { failure, none, some } => {
+                checker.require(module.profile == Profile::Low, "failure.dispatch requires Low");
+                checker.service(*failure, ServiceType::FailureState)?;
+                at_edge(function, block_id, next_edge, checker.state);
+                target(body, none, false, checker.state);
+                at_edge(function, block_id, next_edge, checker.state);
+                invoke_target(module, body, some, Outcome::FailureSome,
+                    &dispatch_slots(Outcome::FailureSome), &sub, checker.state);
+            }
             TermKind::Br(edge) => {
                 at_edge(function, block_id, next_edge, checker.state);
                 target(body, edge, false, checker.state);

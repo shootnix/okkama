@@ -49,6 +49,15 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
                 }
                 edge += 2;
             } else {
+                if let TermKind::FailureDispatch { .. } = &block.term.kind { edge += 1; }
+                for (outcome, target) in dispatch_edges(&block.term.kind) {
+                    state.at(L::Edge { function, edge: VerifyEdgeId(edge) }, block.term.loc);
+                    let schema = OutcomeContract { results: dispatch_slots(outcome), transfers: vec![],
+                        postconditions: vec![], retention: vec![] };
+                    let dummy = Operation::Ownership(OwnershipOp::Empty {});
+                    edge_slots(module, body, &dummy, target, outcome, &schema, state);
+                    edge += 1;
+                }
                 edge += match &block.term.kind {
                     TermKind::Br(_) => 1,
                     TermKind::Cond { .. } | TermKind::Catch { .. } | TermKind::Lookup { .. } => 2,

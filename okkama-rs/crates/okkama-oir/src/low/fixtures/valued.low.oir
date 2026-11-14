@@ -1,0 +1,74 @@
+oir 2 low
+// Valued exit: accept, extract current-scope part, reserve, close, then commit.
+module valued_exit
+object Res {
+    field label: str
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 call-boundary parameters [parameter_effect(convention=take,
+    retention=some(parameter(0)), destination=result)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown, program], publication=atomic)
+func @main(%value: Res facts(managed(deps=d0)); %input: own) -> (Res, own, deps) summary(M0) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^prepare, reserve=true,
+        active_failure=false, effects=scope_effects(failures=[thrown])),
+        cleanup_close(source=scope(S), after_defers=^unwind, reserve=false, active_failure=true,
+        effects=scope_effects(failures=[thrown]))],
+        schedules=[cleanup_schedule(close=0, holders=[]), cleanup_schedule(close=1, holders=[])],
+        plans=[cleanup_plan(close=0, sources=[scope_inventory, whole_reserve_on_failure]), cleanup_plan(close=1,
+        sources=[scope_inventory])], roots=[])
+    dependency d0: dependency = retention(value=%value, selection=selection(%value))
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    boundary B0 lexical in S
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %q1: scope<S> = own.accept %q0, %input
+    invoke.own scope.split %q1, selection(%value)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^unwind($state, $failure)
+^prepare(%q: scope<S>, %part: own, %deps: deps) in S:
+    %p: pending = exit.prepare return %value, %part, deps(%deps) at B0
+    %c00: cleanup-state = cleanup.begin %q, pending %p, close 0, effects scope_effects(failures=[thrown])
+    %c10: cleanup-state = cleanup.settle.empty %c00, schedule 0
+    %c20: cleanup-state = cleanup.plan %c10, plan 0
+    br ^next0(%c20)
+^done(%closed: closed, %forwarded: pending) in S:
+    (%out: Res facts(managed(deps=dout)), %packet: own, %out_deps: deps) =
+        exit.commit %forwarded, destination caller, result Res
+    ret %out, %packet, %out_deps
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+^unwind(%open: scope<S>, %error: failure) in S:
+    %c01: cleanup-state = cleanup.begin %open, failure %error, close 1, effects scope_effects(failures=[thrown])
+    %c11: cleanup-state = cleanup.settle.empty %c01, schedule 1
+    %c21: cleanup-state = cleanup.plan %c11, plan 1
+    br ^next1(%c21)
+^next0(%cn0: cleanup-state) in S:
+    cleanup.next %cn0 selected ^destroy0($state, $selected) done ^finish0($state)
+^destroy0(%cd0: cleanup-state, %selected0: stable-key) in S:
+    (%dead0: cleanup-state, %captured0: failure-state) = cleanup.destroy %cd0, %selected0
+    failure.dispatch %captured0 none ^next0(%dead0) some ^record0(%dead0, $failure)
+^record0(%cr0: cleanup-state, %new_failure0: failure) in S:
+    %recorded0: cleanup-state = cleanup.failure %cr0, %new_failure0
+    br ^next0(%recorded0)
+^finish0(%cf0: cleanup-state) in S:
+    (%closed_final0: closed, %failures0: failure-state, %exit0: exit-state) = cleanup.finish %cf0
+    exit.dispatch 0 %closed_final0 %failures0 %exit0 pending ^done($closed, $pending) failure ^failed($closed, $failure)
+^continued1(%combined: failure) in S:
+    raise %combined
+^next1(%cn1: cleanup-state) in S:
+    cleanup.next %cn1 selected ^destroy1($state, $selected) done ^finish1($state)
+^destroy1(%cd1: cleanup-state, %selected1: stable-key) in S:
+    (%dead1: cleanup-state, %captured1: failure-state) = cleanup.destroy %cd1, %selected1
+    failure.dispatch %captured1 none ^next1(%dead1) some ^record1(%dead1, $failure)
+^record1(%cr1: cleanup-state, %new_failure1: failure) in S:
+    %recorded1: cleanup-state = cleanup.failure %cr1, %new_failure1
+    br ^next1(%recorded1)
+^finish1(%cf1: cleanup-state) in S:
+    (%closed_final1: closed, %failures1: failure-state, %exit1: exit-state) = cleanup.finish %cf1
+    exit.dispatch 1 %closed_final1 %failures1 %exit1 failure ^continued1($failure)
+}

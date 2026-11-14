@@ -80,7 +80,7 @@ fn every_opcode_builder_roundtrips_and_every_invoke_slot_is_preserved() {
         roundtrip(&module);
     }
     assert_eq!(seen, Operation::opcode_inventory().into_iter().collect(), "opcode missing a builder round-trip case");
-    assert_eq!(seen.len(), 269);
+    assert_eq!(seen.len(), 271);
 }
 
 #[test]
@@ -441,6 +441,12 @@ fn every_typed_payload_enum_branch_roundtrips() {
         Outcome::Normal,
         Outcome::Unwind,
         Outcome::Cancel,
+        Outcome::CleanupSelected,
+        Outcome::CleanupDone,
+        Outcome::ExitSuccess,
+        Outcome::ExitPending,
+        Outcome::ExitFailure,
+        Outcome::FailureSome,
         Outcome::DeferContinue,
         Outcome::DeferReplace(0)
     ];
@@ -673,7 +679,7 @@ fn every_typed_payload_enum_branch_roundtrips() {
         TransferRule::Reserve { packet: cs::<ValueId>(), boundary: cs::<BoundaryId>() },
         TransferRule::ExtendReservation { pending: cs::<ValueId>(), packet: cs::<ValueId>() },
         TransferRule::ReplaceReservation { pending: cs::<ValueId>(), packet: cs::<Option<ValueId>>() },
-        TransferRule::AbortReservation { pending: cs::<ValueId>(), cleanup: cs::<ValueId>(), phase: cs::<AbortPhase>() },
+        TransferRule::AbortReservation { pending: cs::<ValueId>(), cleanup: cs::<ValueId>() },
         TransferRule::FrameSave { frame: cs::<ValueId>(), values: cs::<Vec<ValueId>>() },
         TransferRule::FrameResume { frame: cs::<ValueId>(), slots: cs::<Vec<u32>>() },
         TransferRule::CompleteIdentity { identity: cs::<ValueId>(), state: cs::<ValueId>(), output: cs::<SlotName>() }
@@ -698,6 +704,11 @@ fn every_typed_payload_enum_branch_roundtrips() {
         Postcondition::NoPublication,
         Postcondition::CalleeInputsSettled,
         Postcondition::UniqueCacheRecheckAfterCoro,
+        Postcondition::CleanupOwnsReserve,
+        Postcondition::FirstFailureAbortsWholeReserveIntoSuffix,
+        Postcondition::FailurePriorityPreserved,
+        Postcondition::CleanupDrained,
+        Postcondition::FailedExitHasNoPending,
         Postcondition::DestroyingBeforeCall,
         Postcondition::DeadAfterCall(cs::<ValueId>()),
         Postcondition::ContinueCleanup,

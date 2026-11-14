@@ -86,7 +86,8 @@ impl<'a> FunctionBuilder<'a> {
         let declaration = module.functions.get(function)?;
         if declaration.body.is_some() { return Err(BuildError::AlreadyDefined(function)); }
         let params: Vec<_> = declaration.signature.params.iter().copied().map(ParamSpec::new).collect();
-        let body = Body { high_results: vec![], high_effects: vec![], descriptor_bindings: vec![],
+        let body = Body { cleanup: CleanupMetadata::default(), high_results: vec![], high_effects: vec![],
+            descriptor_bindings: vec![],
             service_schedules: vec![], entry: BlockId::from_u32(0), values: Arena::new(), blocks: Arena::new(),
             insts: Arena::new(), bindings: Arena::new(), boundaries: Arena::new(),
             deps: Arena::new(), keys: Arena::new(), selections: Arena::new() };
@@ -443,6 +444,12 @@ fn validate_invoke_edge(module: &mut Module, body: &Body, edge: &InvokeEdge, out
 fn validate_term(module: &mut Module, body: &Body, term: &TermKind, signature: Option<&Signature>) -> Result<(), BuildError> {
     check_references(term, module, body)?;
     match term {
+        TermKind::CleanupNext { .. } | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+            for (outcome, edge) in dispatch_edges(term) {
+                validate_invoke_edge(module, body, edge, outcome, &dispatch_slots(outcome))?;
+            }
+            if let TermKind::FailureDispatch { none, .. } = term { validate_target(body, none)?; }
+        }
         TermKind::Br(target) => validate_target(body, target)?,
         TermKind::Cond { condition, yes, no } => {
             check_result_types(&[module.types.intern(Type::Bool)?], &[value_type(body, *condition)?])?;
@@ -583,6 +590,13 @@ impl<'a> FunctionEditor<'a> {
             (TermKind::Cond { no: target, .. }, E::No) | (TermKind::Switch { default: target, .. }, E::Default) |
             (TermKind::Catch { next: target, .. }, E::CatchNext) | (TermKind::Lookup { missing: target, .. }, E::LookupMissing) => target.args = ordinary_args(args)?,
             (TermKind::Switch { cases, .. }, E::SwitchCase(index)) => cases.get_mut(index as usize).ok_or(BuildError::InvalidPosition)?.target.args = ordinary_args(args)?,
+            (TermKind::FailureDispatch { none, .. }, E::FailureNone) => none.args = ordinary_args(args)?,
+            (TermKind::CleanupNext { selected: edge, .. }, E::CleanupSelected)
+            | (TermKind::CleanupNext { done: edge, .. }, E::CleanupDone)
+            | (TermKind::FailureDispatch { some: edge, .. }, E::FailureSome)
+            | (TermKind::ExitDispatch { success: Some(edge), .. }, E::ExitSuccess)
+            | (TermKind::ExitDispatch { pending: Some(edge), .. }, E::ExitPending)
+            | (TermKind::ExitDispatch { failed: Some(edge), .. }, E::ExitFailure) => edge.args = args,
             (TermKind::InvokeDefer { continue_edge: edge, .. }, E::DeferContinue)
             | (TermKind::InvokeDefer { unwind: Some(edge), .. }, E::DeferUnwind) => edge.args = args,
             (TermKind::InvokeDefer { replacements, .. }, E::DeferReplace(index)) => {

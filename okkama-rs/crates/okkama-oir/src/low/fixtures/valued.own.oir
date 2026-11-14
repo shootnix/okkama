@@ -1,0 +1,40 @@
+oir 2 own
+// Valued exit: accept, extract current-scope part, reserve, close, then commit.
+module valued_exit
+object Res {
+    field label: str
+    destroy @destroy
+}
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)]
+    contract call_contract(publication=atomic)
+func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Md);
+scope S action in @main
+summary M0 call-boundary parameters [parameter_effect(convention=take,
+    retention=some(parameter(0)), destination=result)]
+    results [result_relation(aliases=[parameter(0)], external_deps=[0], provenance=unbound_result)]
+    contract call_contract(results=[Res], failures=[thrown, program], publication=atomic)
+func @main(%value: Res facts(managed(deps=d0)); %input: own) -> (Res, own, deps) summary(M0) {
+    dependency d0: dependency = retention(value=%value, selection=selection(%value))
+    dependency dout: dependency = retention(value=%out, selection=selection(%out))
+    boundary B0 lexical in S
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    %q1: scope<S> = own.accept %q0, %input
+    invoke.own scope.split %q1, selection(%value)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^unwind($state, $failure)
+^prepare(%q: scope<S>, %part: own, %deps: deps) in S:
+    %p: pending = exit.prepare return %value, %part, deps(%deps) at B0
+    invoke.own scope.end %q, reserve %p, effects scope_effects(failures=[thrown])
+        normal ^done($closed, $pending)
+        unwind ^failed($closed, $failure)
+^done(%closed: closed, %forwarded: pending) in S:
+    (%out: Res facts(managed(deps=dout)), %packet: own, %out_deps: deps) =
+        exit.commit %forwarded, destination caller, result Res
+    ret %out, %packet, %out_deps
+^failed(%closed_failed: closed, %failure: failure) in S:
+    raise %failure
+^unwind(%open: scope<S>, %error: failure) in S:
+    %combined: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown])
+    raise %combined
+}

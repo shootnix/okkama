@@ -1280,11 +1280,23 @@ impl Checker<'_, '_> {
     }
     fn cleanup(&mut self, op: &CleanupOp) -> Checked<()> {
         match op {
-            CleanupOp::Begin { state, pending, failure, schedule } => {
-                self.scope(*state)?;
+            CleanupOp::Begin { state, pending, failure, close, effects } => {
+                self.close_envelope(effects, failure.is_some(), *state)?;
+                self.require(!effects.suspends && !effects.cancel, "P1 cleanup begin must be synchronous");
+                let source_type = self.ty(*state)?.clone();
+                if let Ok(descriptor) = self.body.cleanup.closes.get(*close) {
+                    let expected = match descriptor.source {
+                        CleanupSource::Scope(scope) => ServiceType::Scope(scope),
+                        CleanupSource::Packet(_) => ServiceType::Own,
+                    };
+                    self.require(source_type == Type::Service(expected), "cleanup source type differs from close");
+                    self.require(descriptor.reserve == pending.is_some(), "cleanup reserve differs from close");
+                    self.require(descriptor.active_failure == failure.is_some(), "cleanup failure differs from close");
+                    self.require(descriptor.effects == *effects, "cleanup D18 differs from close");
+                } else { self.report(R::T1, "invalid cleanup close ID"); }
                 if let Some(pending) = pending { self.service(*pending, ServiceType::Pending)?; }
                 if let Some(failure) = failure { self.service(*failure, ServiceType::Failure)?; }
-                self.language(*schedule)?;
+
             }
             CleanupOp::Defer { cleanup, action } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
@@ -1297,7 +1309,34 @@ impl Checker<'_, '_> {
                     | Type::Frame(_));
                 self.require(valid, "cleanup settle requires a service holder");
             }
-            CleanupOp::Plan { cleanup } | CleanupOp::Next { cleanup } | CleanupOp::Shield { cleanup }
+            CleanupOp::SettleEmpty { cleanup, schedule } => {
+                self.service(*cleanup, ServiceType::CleanupState)?;
+                let valid = self.body.cleanup.schedules.get(*schedule).is_ok_and(|item| item.holders.is_empty()
+                    && self.body.cleanup.closes.get(item.close).is_ok());
+                self.require(valid, "empty settle requires a checked empty D16 schedule");
+            }
+            CleanupOp::Plan { cleanup, plan } => {
+                self.service(*cleanup, ServiceType::CleanupState)?;
+                if let Ok(plan) = self.body.cleanup.plans.get(*plan)
+                    && let Ok(close) = self.body.cleanup.closes.get(plan.close) {
+                    let mut expected = vec![match close.source {
+                        CleanupSource::Scope(_) => MergeSource::ScopeInventory,
+                        CleanupSource::Packet(_) => MergeSource::PacketInventory,
+                    }];
+                    if close.reserve {
+                        expected.push(MergeSource::WholeReserveOnFailure);
+                    }
+                    self.require(plan.sources == expected,
+                        "merge plan must cover its complete close and reserve sources");
+                } else {
+                    self.report(R::T1, "invalid cleanup plan ID");
+                }
+            }
+            CleanupOp::Destroy { cleanup, key } => {
+                self.service(*cleanup, ServiceType::CleanupState)?;
+                self.service(*key, ServiceType::StableKey)?;
+            }
+            CleanupOp::Next { cleanup } | CleanupOp::Shield { cleanup }
             | CleanupOp::DeliverCancel { cleanup } | CleanupOp::Finish { cleanup } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
             }
@@ -1311,7 +1350,7 @@ impl Checker<'_, '_> {
             }
             CleanupOp::RecordFailure { cleanup, failure } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
-                self.service(*failure, ServiceType::FailureState)?;
+                self.service(*failure, ServiceType::Failure)?;
             }
             CleanupOp::CellNew { value, ty } => {
                 self.exact(*value, *ty)?;

@@ -411,6 +411,10 @@ pub(super) fn targets(block: &Block) -> Vec<BlockId> {
     let mut targets = Vec::new();
     if let Some(unwind) = &block.unwind { targets.push(unwind.target.block); }
     match &block.term.kind {
+        TermKind::CleanupNext { .. } | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } => {
+            if let TermKind::FailureDispatch { none, .. } = &block.term.kind { targets.push(none.block); }
+            targets.extend(dispatch_edges(&block.term.kind).iter().map(|(_, edge)| edge.block));
+        }
         TermKind::Br(target) => targets.push(target.block),
         TermKind::Cond { yes, no, .. } => targets.extend([yes.block, no.block]),
         TermKind::Switch { cases, default, .. } => {

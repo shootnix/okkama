@@ -1,0 +1,79 @@
+//! Semantic cleanup schemas. These IDs are function-local, never wire/runtime offsets.
+use crate::*;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CleanupMetadata {
+    pub closes: Arena<CleanupCloseId, CleanupClose>,
+    pub schedules: Arena<CleanupScheduleId, CleanupSchedule>,
+    pub plans: Arena<CleanupPlanId, CleanupPlan>,
+    pub roots: Arena<RootMapId, RootRequirement>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CleanupSource { Scope(ScopeId), Packet(BoundaryId) }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupClose {
+    pub source: CleanupSource,
+    /// Entry after the already elaborated reached defer prefix. No runtime defer runner.
+    pub after_defers: BlockId,
+    pub reserve: bool,
+    pub active_failure: bool,
+    pub effects: ScopeEffectEnvelope,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupSchedule {
+    pub close: CleanupCloseId,
+    /// The complete D16 inventory. L1 admits only the checked empty inventory.
+    pub holders: Vec<ValueId>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MergeSource { ScopeInventory, PacketInventory, WholeReserveOnFailure }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupPlan {
+    pub close: CleanupCloseId,
+    /// One descending-serial selector over every source. Reserve joins only the unexecuted suffix.
+    pub sources: Vec<MergeSource>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RootBoundary { BeforeInstruction(InstId), AfterInstruction(InstId), Terminator(BlockId), Entry(BlockId) }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RootTrace {
+    Value(TypeId), Descriptor(ValueId), FullDependencies,
+    /// Current self and traced fields, static/admission/history/staging suffix, reserve and failures.
+    CleanupActivation,
+    ScopeInventory, PacketInventory, PendingValueReserveDeps, FailureGraph, ExitReserve,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RootBinding { pub value: ValueId, pub trace: RootTrace }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RootRequirement { pub boundary: RootBoundary, pub bindings: Vec<RootBinding> }
+
+/// The schemas are independent of the producer and shared by codec, builder and verifier.
+pub fn dispatch_slots(outcome: Outcome) -> Vec<ResultSlot> {
+    use ServiceType as S;
+    use SlotName as N;
+    match outcome {
+        Outcome::CleanupSelected => vec![ResultSlot::service(N::State, S::CleanupState),
+            ResultSlot::service(N::Selected, S::StableKey)],
+        Outcome::CleanupDone => vec![ResultSlot::service(N::State, S::CleanupState)],
+        Outcome::ExitSuccess => vec![ResultSlot::service(N::Closed, S::Closed)],
+        Outcome::ExitPending => vec![ResultSlot::service(N::Closed, S::Closed),
+            ResultSlot::service(N::Pending, S::Pending)],
+        Outcome::ExitFailure => vec![ResultSlot::service(N::Closed, S::Closed),
+            ResultSlot::service(N::Failure, S::Failure)],
+        Outcome::FailureSome => vec![ResultSlot::service(N::Failure, S::Failure)],
+        _ => vec![],
+    }
+}
+pub fn dispatch_edges(term: &TermKind) -> Vec<(Outcome, &InvokeEdge)> {
+    match term {
+        TermKind::CleanupNext { selected, done, .. } => {
+            vec![(Outcome::CleanupSelected, selected), (Outcome::CleanupDone, done)]
+        }
+        TermKind::ExitDispatch { success, pending, failed, .. } => {
+            [(Outcome::ExitSuccess, success), (Outcome::ExitPending, pending), (Outcome::ExitFailure, failed)]
+                .into_iter().filter_map(|(outcome, edge)| edge.as_ref().map(|edge| (outcome, edge))).collect()
+        }
+        TermKind::FailureDispatch { some, .. } => vec![(Outcome::FailureSome, some)],
+        _ => vec![],
+    }
+}

@@ -25,9 +25,9 @@ func @main(%value: Res, %deps: deps; %old: pending, %packet: own, %q: scope<S>, 
 ^entry in S:
     (%new: pending, %rest: own) = exit.replace %old, replacement prepared_exit(kind=return, value=some(%value), packet=some(%packet), deps=some(%deps), selection=selection(%value), boundary=B0)
     %admitted: scope<S> = own.admit %q, %rest
-    %cleanup: cleanup-state = cleanup.begin %admitted, %schedule
-    %abort: cleanup-state = exit.abort %new, %cleanup, phase before_destroy
-    %plan: cleanup-state = cleanup.plan %abort
+    %cleanup: cleanup-state = cleanup.begin %admitted, close 0, effects scope_effects()
+    %abort: cleanup-state = exit.abort %new, %cleanup
+    %plan: cleanup-state = cleanup.plan %abort, plan 0
     (%closed: closed, %failures: failure-state, %exit: exit-state) = cleanup.finish %plan
     ret
 }

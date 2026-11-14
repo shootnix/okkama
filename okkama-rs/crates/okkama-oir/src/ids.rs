@@ -32,6 +32,7 @@ macro_rules! ids {
 // Module-wide IDs, including ScopeId used by the shared type table.
 ids!(FuncId, TypeId, DeclId, ScopeId, FileId, SummaryId, ProtocolId);
 // Function-local IDs.
+ids!(CleanupCloseId, CleanupPlanId, CleanupScheduleId, RootMapId);
 ids!(BlockId, InstId, ValueId, BindingId, BoundaryId, DepExprId, KeyExprId, SelectionId, CreationSiteId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

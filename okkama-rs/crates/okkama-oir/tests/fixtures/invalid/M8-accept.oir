@@ -24,6 +24,6 @@ func @main(%pending: pending, %cleanup: cleanup-state) -> cleanup-state {
 ^entry in S:
     %shielded: cleanup-state = cleanup.shield %cleanup
     %delivered: cleanup-state = cleanup.deliver_cancel %shielded
-    %aborted: cleanup-state = exit.abort %pending, %delivered, phase after_executed_prefix
+    %aborted: cleanup-state = exit.abort %pending, %delivered
     ret %aborted
 }

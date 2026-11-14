@@ -8,6 +8,6 @@ func @main(%cleanup: cleanup-state, %a: task-state, %b: task-state) -> cleanup-s
 ^entry in S:
     %first: cleanup-state = cleanup.settle %cleanup, %a, protocol group
     %second: cleanup-state = cleanup.settle %first, %b, protocol group
-    %plan: cleanup-state = cleanup.plan %second
+    %plan: cleanup-state = cleanup.plan %second, plan 0
     ret %plan
 }

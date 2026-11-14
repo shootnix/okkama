@@ -89,9 +89,12 @@ pub(super) fn check<'m>(module: &'m Module, selected: Option<FuncId>, state: &mu
             return;
         }
         // D8 tagged transfer/settlement is a separate B10 pass in #564 commit 4.
-        // Do not run the ordinary-return engine over the tagged defer ABI.
+        // The ordinary-return engine cannot interpret the tagged defer/cleanup ABI.
+        // Low conservation, lifetime and failure proofs across this ABI remain #564 commit 4;
+        // types, SSA, edge-slot multiplicity, authority and local phases still run independently.
         if body.blocks.iter().any(|(_, block)| matches!(block.term.kind,
-            TermKind::InvokeDefer { .. } | TermKind::RetDefer { .. })) {
+            TermKind::InvokeDefer { .. } | TermKind::RetDefer { .. }
+            | TermKind::ExitDispatch { .. } | TermKind::FailureDispatch { .. } | TermKind::CleanupNext { .. })) {
             continue;
         }
         let mut engine = Engine {

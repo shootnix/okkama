@@ -1,0 +1,10 @@
+oir 2 own
+// D3: end; oracle: two-scope reserve abort in Champ G1 section 6.5.
+module end
+scope S action in @main
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @main(%q: scope<S>) -> void summary(M0) {
+^entry in S:
+    %closed: closed = scope.end %q, effects scope_effects()
+    ret
+}

@@ -5,7 +5,9 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseSite { Instruction(InstId), Terminator(BlockId), BlockUnwind(BlockId), ValueFacts(ValueId), InstructionFacts(InstId), Declaration(OperandRef) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind { DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
+pub enum EdgeKind {
+    CleanupSelected, CleanupDone, ExitSuccess, ExitPending, ExitFailure, FailureNone, FailureSome,
+    DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
     BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CfgEvent {
@@ -144,6 +146,37 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
     let site = UseSite::Terminator(block);
     let mut operands = vec![];
     match &term.kind {
+        TermKind::CleanupNext { cleanup, selected, done } => {
+            operands.push(ssa(*cleanup, OperandMode::Consume));
+            for (kind, outcome, edge) in [
+                (EdgeKind::CleanupSelected, Outcome::CleanupSelected, selected),
+                (EdgeKind::CleanupDone, Outcome::CleanupDone, done),
+            ] {
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, edge, kind, site, visit);
+            }
+        }
+        TermKind::ExitDispatch { closed, failure, exit, .. } => {
+            operands.push(ssa(*closed, OperandMode::Observe));
+            operands.push(ssa(*failure, OperandMode::Observe));
+            operands.push(ssa(*exit, OperandMode::Consume));
+            for (outcome, target) in dispatch_edges(&term.kind) {
+                let kind = match outcome {
+                    Outcome::ExitSuccess => EdgeKind::ExitSuccess,
+                    Outcome::ExitPending => EdgeKind::ExitPending,
+                    _ => EdgeKind::ExitFailure,
+                };
+                edge_definitions(block, kind, outcome, &dispatch_slots(outcome), visit)?;
+                invoke_edge(block, target, kind, site, visit);
+            }
+        }
+        TermKind::FailureDispatch { failure, none, some } => {
+            operands.push(ssa(*failure, OperandMode::Observe));
+            edge(block, none, EdgeKind::FailureNone, site, visit);
+            edge_definitions(block, EdgeKind::FailureSome, Outcome::FailureSome,
+                &dispatch_slots(Outcome::FailureSome), visit)?;
+            invoke_edge(block, some, EdgeKind::FailureSome, site, visit);
+        }
         TermKind::Br(target) => edge(block, target, EdgeKind::Branch, site, visit),
         TermKind::Cond { condition, yes, no } => {
             operands.push(ssa(*condition, OperandMode::Observe));

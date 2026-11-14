@@ -1,0 +1,30 @@
+oir 2 low
+// D3: unwind; oracle: two-scope reserve abort in Champ G1 section 6.5.
+module unwind
+scope S action in @main
+summary M0 internal contract call_contract(failures=[thrown], publication=atomic)
+func @main(%q: scope<S>, %active: failure) -> failure summary(M0) {
+    low.metadata cleanup_metadata(closes=[cleanup_close(source=scope(S), after_defers=^entry, reserve=false,
+        active_failure=true, effects=scope_effects(failures=[thrown], suspends=false, cancel=false))],
+        schedules=[cleanup_schedule(close=0, holders=[])], plans=[cleanup_plan(close=0, sources=[scope_inventory])],
+        roots=[])
+^entry in S:
+    %c0: cleanup-state = cleanup.begin %q, failure %active, close 0, effects scope_effects(failures=[thrown],
+        suspends=false, cancel=false)
+    %c1: cleanup-state = cleanup.settle.empty %c0, schedule 0
+    %c2: cleanup-state = cleanup.plan %c1, plan 0
+    br ^next(%c2)
+^continued(%combined: failure) in S:
+    ret %combined
+^next(%cn: cleanup-state) in S:
+    cleanup.next %cn selected ^destroy($state, $selected) done ^finish($state)
+^destroy(%cd: cleanup-state, %selected: stable-key) in S:
+    (%dead: cleanup-state, %captured: failure-state) = cleanup.destroy %cd, %selected
+    failure.dispatch %captured none ^next(%dead) some ^record(%dead, $failure)
+^record(%cr: cleanup-state, %new_failure: failure) in S:
+    %recorded: cleanup-state = cleanup.failure %cr, %new_failure
+    br ^next(%recorded)
+^finish(%cf: cleanup-state) in S:
+    (%closed_final: closed, %failures: failure-state, %exit: exit-state) = cleanup.finish %cf
+    exit.dispatch 0 %closed_final %failures %exit failure ^continued($failure)
+}
