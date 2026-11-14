@@ -24,10 +24,12 @@ checks and nine specification questions. Draft 3 accepts all nine answers.
       stable snapshots, roots, schedules and failure graphs.
 - [x] Update README with new findings only and regenerate results.json.
 
-Acceptance: 155 unique fixtures; 101 accepted / 103 finite positive paths;
+Acceptance: 154 unique fixtures; 100 accepted / 102 finite positive paths;
 54 expected verifier refusals; 21 unittests pass; no conditional fixtures.
-41 corpus programs / 215 TAP checks translated: 40 programs / 214 checks
-match exactly. The single difference is cold-futures TAP #9: draft 3 §10.1
+40 corpus programs / 213 TAP checks translated: 39 programs / 212 checks
+match exactly. #581 moved future-completions to the corpus root, merged the former
+#580 all-futures checks into all-futures, and reduced async-results to six checks. The single
+difference is cold-futures TAP #9: draft 3 §10.1
 closes non-retained inputs at action completion (AR), source expects empty log.
 The source expectation and normative result are both retained in manifest and
 results.json; no blanket corpus parity or G0 approval is claimed.
