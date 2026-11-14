@@ -4,20 +4,20 @@
   "engine_target": "Sparrow",
   "corpus_parity": "DIFFERENCES",
   "unittest_tests": 21,
-  "fixtures": 155,
-  "accepted": 101,
+  "fixtures": 154,
+  "accepted": 100,
   "rejected_as_expected": 54,
-  "verified_positive_paths": 103,
+  "verified_positive_paths": 102,
   "by_status": {
-    "corpus-golden": 41,
+    "corpus-golden": 40,
     "normative": 114
   },
   "review_findings": 24,
   "verifier_rules": 11,
-  "corpus_programs": 41,
-  "corpus_tap_checks": 215,
-  "corpus_matching_checks": 214,
-  "corpus_matching_programs": 40,
+  "corpus_programs": 40,
+  "corpus_tap_checks": 213,
+  "corpus_matching_checks": 212,
+  "corpus_matching_programs": 39,
   "corpus_differences": 1,
   "corpus": [
     {
@@ -777,8 +777,8 @@
       "parity": "MATCH"
     },
     {
-      "source": "tests/ownership-corpus/pending/581-future-completions.ok",
-      "source_sha256": "7613c89cc163b9b8de31e17bea776e407c071069ccc277e2aa3fb2fda3d72353",
+      "source": "tests/ownership-corpus/future-completions.ok",
+      "source_sha256": "eccea87857d63951e02240a6388d7ebeb7ca12a9dd3eaeb11041bd01a39a6ac5",
       "fixture": "corpus/future-completions.oir",
       "checks": 4,
       "checkpoints": [
@@ -802,51 +802,37 @@
     },
     {
       "source": "tests/ownership-corpus/all-futures.ok",
-      "source_sha256": "1204dc88f74cc814180395fb6e8c813b641fddefa5a8d8333587918ab1df727d",
+      "source_sha256": "c236fa80b776803100c029d7047b829f5f54cc654c1dd5d1db7d2fcde6ff67aa",
       "fixture": "corpus/all-futures.oir",
-      "checks": 3,
+      "checks": 6,
       "checkpoints": [
+        "",
+        "",
+        "BA",
         "",
         "FL",
         "FL"
       ],
       "destroy": [
+        "B",
+        "A",
         "F",
         "L"
       ],
       "source_expectations": [
         "",
+        "",
+        "BA",
+        "",
         "FL",
         "FL"
-      ],
-      "differences": [],
-      "parity": "MATCH"
-    },
-    {
-      "source": "tests/ownership-corpus/580-all-futures.ok",
-      "source_sha256": "fee744c92b0565309970ab29e7292a997bc804fa781e72dc4316ff27d8f75c84",
-      "fixture": "corpus/580-all-futures.oir",
-      "checks": 3,
-      "checkpoints": [
-        "",
-        "",
-        "BA"
-      ],
-      "destroy": [
-        "B",
-        "A"
-      ],
-      "source_expectations": [
-        "",
-        "",
-        "BA"
       ],
       "differences": [],
       "parity": "MATCH"
     },
     {
       "source": "tests/ownership-corpus/raced.ok",
-      "source_sha256": "81935ef26f12c3b1175c42cd1755eff2cd3fdcda89ba98db5b02ca34783bbb97",
+      "source_sha256": "712aff144ab708b2e28f6018fd5d35e0a2cb5cde2e759ba21d3d8e2441ac51a1",
       "fixture": "corpus/raced.oir",
       "checks": 4,
       "checkpoints": [
@@ -920,29 +906,22 @@
     },
     {
       "source": "tests/ownership-corpus/async-results.ok",
-      "source_sha256": "c3477fec787a8651ae2c23827486142d2889541c67c9d082926eb78029a0ecb9",
+      "source_sha256": "93601af152f00b933557384777b927f8ba63619c5b9476f09c0c01dfb5a46675",
       "fixture": "corpus/async-results.oir",
-      "checks": 8,
+      "checks": 6,
       "checkpoints": [
         "",
         "L",
         "L",
         "LR",
         "L",
-        "LR",
-        "LBRA",
-        "LBRAO"
+        "LR"
       ],
       "destroy": [
         "L",
         "R",
         "L",
-        "R",
-        "L",
-        "B",
-        "R",
-        "A",
-        "O"
+        "R"
       ],
       "source_expectations": [
         "",
@@ -950,9 +929,7 @@
         "L",
         "LR",
         "L",
-        "LR",
-        "LBRA",
-        "LBRAO"
+        "LR"
       ],
       "differences": [],
       "parity": "MATCH"
@@ -992,7 +969,7 @@
     },
     {
       "source": "tests/ownership-corpus/channel-transfer.ok",
-      "source_sha256": "4409e0658cb95a13c660ae4de6f8d2b694cbf5e1a5a8885d54d78d0f5449bdfa",
+      "source_sha256": "e65a6b63db6b833356a2aeb9e3702b1d17e3c31345660805a0efc0ce4f82117e",
       "fixture": "corpus/channel-transfer.oir",
       "checks": 6,
       "checkpoints": [
@@ -1021,7 +998,7 @@
     },
     {
       "source": "tests/ownership-corpus/async-destroy.ok",
-      "source_sha256": "2472576c049ffb3de44c2e34f7a7a9cda5a64c3669cf7e5500a4af6ccfd1ef8c",
+      "source_sha256": "2a38d2bd163ce51029b4189a623e7fd324ce4a3d41bee023c826fa8a43538bb3",
       "fixture": "corpus/async-destroy.oir",
       "checks": 10,
       "checkpoints": [
@@ -7137,6 +7114,126 @@
       "fixture": "corpus/all-futures.oir",
       "events": [
         {
+          "event": "task.suspend",
+          "future": "first",
+          "scope": "@task:first"
+        },
+        {
+          "event": "future.start",
+          "future": "first"
+        },
+        {
+          "event": "task.suspend",
+          "future": "second",
+          "scope": "@task:second"
+        },
+        {
+          "event": "future.start",
+          "future": "second"
+        },
+        {
+          "event": "future.settle-request",
+          "future": "first",
+          "cancel": false,
+          "state": "running"
+        },
+        {
+          "event": "task.resume",
+          "future": "first"
+        },
+        {
+          "event": "service.begin",
+          "scope": "@task:first"
+        },
+        {
+          "event": "service.end",
+          "scope": "@task:first"
+        },
+        {
+          "event": "future.settled",
+          "future": "first",
+          "failure": null
+        },
+        {
+          "event": "future.settle-request",
+          "future": "second",
+          "cancel": false,
+          "state": "running"
+        },
+        {
+          "event": "task.resume",
+          "future": "second"
+        },
+        {
+          "event": "service.begin",
+          "scope": "@task:second"
+        },
+        {
+          "event": "service.end",
+          "scope": "@task:second"
+        },
+        {
+          "event": "future.settled",
+          "future": "second",
+          "failure": null
+        },
+        {
+          "event": "future.settle-request",
+          "future": "first",
+          "cancel": false,
+          "state": "settled"
+        },
+        {
+          "event": "future.settle-request",
+          "future": "second",
+          "cancel": false,
+          "state": "settled"
+        },
+        {
+          "event": "service.begin",
+          "scope": "collected"
+        },
+        {
+          "event": "service.choose",
+          "scope": "collected",
+          "service": "first"
+        },
+        {
+          "event": "service.released",
+          "scope": "collected",
+          "service": "first"
+        },
+        {
+          "event": "service.choose",
+          "scope": "collected",
+          "service": "second"
+        },
+        {
+          "event": "service.released",
+          "scope": "collected",
+          "service": "second"
+        },
+        {
+          "event": "service.end",
+          "scope": "collected"
+        },
+        {
+          "event": "service.begin",
+          "scope": "@destroy2"
+        },
+        {
+          "event": "service.end",
+          "scope": "@destroy2"
+        },
+        {
+          "event": "service.begin",
+          "scope": "@destroy1"
+        },
+        {
+          "event": "service.end",
+          "scope": "@destroy1"
+        },
+        {
           "event": "service.begin",
           "scope": "empty"
         },
@@ -7182,11 +7279,11 @@
         },
         {
           "event": "service.begin",
-          "scope": "@destroy2"
+          "scope": "@destroy4"
         },
         {
           "event": "service.end",
-          "scope": "@destroy2"
+          "scope": "@destroy4"
         },
         {
           "event": "future.settled",
@@ -7213,11 +7310,11 @@
         },
         {
           "event": "service.begin",
-          "scope": "@destroy1"
+          "scope": "@destroy3"
         },
         {
           "event": "service.end",
-          "scope": "@destroy1"
+          "scope": "@destroy3"
         },
         {
           "event": "future.settled",
@@ -7257,139 +7354,6 @@
         {
           "event": "service.end",
           "scope": "block"
-        },
-        {
-          "event": "service.begin",
-          "scope": "main"
-        },
-        {
-          "event": "service.end",
-          "scope": "main"
-        }
-      ]
-    },
-    {
-      "fixture": "corpus/580-all-futures.oir",
-      "events": [
-        {
-          "event": "task.suspend",
-          "future": "first",
-          "scope": "@task:first"
-        },
-        {
-          "event": "future.start",
-          "future": "first"
-        },
-        {
-          "event": "task.suspend",
-          "future": "second",
-          "scope": "@task:second"
-        },
-        {
-          "event": "future.start",
-          "future": "second"
-        },
-        {
-          "event": "future.settle-request",
-          "future": "first",
-          "cancel": false,
-          "state": "running"
-        },
-        {
-          "event": "task.resume",
-          "future": "first"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@task:first"
-        },
-        {
-          "event": "service.end",
-          "scope": "@task:first"
-        },
-        {
-          "event": "future.settled",
-          "future": "first",
-          "failure": null
-        },
-        {
-          "event": "future.settle-request",
-          "future": "second",
-          "cancel": false,
-          "state": "running"
-        },
-        {
-          "event": "task.resume",
-          "future": "second"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@task:second"
-        },
-        {
-          "event": "service.end",
-          "scope": "@task:second"
-        },
-        {
-          "event": "future.settled",
-          "future": "second",
-          "failure": null
-        },
-        {
-          "event": "future.settle-request",
-          "future": "first",
-          "cancel": false,
-          "state": "settled"
-        },
-        {
-          "event": "future.settle-request",
-          "future": "second",
-          "cancel": false,
-          "state": "settled"
-        },
-        {
-          "event": "service.begin",
-          "scope": "block"
-        },
-        {
-          "event": "service.choose",
-          "scope": "block",
-          "service": "first"
-        },
-        {
-          "event": "service.released",
-          "scope": "block",
-          "service": "first"
-        },
-        {
-          "event": "service.choose",
-          "scope": "block",
-          "service": "second"
-        },
-        {
-          "event": "service.released",
-          "scope": "block",
-          "service": "second"
-        },
-        {
-          "event": "service.end",
-          "scope": "block"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy2"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy2"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy1"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy1"
         },
         {
           "event": "service.begin",
@@ -7974,99 +7938,6 @@
         {
           "event": "service.end",
           "scope": "@destroy4"
-        },
-        {
-          "event": "future.await",
-          "reference": "temp2",
-          "take": true
-        },
-        {
-          "event": "future.settle-request",
-          "future": "temp2",
-          "cancel": false,
-          "state": "cold"
-        },
-        {
-          "event": "task.suspend",
-          "future": "temp2",
-          "scope": "@task:temp2"
-        },
-        {
-          "event": "future.start",
-          "future": "temp2"
-        },
-        {
-          "event": "task.resume",
-          "future": "temp2"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@task:temp2"
-        },
-        {
-          "event": "service.end",
-          "scope": "@task:temp2"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy7"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy7"
-        },
-        {
-          "event": "future.settled",
-          "future": "temp2",
-          "failure": null
-        },
-        {
-          "event": "service.begin",
-          "scope": "block"
-        },
-        {
-          "event": "service.end",
-          "scope": "block"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy9"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy9"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy8"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy8"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy6"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy6"
-        },
-        {
-          "event": "service.begin",
-          "scope": "outer"
-        },
-        {
-          "event": "service.end",
-          "scope": "outer"
-        },
-        {
-          "event": "service.begin",
-          "scope": "@destroy5"
-        },
-        {
-          "event": "service.end",
-          "scope": "@destroy5"
         },
         {
           "event": "service.begin",

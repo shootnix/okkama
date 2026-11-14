@@ -2,6 +2,23 @@
 # Plain arithmetic, Events and TAP plumbing omitted; schedule explicit.
 profile own
 scope.begin main async
+scope.begin collected
+future first new A bound
+future second new B bound
+collect.all results first second first
+assert.items results @result:first @result:second @result:first
+get a results 0
+get duplicate results 2
+use a
+use duplicate
+check ''
+collect.all again first second first
+get b again 1
+use b
+check ''
+scope.end collected
+check BA
+reset.log
 scope.begin empty
 collect.all empty_result
 use empty_result
