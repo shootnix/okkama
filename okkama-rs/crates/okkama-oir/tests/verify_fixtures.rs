@@ -1,6 +1,8 @@
 use okkama_oir::{text, verify::*};
 use okkama_oir::visit::Rewrite;
 use std::{fs, path::Path};
+mod support;
+use support::FixtureContracts;
 
 fn location(entity: &EntityLocation) -> String {
     match entity {
@@ -24,60 +26,88 @@ fn location(entity: &EntityLocation) -> String {
         other => format!("{other:?}"),
     }
 }
+fn fixture_result(module: &okkama_oir::Module, errors: ErrorPolicy) -> Result<(), VerifyReport> {
+    let options = VerifyOptions {
+        execution: ExecutionMode::Tests,
+        errors,
+        ..VerifyOptions::default()
+    };
+    let context = VerifyContext {
+        external_contracts: &FixtureContracts(module),
+        ..VerifyContext::default()
+    };
+    verify_with(module, &options, context).map(|_| ())
+}
+
+fn fixture_module(root: &Path, path: &str) -> okkama_oir::Module {
+    let source = fs::read_to_string(root.join(path)).unwrap();
+    text::parse(&source).unwrap_or_else(|error| panic!("{path}: {error}"))
+}
+
 #[test]
 fn canonical_verifier_fixtures() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/verify");
     let mut failures = Vec::new();
-    let mut covered = std::collections::BTreeSet::new();
     for class in ["valid", "invalid"] {
-        let mut paths: Vec<_> = fs::read_dir(root.join(class)).unwrap().map(|e| e.unwrap().path()).collect();
+        let mut paths: Vec<_> = fs::read_dir(root.join(class)).unwrap()
+            .map(|entry| entry.unwrap().path()).collect();
         paths.sort();
         for path in paths {
             let source = fs::read_to_string(&path).unwrap();
-            let module = match text::parse(&source) {
-                Ok(module) => module,
-                Err(error) => {
-                    failures.push(format!("{}: {error}", path.display()));
-                    continue;
-                }
-            };
-            let options = VerifyOptions { execution: ExecutionMode::Tests, ..VerifyOptions::default() };
-            let context = VerifyContext { external_contracts: &FixtureContracts(&module), ..VerifyContext::default() };
-            let result = verify_with(&module, &options, context);
+            let module = text::parse(&source).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let result = fixture_result(&module, ErrorPolicy::All);
+            assert_eq!(fixture_result(&module, ErrorPolicy::All), result, "{}", path.display());
+            let canonical = text::print(&module).unwrap();
+            let roundtrip = text::parse(&canonical).unwrap();
+            let repeated = fixture_result(&roundtrip, ErrorPolicy::All);
             if class == "valid" {
-                if let Err(error) = result { failures.push(format!("{}: {error:?}", path.display())); }
-            } else {
-                let expected = source.lines().find_map(|line| line.strip_prefix("// expect ")).unwrap();
-                let (rule, primary) = expected.split_once(' ').unwrap();
-                covered.insert(rule.to_owned());
-                let report = match result {
-                    Err(report) => report,
-                    Ok(_) => {
-                        failures.push(format!("{}: accepted invalid fixture", path.display()));
-                        continue;
-                    }
-                };
-                assert_eq!(report.failure, VerifyFailure::Rejected, "{}: {report:?}", path.display());
-                if !report.diagnostics.iter().any(|d| d.rule.as_str() == rule
-                    && location(&d.primary.entity) == primary) {
-                    failures.push(format!("{}: {expected}; {report:?}", path.display()));
+                if let Err(error) = result {
+                    failures.push(format!("{}: {error:?}", path.display()));
                 }
-                let first = verify_with(&module, &VerifyOptions { errors: ErrorPolicy::First, ..options },
-                    context).unwrap_err();
-                assert_eq!(first.diagnostics, report.diagnostics[..1], "{}", path.display());
+                assert!(repeated.is_ok(), "{}: {repeated:?}", path.display());
+                continue;
             }
+            let expected = source.lines().find_map(|line| line.strip_prefix("// expect ")).unwrap();
+            let (rule, primary) = expected.split_once(' ').unwrap();
+            let Err(report) = result else {
+                failures.push(format!("{}: accepted invalid fixture", path.display()));
+                continue;
+            };
+            assert_eq!(report.failure, VerifyFailure::Rejected, "{}: {report:?}", path.display());
+            if !report.diagnostics.iter().any(|diagnostic| diagnostic.rule.as_str() == rule
+                && location(&diagnostic.primary.entity) == primary) {
+                failures.push(format!("{}: {expected}; {report:?}", path.display()));
+            }
+            let repeated = repeated.unwrap_err();
+            assert_eq!(repeated.failure, VerifyFailure::Rejected);
+            assert!(repeated.diagnostics.iter().any(|diagnostic| diagnostic.rule.as_str() == rule),
+                "canonical roundtrip lost {rule}: {}", path.display());
+            let first = fixture_result(&module, ErrorPolicy::First).unwrap_err();
+            assert_eq!(first.diagnostics, report.diagnostics[..1], "{}", path.display());
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    for rule in [
-        "B1.1", "B1.2", "B2.1", "B2.2", "B2.3", "B3.1", "B3.2", "B4.1", "B4.2", "B4.3",
-        "B5.1", "B5.2", "B5.3", "B5.4", "B6.3", "B8.1", "B8.2", "B10.1",
-        "B7.1", "B7.2", "B7.3", "B7.4", "B7.5", "B9.1", "B9.2", "B9.3", "B9.4", "B9.5", "B9.6",
-        "B10.2", "B10.3", "B10.4", "B10.5", "B10.6", "B11.1", "B11.2", "B11.3", "B11.4",
-    ] {
-        assert!(covered.contains(&format!("OIR2-{rule}")), "missing canonical negative for {rule}");
+}
+
+#[test]
+fn every_rule_has_a_verified_canonical_positive_and_negative() {
+    use std::collections::BTreeSet;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/verify");
+    let mut covered = BTreeSet::new();
+    for line in include_str!("fixtures/verify/matrix.tsv").lines().skip(1) {
+        let row: Vec<_> = line.split('\t').collect();
+        assert_eq!(row.len(), 3, "{line}");
+        assert!(covered.insert(row[0]), "duplicate RuleId: {line}");
+        let positive = fixture_module(&root, row[1]);
+        fixture_result(&positive, ErrorPolicy::All).unwrap_or_else(|report| panic!("{line}: {report:?}"));
+        let negative = fixture_module(&root, row[2]);
+        let report = fixture_result(&negative, ErrorPolicy::All).unwrap_err();
+        assert_eq!(report.failure, VerifyFailure::Rejected, "{line}");
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule.as_str() == row[0]),
+            "{line}: {report:?}");
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let required: BTreeSet<_> = RuleId::ALL.iter().map(|rule| rule.as_str()).collect();
+    assert_eq!(covered, required, "every RuleId needs both canonical witnesses");
 }
 
 #[test]
@@ -170,55 +200,61 @@ fn high_intents_and_shared_await_do_not_create_ownership_results() {
 }
 
 #[test]
-fn specification_core_verifier_corpus() {
+fn specification_manifest_verifier_corpus() {
     use std::collections::BTreeSet;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let manifest = fs::read_to_string(root.join("spec/manifest.tsv")).unwrap();
-    let core = include_str!("fixtures/core-corpus.txt");
-    let mut seen = BTreeSet::new();
-    let mut failures = Vec::new();
+    let mut positives = BTreeSet::new();
+    let mut negatives = BTreeSet::new();
+    let mut reviews = BTreeSet::new();
+    let mut examples = BTreeSet::new();
+    let mut pairs = BTreeSet::new();
     for line in manifest.lines().skip(1) {
         let row: Vec<_> = line.split('\t').collect();
-        if !core.lines().any(|path| path == row[3]) || !seen.insert(row[3]) { continue; }
-        let path = root.join(row[3]);
-        let source = fs::read_to_string(&path).unwrap();
-        let module = text::parse(&source).unwrap();
-        let options = VerifyOptions { execution: ExecutionMode::Tests, ..VerifyOptions::default() };
-        let context = VerifyContext {
-            external_contracts: &FixtureContracts(&module), ..VerifyContext::default()
-        };
-        let result = verify_with(&module, &options, context);
-        match result {
-            Ok(_) if row[2] == "semantic-reject" => failures.push(format!("{} ACCEPTED expected {}", row[3], row[6])),
-            Err(report) if row[2] != "semantic-reject" => failures.push(format!("{}: {:?}", row[3],
-                report.diagnostics.iter().map(|d| (d.rule.as_str(), location(&d.primary.entity), &d.message))
-                    .collect::<Vec<_>>())),
-            Err(report) if !report.diagnostics.iter().any(|d| d.rule.as_str() == row[6]) => {
-                failures.push(format!("{} EXPECTED {}: {:?}", row[3], row[6], report.diagnostics));
+        assert_eq!(row.len(), 12, "{line}");
+        if row[0].starts_with("example-") || row[0].starts_with("review-A.1-") {
+            examples.insert(row[0]);
+        }
+        if matches!(row[8], "historical" | "parse-reject") {
+            assert!(row[9..].iter().all(|field| *field == "-"), "{line}");
+            continue;
+        }
+        assert!(matches!(row[8], "static-ir" | "protocol-contract" | "runtime-behavior" | "frontend-reject"),
+            "missing verification level: {line}");
+        assert_ne!(row[11], "-", "missing verifier RuleIds: {line}");
+        // A codec illustration and its behavior sidecar are not verifier certificates.
+        // The explicit columns identify complete canonical translations for each example.
+        if positives.insert(row[9]) {
+            let module = fixture_module(&root, row[9]);
+            fixture_result(&module, ErrorPolicy::All).unwrap_or_else(|report| panic!("{line}: {report:?}"));
+        }
+        if negatives.insert((row[10], row[11])) {
+            let module = fixture_module(&root, row[10]);
+            let report = fixture_result(&module, ErrorPolicy::All).unwrap_err();
+            assert_eq!(report.failure, VerifyFailure::Rejected, "{line}");
+            for rule in row[11].split(',') {
+                assert!(RuleId::ALL.iter().any(|known| known.as_str() == rule), "{line}");
+                assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule.as_str() == rule),
+                    "{line}: {report:?}");
             }
-            _ => {}
+        }
+        if let Some(number) = row[0].strip_prefix("review-A.1-") {
+            reviews.insert(number.parse::<u8>().unwrap());
+        }
+        if row[0].starts_with('M') {
+            pairs.insert((row[0].split('-').next().unwrap(), row[2]));
         }
     }
-    assert_eq!(seen.len(), core.lines().count(), "core inventory contains a path absent from the manifest");
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let required = include_str!("fixtures/spec/examples.txt").lines().collect();
+    assert_eq!(examples, required, "every spec example must remain wired to canonical witnesses");
+    assert_eq!(reviews, (1..=24).collect(), "preserve every numbered A.1 example");
+    for number in 1..=9 {
+        for class in ["accept", "semantic-reject"] {
+            assert!(pairs.contains(&(format!("M{number}").as_str(), class)), "M{number} lacks {class}");
+        }
+    }
 }
 
-// The fixture files are the frozen native test ABI catalogue. Production
-// verification never registers external contracts from input declarations.
-struct FixtureContracts<'a>(&'a okkama_oir::Module);
-impl ExternalContracts for FixtureContracts<'_> {
-    fn native(&self, name: &str) -> Option<&okkama_oir::Signature> {
-        self.0.functions.iter().find_map(|(_, f)| f.attrs.iter().any(|a| {
-            matches!(a, okkama_oir::FunctionAttr::Extern(n) if n == name && n.starts_with("fixture."))
-        }).then_some(&f.signature))
-    }
-    fn intrinsic(&self, _: &str) -> Option<&okkama_oir::Signature> { None }
-    fn native_summary(&self, name: &str) -> Option<&okkama_oir::Summary> {
-        self.0.functions.iter().find_map(|(_, f)| f.attrs.iter().any(|a| {
-            matches!(a, okkama_oir::FunctionAttr::Extern(n) if n == name && n.starts_with("fixture."))
-        }).then_some(f.summary).flatten()).and_then(|id| self.0.summaries.get(id).ok())
-    }
-}
 
 #[test]
 fn ownership_verdicts_survive_codec_and_arena_permutations() {
@@ -241,7 +277,12 @@ fn ownership_verdicts_survive_codec_and_arena_permutations() {
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             let expected = verdict(&original);
             let printed = text::print(&original).unwrap();
-            let renamed = text::parse(&printed.replace('%', "%renamed_")).unwrap();
+            let mut renamed = original.clone();
+            for (_, function) in renamed.functions.iter_mut() {
+                function.symbol = format!("renamed_{}", function.symbol);
+            }
+            let renamed = text::print(&renamed).unwrap().replace('%', "%renamed_");
+            let renamed = text::parse(&renamed).unwrap();
             assert_eq!(verdict(&renamed), expected, "SSA names: {}", path.display());
             let roundtrip = text::parse(&printed).unwrap();
             assert_eq!(verdict(&roundtrip), expected, "codec: {}", path.display());
@@ -249,6 +290,11 @@ fn ownership_verdicts_survive_codec_and_arena_permutations() {
             for (_, function) in permuted.functions.iter_mut() {
                 let Some(body) = &mut function.body else { continue; };
                 let mut remap = IdRemap::default();
+                let mut blocks = Arena::new();
+                for (old, block) in body.blocks.iter().collect::<Vec<_>>().into_iter().rev() {
+                    remap.blocks.insert(old, blocks.alloc(block.clone()).unwrap());
+                }
+                body.blocks = blocks;
                 let mut values = Arena::new();
                 for (old, value) in body.values.iter().collect::<Vec<_>>().into_iter().rev() {
                     remap.values.insert(old, values.alloc(value.clone()).unwrap());

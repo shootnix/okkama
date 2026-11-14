@@ -1,87 +1,90 @@
 use crate::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RuleId {
-    S1, S2, S3,
-    T1, T2, T3, T4, T5, T6,
-    SSA1, SSA2,
-    A1, A2, A3,
-    B51, B61, B62,
-    B11, B12, B21, B22, B23, B31, B32, B41, B42, B43, B52, B53, B54, B63, B81, B82, B101,
-    B71, B72, B73, B74, B75, B91, B92, B93, B94, B95, B96,
-    B102, B103, B104, B105, B106, B111, B112, B113, B114,
-    H1, H2, H3, H4, H5, H6, H7, H8, H9,
+// Keep the public inventory and stable names inseparable from the enum.
+macro_rules! rule_ids {
+    ($($variant:ident => $name:literal),* $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum RuleId {
+            $($variant),*
+        }
+
+        impl RuleId {
+            /// Complete semantic rule inventory, including textual structural errors.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name),*
+                }
+            }
+        }
+    };
 }
 
-impl RuleId {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::S1 => "OIR2-S1",
-            Self::S2 => "OIR2-S2",
-            Self::S3 => "OIR2-S3",
-            Self::T1 => "OIR2-T1",
-            Self::T2 => "OIR2-T2",
-            Self::T3 => "OIR2-T3",
-            Self::T4 => "OIR2-T4",
-            Self::T5 => "OIR2-T5",
-            Self::T6 => "OIR2-T6",
-            Self::SSA1 => "OIR2-SSA1",
-            Self::SSA2 => "OIR2-SSA2",
-            Self::A1 => "OIR2-A1",
-            Self::A2 => "OIR2-A2",
-            Self::A3 => "OIR2-A3",
-            Self::B11 => "OIR2-B1.1",
-            Self::B12 => "OIR2-B1.2",
-            Self::B21 => "OIR2-B2.1",
-            Self::B22 => "OIR2-B2.2",
-            Self::B23 => "OIR2-B2.3",
-            Self::B31 => "OIR2-B3.1",
-            Self::B32 => "OIR2-B3.2",
-            Self::B41 => "OIR2-B4.1",
-            Self::B42 => "OIR2-B4.2",
-            Self::B43 => "OIR2-B4.3",
-            Self::B52 => "OIR2-B5.2",
-            Self::B53 => "OIR2-B5.3",
-            Self::B54 => "OIR2-B5.4",
-            Self::B63 => "OIR2-B6.3",
-            Self::B81 => "OIR2-B8.1",
-            Self::B82 => "OIR2-B8.2",
-            Self::B101 => "OIR2-B10.1",
-            Self::B51 => "OIR2-B5.1",
-            Self::B61 => "OIR2-B6.1",
-            Self::B62 => "OIR2-B6.2",
-            Self::B71 => "OIR2-B7.1",
-            Self::B72 => "OIR2-B7.2",
-            Self::B73 => "OIR2-B7.3",
-            Self::B74 => "OIR2-B7.4",
-            Self::B75 => "OIR2-B7.5",
-            Self::B91 => "OIR2-B9.1",
-            Self::B92 => "OIR2-B9.2",
-            Self::B93 => "OIR2-B9.3",
-            Self::B94 => "OIR2-B9.4",
-            Self::B95 => "OIR2-B9.5",
-            Self::B96 => "OIR2-B9.6",
-            Self::B102 => "OIR2-B10.2",
-            Self::B103 => "OIR2-B10.3",
-            Self::B104 => "OIR2-B10.4",
-            Self::B105 => "OIR2-B10.5",
-            Self::B106 => "OIR2-B10.6",
-            Self::B111 => "OIR2-B11.1",
-            Self::B112 => "OIR2-B11.2",
-            Self::B113 => "OIR2-B11.3",
-            Self::B114 => "OIR2-B11.4",
-            Self::H1 => "OIR2-H1",
-            Self::H2 => "OIR2-H2",
-            Self::H3 => "OIR2-H3",
-            Self::H4 => "OIR2-H4",
-            Self::H5 => "OIR2-H5",
-            Self::H6 => "OIR2-H6",
-            Self::H7 => "OIR2-H7",
-            Self::H8 => "OIR2-H8",
-            Self::H9 => "OIR2-H9",
-
-        }
-    }
+rule_ids! {
+    S1 => "OIR2-S1",
+    S2 => "OIR2-S2",
+    S3 => "OIR2-S3",
+    T1 => "OIR2-T1",
+    T2 => "OIR2-T2",
+    T3 => "OIR2-T3",
+    T4 => "OIR2-T4",
+    T5 => "OIR2-T5",
+    T6 => "OIR2-T6",
+    SSA1 => "OIR2-SSA1",
+    SSA2 => "OIR2-SSA2",
+    A1 => "OIR2-A1",
+    A2 => "OIR2-A2",
+    A3 => "OIR2-A3",
+    B51 => "OIR2-B5.1",
+    B61 => "OIR2-B6.1",
+    B62 => "OIR2-B6.2",
+    B11 => "OIR2-B1.1",
+    B12 => "OIR2-B1.2",
+    B21 => "OIR2-B2.1",
+    B22 => "OIR2-B2.2",
+    B23 => "OIR2-B2.3",
+    B31 => "OIR2-B3.1",
+    B32 => "OIR2-B3.2",
+    B41 => "OIR2-B4.1",
+    B42 => "OIR2-B4.2",
+    B43 => "OIR2-B4.3",
+    B52 => "OIR2-B5.2",
+    B53 => "OIR2-B5.3",
+    B54 => "OIR2-B5.4",
+    B63 => "OIR2-B6.3",
+    B81 => "OIR2-B8.1",
+    B82 => "OIR2-B8.2",
+    B101 => "OIR2-B10.1",
+    B71 => "OIR2-B7.1",
+    B72 => "OIR2-B7.2",
+    B73 => "OIR2-B7.3",
+    B74 => "OIR2-B7.4",
+    B75 => "OIR2-B7.5",
+    B91 => "OIR2-B9.1",
+    B92 => "OIR2-B9.2",
+    B93 => "OIR2-B9.3",
+    B94 => "OIR2-B9.4",
+    B95 => "OIR2-B9.5",
+    B96 => "OIR2-B9.6",
+    B102 => "OIR2-B10.2",
+    B103 => "OIR2-B10.3",
+    B104 => "OIR2-B10.4",
+    B105 => "OIR2-B10.5",
+    B106 => "OIR2-B10.6",
+    B111 => "OIR2-B11.1",
+    B112 => "OIR2-B11.2",
+    B113 => "OIR2-B11.3",
+    B114 => "OIR2-B11.4",
+    H1 => "OIR2-H1",
+    H2 => "OIR2-H2",
+    H3 => "OIR2-H3",
+    H4 => "OIR2-H4",
+    H5 => "OIR2-H5",
+    H6 => "OIR2-H6",
+    H7 => "OIR2-H7",
+    H8 => "OIR2-H8",
+    H9 => "OIR2-H9",
 }
 impl std::fmt::Display for RuleId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }

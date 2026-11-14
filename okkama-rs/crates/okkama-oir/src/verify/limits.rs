@@ -31,9 +31,23 @@ impl Default for VerifyLimits {
 /// These checks validate declared IR structure only until producer metadata exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StructuralCheck {
+    /// Slot types and represented save/resume/cancel transfers;
+    /// no complete declared frame layout or continuation graph.
     B95FrameLayoutAndContinuations,
+    /// Low SSA root bindings are checked; complete suspension maps
+    /// and physical backend stack maps remain producer work.
     B105SuspensionRootMaps,
+    /// Holder/transition/root contracts; positional multiplicity and collector scheduling need producer metadata.
     B96CollectorPositions,
+}
+
+impl StructuralCheck {
+    /// Explicit inventory of obligations that a successful verifier certificate does not fully discharge.
+    pub const ALL: &'static [Self] = &[
+        Self::B95FrameLayoutAndContinuations,
+        Self::B105SuspensionRootMaps,
+        Self::B96CollectorPositions,
+    ];
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
