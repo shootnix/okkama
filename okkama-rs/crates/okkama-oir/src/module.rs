@@ -194,6 +194,8 @@ pub struct DescriptorBinding {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServiceSchedule {
+    pub dictionary: Option<crate::ValueId>,
+    pub duties: Vec<crate::ValueId>,
     pub name: String,
     pub owner: ScopeId,
     pub protocol: crate::ProtocolId,

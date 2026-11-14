@@ -5,7 +5,7 @@ impl Engine<'_, '_> {
         &mut self, flow: &Flow, keys: BTreeSet<Origin>, labels: BTreeSet<ValueId>, fresh: bool,
     ) -> Filter {
         let possible = self.possible(flow, &keys);
-        Filter { keys, possible, labels, fresh, state: 0, stale: false }
+        Filter { keys, possible, labels, fresh, state: 0, stale: false, whole_future: false }
     }
     pub(super) fn call_entry(&mut self, op: &Operation, before: &Flow, _: &mut Flow) {
         if self.module.profile == Profile::High {
@@ -19,6 +19,7 @@ impl Engine<'_, '_> {
         };
         let target = target.or_else(|| super::super::summaries::cap_target(self.module, op));
         self.call_deps(call, receiver, target, before);
+        self.descriptor_arguments(call, target, before);
         if let Some(function) = target.and_then(|id| self.module.functions.get(id).ok()) {
             let own = |ty: &&TypeId| self.module.types.get(**ty) == Ok(&Type::Service(ServiceType::Own));
             let inputs = function.signature.params.iter().filter(own).count();
@@ -38,7 +39,10 @@ impl Engine<'_, '_> {
             }
             return;
         }
-        if summary.entry_kind == EntryKind::Internal {
+        let defer_entry = target.and_then(|id| self.module.functions.get(id).ok()).is_some_and(|function| {
+            function.attrs.iter().any(|attr| matches!(attr, FunctionAttr::DeferEntry { .. }))
+        });
+        if summary.entry_kind == EntryKind::Internal && !defer_entry {
             return;
         }
         let arguments: Vec<_> = receiver.iter().chain(&call.args).map(|arg| arg.value).collect();
@@ -120,7 +124,7 @@ impl Engine<'_, '_> {
             }
         }
     }
-    fn subset(&self, piece: &Piece, graph: &BTreeSet<Origin>, labels: &BTreeSet<ValueId>) -> bool {
+    pub(super) fn subset(&self, piece: &Piece, graph: &BTreeSet<Origin>, labels: &BTreeSet<ValueId>) -> bool {
         if !piece.family && graph.contains(&piece.origin) {
             return true;
         }

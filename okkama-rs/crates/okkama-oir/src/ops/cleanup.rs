@@ -51,6 +51,14 @@ operation_group! { CleanupOp {
         => ("cleanup.defer", [cleanup: Consume, action: Borrow], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
     Settle { cleanup: ValueId, holder: ValueId, protocol: ProtocolId }
         => ("cleanup.settle", [cleanup: Consume, holder: Consume], Rule::CleanupSettle { cleanup: *cleanup, holder: *holder, protocol: *protocol });
+    SettleEmpty { cleanup: ValueId, schedule: ValueId }
+        => ("cleanup.settle.empty", [cleanup: Consume, schedule: Observe],
+            Rule::CleanupStep { cleanup: *cleanup, finishing: false });
+    PlanChecked { cleanup: ValueId, plan: CleanupPlanId }
+        => ("cleanup.plan.checked", [cleanup: Consume], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
+    DestroySelected { cleanup: ValueId, selected: ValueId }
+        => ("cleanup.destroy", [cleanup: Consume, selected: Observe],
+            Rule::Destroy { cleanup: *cleanup, identity: *selected });
     Plan { cleanup: ValueId }
         => ("cleanup.plan", [cleanup: Consume], Rule::CleanupStep { cleanup: *cleanup, finishing: false });
     Next { cleanup: ValueId }

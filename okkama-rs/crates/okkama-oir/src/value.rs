@@ -6,6 +6,9 @@ pub struct Body {
     pub high_effects: Vec<HighEffectRecord>,
     pub descriptor_bindings: Vec<crate::DescriptorBinding>,
     pub service_schedules: Vec<crate::ServiceSchedule>,
+    pub cleanup_plans: Arena<crate::CleanupPlanId, crate::CleanupPlan>,
+    pub cleanup_orders: Arena<crate::CleanupOrderId, crate::CleanupOrder>,
+    pub cleanup_roots: Arena<crate::CleanupRootsId, crate::CleanupRoots>,
     pub entry: BlockId,
     pub values: Arena<ValueId, ValueData>,
     pub blocks: Arena<BlockId, Block>,
@@ -60,7 +63,7 @@ pub struct BlockUnwind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome { Normal, Unwind, Cancel, DeferContinue, DeferReplace(u16) }
+pub enum Outcome { Normal, Unwind, Cancel, DeferContinue, DeferReplace(u16), Dispatch(u16) }
 
 /// An invoke result belongs only to its edge, never to the source block's SSA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,6 +103,12 @@ pub enum TermKind {
         continue_edge: InvokeEdge,
         replacements: Vec<DeferReplaceEdge>,
         unwind: Option<InvokeEdge>,
+    },
+    StateDispatch {
+        closed: Option<ValueId>,
+        failure: ValueId,
+        exit: Option<ValueId>,
+        arms: Vec<DispatchEdge>,
     },
     RetDefer { tag: DeferReturnTag, values: Vec<ValueId> },
     Ret { values: Vec<ValueId> },
@@ -156,4 +165,40 @@ pub struct HighEffectEnvelope {
 pub struct HighEffectRecord {
     pub site: HighOperationSite,
     pub effects: HighEffectEnvelope,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DispatchKind { None, Some, Success, Pending, Failure }
+impl DispatchKind {
+    pub fn outcome(self) -> Outcome { Outcome::Dispatch(self as u16) }
+    pub fn results(self) -> Vec<crate::ResultSlot> {
+        use crate::{ResultSlot as R, ServiceType as S, SlotName as N};
+        match self {
+            Self::None => vec![],
+            Self::Some => vec![R::service(N::Failure, S::Failure)],
+            Self::Success => vec![R::service(N::Closed, S::Closed)],
+            Self::Pending => vec![R::service(N::Closed, S::Closed), R::service(N::Pending, S::Pending)],
+            Self::Failure => vec![R::service(N::Closed, S::Closed), R::service(N::Failure, S::Failure)],
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DispatchEdge { pub kind: DispatchKind, pub edge: InvokeEdge }
+
+/// Function-local proof records, never runtime serials or machine stack maps.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupPlan {
+    pub effects: Option<crate::ScopeEffectEnvelope>,
+    pub entries: Vec<ValueId>,
+    pub merge: bool,
+    pub order: crate::CleanupOrderId,
+    pub roots: crate::CleanupRootsId,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupOrder { pub creations: Vec<crate::CreationOrigin> }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupRoots {
+    pub values: Vec<ValueId>,
+    pub kinds: Vec<crate::RootKind>,
+    pub through_suspend: bool,
 }

@@ -5,7 +5,8 @@ use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseSite { Instruction(InstId), Terminator(BlockId), BlockUnwind(BlockId), ValueFacts(ValueId), InstructionFacts(InstId), Declaration(OperandRef) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind { DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32), Default,
+pub enum EdgeKind { Dispatch(u16), DeferContinue, DeferReplace(u16), DeferUnwind, Branch, Yes, No, SwitchCase(u32),
+    Default,
     BlockUnwind, InvokeNormal, InvokeUnwind, CatchHandler, CatchNext, LookupFound, LookupMissing }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CfgEvent {
@@ -177,6 +178,16 @@ pub fn walk_terminator(block: BlockId, term: &Terminator, body: &Body, registry:
                 edge_definitions(block, EdgeKind::DeferUnwind, Outcome::Unwind,
                     &registry.defer_results(*function, Outcome::Unwind)?, visit)?;
                 invoke_edge(block, unwind, EdgeKind::DeferUnwind, site, visit);
+            }
+        }
+        TermKind::StateDispatch { closed, failure, exit, arms } => {
+            if let Some(closed) = closed { operands.push(ssa(*closed, OperandMode::Observe)); }
+            operands.push(ssa(*failure, OperandMode::Observe));
+            if let Some(exit) = exit { operands.push(ssa(*exit, OperandMode::Consume)); }
+            for arm in arms {
+                let kind = EdgeKind::Dispatch(arm.kind as u16);
+                edge_definitions(block, kind, arm.kind.outcome(), &arm.kind.results(), visit)?;
+                invoke_edge(block, &arm.edge, kind, site, visit);
             }
         }
         TermKind::RetDefer { values, .. } |

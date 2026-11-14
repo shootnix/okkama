@@ -229,7 +229,7 @@ impl OpContract {
         match outcome {
             Outcome::Normal => Some(&self.normal), Outcome::Unwind => self.unwind.as_ref(),
             Outcome::Cancel => self.cancellation.as_ref().map(|cancel| &cancel.outcome),
-            Outcome::DeferContinue | Outcome::DeferReplace(_) => None,
+            Outcome::DeferContinue | Outcome::DeferReplace(_) | Outcome::Dispatch(_) => None,
         }
     }
     pub fn edge_result(&self, result: EdgeResult) -> Option<&ResultSlot> {

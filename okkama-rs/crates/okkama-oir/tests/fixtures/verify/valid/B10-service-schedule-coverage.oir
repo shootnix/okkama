@@ -1,0 +1,26 @@
+oir 2 low
+module cleanup_empty
+protocol Services kind services holders [scope, group] rules [protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=settled))]
+scope S action in @f
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @f(%schedule: type, %t1: task-state, %t2: task-state) -> void [async] summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule, duties [%t1, %t2]
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%settled2], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
+    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %c: cleanup-state = cleanup.begin %q, %schedule
+    %shield: cleanup-state = cleanup.shield %c
+    %settled: cleanup-state = cleanup.settle %shield, %t1, protocol Services
+    %settled2: cleanup-state = cleanup.settle %settled, %t2, protocol Services
+    %planned: cleanup-state = cleanup.plan.checked %settled2, plan P0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch %closed, %fs, %xs
+        success ^done($closed)
+        failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%closed2: closed, %failure: failure) in S:
+    raise %failure
+}

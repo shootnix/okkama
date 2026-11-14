@@ -5,6 +5,9 @@ pub trait Reader {
     fn active(&self) -> bool { true }
     fn sequence(&mut self, _: usize, _: usize) {}
     fn depth(&mut self, _: usize) {}
+    fn cleanup_plan(&mut self, _: &CleanupPlanId) {}
+    fn cleanup_order(&mut self, _: &CleanupOrderId) {}
+    fn cleanup_roots(&mut self, _: &CleanupRootsId) {}
     fn value(&mut self, _: &ValueId) {}
     fn instruction(&mut self, _: &InstId) {}
     fn block(&mut self, _: &BlockId) {}
@@ -38,7 +41,8 @@ leaf!(ValueId => value, InstId => instruction, BlockId => block, BindingId => bi
     BoundaryId => boundary, DepExprId => dependency, KeyExprId => key,
     SelectionId => selection, CreationSiteId => creation_site, TypeId => ty,
     DeclId => declaration, FuncId => function, ScopeId => scope, SummaryId => summary,
-    ProtocolId => protocol, FileId => file);
+    ProtocolId => protocol, FileId => file, CleanupPlanId => cleanup_plan,
+    CleanupOrderId => cleanup_order, CleanupRootsId => cleanup_roots);
 macro_rules! inert {
     ($($ty:ty),* $(,)?) => {$(impl Read for $ty { fn read(&self, _: &mut impl Reader) {} })*};
 }
@@ -83,8 +87,10 @@ macro_rules! fields {
     )*};
 }
 fields!(
+    CleanupPlan { entries, order, roots }, CleanupOrder { creations }, CleanupRoots { values },
+    DispatchEdge { edge },
     DeferLabel { result }, DeferRegistration { boundary },
-    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol },
+    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol, dictionary, duties },
     HighResultExit { block, value, prepared }, HighEffectRecord { site },
     DeferReplaceEdge { edge },
     FieldRef { declaration }, FieldValue { field, value }, ConstructionCompletion { state },
@@ -104,7 +110,8 @@ fields!(
     Block { lexical_scope, params, unwind, insts, term },
     Terminator { kind, loc }, SwitchCase { value, target },
     Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
-        high_results, high_effects, descriptor_bindings, service_schedules }
+        high_results, high_effects, descriptor_bindings, service_schedules,
+        cleanup_plans, cleanup_orders, cleanup_roots }
 );
 impl Read for DebugLoc {
     fn read(&self, visitor: &mut impl Reader) {
@@ -172,6 +179,12 @@ impl Read for TermKind {
                 continue_edge.read(visitor);
                 replacements.read(visitor);
                 unwind.read(visitor);
+            }
+            Self::StateDispatch { closed, failure, exit, arms } => {
+                closed.read(visitor);
+                failure.read(visitor);
+                exit.read(visitor);
+                arms.read(visitor);
             }
             Self::RetDefer { values, .. } => values.read(visitor),
             Self::Ret { values } => values.read(visitor),

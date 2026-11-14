@@ -336,6 +336,9 @@ fn body_structure<'a>(module: &'a Module, function: FuncId, data: &Function, bod
     references(module, Some(body), Some(function), &body.high_effects, state);
     references(module, Some(body), Some(function), &body.descriptor_bindings, state);
     references(module, Some(body), Some(function), &body.service_schedules, state);
+    references(module, Some(body), Some(function), &body.cleanup_plans, state);
+    references(module, Some(body), Some(function), &body.cleanup_orders, state);
+    references(module, Some(body), Some(function), &body.cleanup_roots, state);
     expressions::check(body, state);
     if !state.array(body.insts.len(), 8) || !state.array(body.values.len(), 8) { return; }
     let mut inst_count = vec![0_u8; body.insts.len()];
@@ -418,6 +421,9 @@ pub(super) fn targets(block: &Block) -> Vec<BlockId> {
             targets.push(default.block);
         }
         TermKind::InvokeOwn { normal, unwind, .. } => targets.extend([normal.block, unwind.block]),
+        TermKind::StateDispatch { arms, .. } => {
+            targets.extend(arms.iter().map(|arm| arm.edge.block));
+        }
         TermKind::InvokeDefer { continue_edge, replacements, unwind, .. } => {
             targets.push(continue_edge.block);
             targets.extend(replacements.iter().map(|replacement| replacement.edge.block));

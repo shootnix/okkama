@@ -1,0 +1,26 @@
+oir 2 coro
+module borrowed_cell
+object R {
+    field x: int
+    destroy @destroy
+}
+scope SD action in @destroy
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+summary Mf call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(failures=[thrown], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @f(%r: R facts(managed(deps=dr)); %input: own) -> void summary(Mf) {
+    dependency dc: dependency = retention(value=%r, selection=selection(%r))
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %accepted: scope<S> = own.accept %q, %input
+    %cell: cell<R> facts(managed(deps=dc)) = cell.new %r, ty R
+    %borrowed: R facts(managed(deps=dr)) = cell.load %cell
+    %closed: closed = scope.end %accepted, effects scope_effects(failures=[thrown], suspends=false, cancel=false)
+    ret
+}

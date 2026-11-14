@@ -437,6 +437,7 @@ impl<'a> Reader<'a> {
         let entry = explicit_entry.unwrap_or(BlockId::from_u32(0));
         let mut body = Body {
             high_results: vec![], high_effects: vec![], descriptor_bindings: vec![], service_schedules: vec![],
+            cleanup_plans: Arena::new(), cleanup_orders: Arena::new(), cleanup_roots: Arena::new(),
             entry, values: Arena::new(), blocks: Arena::new(), insts: Arena::new(), bindings: Arena::new(),
             boundaries: Arena::new(), deps: Arena::new(), keys: Arena::new(), selections: Arena::new(),
         };
@@ -455,7 +456,13 @@ impl<'a> Reader<'a> {
                     }
                 };
             }
-            if self.is("descriptor.binding") {
+            if self.is("plan") {
+                local!("plan", "P", cleanup_plans, CleanupPlan);
+            } else if self.is("order") {
+                local!("order", "O", cleanup_orders, CleanupOrder);
+            } else if self.is("roots") {
+                local!("roots", "R", cleanup_roots, CleanupRoots);
+            } else if self.is("descriptor.binding") {
                 self.expect("descriptor.binding")?;
                 let dictionary = ValueId::read(self)?;
                 self.expect("contract")?;
@@ -470,7 +477,17 @@ impl<'a> Reader<'a> {
                 self.expect(",")?;
                 self.expect("protocol")?;
                 let protocol = ProtocolId::read(self)?;
-                body.service_schedules.push(ServiceSchedule { name, owner, protocol });
+                let dictionary = if self.operand_keyword("dictionary") {
+                    self.expect(",")?;
+                    self.expect("dictionary")?;
+                    Some(ValueId::read(self)?)
+                } else { None };
+                let duties = if self.operand_keyword("duties") {
+                    self.expect(",")?;
+                    self.expect("duties")?;
+                    Vec::read(self)?
+                } else { vec![] };
+                body.service_schedules.push(ServiceSchedule { name, owner, protocol, dictionary, duties });
                 self.line()?;
             } else if self.is("high.effects") {
                 body.high_effects.push(self.high_effect()?);
@@ -659,7 +676,8 @@ impl<'a> Reader<'a> {
     }
 
     fn is_terminator(&self) -> bool {
-        matches!(self.peek().text.as_str(), "br" | "cond" | "switch" | "invoke.own" | "invoke.defer" | "ret"
+        matches!(self.peek().text.as_str(), "br" | "cond" | "switch" | "invoke.own" | "invoke.defer"
+            | "exit.dispatch" | "failure.dispatch" | "ret"
             | "throw" | "raise" | "panic" | "trap" | "catch" | "array.lookup" | "map.lookup"
             | "unreachable" | "}" | "<eof>")
     }
@@ -741,6 +759,31 @@ impl<'a> Reader<'a> {
                     }
                 }
                 TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind }
+            }
+            "exit.dispatch" | "failure.dispatch" if !tag.quoted => {
+                let closed = if tag.text == "exit.dispatch" { Some(ValueId::read(self)?) } else { None };
+                if closed.is_some() { self.expect(",")?; }
+                let failure = ValueId::read(self)?;
+                let exit = if closed.is_some() {
+                    self.expect(",")?;
+                    Some(ValueId::read(self)?)
+                } else { None };
+                let mut arms = vec![];
+                loop {
+                    self.line()?;
+                    let kind = if self.eat("none") { DispatchKind::None }
+                        else if self.eat("some") { DispatchKind::Some }
+                        else if self.eat("success") { DispatchKind::Success }
+                        else if self.eat("pending") { DispatchKind::Pending }
+                        else if self.eat("failure") { DispatchKind::Failure }
+                        else {
+                            self.pos -= 1;
+                            break;
+                        };
+                    let edge = self.invoke_edge(kind.outcome())?;
+                    arms.push(DispatchEdge { kind, edge });
+                }
+                TermKind::StateDispatch { closed, failure, exit, arms }
             }
             "ret" if !tag.quoted && self.eat("defer") => {
                 let tag = if self.eat("continue") {
@@ -836,6 +879,9 @@ impl<'a> Reader<'a> {
                     _ => unwind.as_mut().ok_or_else(|| self.at(&pending.token,
                         DiagnosticKind::Structure, "missing defer unwind"))?,
                 },
+                TermKind::StateDispatch { arms, .. } => arms.iter_mut()
+                    .find(|arm| arm.kind.outcome() == pending.outcome).map(|arm| &mut arm.edge)
+                    .ok_or_else(|| self.at(&pending.token, DiagnosticKind::Structure, "missing dispatch arm"))?,
                 TermKind::Catch { handler, .. } => handler, TermKind::Lookup {
                     found, ..
                 } => found,
@@ -893,6 +939,11 @@ pub(crate) fn edge_slots(module: &Module, body: &Body, term: &TermKind, outcome:
             let results = ContractRegistry::new(module).defer_results(*function, outcome)
                 .map_err(|error| PrintError::new(error.to_string()))?;
             Ok(results.into_iter().map(|slot| slot.name).collect())
+        }
+        TermKind::StateDispatch { arms, .. } => {
+            let arm = arms.iter().find(|arm| arm.kind.outcome() == outcome)
+                .ok_or_else(|| PrintError::new("missing dispatch outcome"))?;
+            Ok(arm.kind.results().iter().map(|slot| slot.name).collect())
         }
         TermKind::Catch { .. } | TermKind::Lookup { .. } if outcome == Outcome::Normal => Ok(vec![SlotName::Value]),
         _ => Err(PrintError::new("edge result outside an outcome schema")),

@@ -1,0 +1,35 @@
+oir 2 coro
+// expect OIR2-B9.5 instruction:1:5
+module frame_cancel
+protocol Services kind services
+protocol Frames kind services holders [frame, scope] rules [protocol_rule(transition=cancel, from=frame, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=closed))] roots [frame_slots, cleanup_remainder]
+scope ST action in @target
+scope S action in @f
+summary Mt internal contract call_contract(publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @target() -> void summary(Mt) {
+^entry in ST:
+    ret
+}
+func @f(%schedule: type) -> void [async] summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule, duties [%saved]
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%cancelled], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
+    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %frame: frame<@target> = frame.alloc @target
+    %empty: own = own.empty
+    %saved: frame<@target> = frame.save %frame, slots [frame_slot(slot=0, value=%empty, mode=consume)], continuation 1
+    %begin: cleanup-state = cleanup.begin %q, %schedule
+    %cancelled: cleanup-state = frame.cancel %saved, %begin, protocol Frames
+    %planned: cleanup-state = cleanup.plan.checked %cancelled, plan P0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch %closed, %fs, %xs
+        success ^done($closed)
+        failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%failed: closed, %failure: failure) in S:
+    raise %failure
+}

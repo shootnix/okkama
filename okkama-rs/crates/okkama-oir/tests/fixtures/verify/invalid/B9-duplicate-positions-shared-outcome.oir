@@ -1,0 +1,10 @@
+oir 2 own
+// expect OIR2-B9.6 Protocol(ProtocolId(0))
+module collector_protocol
+protocol P kind group holders [scope, group, frame, cache, pin] rules [protocol_rule(transition=publish, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=settle, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=cancel, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=save, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled))), protocol_rule(transition=resume, from=group, to=scope, checks=[owner, live_dependencies], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=scope, state=settled)), cancel=some(protocol_poststate(holder=scope, state=settled)))] roots [frame_slots]
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f() -> void summary(Mf) {
+^entry in S:
+    ret
+}

@@ -1,0 +1,30 @@
+oir 2 low
+// expect OIR2-B10.4 terminator:0:0
+module cleanup_empty
+protocol Services kind services
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f(%schedule: type) -> own summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%settled], kinds=[cleanup_remainder, active_self, service_schedule, pending_exit, carrier_graph])
+    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[], suspends=false, cancel=false)))
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %value: int = const 1
+    %empty: own = own.empty
+    (%left: own, %right: own, %deps: deps) = own.split %empty, selection(%value)
+    %packet: own = own.join [%left, %right]
+    %pending: pending = exit.prepare return %value, %packet, deps(%deps) at B0
+    %c: cleanup-state = cleanup.begin %q, %schedule, pending %pending
+    %shield: cleanup-state = cleanup.shield %c
+    %settled: cleanup-state = cleanup.settle.empty %shield, %schedule
+    %planned: cleanup-state = cleanup.plan.checked %settled, plan P0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch %closed, %fs, %xs
+        success ^done($closed, %pending)
+^done(%done: closed, %ready: pending) in S:
+    (%v: int, %out: own, %full: deps) = exit.commit %ready, destination caller, result int
+    ret %out
+}

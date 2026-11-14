@@ -109,7 +109,8 @@ fn operation(module: &Module, function: FuncId, body: &Body, op: &Operation, sta
     let suspends = ContractRegistry::new(module).lookup(op).is_ok_and(|c| c.effects.suspends);
     let static_close = matches!(op, Operation::Ownership(OwnershipOp::ScopeEnd { .. }
         | OwnershipOp::ScopeUnwind { .. } | OwnershipOp::End { .. }));
-    if suspends && !(static_close && core_sync_cleanup(module)) && !data.attrs.contains(&FunctionAttr::Async) {
+    let lowered_cleanup = matches!(op, Operation::Cleanup(_));
+    if suspends && !static_close && !lowered_cleanup && !data.attrs.contains(&FunctionAttr::Async) {
         state.error(R::A3, "suspending operation requires an async action");
     }
     if matches!(op, Operation::Core(CoreOp::TestOk { .. } | CoreOp::TestIs { .. }
@@ -117,13 +118,4 @@ fn operation(module: &Module, function: FuncId, body: &Body, op: &Operation, sta
         && (!module.requires.contains(&Feature::Test) || state.options.execution != super::ExecutionMode::Tests) {
         state.error(R::A3, "test operations require requires test and test execution mode");
     }
-}
-
-// Core lexical cleanup is synchronous when the module has no asynchronous
-// resource or opaque dictionary. Protocol-owned cleanup is refined in commit 4.
-fn core_sync_cleanup(module: &Module) -> bool {
-    !module.types.iter().any(|(_, ty)| matches!(ty, Type::Future(_) | Type::Frame(_) | Type::Parameter(_)
-        | Type::Service(ServiceType::TaskState | ServiceType::CacheState | ServiceType::Pin)))
-        && !module.functions.iter().any(|(_, f)| f.attrs.iter().any(|a| matches!(a, FunctionAttr::Destroy(_)))
-            && f.attrs.contains(&FunctionAttr::Async))
 }

@@ -68,7 +68,13 @@ fn build_op_config(op: Operation, profile: Profile, configure: impl FnOnce(&mut 
         b.emit_schema(op).unwrap_or_else(|e| panic!("{name}: {e}"));
         b.terminate(TermKind::Ret { values: vec![] }).unwrap();
     }
-    let body = b.finish().unwrap(); m.define_function(f, body).unwrap(); m.finish().unwrap()
+    let mut body = b.finish().unwrap();
+    body.cleanup_orders.alloc(CleanupOrder { creations: vec![] }).unwrap();
+    body.cleanup_roots.alloc(CleanupRoots { values: vec![], kinds: vec![], through_suspend: false }).unwrap();
+    body.cleanup_plans.alloc(CleanupPlan { effects: None, entries: vec![], merge: true,
+        order: CleanupOrderId::from_u32(0), roots: CleanupRootsId::from_u32(0) }).unwrap();
+    m.define_function(f, body).unwrap();
+    m.finish().unwrap()
 }
 
 #[test]
@@ -80,7 +86,7 @@ fn every_opcode_builder_roundtrips_and_every_invoke_slot_is_preserved() {
         roundtrip(&module);
     }
     assert_eq!(seen, Operation::opcode_inventory().into_iter().collect(), "opcode missing a builder round-trip case");
-    assert_eq!(seen.len(), 269);
+    assert_eq!(seen.len(), 272);
 }
 
 #[test]
@@ -442,7 +448,8 @@ fn every_typed_payload_enum_branch_roundtrips() {
         Outcome::Unwind,
         Outcome::Cancel,
         Outcome::DeferContinue,
-        Outcome::DeferReplace(0)
+        Outcome::DeferReplace(0),
+        Outcome::Dispatch(0)
     ];
     assert_eq!(cases.len(), Outcome::TEXT_VARIANTS.len(), "Outcome branch missing");
     for value in cases { crate::text::payload_roundtrip(value); }

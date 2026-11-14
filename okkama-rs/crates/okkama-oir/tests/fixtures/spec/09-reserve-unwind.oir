@@ -22,7 +22,7 @@ func @label(%r: Res) -> str [extern "fixture.label"] summary(Mlabel);
 func @destroy(%self: Res) -> void [extern "fixture.destroy", destroy Res] summary(Mverify3);
 func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 scope S action in @main
-func @main(%q: scope<S>, %primary: failure, %pending: pending) -> failure summary(Mverify5) {
+func @main(%q: scope<S>, %primary: failure, %pending: pending) -> failure [async] summary(Mverify5) {
 ^entry in S:
     %failure: failure = scope.unwind %q, %primary, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     ret %failure

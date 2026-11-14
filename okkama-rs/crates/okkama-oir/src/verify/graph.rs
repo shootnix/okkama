@@ -46,6 +46,9 @@ pub(super) fn edges(body: &Body, state: &mut State<'_>) -> Vec<Edge> {
                     add(unwind.block, unwind.args.clone(), false);
                 }
             }
+            TermKind::StateDispatch { arms, .. } => {
+                for arm in arms { add(arm.edge.block, arm.edge.args.clone(), false); }
+            }
             TermKind::Catch { handler, next, .. } => {
                 target(next);
                 add(handler.block, handler.args.clone(), false);

@@ -21,50 +21,106 @@ pub(super) fn successor(module: &Module, body: &Body, value: ValueId) -> bool {
         .is_some_and(|ty| matches!(ty, Type::Successor(_)))
 }
 
+// Ownership is a positive formula over formal type parameters. Substitution is
+// iterative, so recursive nominal graphs do not recurse on untrusted input.
+#[derive(Clone, Default)]
+struct ManagedFormula {
+    owned: bool,
+    parameters: BTreeSet<(u8, u32, u32)>,
+}
+impl ManagedFormula {
+    fn include(&mut self, other: &Self) {
+        self.owned |= other.owned;
+        self.parameters.extend(&other.parameters);
+    }
+    fn grow(&mut self, other: Self, state: &mut State<'_>) -> bool {
+        let changed = other.owned && !self.owned
+            || other.parameters.iter().any(|parameter| !self.parameters.contains(parameter));
+        for parameter in other.parameters {
+            if !self.parameters.contains(&parameter) && state.memory(32) {
+                self.parameters.insert(parameter);
+            }
+        }
+        self.owned |= other.owned;
+        changed
+    }
+}
 pub(super) fn managed_types(module: &Module, state: &mut State<'_>) -> Vec<bool> {
-    if !state.array(module.types.len(), 1) {
+    if !state.array(module.types.len() + module.declarations.len(), 40) {
         return Vec::new();
     }
-    let mut managed = vec![false; module.types.len()];
+    let opaque = ManagedFormula { owned: true, ..ManagedFormula::default() };
+    let mut types = vec![ManagedFormula::default(); module.types.len()];
+    let mut declarations = vec![ManagedFormula::default(); module.declarations.len()];
     let mut changed = true;
     while changed {
         changed = false;
+        for (id, declaration) in module.declarations.iter() {
+            if !state.step(1) {
+                return Vec::new();
+            }
+            let mut next = ManagedFormula::default();
+            match &declaration.kind {
+                DeclarationKind::Object { fields, destroy, builtin, .. } => {
+                    next.owned = *builtin || destroy.is_some();
+                    for field in fields {
+                        next.include(types.get(field.ty.as_u32() as usize).unwrap_or(&opaque));
+                    }
+                }
+                DeclarationKind::Variant { cases, .. } => {
+                    for case in cases {
+                        next.include(declarations.get(case.layout.as_u32() as usize).unwrap_or(&opaque));
+                    }
+                }
+                _ => {}
+            }
+            changed |= declarations[id.as_u32() as usize].grow(next, state);
+        }
         for (id, ty) in module.types.iter() {
             if !state.step(1) {
-                return managed;
+                return Vec::new();
             }
-            let child = |id: TypeId| managed.get(id.as_u32() as usize).copied().unwrap_or(true);
-            let next = match ty {
-                Type::Object { decl, .. } => module.declarations.get(*decl).is_ok_and(|d| match &d.kind {
-                    DeclarationKind::Object { fields, destroy, builtin, .. } => {
-                        *builtin || destroy.is_some() || fields.iter().any(|f| child(f.ty))
-                    }
-                    _ => true,
-                }),
-                Type::Variant(decl) => module.declarations.get(*decl).is_ok_and(|d| match &d.kind {
-                    DeclarationKind::Variant { cases, .. } => cases.iter().any(|case| {
-                        module.declarations.get(case.layout).is_ok_and(|layout| match &layout.kind {
-                            DeclarationKind::Object { fields, destroy, .. } => {
-                                destroy.is_some() || fields.iter().any(|f| child(f.ty))
+            let mut next = ManagedFormula::default();
+            match ty {
+                Type::Object { decl, args } => {
+                    let nominal = declarations.get(decl.as_u32() as usize).unwrap_or(&opaque);
+                    next.owned = nominal.owned;
+                    for &(owner, declaration, index) in &nominal.parameters {
+                        if owner == 0 && declaration == decl.as_u32() {
+                            if let Some(argument) = args.get(index as usize) {
+                                next.include(types.get(argument.as_u32() as usize).unwrap_or(&opaque));
+                            } else {
+                                next.owned = true;
                             }
-                            _ => true,
-                        })
-                    }),
-                    _ => true,
-                }),
-                Type::Successor(ty) | Type::Array(ty) | Type::Builder(ty) => child(*ty),
-                Type::Map(k, v) | Type::MapBuilder(k, v) => child(*k) || child(*v),
-                Type::Any | Type::Role { .. } | Type::Cap { .. } | Type::Fn(_) | Type::Future(_)
-                | Type::Parameter(_) => true,
-                _ => false,
-            };
-            if next && !managed[id.as_u32() as usize] {
-                managed[id.as_u32() as usize] = true;
-                changed = true;
+                        } else {
+                            next.parameters.insert((owner, declaration, index));
+                        }
+                    }
+                }
+                Type::Variant(decl) => next.include(declarations.get(decl.as_u32() as usize).unwrap_or(&opaque)),
+                Type::Successor(ty) | Type::Array(ty) | Type::Builder(ty) | Type::LowCell(ty) => {
+                    next.include(types.get(ty.as_u32() as usize).unwrap_or(&opaque));
+                }
+                Type::Map(key, value) | Type::MapBuilder(key, value) => {
+                    next.include(types.get(key.as_u32() as usize).unwrap_or(&opaque));
+                    next.include(types.get(value.as_u32() as usize).unwrap_or(&opaque));
+                }
+                Type::Parameter(parameter) => {
+                    let (kind, owner) = match parameter.owner {
+                        GenericOwner::Declaration(id) => (0, id.as_u32()),
+                        GenericOwner::Function(id) => (1, id.as_u32()),
+                    };
+                    next.parameters.insert((kind, owner, parameter.index));
+                }
+                Type::Any | Type::Role { .. } | Type::Cap { .. } | Type::Fn(_) | Type::Future(_) => {
+                    next.owned = true;
+                }
+                _ => {}
             }
+            changed |= types[id.as_u32() as usize].grow(next, state);
         }
     }
-    managed
+    types.into_iter().map(|formula| formula.owned || !formula.parameters.is_empty()).collect()
 }
 
 pub(super) fn value_facts(
@@ -87,9 +143,24 @@ pub(super) fn value_facts(
                 Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat | Type::Char
                 | Type::Str | Type::Range | Type::Enum(_) | Type::Never),
             ValueFacts::Plain { certificate: PlainCertificate::ClosedGraph { ty } } => *ty == data.ty && !needs,
-            // Dictionary contracts are a commit-4 obligation; no scalar/plain
-            // certificate is inferred from an empty ownership selection.
-            ValueFacts::Plain { certificate: PlainCertificate::Descriptor(_) } => false,
+            ValueFacts::Plain { certificate: PlainCertificate::Descriptor(dictionary) } => {
+                let parameter = if let Type::Parameter(parameter) = ty {
+                    (parameter.owner == GenericOwner::Function(function)).then_some(parameter.index)
+                } else {
+                    None
+                };
+                let valid = body.descriptor_bindings.iter().any(|binding| {
+                    binding.dictionary == *dictionary && binding.contract.managed == DescriptorManaged::Plain
+                        && !binding.contract.async_destroy
+                        && matches!(binding.contract.retention, SummarySelection::Descriptor(index)
+                            if Some(u32::from(index)) == parameter)
+                        && module.summaries.get(binding.contract.summary).is_ok_and(|summary| {
+                            !summary.contract.async_destroy && !summary.contract.suspends
+                        })
+                });
+                if !valid { state.error(R::B111, "plain dictionary certificate lacks its exact checked contract"); }
+                valid
+            },
             ValueFacts::Unelaborated => false,
             ValueFacts::Service => false,
         };
@@ -283,6 +354,12 @@ impl Engine<'_, '_> {
     }
     pub(super) fn live_use(&mut self, flow: &Flow, value: ValueId) {
         if flow.lifetimes[value.as_u32() as usize] != 1 {
+            if flow.tokens[value.as_u32() as usize].cell.is_some() {
+                self.error(R::B73, "Cell publication preserves the stored borrow's owner lifetime");
+            }
+            if !flow.full_deps[value.as_u32() as usize].is_disjoint(&flow.cache_keys) {
+                self.error(R::B94, "cached result view outlives its cache owner without rehome");
+            }
             self.error(R::B31, "use of a value whose stable dependency has been closed");
         }
     }
@@ -290,6 +367,20 @@ impl Engine<'_, '_> {
         for (value, _) in self.body.values.iter() {
             if before.lifetimes[value.as_u32() as usize] == 1 && self.invalidated(before, value, pieces) {
                 flow.lifetimes[value.as_u32() as usize] = 2;
+            }
+        }
+        for (key, layout) in &before.frames {
+            for (index, slot) in layout {
+                if self.keys_invalidated(before, &slot.requirements, &slot.aliases, pieces)
+                    && let Some(saved) = flow.frames.get_mut(key).and_then(|layout| layout.get_mut(index)) {
+                    saved.lifetime = 2;
+                }
+            }
+        }
+        for (key, slot) in &before.cells {
+            if self.keys_invalidated(before, &slot.requirements, &slot.aliases, pieces)
+                && let Some(stored) = flow.cells.get_mut(key) {
+                stored.lifetime = 2;
             }
         }
     }

@@ -25,9 +25,9 @@ scope S action in @main
 role Read {
     read(Res) -> str
 }
-summary Mslot call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+summary Mslot call-boundary parameters [parameter_effect(convention=borrow, destination=none), parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
 scope Sadapter action in @adapter
-func @adapter(%self: Read facts(managed(deps=dfull_self)), %r: Res facts(managed(deps=dfull_r)); %input: own) -> (str, own, deps) summary(Mslot) {
+func @adapter(%self: Read facts(managed(deps=dfull_self)), %r: Res facts(managed(deps=dfull_r)); %input: own) -> (str, own, deps) [async] summary(Mslot) {
     dependency dfull_self: dependency = retention(value=%self, selection=selection(%self))
     dependency dfull_r: dependency = retention(value=%r, selection=selection(%r))
 ^entry in Sadapter:
@@ -53,8 +53,8 @@ func @adapter(%self: Read facts(managed(deps=dfull_self)), %r: Res facts(managed
     %out: own = own.join [%empty, %selected]
     ret %answer, %out, %deps
 }
-summary Mcaller call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], publication=atomic)
-func @main(%reader: Read facts(managed(deps=dreader))) -> (str, own, deps) summary(Mcaller) {
+summary Mcaller call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(provenance=bound)] contract call_contract(results=[str], failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
+func @main(%reader: Read facts(managed(deps=dreader))) -> (str, own, deps) [async] summary(Mcaller) {
     dependency dreader: dependency = retention(value=%reader, selection=selection(%reader))
     dependency dfresh: dependency = retention(value=%fresh, selection=selection(%fresh))
 ^entry in S:

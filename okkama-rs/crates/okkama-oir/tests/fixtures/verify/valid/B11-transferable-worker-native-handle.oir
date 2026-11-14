@@ -1,0 +1,15 @@
+oir 2 high
+module worker_boundary
+object R {
+    field x: int
+}
+scope S action in @f
+func @f(%entry: fn(int) -> void, %arg: int) -> void {
+^entry in S unwind ^failed:
+    %future: future<void> = worker.spawn %entry, [%arg], direct true
+    discard %future
+    result.exit edge normal(0), value %future, demand discard, prepare none
+    ret
+^failed(%failure: failure) in S:
+    raise %failure
+}

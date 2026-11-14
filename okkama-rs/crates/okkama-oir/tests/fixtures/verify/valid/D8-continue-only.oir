@@ -2,15 +2,20 @@ oir 2 own
 module defer_continue
 scope SD action in @d
 scope S action in @f
-summary Md internal contract call_contract(publication=atomic)
+summary Md internal contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
 func @d(%input: own) -> void [defer()] summary(Md) {
+    boundary B0 call in SD
 ^entry in SD:
+    %closed: closed = end %input, boundary B0
     ret defer continue
 }
-func @f(%input: own) -> void summary(Md) {
+func @f() -> void summary(Md) {
 ^entry in S:
-    invoke.defer @d(; %input)
+    invoke.defer @d(; own.empty)
         continue ^next()
+        unwind ^failed($failure)
 ^next in S:
     ret
+^failed(%failure: failure) in S:
+    raise %failure
 }

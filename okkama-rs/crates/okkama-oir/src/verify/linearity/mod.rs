@@ -5,6 +5,11 @@ mod metadata;
 mod packets;
 mod scopes;
 mod summaries;
+mod cleanup;
+mod async_rules;
+mod defer;
+mod storage;
+mod descriptors;
 
 use super::{EntityLocation as L, RuleId as R, State};
 use crate::*;
@@ -23,7 +28,7 @@ struct Engine<'m, 's> {
     managed: &'s [bool],
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Slot {
     token: Token,
     journal: Token,
@@ -72,6 +77,16 @@ impl Slot {
 
 pub(super) fn check<'m>(module: &'m Module, selected: Option<FuncId>, state: &mut State<'m>) {
     let managed = managed_types(module, state);
+    for (id, declaration) in module.declarations.iter() {
+        if let DeclarationKind::Object { fields, .. } = &declaration.kind {
+            for field in fields {
+                if field.once && managed.get(field.ty.as_u32() as usize).copied().unwrap_or(true) {
+                    state.at(L::Declaration(id), declaration.loc);
+                    state.error(R::B111, "once storage must be plain over its complete target/type graph");
+                }
+            }
+        }
+    }
     for (function, declaration) in module.functions.iter() {
         if selected.is_some_and(|id| id != function) {
             continue;
@@ -87,12 +102,6 @@ pub(super) fn check<'m>(module: &'m Module, selected: Option<FuncId>, state: &mu
         }
         if !state.array(body.values.len(), 64) {
             return;
-        }
-        // D8 tagged transfer/settlement is a separate B10 pass in #564 commit 4.
-        // Do not run the ordinary-return engine over the tagged defer ABI.
-        if body.blocks.iter().any(|(_, block)| matches!(block.term.kind,
-            TermKind::InvokeDefer { .. } | TermKind::RetDefer { .. })) {
-            continue;
         }
         let mut engine = Engine {
             module, function, declaration, body, state, emit: false,
@@ -110,7 +119,9 @@ impl Engine<'_, '_> {
         }
     }
     fn charge_flow(&mut self, flow: &Flow) -> bool {
-        let tokens = flow.tokens.iter().chain(&flow.journals);
+        let tokens = flow.tokens.iter().chain(&flow.journals)
+            .chain(flow.frames.values().flat_map(|layout| layout.values().map(|slot| &slot.token)))
+            .chain(flow.cells.values().map(|slot| &slot.token));
         let pieces = tokens.flat_map(|token| &token.pieces).chain(&flow.closed_inputs);
         let mut entries = 0usize;
         for piece in pieces {
@@ -131,9 +142,17 @@ impl Engine<'_, '_> {
         for (refs, _) in flow.fields.values() {
             entries = entries.saturating_add(1 + refs.len());
         }
+        for token in &flow.tokens {
+            entries = entries.saturating_add(token.unique_region.len() + token.pin_deps.len());
+            if let Some(fact) = &token.cleanup {
+                entries = entries.saturating_add(fact.reserve.len() + fact.inventory.len()
+                    + fact.services.len() + fact.executed.len());
+            }
+        }
         entries = entries.saturating_add(flow.dead.len() + flow.bindings.len() + flow.provenance.len());
+        entries = entries.saturating_add(flow.frames.values().map(|slots| slots.len()).sum::<usize>());
         self.state.step(entries.saturating_add(flow.availability.len()))
-            && self.state.array(flow.availability.len(), 320) && self.state.array(entries, 128)
+            && self.state.array(flow.availability.len(), 1536) && self.state.array(entries, 128)
     }
 
     fn initial(&mut self) -> Flow {
@@ -144,7 +163,8 @@ impl Engine<'_, '_> {
                     | Type::Builder(_) | Type::MapBuilder(..))
             });
         }
-        let call_boundary = self.declaration.summary.and_then(|id| self.module.summaries.get(id).ok())
+        let defer_entry = self.declaration.attrs.iter().any(|attr| matches!(attr, FunctionAttr::DeferEntry { .. }));
+        let call_boundary = defer_entry || self.declaration.summary.and_then(|id| self.module.summaries.get(id).ok())
             .is_some_and(|s| s.entry_kind == EntryKind::CallBoundary);
         let input = self.declaration.signature.params.iter().any(|ty| {
             self.module.types.get(*ty) == Ok(&Type::Service(ServiceType::Own))
@@ -157,12 +177,23 @@ impl Engine<'_, '_> {
         for &value in &entry.params {
             let i = value.as_u32() as usize;
             flow.availability[i] = AVAILABLE;
+            if self.body.descriptor_bindings.iter().any(|binding| binding.dictionary == value) {
+                flow.tokens[i].dictionary = Some(DictionarySource::Parameter(value));
+            }
             flow.aliases[i].insert(value);
             flow.contained[i].insert(value);
             if linear(self.module, self.body, value) {
                 let mut token = Token { scope: scope(self.module, self.body, value), ..Token::default() };
                 token.sources.insert(value);
-                if !builder(self.module, self.body, value) {
+                if matches!(super::later::value_type(self.module, self.body, value),
+                    Some(Type::Frame(_) | Type::Service(ServiceType::TaskState | ServiceType::Receipt
+                        | ServiceType::CacheState | ServiceType::Pin))) {
+                    token.service = Some(Origin::Input(value));
+                }
+                let permission = matches!(super::later::value_type(self.module, self.body, value),
+                    Some(Type::Service(ServiceType::UniqueCache | ServiceType::Pin | ServiceType::Receipt
+                        | ServiceType::TaskState | ServiceType::CleanupState | ServiceType::ExitState)));
+                if !builder(self.module, self.body, value) && !permission {
                     let mut piece = Piece::new(Origin::Input(value), AdmissionProvenance::UnboundResult);
                     if !call_boundary || token.scope.is_some() {
                         piece.provenance = 63;
@@ -175,17 +206,24 @@ impl Engine<'_, '_> {
                     flow.scopes.insert(scope, 1);
                 }
                 flow.tokens[i] = token;
-            } else if self.is_managed(value) {
+            } else if self.is_managed(value) || matches!(super::later::value_type(self.module, self.body, value),
+                Some(Type::Service(ServiceType::StableKey))) {
                 flow.refs[i].insert(Origin::External(value));
                 flow.identities[i] = Some(Origin::External(value));
                 flow.full_deps[i].insert(Origin::External(value));
                 flow.provenance.insert(Origin::External(value), provenance_bit(AdmissionProvenance::Bound));
             }
+            if matches!(super::later::value_type(self.module, self.body, value), Some(Type::Future(_))) {
+                flow.cache_keys.insert(Origin::External(value));
+            }
             if successor(self.module, self.body, value) {
                 flow.must_use[i] = 1;
             }
             if self.body.values.get(value).ok().and_then(|v| self.module.types.get(v.ty).ok())
-                == Some(&Type::Service(ServiceType::Failure)) { flow.failures[i] = 31; }
+                == Some(&Type::Service(ServiceType::Failure)) {
+                flow.failures[i] = 31;
+                flow.tokens[i].failure_origin = Some(Origin::Input(value));
+            }
         }
         // A paired deps parameter is an ABI precondition, checked at direct
         // calls below. Its symbolic entry graph is the argument's full graph.
@@ -221,7 +259,7 @@ impl Engine<'_, '_> {
                     token.pieces = token.pieces.iter().cloned().map(|mut piece| {
                         piece.predicates.insert(Filter {
                             keys: keys.clone(), fresh: false, possible: BTreeSet::new(),
-                            labels: input_labels.clone(), stale: false, state: 0,
+                            labels: input_labels.clone(), stale: false, whole_future: false, state: 0,
                         }, true);
                         piece
                     }).collect();
@@ -236,8 +274,10 @@ impl Engine<'_, '_> {
         flow
     }
     fn is_managed(&self, value: ValueId) -> bool {
-        self.body.values.get(value).is_ok_and(|v| matches!(v.facts, ValueFacts::Managed { .. })
-            || self.managed.get(v.ty.as_u32() as usize).copied().unwrap_or(true))
+        self.body.values.get(value).is_ok_and(|v| !matches!(v.facts, ValueFacts::Plain {
+            certificate: PlainCertificate::Descriptor(_),
+        }) && (matches!(v.facts, ValueFacts::Managed { .. })
+            || self.managed.get(v.ty.as_u32() as usize).copied().unwrap_or(true)))
     }
     fn solve(&mut self) {
         if !self.state.array(self.body.blocks.len(), 64) {
@@ -303,6 +343,12 @@ impl Engine<'_, '_> {
     }
     fn use_value(&mut self, flow: &mut Flow, value: ValueId, mode: OperandMode, rule: R) {
         let index = value.as_u32() as usize;
+        if flow.tokens[index].pin_deps.iter().any(|key| flow.dead.contains(key)) {
+            self.error(R::B96, "retained view pin outlives its stable owner");
+        }
+        if flow.tokens[index].unique.is_some_and(|key| flow.dead.contains(&key)) {
+            self.error(R::B92, "unique-cache capability outlives the cache owner");
+        }
         let reservation = self.body.values.get(value).ok().and_then(|v| self.module.types.get(v.ty).ok())
             == Some(&Type::Service(ServiceType::Pending));
         if !reservation {
@@ -342,9 +388,7 @@ impl Engine<'_, '_> {
                 }
             }
         }
-        let core = self.body.values.get(value).ok().and_then(|v| self.module.types.get(v.ty).ok())
-                .is_some_and(|ty| matches!(ty, Type::Service(ServiceType::Own | ServiceType::Scope(_)
-                    | ServiceType::Pending) | Type::Builder(_) | Type::MapBuilder(..)));
+        let core = linear(self.module, self.body, value);
             if core && flow.availability[i] & AVAILABLE != 0 {
             self.error(if builder(self.module, self.body, value) { R::B81 } else { R::B22 },
                 "new incarnation overwrites an available linear carrier");
@@ -370,7 +414,9 @@ impl Engine<'_, '_> {
         flow.tokens[i] = flow.normalize_token(slot.token);
         flow.journals[i] = flow.normalize_token(slot.journal);
         let service_deps = self.body.values.get(value).ok().and_then(|v| self.module.types.get(v.ty).ok())
-            .is_some_and(|ty| matches!(ty, Type::Service(ServiceType::Deps | ServiceType::Pending)));
+            .is_some_and(|ty| matches!(ty, Type::Service(ServiceType::Deps | ServiceType::Pending
+                | ServiceType::StableKey
+                | ServiceType::CleanupState | ServiceType::ExitState | ServiceType::OwnerSnapshot)));
         flow.refs[i] = if self.is_managed(value) || service_deps { slot.refs }
             else { BTreeSet::new() };
         flow.full_deps[i] = flow.refs[i].union(&slot.requirements).copied().collect();
@@ -438,14 +484,63 @@ impl Engine<'_, '_> {
                     }
                 }
             }
+            TermKind::Cond { condition, yes, no } if flow.tokens[condition.as_u32() as usize]
+                .cleanup_test.is_some() => {
+                let test = flow.tokens[condition.as_u32() as usize].cleanup_test;
+                for (present, target) in [(true, yes), (false, no)] {
+                    let mut branch = flow.clone();
+                    let mut possible = true;
+                    for (index, token) in branch.tokens.iter_mut().enumerate() {
+                        if branch.availability[index] != AVAILABLE { continue; }
+                        if let Some(fact) = &mut token.cleanup {
+                            if fact.test != test { continue; }
+                            if present { possible &= !token.pieces.is_empty(); }
+                            else {
+                                possible &= token.pieces.is_empty() || token.pieces.iter().any(|piece| piece.family);
+                                token.pieces.clear();
+                                fact.selected = None;
+                            }
+                        }
+                    }
+                    if possible {
+                        let args = target.args.iter().copied().map(EdgeArg::Value).collect::<Vec<_>>();
+                        outgoing.push(self.edge(&branch, target.block, &args, &[], R::B21));
+                    }
+                }
+            }
+            TermKind::StateDispatch { closed, failure, exit, arms } => {
+                self.dispatch(&mut flow, *closed, *failure, *exit, arms, &mut outgoing);
+            }
+            TermKind::InvokeDefer { function, call, continue_edge, replacements, unwind } => {
+                self.defer_invoke(id, *function, call, continue_edge, replacements, unwind.as_ref(),
+                    &flow, &mut outgoing);
+            }
+            TermKind::RetDefer { tag, values } => {
+                self.defer_return(tag, values, &flow);
+                let normal = !matches!(tag, DeferReturnTag::Continue) || values.is_empty();
+                self.finish(&mut flow, normal, values);
+            }
             TermKind::Ret { values } => self.finish(&mut flow, true, values),
             TermKind::Throw(v) | TermKind::Raise(v) | TermKind::Panic(v) => {
                 self.live_use(&flow, *v);
+                if flow.active_failure != 0 && !matches!(block.term.kind, TermKind::Raise(_)) {
+                    self.error(R::B104, "cleanup cannot reclassify an active failure as panic or typed throw");
+                }
+                if matches!(block.term.kind, TermKind::Raise(_))
+                    && flow.active_failure_origin.is_some()
+                    && flow.active_failure_origin != flow.tokens[v.as_u32() as usize].failure_origin {
+                    self.error(R::B104, "cleanup cannot substitute a different primary Error/failure view");
+                }
+                flow.active_failure_origin = if matches!(block.term.kind, TermKind::Raise(_)) {
+                    flow.tokens[v.as_u32() as usize].failure_origin
+                } else { Some(Origin::External(*v)) };
                 flow.active_failure = match &block.term.kind {
                     TermKind::Throw(_) => failure_bit(FailureKind::Thrown),
                     TermKind::Panic(_) => failure_bit(FailureKind::Panic),
                     _ => flow.failures[v.as_u32() as usize],
                 };
+                flow.latest_failure = flow.active_failure;
+                flow.latest_failure_origin = flow.active_failure_origin;
                 if let Some(unwind) = &block.unwind {
                     outgoing.push(self.edge(&flow, unwind.target.block,
                         &unwind.target.args.iter().copied().map(EdgeArg::Value).collect::<Vec<_>>(), &[], R::B63));
@@ -476,7 +571,10 @@ impl Engine<'_, '_> {
             TermKind::Catch { failure, handler, next, .. } => {
                 self.live_use(&flow, *failure);
                 let mut caught = flow.clone();
-                caught.active_failure = 0;
+                if flow.tokens[failure.as_u32() as usize].failure_origin == flow.active_failure_origin {
+                    caught.active_failure = 0;
+                    caught.active_failure_origin = None;
+                }
                 outgoing.push(self.edge(&caught, handler.block, &handler.args, &[Slot::default()], R::B21));
                 let args = next.args.iter().copied().map(EdgeArg::Value).collect::<Vec<_>>();
                 outgoing.push(self.edge(&flow, next.block, &args, &[], R::B21));
@@ -500,6 +598,12 @@ impl Engine<'_, '_> {
             return (target, flow.clone());
         }
         let mut next = flow.clone();
+        for (index, token) in flow.tokens.iter().enumerate() {
+            if flow.availability[index] == AVAILABLE && token.unique.is_some()
+                && !token.unique_region.contains(&target) {
+                self.error(R::B92, "unique capability leaves its proved CFG region");
+            }
+        }
         let mut saved = Vec::new();
         for arg in args {
             let slot = match arg {
@@ -523,7 +627,8 @@ impl Engine<'_, '_> {
         if let Ok(block) = self.body.blocks.get(target) {
             if block.params.len() == saved.len() + 1 && self.body.values.get(block.params[saved.len()]).ok()
                 .and_then(|v| self.module.types.get(v.ty).ok()) == Some(&Type::Service(ServiceType::Failure)) {
-                saved.push(Slot { failures: next.active_failure, ..Slot::default() });
+                let token = Token { failure_origin: next.latest_failure_origin, ..Token::default() };
+                saved.push(Slot { token, failures: next.latest_failure, ..Slot::default() });
             }
             for (index, slot) in saved.iter_mut().enumerate() {
                 slot.redefine = args.get(index) != block.params.get(index).map(|value| EdgeArg::Value(*value)).as_ref();
@@ -579,7 +684,9 @@ impl Engine<'_, '_> {
         (target, next)
     }
     fn finish(&mut self, flow: &mut Flow, normal: bool, values: &[ValueId]) {
-        self.body_summary(flow, normal, values);
+        if !self.declaration.attrs.iter().any(|attr| matches!(attr, FunctionAttr::DeferEntry { .. })) {
+            self.body_summary(flow, normal, values);
+        }
         if !flow.entry_accepted && self.module.profile != Profile::High {
             self.error(R::B54, "explicit input packet was never accepted into callee cleanup");
         }
@@ -587,6 +694,13 @@ impl Engine<'_, '_> {
             flow.tokens[v.as_u32() as usize].pieces.iter().map(|p| p.origin)
         }).collect();
         for &value in values {
+            if super::later::value_type(self.module, self.body, value)
+                == Some(&Type::Service(ServiceType::ExitState)) {
+                self.error(R::B101, "ExitState must be eliminated by typed dispatch, not returned");
+            }
+            if flow.tokens[value.as_u32() as usize].unique.is_some() {
+                self.error(R::B92, "unique-cache capability cannot escape its function/region");
+            }
             if flow.refs[value.as_u32() as usize].iter().any(|origin| {
                 matches!(origin, Origin::Instruction(..) | Origin::Invoke(..)
                     | Origin::RetiredInstruction(..) | Origin::RetiredInvoke(..)) && !exported.contains(origin)
@@ -598,9 +712,7 @@ impl Engine<'_, '_> {
         }
         for (value, _) in self.body.values.iter() {
             let i = value.as_u32() as usize;
-            let core = self.body.values.get(value).ok().and_then(|v| self.module.types.get(v.ty).ok())
-                .is_some_and(|ty| matches!(ty, Type::Service(ServiceType::Own | ServiceType::Scope(_)
-                    | ServiceType::Pending) | Type::Builder(_) | Type::MapBuilder(..)));
+            let core = linear(self.module, self.body, value);
             if core && flow.availability[i] & AVAILABLE != 0 {
                 let rule = if scope(self.module, self.body, value).is_some() { R::B41 }
                     else if builder(self.module, self.body, value) { R::B81 }

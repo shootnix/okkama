@@ -1,0 +1,102 @@
+oir 2 coro
+module resources
+object R {
+    field x: int
+    destroy @destroy
+}
+protocol Services kind services
+scope Sd action in @destroy
+scope S action in @f
+scope SI block in @f parent S
+summary Md call-boundary parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary M0 internal contract call_contract(failures=[thrown, program, panic, native, cancelled], suspends=true, publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in Sd:
+    ret
+}
+scope Sc action in @create
+summary Mc internal results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], failures=[thrown, program, panic, native, cancelled], publication=atomic)
+func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
+    key kc: key = created(site=0, instance=%made)
+    dependency dc: dependency = key(kc)
+    boundary Bc call in Sc
+^entry in Sc:
+    invoke.own obj.new R { x: 1; %input }
+        normal ^ok($value, $packet)
+        unwind ^bad($packet, $failure)
+^ok(%made: R facts(managed(deps=dc)), %packet: own) in Sc:
+    ret %made, %packet
+^bad(%rest: own, %failure: failure) in Sc:
+    %closed: closed = end %rest, boundary Bc
+    raise %failure
+}
+func @f(%schedule: type) -> void [async] summary(M0) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    order O0: order = cleanup_order(creations=[])
+    roots Rfirst: roots = cleanup_roots(values=[%m_settled], kinds=[cleanup_remainder, active_self, service_schedule, pending_exit, carrier_graph], through_suspend=true)
+    roots Rafter: roots = cleanup_roots(values=[%m_aborted], kinds=[cleanup_remainder, active_self, service_schedule, pending_exit, carrier_graph], through_suspend=true)
+    plan Pfirst: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=Rfirst, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=false, cancel=true)))
+    plan Pafter: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=Rafter, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=false, cancel=true)))
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
+    key k0: key = created(site=0, instance=%r)
+    dependency d0: dependency = key(k0)
+    boundary B0 lexical in S
+^entry in S:
+    %q: scope<S> = scope.begin S
+    invoke.own call @create(; own.empty)
+        normal ^have_A($value, $packet, %q)
+        unwind ^failed_create(%q, $failure)
+^have_A(%a: R facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %with_A: scope<S> = own.admit %qa, %pa
+    invoke.own call @create(; own.empty)
+        normal ^have($value, $packet, %with_A)
+        unwind ^failed_create(%with_A, $failure)
+^have(%r: R facts(managed(deps=d0)), %packet: own, %state: scope<S>) in S:
+    %inner: scope<SI> = scope.begin SI
+    %admitted: scope<SI> = own.admit %inner, %packet
+    br ^extract(%admitted, %state)
+^extract(%owned: scope<SI>, %outer_root: scope<S>) in SI:
+    invoke.own scope.split %owned, selection(%r)
+        normal ^prepare($state, $selected, $external_deps, %outer_root)
+        unwind ^failed_inner($state, $failure, %outer_root)
+^prepare(%rest: scope<SI>, %selected: own, %external: deps, %outer_state: scope<S>) in SI:
+    %pending: pending = exit.prepare return %r, %selected, deps(%external) at B0
+    invoke.own scope.end %rest, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^outer($closed, $pending, %outer_state)
+        unwind ^abort_outer($closed, $failure, %outer_state)
+^outer(%ci: closed, %reserved: pending, %root: scope<S>) in S:
+    %m_c: cleanup-state = cleanup.begin %root, %schedule
+    %m_shield: cleanup-state = cleanup.shield %m_c
+    %m_settled: cleanup-state = cleanup.settle.empty %m_shield, %schedule
+    %m_cancelled: cleanup-state = cleanup.deliver_cancel %m_settled
+    %m_aborted: cleanup-state = exit.abort %reserved, %m_cancelled, phase before_destroy
+    %m_after_plan: cleanup-state = cleanup.plan.checked %m_aborted, plan Pafter
+    br ^m_loop(%m_after_plan)
+^m_loop(%m_state: cleanup-state) in S:
+    (%m_selected_state: cleanup-state, %m_key: stable-key, %m_present: bool) = cleanup.next %m_state
+    cond %m_present, ^m_destroy(%m_selected_state), ^m_finish(%m_selected_state)
+^m_destroy(%m_claimed: cleanup-state) in S:
+    (%m_after: cleanup-state, %m_step_failure: failure-state) = cleanup.destroy %m_claimed, %m_key
+    failure.dispatch %m_step_failure
+        none ^m_loop(%m_after)
+        some ^m_record(%m_after, $failure)
+^m_record(%m_failed: cleanup-state, %m_failure: failure) in S:
+    %m_recorded: cleanup-state = cleanup.failure %m_failed, %m_failure
+    br ^m_loop(%m_recorded)
+^m_finish(%m_remaining: cleanup-state) in S:
+    (%m_closed: closed, %m_fs: failure-state, %m_xs: exit-state) = cleanup.finish %m_remaining
+    exit.dispatch %m_closed, %m_fs, %m_xs
+        failure ^m_final($closed, $failure)
+^m_final(%m_final_closed: closed, %m_final_error: failure) in S:
+    raise %m_final_error
+^abort_outer(%closed_inner: closed, %error: failure, %open: scope<S>) in S:
+    %final: failure = scope.unwind %open, %error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %final
+^failed_inner(%open_inner: scope<SI>, %inner_error: failure, %open_outer: scope<S>) in SI:
+    %combined_inner: failure = scope.unwind %open_inner, %inner_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    br ^failed_create(%open_outer, %combined_inner)
+^failed_create(%open_root: scope<S>, %creation_error: failure) in S:
+    %propagated: failure = scope.unwind %open_root, %creation_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %propagated
+}

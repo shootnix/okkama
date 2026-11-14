@@ -1,0 +1,23 @@
+oir 2 low
+// expect OIR2-B10.2 instruction:0:4
+module cleanup_empty
+protocol Services kind services
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f(%schedule: type) -> void summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%settled], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph])
+    plan P0: plan = cleanup_plan(entries=[%schedule], merge=false, order=O0, roots=R0, effects=some(scope_effects(failures=[], suspends=false, cancel=false)))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %c: cleanup-state = cleanup.begin %q, %schedule
+    %shield: cleanup-state = cleanup.shield %c
+    %settled: cleanup-state = cleanup.settle.empty %shield, %schedule
+    %planned: cleanup-state = cleanup.plan.checked %settled, plan P0
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %planned
+    exit.dispatch %closed, %fs, %xs
+        success ^done($closed)
+^done(%done: closed) in S:
+    ret
+}

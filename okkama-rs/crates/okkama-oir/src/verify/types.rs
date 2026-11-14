@@ -811,6 +811,34 @@ fn terminator<'a>(
                 elaboration::defer_edges(&mut checker, *callee, call, continue_edge, replacements,
                     unwind.as_ref(), function, block_id, next_edge)?;
             }
+            TermKind::StateDispatch { closed, failure, exit, arms } => {
+                checker.service(*failure, ServiceType::FailureState)?;
+                if let Some(closed) = closed { checker.service(*closed, ServiceType::Closed)?; }
+                if let Some(exit) = exit { checker.service(*exit, ServiceType::ExitState)?; }
+                checker.require(matches!(module.profile, Profile::Coro | Profile::Low),
+                    "typed cleanup dispatch requires coro/low");
+                checker.require(closed.is_some() == exit.is_some(), "exit dispatch needs closed and exit state");
+                let mut seen = std::collections::BTreeSet::new();
+                for arm in arms {
+                    let valid = if exit.is_some() {
+                        matches!(arm.kind, DispatchKind::Success | DispatchKind::Pending | DispatchKind::Failure)
+                    } else { matches!(arm.kind, DispatchKind::None | DispatchKind::Some) };
+                    checker.require(valid && seen.insert(arm.kind as u16), "invalid/duplicate dispatch arm");
+                    invoke_target(module, body, &arm.edge, arm.kind.outcome(), &arm.kind.results(),
+                        &Substitution::default(), checker.state);
+                    for (index, slot) in arm.kind.results().iter().enumerate() {
+                        if matches!(slot.ty, ResultType::Service(service) if service.is_linear()) {
+                            let uses = arm.edge.args.iter().filter(|arg| matches!(arg,
+                                EdgeArg::Produced(result) if result.outcome == arm.kind.outcome()
+                                    && usize::from(result.slot) == index)).count();
+                            if uses != 1 {
+                                checker.report(R::B62, "dispatch linear slot must be forwarded exactly once");
+                            }
+                        }
+                    }
+                    *next_edge += 1;
+                }
+            }
             TermKind::RetDefer { tag, values } => {
                 let declaration = module.functions.get(function)?;
                 let labels = declaration.attrs.iter().find_map(|attr| {

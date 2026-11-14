@@ -1,0 +1,11 @@
+oir 2 own
+module typed_cleanup
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f(%primary: failure, %other: failure) -> failure summary(Mf) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %combined: failure = scope.unwind %q, %primary, effects scope_effects(failures=[], suspends=false, cancel=false)
+    %with_secondary: failure = fail.secondary %combined, %other
+    ret %with_secondary
+}

@@ -28,6 +28,14 @@ impl Default for VerifyLimits {
     }
 }
 
+/// These checks validate declared IR structure only until producer metadata exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StructuralCheck {
+    B95FrameLayoutAndContinuations,
+    B105SuspensionRootMaps,
+    B96CollectorPositions,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VerifyStats {
     pub entities: usize,
@@ -35,6 +43,8 @@ pub struct VerifyStats {
     /// Conservative charged allocation bound; never a measurement of process RSS.
     pub memory_bytes: usize,
     pub functions: usize,
+    pub structural_checks: Vec<StructuralCheck>,
+    pub dynamic: Box<DynamicStats>,
 }
 
 pub(super) fn add(current: &mut usize, amount: usize, limit: usize) -> bool {
@@ -45,4 +55,19 @@ pub(super) fn add(current: &mut usize, amount: usize, limit: usize) -> bool {
         }
         _ => false,
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DynamicSite {
+    pub site: super::OperationSite,
+    pub target: crate::ScopeId,
+    pub reason: crate::DynamicReason,
+    pub protocol: crate::ProtocolId,
+}
+
+/// Bounded protocol evidence is kept off the common diagnostic return path.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DynamicStats {
+    pub sites: Vec<DynamicSite>,
+    pub census: crate::DynamicCensus,
 }

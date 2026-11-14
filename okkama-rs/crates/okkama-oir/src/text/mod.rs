@@ -457,6 +457,8 @@ macro_rules! ids {
 ids!(DeclId => ("decl", "", false), FuncId => ("func", "@", false),
     ScopeId => ("scope", "S", false), FileId => ("file", "", false), SummaryId => ("summary", "M", false),
     ProtocolId => ("protocol", "", false),
+    CleanupPlanId => ("plan", "P", true), CleanupOrderId => ("order", "O", true),
+    CleanupRootsId => ("roots", "R", true),
     BlockId => ("block", "^", true), InstId => ("inst", "i", true),
     BindingId => ("binding", "b", true), BoundaryId => ("boundary", "B", true),
     DepExprId => ("dependency", "d", true), KeyExprId => ("key", "k", true));
@@ -583,7 +585,8 @@ variants!(Outcome {
     Unwind => "unwind",
     Cancel => "cancel",
     DeferContinue => "defer_continue",
-    DeferReplace(index) => "defer_replace"
+    DeferReplace(index) => "defer_replace",
+    Dispatch(index) => "dispatch"
 });
 record!(EdgeResult, "edge_result", { outcome, slot });
 impl Codec for SwitchCase {
@@ -1354,6 +1357,9 @@ opcodes!(ExitOp {
     Abort { pending, cleanup, phase } => "exit.abort",
 });
 opcodes!(CleanupOp {
+    SettleEmpty { cleanup, schedule } => "cleanup.settle.empty",
+    PlanChecked { cleanup, plan } => "cleanup.plan.checked",
+    DestroySelected { cleanup, selected } => "cleanup.destroy",
     Begin { state, pending, failure, schedule } => "cleanup.begin",
     Defer { cleanup, action } => "cleanup.defer",
     Settle { cleanup, holder, protocol } => "cleanup.settle",
@@ -1645,3 +1651,7 @@ fn value_default(profile: Profile, ty: Option<&Type>) -> ValueFacts {
         _ => ValueFacts::Unelaborated,
     }
 }
+
+record!(CleanupPlan, "cleanup_plan", { entries, merge, order, roots, effects });
+record!(CleanupOrder, "cleanup_order", { creations });
+record!(CleanupRoots, "cleanup_roots", { values, kinds, through_suspend });

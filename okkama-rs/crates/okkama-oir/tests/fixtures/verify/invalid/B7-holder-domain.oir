@@ -1,0 +1,42 @@
+oir 2 own
+// expect OIR2-B7.4 terminator:2:1
+module channel_domain
+object R {
+    field x: int
+    destroy @destroy
+}
+protocol P kind channel holders [scope, packet, channel, receipt] rules [protocol_rule(transition=dynamic, from=packet, to=scope, checks=[owner, live_dependencies, snapshot, transferable], normal=protocol_poststate(holder=scope, state=open), unwind=some(protocol_poststate(holder=packet, state=unaccepted)))] roots [operands, pins]
+scope SD action in @destroy
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @create(%input: own) -> (R, own, deps) [extern "fixture.channel"] summary(Mc);
+func @f() -> void summary(Mf) {
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    (%r: R facts(managed(deps=dr)), %packet: own, %deps: deps) = call @create(; own.empty)
+    invoke.own own.dynamic %q, %packet, target S, reason channel, protocol P
+        normal ^have($state)
+        unwind ^failed_dynamic($state, $packet, $failure)
+^have(%owner: scope<S>) in S:
+    invoke.own scope.split %owner, selection(%r)
+        normal ^ok($state, $selected, $external_deps)
+        unwind ^failed($state, $failure)
+^ok(%rest: scope<S>, %selected: own, %full: deps) in S:
+    %accepted: scope<S> = own.accept %rest, %selected
+    %closed: closed = scope.end %accepted, effects scope_effects(failures=[], suspends=false, cancel=false)
+    ret
+^failed_dynamic(%original: scope<S>, %unaccepted: own, %failure0: failure) in S:
+    %all: scope<S> = own.accept %original, %unaccepted
+    br ^failed(%all, %failure0)
+^failed(%state: scope<S>, %failure: failure) in S:
+    %combined: failure = scope.unwind %state, %failure, effects scope_effects(failures=[], suspends=false, cancel=false)
+    raise %combined
+}

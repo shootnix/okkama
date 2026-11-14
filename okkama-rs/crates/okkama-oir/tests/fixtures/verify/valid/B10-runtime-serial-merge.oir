@@ -1,0 +1,39 @@
+oir 2 low
+module runtime_merge
+protocol Services kind services
+scope S action in @f
+summary Mf internal contract call_contract(failures=[thrown, program, panic, native], suspends=true, publication=atomic)
+func @f(%schedule: type, %input: own) -> void [async] summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%c2], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph], through_suspend=true)
+    plan P0: plan = cleanup_plan(entries=[], merge=true, order=O0, roots=R0, effects=some(scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %admitted: scope<S> = own.accept %q, %input
+    %c: cleanup-state = cleanup.begin %admitted, %schedule
+    %c1: cleanup-state = cleanup.shield %c
+    %c2: cleanup-state = cleanup.settle.empty %c1, %schedule
+    %c3: cleanup-state = cleanup.plan.checked %c2, plan P0
+    br ^next(%c3)
+^next(%state: cleanup-state) in S:
+    (%selected_state: cleanup-state, %key: stable-key, %present: bool) = cleanup.next %state
+    cond %present, ^destroy(%selected_state), ^finish(%selected_state)
+^destroy(%claimed: cleanup-state) in S:
+    (%after: cleanup-state, %step_failure: failure-state) = cleanup.destroy %claimed, %key
+    failure.dispatch %step_failure
+        none ^next(%after)
+        some ^record(%after, $failure)
+^record(%failed: cleanup-state, %failure: failure) in S:
+    %recorded: cleanup-state = cleanup.failure %failed, %failure
+    br ^next(%recorded)
+^finish(%remaining: cleanup-state) in S:
+    (%closed: closed, %fs: failure-state, %xs: exit-state) = cleanup.finish %remaining
+    exit.dispatch %closed, %fs, %xs
+        success ^done($closed)
+        failure ^failed($closed, $failure)
+^done(%done: closed) in S:
+    ret
+^failed(%closed2: closed, %final: failure) in S:
+    raise %final
+}

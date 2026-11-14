@@ -31,6 +31,7 @@ func @create(%input: own) -> (R, own) [ctor R] summary(Mc) {
     raise %failure
 }
 func @f(%choose: bool) -> (R, own, deps) summary(M0) {
+    dependency da: dependency = retention(value=%a, selection=selection(%a))
     key k0: key = created(site=0, instance=%r)
     dependency d0: dependency = key(k0)
     dependency dout: dependency = retention(value=%result, selection=selection(%result))
@@ -40,25 +41,30 @@ func @f(%choose: bool) -> (R, own, deps) summary(M0) {
     cond %choose, ^left(%q), ^right(%q)
 ^left(%ql: scope<S>) in S:
     invoke.own call @create(; own.empty)
-        normal ^have($value, $packet, %ql)
+        normal ^have_A($value, $packet, %ql)
         unwind ^failed_create(%ql, $failure)
 ^right(%qr: scope<S>) in S:
     invoke.own call @create(; own.empty)
-        normal ^have($value, $packet, %qr)
+        normal ^have_A($value, $packet, %qr)
         unwind ^failed_create(%qr, $failure)
+^have_A(%a: R facts(managed(deps=da)), %pa: own, %qa: scope<S>) in S:
+    %with_A: scope<S> = own.admit %qa, %pa
+    invoke.own call @create(; own.empty)
+        normal ^have($value, $packet, %with_A)
+        unwind ^failed_create(%with_A, $failure)
 ^have(%r: R facts(managed(deps=d0)), %packet: own, %state: scope<S>) in S:
-    %admitted: scope<S> = own.admit %state, %packet
-    br ^extract(%admitted)
-^extract(%owned: scope<S>) in S:
-    invoke.own scope.split %owned, selection(%r)
-        normal ^prepare($state, $selected, $external_deps)
-        unwind ^failed_create($state, $failure)
-^prepare(%rest: scope<S>, %selected: own, %external: deps) in S:
     %inner: scope<SI> = scope.begin SI
+    %admitted: scope<SI> = own.admit %inner, %packet
+    br ^extract(%admitted, %state)
+^extract(%owned: scope<SI>, %outer_root: scope<S>) in SI:
+    invoke.own scope.split %owned, selection(%r)
+        normal ^prepare($state, $selected, $external_deps, %outer_root)
+        unwind ^failed_inner($state, $failure, %outer_root)
+^prepare(%rest: scope<SI>, %selected: own, %external: deps, %outer_state: scope<S>) in SI:
     %pending: pending = exit.prepare return %r, %selected, deps(%external) at B0
-    invoke.own scope.end %inner, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
-        normal ^outer($closed, $pending, %rest)
-        unwind ^abort_outer($closed, $failure, %rest)
+    invoke.own scope.end %rest, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+        normal ^outer($closed, $pending, %outer_state)
+        unwind ^abort_outer($closed, $failure, %outer_state)
 ^outer(%ci: closed, %reserved: pending, %root: scope<S>) in S:
     invoke.own scope.end %root, reserve %reserved, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
@@ -71,6 +77,9 @@ func @f(%choose: bool) -> (R, own, deps) summary(M0) {
     raise %final
 ^failed(%closed_outer: closed, %failure: failure) in S:
     raise %failure
+^failed_inner(%open_inner: scope<SI>, %inner_error: failure, %open_outer: scope<S>) in SI:
+    %combined_inner: failure = scope.unwind %open_inner, %inner_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    br ^failed_create(%open_outer, %combined_inner)
 ^failed_create(%open_root: scope<S>, %creation_error: failure) in S:
     %propagated: failure = scope.unwind %open_root, %creation_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
     raise %propagated

@@ -71,6 +71,8 @@ fn canonical_verifier_fixtures() {
     for rule in [
         "B1.1", "B1.2", "B2.1", "B2.2", "B2.3", "B3.1", "B3.2", "B4.1", "B4.2", "B4.3",
         "B5.1", "B5.2", "B5.3", "B5.4", "B6.3", "B8.1", "B8.2", "B10.1",
+        "B7.1", "B7.2", "B7.3", "B7.4", "B7.5", "B9.1", "B9.2", "B9.3", "B9.4", "B9.5", "B9.6",
+        "B10.2", "B10.3", "B10.4", "B10.5", "B10.6", "B11.1", "B11.2", "B11.3", "B11.4",
     ] {
         assert!(covered.contains(&format!("OIR2-{rule}")), "missing canonical negative for {rule}");
     }
@@ -253,6 +255,21 @@ fn ownership_verdicts_survive_codec_and_arena_permutations() {
                 for (old, inst) in body.insts.iter().collect::<Vec<_>>().into_iter().rev() {
                     remap.instructions.insert(old, instructions.alloc(inst.clone()).unwrap());
                 }
+                let mut plans = Arena::new();
+                for (old, plan) in body.cleanup_plans.iter().collect::<Vec<_>>().into_iter().rev() {
+                    remap.cleanup_plans.insert(old, plans.alloc(plan.clone()).unwrap());
+                }
+                let mut orders = Arena::new();
+                for (old, order) in body.cleanup_orders.iter().collect::<Vec<_>>().into_iter().rev() {
+                    remap.cleanup_orders.insert(old, orders.alloc(order.clone()).unwrap());
+                }
+                let mut roots = Arena::new();
+                for (old, root) in body.cleanup_roots.iter().collect::<Vec<_>>().into_iter().rev() {
+                    remap.cleanup_roots.insert(old, roots.alloc(root.clone()).unwrap());
+                }
+                body.cleanup_plans = plans;
+                body.cleanup_orders = orders;
+                body.cleanup_roots = roots;
                 body.values = values;
                 body.insts = instructions;
                 body.rewrite(&mut remap);
@@ -287,5 +304,42 @@ fn absent_call_summaries_are_specific_to_high() {
         module.profile = profile;
         let report = verify(&module).unwrap_err();
         assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == RuleId::B51), "{report:?}");
+    }
+}
+
+#[test]
+fn protocol_census_and_structural_gaps_are_explicit() {
+    use okkama_oir::*;
+    let module = text::parse(include_str!("fixtures/verify/valid/B7-any-family.oir")).unwrap();
+    let verified = verify(&module).unwrap();
+    assert_eq!(verified.stats().dynamic.sites.len(), 1);
+    assert_eq!(verified.stats().dynamic.census.module_count(DynamicReason::Any), 1);
+    assert_eq!(verified.stats().dynamic.census.module_count(DynamicReason::Merge), 0);
+    assert!(matches!(verified.stats().dynamic.sites[0].site, OperationSite::Terminator { .. }));
+    let module = text::parse(include_str!("fixtures/verify/valid/B9-frame-save-resume-cancel.oir")).unwrap();
+    assert!(verify_coro(&module).unwrap().stats().structural_checks
+        .contains(&StructuralCheck::B95FrameLayoutAndContinuations));
+    let module = text::parse(include_str!("fixtures/verify/valid/B9-duplicate-positions-shared-outcome.oir")).unwrap();
+    assert!(verify_own(&module).unwrap().stats().structural_checks
+        .contains(&StructuralCheck::B96CollectorPositions));
+}
+
+#[test]
+fn malformed_cleanup_proof_arenas_are_rejected_without_panics() {
+    use okkama_oir::*;
+    for corruption in 0..3 {
+        let mut module = text::parse(include_str!("fixtures/verify/valid/B10-common-cleanup-plan.oir")).unwrap();
+        let body = module.functions.get_mut(FuncId::from_u32(0)).unwrap().body.as_mut().unwrap();
+        match corruption {
+            0 => body.cleanup_plans.get_mut(CleanupPlanId::from_u32(0)).unwrap().roots =
+                CleanupRootsId::from_u32(u32::MAX),
+            1 => body.cleanup_roots.get_mut(CleanupRootsId::from_u32(0)).unwrap().values =
+                vec![ValueId::from_u32(u32::MAX)],
+            _ => body.cleanup_orders.get_mut(CleanupOrderId::from_u32(0)).unwrap().creations =
+                vec![CreationOrigin::Instruction(InstId::from_u32(u32::MAX))],
+        }
+        let report = verify_low(&module).unwrap_err();
+        assert_eq!(report.failure, VerifyFailure::Rejected);
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == RuleId::S3));
     }
 }

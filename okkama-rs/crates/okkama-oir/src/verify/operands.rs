@@ -1284,7 +1284,7 @@ impl Checker<'_, '_> {
                 self.scope(*state)?;
                 if let Some(pending) = pending { self.service(*pending, ServiceType::Pending)?; }
                 if let Some(failure) = failure { self.service(*failure, ServiceType::Failure)?; }
-                self.language(*schedule)?;
+                self.expect(*schedule, Type::Descriptor)?;
             }
             CleanupOp::Defer { cleanup, action } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
@@ -1297,7 +1297,16 @@ impl Checker<'_, '_> {
                     | Type::Frame(_));
                 self.require(valid, "cleanup settle requires a service holder");
             }
-            CleanupOp::Plan { cleanup } | CleanupOp::Next { cleanup } | CleanupOp::Shield { cleanup }
+            CleanupOp::SettleEmpty { cleanup, schedule } => {
+                self.service(*cleanup, ServiceType::CleanupState)?;
+                self.expect(*schedule, Type::Descriptor)?;
+            }
+            CleanupOp::DestroySelected { cleanup, selected } => {
+                self.service(*cleanup, ServiceType::CleanupState)?;
+                self.service(*selected, ServiceType::StableKey)?;
+            }
+            CleanupOp::PlanChecked { cleanup, .. } | CleanupOp::Plan { cleanup } | CleanupOp::Next { cleanup }
+            | CleanupOp::Shield { cleanup }
             | CleanupOp::DeliverCancel { cleanup } | CleanupOp::Finish { cleanup } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
             }
@@ -1311,7 +1320,7 @@ impl Checker<'_, '_> {
             }
             CleanupOp::RecordFailure { cleanup, failure } => {
                 self.service(*cleanup, ServiceType::CleanupState)?;
-                self.service(*failure, ServiceType::FailureState)?;
+                self.service(*failure, ServiceType::Failure)?;
             }
             CleanupOp::CellNew { value, ty } => {
                 self.exact(*value, *ty)?;

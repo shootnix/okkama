@@ -24,7 +24,7 @@ func @deferred() -> void [extern "fixture.deferred"] summary(Mvoid);
 summary Mcleanup call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[Res], publication=atomic)
 func @cleanup_A(%input: own) -> (Res, own, deps) [extern "fixture.cleanup_A"] summary(Mcleanup);
 scope S action in @main
-func @main(%value: Res facts(managed(deps=dfull_value)), %deps: deps; %packet: own) -> (Res, own, deps) summary(Mverify5) {
+func @main(%value: Res facts(managed(deps=dfull_value)), %deps: deps; %packet: own) -> (Res, own, deps) [async] summary(Mverify5) {
     dependency dfull_value: dependency = retention(value=%value, selection=selection(%value))
     dependency dfull_result: dependency = retention(value=%result, selection=selection(%result))
     dependency dcleanup: dependency = retention(value=%cleanup, selection=selection(%cleanup))
@@ -33,13 +33,21 @@ func @main(%value: Res facts(managed(deps=dfull_value)), %deps: deps; %packet: o
     %q: scope<S> = scope.begin S
     (%cleanup: Res facts(managed(deps=dcleanup)), %pa: own, %da: deps) = call @cleanup_A(; own.empty)
     %with_A: scope<S> = own.admit %q, %pa
-    %pending: pending = exit.prepare return %value, %packet, deps(%deps) at B0
-    invoke.own scope.end %with_A, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    %accepted: scope<S> = own.accept %with_A, %packet
+    invoke.own scope.split %accepted, selection(%value)
+        normal ^prepare($state, $selected, $external_deps)
+        unwind ^split_failed($state, $failure)
+^prepare(%rest: scope<S>, %part: own, %external: deps) in S:
+    %pending: pending = exit.prepare return %value, %part, deps(%deps) at B0
+    invoke.own scope.end %rest, reserve %pending, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
         normal ^commit($closed, $pending)
         unwind ^failed($closed, $failure)
 ^commit(%closed: closed, %reserved: pending) in S:
     (%result: Res facts(managed(deps=dfull_result)), %out: own, %full: deps) = exit.commit %reserved, destination caller, result Res
     ret %result, %out, %full
+^split_failed(%open: scope<S>, %split_error: failure) in S:
+    %combined: failure = scope.unwind %open, %split_error, effects scope_effects(failures=[thrown, program, panic, native], suspends=true, cancel=false)
+    raise %combined
 ^failed(%closed2: closed, %failure: failure) in S:
     br ^outer_failure(%failure)
 ^outer_failure(%error: failure) in S:

@@ -2,11 +2,26 @@ use super::*;
 
 impl Engine<'_, '_> {
     pub(super) fn partition(&mut self, flow: &Flow, token: &Token, selection: SelectionId) -> (Token, Token) {
+        let mut pending = vec![selection];
+        let mut whole_future = false;
+        let mut seen = BTreeSet::new();
+        while let Some(selection) = pending.pop() {
+            if !self.state.step(1) { break; }
+            if !seen.insert(selection) { continue; }
+            match self.body.selections.get(selection) {
+                Ok(SelectionExpr::Value(value) | SelectionExpr::OwnerGraph(value)) => {
+                    whole_future |= matches!(super::super::later::value_type(self.module, self.body, *value),
+                        Some(Type::Future(_)));
+                }
+                Ok(SelectionExpr::Union(items)) => pending.extend(items),
+                _ => {}
+            }
+        }
         let mut rest = token.clone();
         let mut selected = Token::default();
         for (keys, fresh, labels) in self.selection_terms(flow, selection) {
             let possible = self.possible(flow, &keys);
-            let filter = Filter { keys, fresh, possible, labels, stale: false, state: 0 };
+            let filter = Filter { keys, fresh, possible, labels, stale: false, whole_future, state: 0 };
             let (next, part) = self.partition_filter(&rest, filter);
             rest = next;
             selected = self.union([selected, part], true);
@@ -24,6 +39,7 @@ impl Engine<'_, '_> {
             let filter = Filter {
                 keys: keys.clone(), fresh: *fresh && !admits_all,
                 possible: possible.clone(), labels: labels.clone(), stale: false,
+                whole_future: base.whole_future,
                 state: if *fresh && !admits_all { piece.provenance } else { 0 },
             };
             let unknown = piece.family || matches!(piece.origin, Origin::Input(_))
@@ -31,7 +47,14 @@ impl Engine<'_, '_> {
             let provenance = piece.provenance;
             let eligible = !*fresh || provenance & FRESH != 0;
             let related = matches!(piece.origin, Origin::Input(_))
-                || keys.contains(&piece.origin) || possible.contains(&piece.origin);
+                || keys.contains(&piece.origin) || possible.contains(&piece.origin)
+                || piece.holder.is_some_and(|holder| keys.contains(&holder));
+            if related && eligible && !keys.is_empty() && piece.holder.is_some() && !base.whole_future {
+                let rule = if piece.channel { R::B74 } else { R::B91 };
+                self.error(rule, "scope/packet selection cannot extract a private protocol holder graph");
+                rest.pieces.insert(piece.clone());
+                continue;
+            }
             if !eligible || keys.is_empty() || !related {
                 rest.pieces.insert(piece.clone());
             } else if !unknown {
@@ -54,7 +77,7 @@ impl Engine<'_, '_> {
         }
         (rest, selected)
     }
-    fn union(&mut self, parts: impl IntoIterator<Item = Token>, disjoint: bool) -> Token {
+    pub(super) fn union(&mut self, parts: impl IntoIterator<Item = Token>, disjoint: bool) -> Token {
         let mut result = Token::default();
         for part in parts {
             if !self.state.step(part.pieces.len().saturating_mul(result.pieces.len()).saturating_add(1)) {
@@ -78,6 +101,15 @@ impl Engine<'_, '_> {
         if !self.charge_flow(flow) {
             return Vec::new();
         }
+        flow.retire_origin(view_origin(origin, u16::MAX as usize));
+        for index in 0..schema.results.len() {
+            let key = match origin {
+                Origin::Instruction(inst, _) => Origin::Instruction(inst, 0x8000_0000 + index as u32),
+                Origin::Invoke(block, _) => Origin::Invoke(block, 0x8000_0000 + index as u32),
+                _ => origin,
+            };
+            flow.retire_origin(key);
+        }
         if outcome == Outcome::Normal {
             if super::super::summaries::call(op).is_none() {
                 for slot in 0..schema.results.len() {
@@ -87,7 +119,9 @@ impl Engine<'_, '_> {
                     flow.retire_origin(view_origin(origin, slot));
                 }
             }
-            if matches!(op, Operation::Core(CoreOp::ObjNew { .. } | CoreOp::ObjNext { .. })) {
+            if matches!(op, Operation::Core(CoreOp::ObjNew { .. } | CoreOp::ObjNext { .. })
+                | Operation::Async(AsyncOp::FutureNew { .. } | AsyncOp::FrameAlloc { .. })
+                | Operation::Cleanup(CleanupOp::CellNew { .. })) {
                 flow.retire_origin(origin);
             }
             if let Some((call, _, _)) = super::super::summaries::call(op)
@@ -114,12 +148,22 @@ impl Engine<'_, '_> {
         }
         let before = flow.clone();
         if let Operation::Ownership(OwnershipOp::ScopeUnwind { failure, .. }) = op {
+            let primary = before.tokens[failure.as_u32() as usize].failure_origin;
+            if before.active_failure_origin.is_some() && before.active_failure_origin != primary {
+                self.error(R::B104, "scope unwind must preserve the actual primary failure/Error view");
+            }
             flow.active_failure = before.failures[failure.as_u32() as usize];
+            flow.active_failure_origin = primary;
         }
         if outcome != Outcome::Normal
             && let Ok(contract) = ContractRegistry::new(self.module).construction_schema(op, self.body) {
-            flow.active_failure = if outcome == Outcome::Cancel { failure_bit(FailureKind::Cancelled) }
+            flow.latest_failure_origin = Some(view_origin(origin, u16::MAX as usize));
+            flow.latest_failure = if outcome == Outcome::Cancel { failure_bit(FailureKind::Cancelled) }
                 else { contract.effects.failures.iter().fold(0, |mask, kind| mask | failure_bit(*kind)) };
+            if before.active_failure == 0 {
+                flow.active_failure = flow.latest_failure;
+                flow.active_failure_origin = flow.latest_failure_origin;
+            }
         }
         let refs = op.operand_refs();
         let mut metadata: Vec<_> = refs.iter().filter_map(|operand| {
@@ -196,6 +240,8 @@ impl Engine<'_, '_> {
                     }
                     if let Some(i) = slot_index(*selected) {
                         slots[i].token = right;
+                        slots[i].token.selected_scope = before.tokens[input.as_u32() as usize].scope;
+                        slots[i].token.selection = Some(*selection);
                     }
                     if let Some(i) = slot_index(SlotName::ExternalDeps) {
                         let (keys, _) = self.selection(&before, *selection);
@@ -206,6 +252,10 @@ impl Engine<'_, '_> {
                 }
                 TransferRule::Admit { state, packet, output, provenance } => {
                     let owner = scope(self.module, self.body, *state);
+                    if before.tokens[packet.as_u32() as usize].bound_admission
+                        && !matches!(op, Operation::Ownership(OwnershipOp::Accept { .. })) {
+                        self.error(R::B101, "discarded replacement reserve requires bound own.accept");
+                    }
                     let mut incoming = before.tokens[packet.as_u32() as usize].clone();
                     incoming.pieces = incoming.pieces.into_iter().map(|mut piece| {
                         let restored = matches!(op, Operation::Ownership(OwnershipOp::Accept { .. }))
@@ -264,9 +314,14 @@ impl Engine<'_, '_> {
                             | OwnershipOp::ScopeUnwind { reserve, .. }) => *reserve,
                         _ => None,
                     };
-                    self.close(&before, flow, *input, reserve);
+                    if !matches!(op, Operation::Cleanup(CleanupOp::Finish { .. })) {
+                        self.close(&before, flow, *input, reserve);
+                    }
                 }
                 TransferRule::Settle { inputs } => {
+                    if matches!(op, Operation::Cleanup(CleanupOp::Settle { .. })
+                        | Operation::Async(AsyncOp::FrameCancel { .. } | AsyncOp::FuturePublish { .. }
+                            | AsyncOp::FutureSettle { .. })) { continue; }
                     for input in inputs {
                         let pieces: Vec<_> = before.tokens[input.as_u32() as usize].pieces.iter().cloned().collect();
                         self.invalidate(&before, flow, &pieces);
@@ -280,6 +335,34 @@ impl Engine<'_, '_> {
                 }
                 TransferRule::Reserve { packet, boundary } => {
                     let mut token = before.tokens[packet.as_u32() as usize].clone();
+                    let current = self.body.blocks.get(block).ok().map(|block| block.lexical_scope);
+                    let outer = token.selected_scope.is_some_and(|selected| before.scopes.iter().any(|(id, status)| {
+                        *status == 1 && *id != selected
+                            && super::super::high::inside(self.module, *id, selected, self.state)
+                    }));
+                    if !token.pieces.is_empty() && (token.selected_scope != current || outer) {
+                        self.error(R::B101, "initial reserve must be selected from the currently closing scope");
+                    }
+                    for (value, _) in self.body.values.iter() {
+                        if before.availability[value.as_u32() as usize] == AVAILABLE
+                            && super::super::later::value_type(self.module, self.body, value)
+                                == Some(&Type::Service(ServiceType::Pending)) {
+                            self.error(R::B101, "an action cannot have two active pending exits");
+                        }
+                    }
+                    token.selection = Some(match op {
+                        Operation::Exit(ExitOp::Prepare { exit }) => {
+                            token.pending_type = exit.value.and_then(|value| self.body.values.get(value).ok())
+                                .map(|value| value.ty);
+                            token.pending_kind = Some(exit.kind);
+                            token.pending_boundary = Some(exit.boundary);
+                            if exit.value.is_none() && !token.pieces.is_empty() {
+                                self.error(R::B101, "void exit cannot reserve an unrelated nonempty packet");
+                            }
+                            exit.selection
+                        },
+                        _ => unreachable!(),
+                    });
                     if let Ok(boundary) = self.body.boundaries.get(*boundary) {
                         token.reserve.insert(boundary.scope);
                         token.pieces = token.pieces.into_iter().map(|mut piece| {
@@ -318,16 +401,37 @@ impl Engine<'_, '_> {
                 }
                 TransferRule::ReplaceReservation { pending, packet } => {
                     if let Operation::Exit(ExitOp::Replace { replacement, .. }) = op {
+                        if before.active_failure != 0 {
+                            self.error(R::B101, "defer replacement cannot replace an active primary failure");
+                        }
                         let (mut rest, kept) = self.partition(&before,
                             &before.tokens[pending.as_u32() as usize], replacement.selection);
                         rest.reserve.clear();
-                        rest.scope = self.body.boundaries.get(replacement.boundary).ok().map(|boundary| boundary.scope);
+                        rest.bound_admission = true;
+                        rest.pieces = rest.pieces.into_iter().map(|mut piece| {
+                            piece.provenance = provenance_bit(AdmissionProvenance::Bound);
+                            piece
+                        }).collect();
+                        if slot_index(SlotName::Rest).is_none() && !rest.pieces.is_empty() {
+                            self.error(R::B101, "replacement cannot discard its old reserve without a rest slot");
+                        }
+                        rest.scope = self.body.blocks.get(block).ok().map(|block| block.lexical_scope);
                         if let Some(i) = slot_index(SlotName::Rest) {
                             slots[i].token = rest;
                         }
                         let offered = packet.map(|packet| before.tokens[packet.as_u32() as usize].clone())
                             .unwrap_or_default();
-                        let mut next = self.union([kept, offered], false);
+                        let (outside, _) = self.partition(&before, &offered, replacement.selection);
+                        if !outside.pieces.is_empty() {
+                            self.error(R::B101, "defer replacement packet exceeds the candidate's retention graph");
+                        }
+                        let mut next = self.union([kept, offered], true);
+                        next.reserve.clear();
+                        next.selection = Some(replacement.selection);
+                        next.pending_type = replacement.value.and_then(|value| self.body.values.get(value).ok())
+                            .map(|value| value.ty);
+                        next.pending_kind = Some(replacement.kind);
+                        next.pending_boundary = Some(replacement.boundary);
                         if let Ok(boundary) = self.body.boundaries.get(replacement.boundary) {
                             next.reserve.insert(boundary.scope);
                         }
@@ -342,10 +446,28 @@ impl Engine<'_, '_> {
                     }
                 }
                 TransferRule::ExtendReservation { pending, packet } => {
+                    let part = &before.tokens[packet.as_u32() as usize];
+                    let current = self.body.blocks.get(block).ok().map(|block| block.lexical_scope);
+                    let pending_token = &before.tokens[pending.as_u32() as usize];
+                    if !part.pieces.is_empty() {
+                        if part.private || part.selected_scope != current || part.bound_admission {
+                            self.error(R::B101, "exit.extend requires the closing scope's selected transferable part");
+                        }
+                        if let Some(selection) = pending_token.selection {
+                            let (rest, _) = self.partition(&before, part, selection);
+                            if !rest.pieces.is_empty() {
+                                self.error(R::B101, "extension contains obligations outside current pending retention");
+                            }
+                        }
+                    }
                     let mut token = self.union([
                         before.tokens[pending.as_u32() as usize].clone(),
                         before.tokens[packet.as_u32() as usize].clone(),
-                    ], false);
+                    ], true);
+                    token.selection = pending_token.selection;
+                    token.pending_type = pending_token.pending_type;
+                    token.pending_kind = pending_token.pending_kind;
+                    token.pending_boundary = pending_token.pending_boundary;
                     token.scope = before.tokens[pending.as_u32() as usize].scope;
                     if let Some(i) = slot_index(SlotName::State) {
                         slots[i].token = token;
@@ -371,14 +493,71 @@ impl Engine<'_, '_> {
                         slots[i].token = token;
                     }
                 }
-                // Async protocols and the lowered cleanup automaton are checked
-                // by the reserved commit-4 pass, not by claimed postconditions.
-                _ => {}
+                TransferRule::Protocol { inputs, .. } => {
+                    if let Operation::Ownership(OwnershipOp::Dynamic { state, packet, target, reason, .. }) = op {
+                        if matches!(reason, DynamicReason::Atomic | DynamicReason::Cell)
+                            && !before.tokens[packet.as_u32() as usize].pieces.is_empty() {
+                            self.error(R::B73, "Atomic/Cell dynamic publication cannot steal an owned packet");
+                        }
+                        let mut token = self.union(inputs.iter().map(|value| {
+                            before.tokens[value.as_u32() as usize].clone()
+                        }), true);
+                        token.scope = Some(*target);
+                        token.pieces = token.pieces.into_iter().map(|mut piece| {
+                            piece.owner = Some(*target);
+                            if *reason == DynamicReason::Channel {
+                                piece.holder = Some(origin);
+                                piece.channel = true;
+                            }
+                            piece
+                        }).collect();
+                        if let Some(i) = slot_index(SlotName::State) { slots[i].token = token; }
+                        let _ = state;
+                    } else if matches!(op, Operation::Call(_)) && outcome != Outcome::Normal {
+                        let mut token = self.union(inputs.iter().map(|value| {
+                            before.tokens[value.as_u32() as usize].clone()
+                        }), true);
+                        token.private = true;
+                        token.pieces = token.pieces.into_iter().map(|mut piece| {
+                            piece.family = true;
+                            piece.holder = Some(origin);
+                            piece.provenance = provenance_bit(AdmissionProvenance::StagedOrCarrierOwned);
+                            piece
+                        }).collect();
+                        if let Some(i) = slot_index(SlotName::Receipt).or_else(|| slot_index(SlotName::Task)) {
+                            slots[i].token = token;
+                        } else if !token.pieces.is_empty() {
+                            self.error(R::B91, "exceptional publication needs its actual task or receipt holder");
+                        }
+                    }
+                }
+                // These have state-dependent checks below; no claimed annotation
+                // is accepted as a substitute for executing their transfer.
+                TransferRule::Publish { .. } | TransferRule::Extract { .. }
+                | TransferRule::AbortReservation { .. } | TransferRule::FrameSave { .. }
+                | TransferRule::FrameResume { .. } => {}
             }
         }
         self.buffer(op, outcome, &before, schema, &mut slots);
         self.stage(op, outcome, &before, flow, schema, &mut slots);
         self.results(op, schema, outcome, origin, &before, flow, &mut slots);
+        self.cleanup_operation(block, op, outcome, &before, flow, schema, &mut slots);
+        self.async_operation(block, op, outcome, origin, &before, flow, schema, &mut slots);
+        self.storage_operation(op, outcome, origin, &before, flow, &mut slots);
+        if outcome == Outcome::Normal && self.module.profile != Profile::High {
+            self.descriptor_operation(op, origin, &mut slots);
+        }
+        for (index, (info, slot)) in schema.results.iter().zip(slots.iter_mut()).enumerate() {
+            if matches!(info.ty, ResultType::Service(ServiceType::TaskState | ServiceType::Receipt
+                | ServiceType::CacheState | ServiceType::Pin) | ResultType::Frame(_))
+                && slot.token.service.is_none() {
+                slot.token.service = Some(match origin {
+                    Origin::Instruction(inst, _) => Origin::Instruction(inst, 0x8000_0000 + index as u32),
+                    Origin::Invoke(block, _) => Origin::Invoke(block, 0x8000_0000 + index as u32),
+                    _ => origin,
+                });
+            }
+        }
         for postcondition in &schema.postconditions {
             if let Postcondition::DischargeMustUse(value) = postcondition {
                 flow.must_use[value.as_u32() as usize] = 2;
@@ -581,6 +760,21 @@ impl Engine<'_, '_> {
         }
         for (i, slot) in slots.iter_mut().enumerate() {
             if schema.results[i].ty == ResultType::Service(ServiceType::Failure) {
+                let primary = match op {
+                    Operation::Ownership(OwnershipOp::ScopeUnwind { failure, .. }) => Some(*failure),
+                    Operation::Core(CoreOp::FailSecondary { primary, .. }) => Some(*primary),
+                    Operation::Core(CoreOp::FailCaused { new, .. }) => Some(*new),
+                    _ => None,
+                };
+                slot.token.failure_origin = primary.and_then(|value| {
+                    before.tokens[value.as_u32() as usize].failure_origin
+                }).or(if outcome == Outcome::Normal { flow.active_failure_origin }
+                    else { flow.latest_failure_origin });
+                if matches!(op, Operation::Core(CoreOp::FailSecondary { .. } | CoreOp::FailCaused { .. }))
+                    && before.active_failure_origin.is_some()
+                    && before.active_failure_origin != slot.token.failure_origin {
+                    self.error(R::B104, "cleanup combination cannot change its primary Error identity");
+                }
                 slot.failures = match op {
                     Operation::Ownership(OwnershipOp::ScopeUnwind { failure, .. }) => {
                         before.failures[failure.as_u32() as usize]
@@ -588,7 +782,10 @@ impl Engine<'_, '_> {
                     Operation::Core(CoreOp::FailSecondary { primary, .. }) => {
                         before.failures[primary.as_u32() as usize]
                     }
-                    _ => flow.active_failure,
+                    Operation::Core(CoreOp::FailCaused { new, .. }) => {
+                        before.failures[new.as_u32() as usize]
+                    }
+                    _ => if outcome == Outcome::Normal { flow.active_failure } else { flow.latest_failure },
                 };
             }
             if matches!(schema.results[i].ty, ResultType::SuccessorOf(_)) {

@@ -1,0 +1,10 @@
+oir 2 own
+module profile_boundary
+scope S action in @f
+summary Mf internal contract call_contract(publication=atomic)
+func @f() -> void summary(Mf) {
+^entry in S:
+    %q: scope<S> = scope.begin S
+    %closed: closed = scope.end %q, effects scope_effects(failures=[], suspends=false, cancel=false)
+    ret
+}

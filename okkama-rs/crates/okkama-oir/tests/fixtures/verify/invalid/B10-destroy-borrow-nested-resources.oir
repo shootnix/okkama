@@ -1,0 +1,43 @@
+oir 2 low
+// expect OIR2-B10.2 instruction:2:7
+module direct_destroy
+object R {
+    field x: int
+    destroy @destroy
+}
+protocol Services kind services
+scope SD action in @destroy
+scope S action in @f
+summary Md internal parameters [parameter_effect(convention=borrow, destination=none)] contract call_contract(publication=atomic)
+summary Mc call-boundary results [result_relation(fresh=[0], provenance=unbound_result)] contract call_contract(results=[R], publication=atomic)
+summary Mf internal contract call_contract(publication=atomic)
+func @destroy(%self: R facts(managed(deps=dd))) -> void [destroy R] summary(Md) {
+    dependency dd: dependency = retention(value=%self, selection=selection(%self))
+^entry in SD:
+    ret
+}
+func @create(%packet: own) -> (R, own, deps) [extern "fixture.singleton"] summary(Mc);
+func @f(%schedule: type, %descriptor: type) -> void summary(Mf) {
+    service.schedule Schedule0 owner S, protocol Services, dictionary %schedule
+    dependency dr: dependency = retention(value=%r, selection=selection(%r))
+    order O0: order = cleanup_order(creations=[])
+    roots R0: roots = cleanup_roots(values=[%c2], kinds=[cleanup_remainder, active_self, service_schedule, carrier_graph])
+    plan P0: plan = cleanup_plan(entries=[], merge=false, order=O0, roots=R0, effects=some(scope_effects(failures=[], suspends=false, cancel=false)))
+^entry in S:
+    %q: scope<S> = scope.begin S
+    (%r: R facts(managed(deps=dr)), %packet: own, %deps: deps) = call @create(; own.empty)
+    %admitted: scope<S> = own.admit %q, %packet
+    %c: cleanup-state = cleanup.begin %admitted, %schedule
+    %c1: cleanup-state = cleanup.shield %c
+    %c2: cleanup-state = cleanup.settle.empty %c1, %schedule
+    %c3: cleanup-state = cleanup.plan.checked %c2, plan P0
+    (%c4: cleanup-state, %fs: failure-state) = destroy.direct %c3, %r, %descriptor, destroy @destroy
+    failure.dispatch %fs
+        none ^finished(%c4)
+^finished(%remaining: cleanup-state) in S:
+    (%closed: closed, %failures: failure-state, %xs: exit-state) = cleanup.finish %remaining
+    exit.dispatch %closed, %failures, %xs
+        success ^done($closed)
+^done(%done: closed) in S:
+    ret
+}

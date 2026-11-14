@@ -2,7 +2,7 @@ oir 2 own
 module core
 scope S action in @f
 summary M0 internal parameters [parameter_effect(convention=borrow, destination=none)]  contract call_contract(failures=[thrown, program, panic, native, cancelled], publication=atomic)
-func @f(%q0: scope<S>, %p: own, %x: int) -> void summary(M0) {
+func @f(%q0: scope<S>, %p: own, %x: int) -> void [async] summary(M0) {
 ^entry in S:
     %q1: scope<S> = own.admit %q0, %p
     br ^body(%q1)

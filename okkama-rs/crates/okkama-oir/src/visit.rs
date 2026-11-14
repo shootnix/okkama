@@ -3,6 +3,9 @@
 use crate::*;
 
 pub trait VisitorMut {
+    fn cleanup_plan(&mut self, _: &mut CleanupPlanId) {}
+    fn cleanup_order(&mut self, _: &mut CleanupOrderId) {}
+    fn cleanup_roots(&mut self, _: &mut CleanupRootsId) {}
     fn value(&mut self, _: &mut ValueId) {}
     fn instruction(&mut self, _: &mut InstId) {}
     fn block(&mut self, _: &mut BlockId) {}
@@ -37,7 +40,8 @@ leaf!(ValueId => value, InstId => instruction, BlockId => block, BindingId => bi
     BoundaryId => boundary, DepExprId => dependency, KeyExprId => key,
     SelectionId => selection, CreationSiteId => creation_site, TypeId => ty,
     DeclId => declaration, FuncId => function, ScopeId => scope, SummaryId => summary,
-    ProtocolId => protocol, FileId => file);
+    ProtocolId => protocol, FileId => file, CleanupPlanId => cleanup_plan,
+    CleanupOrderId => cleanup_order, CleanupRootsId => cleanup_roots);
 macro_rules! inert {
     ($($ty:ty),* $(,)?) => {$(impl Rewrite for $ty { fn rewrite(&mut self, _: &mut impl VisitorMut) {} })*};
 }
@@ -68,8 +72,10 @@ macro_rules! fields {
     )*};
 }
 fields!(
+    CleanupPlan { entries, order, roots }, CleanupOrder { creations }, CleanupRoots { values },
+    DispatchEdge { edge },
     DeferLabel { result }, DeferRegistration { boundary },
-    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol },
+    DescriptorBinding { dictionary, contract }, ServiceSchedule { owner, protocol, dictionary, duties },
     HighResultExit { block, value, prepared }, HighEffectRecord { site },
     DeferReplaceEdge { edge },
     FieldRef { declaration }, FieldValue { field, value }, ConstructionCompletion { state },
@@ -89,7 +95,8 @@ fields!(
     Block { lexical_scope, params, unwind, insts, term },
     Terminator { kind, loc }, SwitchCase { value, target },
     Body { entry, values, blocks, insts, bindings, boundaries, deps, keys, selections,
-        high_results, high_effects, descriptor_bindings, service_schedules }
+        high_results, high_effects, descriptor_bindings, service_schedules,
+        cleanup_plans, cleanup_orders, cleanup_roots }
 );
 impl Rewrite for DebugLoc {
     fn rewrite(&mut self, visitor: &mut impl VisitorMut) { self.file.rewrite(visitor); visitor.location(self); }
@@ -134,6 +141,12 @@ impl Rewrite for TermKind {
                 continue_edge.rewrite(visitor);
                 replacements.rewrite(visitor);
                 unwind.rewrite(visitor);
+            }
+            Self::StateDispatch { closed, failure, exit, arms } => {
+                closed.rewrite(visitor);
+                failure.rewrite(visitor);
+                exit.rewrite(visitor);
+                arms.rewrite(visitor);
             }
             Self::RetDefer { values, .. } => values.rewrite(visitor),
             Self::Ret { values } => values.rewrite(visitor),
@@ -223,6 +236,9 @@ pub fn rewrite_uses(body: &mut Body, visitor: &mut impl VisitorMut) {
     body.high_effects.rewrite(visitor);
     body.descriptor_bindings.rewrite(visitor);
     body.service_schedules.rewrite(visitor);
+    body.cleanup_plans.rewrite(visitor);
+    body.cleanup_orders.rewrite(visitor);
+    body.cleanup_roots.rewrite(visitor);
     body.keys.rewrite(visitor); body.deps.rewrite(visitor); body.selections.rewrite(visitor);
     for (_, data) in body.values.iter_mut() { data.facts.rewrite(visitor); }
     for (_, inst) in body.insts.iter_mut() { inst.op.rewrite(visitor); inst.facts.rewrite(visitor); inst.loc.rewrite(visitor); }

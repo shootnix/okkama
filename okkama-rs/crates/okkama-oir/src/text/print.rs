@@ -315,6 +315,9 @@ impl Writer<'_> {
             }
         };
         }
+        arena!(cleanup_plans, "plan", "P");
+        arena!(cleanup_orders, "order", "O");
+        arena!(cleanup_roots, "roots", "R");
         arena!(bindings, "binding", "b");
         arena!(boundaries, "boundary", "B");
         arena!(keys, "key", "k");
@@ -608,6 +611,27 @@ impl Writer<'_> {
                 if let Some(unwind) = unwind {
                     self.push("\n        unwind ");
                     self.edge(&term.kind, unwind, Outcome::Unwind)?;
+                }
+            }
+            TermKind::StateDispatch { closed, failure, exit, arms } => {
+                if let Some(closed) = closed {
+                    self.push("exit.dispatch ");
+                    closed.write(self)?;
+                    self.push(", ");
+                } else { self.push("failure.dispatch "); }
+                failure.write(self)?;
+                if let Some(exit) = exit {
+                    self.push(", ");
+                    exit.write(self)?;
+                }
+                for arm in arms {
+                    self.push("\n        ");
+                    self.push(match arm.kind {
+                        DispatchKind::None => "none ", DispatchKind::Some => "some ",
+                        DispatchKind::Success => "success ", DispatchKind::Pending => "pending ",
+                        DispatchKind::Failure => "failure ",
+                    });
+                    self.edge(&term.kind, &arm.edge, arm.kind.outcome())?;
                 }
             }
             TermKind::RetDefer { tag, values } => {

@@ -1,7 +1,8 @@
 //! Independent, read-only verification of OIR-2.
 //! Implements structure, types, SSA, edge contracts, authority, summary shapes
-//! and core ownership/lifetime conservation. Async protocols and lowered cleanup
-//! remain reserved passes; a certificate covers only the implemented subset.
+//! ownership/lifetime conservation, represented async protocols and lowered cleanup.
+//! `VerifyStats::structural_checks` names producer-metadata gaps; these are not
+//! certificates for frame layouts, continuation graphs or suspension root maps.
 mod diagnostic;
 mod limits;
 mod index;
@@ -10,6 +11,7 @@ mod types;
 mod expressions;
 pub(crate) mod read;
 mod later;
+mod effects;
 mod linearity;
 mod graph;
 mod dominance;
@@ -226,7 +228,7 @@ fn run<'m>(
     summaries::check(module, function, &mut state);
     high::check(module, function, &mut state);
     linearity::check(module, function, &mut state);
-    later::async_cleanup_and_profiles(module, &mut state);
+    later::async_cleanup_and_profiles(module, function, &mut state);
     order_diagnostics(module, &mut state);
     // Passes emit in traversal order: module arenas, function/block arenas,
     // instruction positions, then operands/slots. No hash iteration controls diagnostics.

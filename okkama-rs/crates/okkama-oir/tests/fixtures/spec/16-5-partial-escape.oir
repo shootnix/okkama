@@ -8,7 +8,7 @@ object Session {
 }
 scope S action in @main
 summary Mverify1 call-boundary parameters [parameter_effect(convention=borrow, destination=none)] results [result_relation(fresh=[0], aliases=[field(parameter=0, field=field_ref(declaration=Session, index=0))], external_deps=[0], provenance=unbound_result)] contract call_contract(results=[Connection], failures=[thrown, program, panic, native, cancelled], publication=atomic)
-func @main(%session: Session facts(managed(deps=dfull_session)), %full: deps; %q: scope<S>) -> (Connection, own, deps) [method Session] summary(Mverify1) {
+func @main(%session: Session facts(managed(deps=dfull_session)), %full: deps; %q: scope<S>) -> (Connection, own, deps) [method Session, async] summary(Mverify1) {
     dependency dfull_session: dependency = retention(value=%session, selection=selection(%session))
     dependency dfull_result: dependency = retention(value=%result, selection=selection(%result))
     boundary B0 lexical in S

@@ -55,7 +55,9 @@ impl Reader for References<'_, '_> {
     body_ref!(value: ValueId => values, instruction: InstId => insts,
         block: BlockId => blocks, binding: BindingId => bindings,
         boundary: BoundaryId => boundaries, dependency: DepExprId => deps,
-        key: KeyExprId => keys, selection: SelectionId => selections);
+        key: KeyExprId => keys, selection: SelectionId => selections,
+        cleanup_plan: CleanupPlanId => cleanup_plans, cleanup_order: CleanupOrderId => cleanup_orders,
+        cleanup_roots: CleanupRootsId => cleanup_roots);
     fn scope(&mut self, id: &ScopeId) {
         if !self.state.step(1) { return; }
         match self.module.scopes.get(*id) {
@@ -135,7 +137,10 @@ pub(super) fn intact(module: &Module, body: &Body, item: &impl Read, state: &mut
         check!(instruction: InstId => body.insts, block: BlockId => body.blocks,
             binding: BindingId => body.bindings, boundary: BoundaryId => body.boundaries,
             dependency: DepExprId => body.deps, key: KeyExprId => body.keys,
-            selection: SelectionId => body.selections, ty: TypeId => module.types,
+            selection: SelectionId => body.selections,
+            cleanup_plan: CleanupPlanId => body.cleanup_plans,
+            cleanup_order: CleanupOrderId => body.cleanup_orders,
+            cleanup_roots: CleanupRootsId => body.cleanup_roots, ty: TypeId => module.types,
             declaration: DeclId => module.declarations, function: FuncId => module.functions,
             scope: ScopeId => module.scopes, summary: SummaryId => module.summaries,
             protocol: ProtocolId => module.protocols, file: FileId => module.files);

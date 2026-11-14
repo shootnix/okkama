@@ -7,6 +7,20 @@ impl Engine<'_, '_> {
         if outcome != Outcome::Normal {
             return;
         }
+        let closing = before.tokens.iter().enumerate().any(|(index, token)| {
+            before.availability[index] == AVAILABLE && token.cleanup.is_some()
+        });
+        if closing && !matches!(op, Operation::Cleanup(_) | Operation::Exit(ExitOp::Abort { .. })
+            | Operation::Async(AsyncOp::FrameCancel { .. })
+            | Operation::Const(_) | Operation::Core(CoreOp::FailSecondary { .. } | CoreOp::FailCaused { .. })) {
+            let resource = op.operand_refs().iter().any(|operand| match operand.reference {
+                OperandRef::Value(value) => self.is_managed(value) || linear(self.module, self.body, value),
+                _ => true,
+            });
+            if resource {
+                self.error(R::B103, "ordinary resource access/adoption cannot reenter a running cleanup plan");
+            }
+        }
         if !before.entry_accepted {
             if let Operation::Ownership(OwnershipOp::Accept { state, packet }) = op {
                 let input = match self.declaration.signature.ownership_abi {
@@ -26,7 +40,37 @@ impl Engine<'_, '_> {
                 self.error(R::B51, "callee must accept fresh inputs before evaluating its body");
             }
         }
-        if let Operation::Exit(ExitOp::Commit { pending, .. }) = op {
+        if self.module.profile != Profile::High {
+            let prepared = match op {
+                Operation::Exit(ExitOp::Prepare { exit }) => Some(exit),
+                Operation::Exit(ExitOp::Replace { replacement, .. }) => Some(replacement),
+                _ => None,
+            };
+            if let Some(exit) = prepared
+            && let Some(value) = exit.value {
+                let (keys, _) = self.selection(before, exit.selection);
+                if keys != before.refs[value.as_u32() as usize] {
+                    self.error(R::B101, "pending selection must describe the current value's exact retention");
+                }
+            }
+        }
+        if let Operation::Exit(ExitOp::Commit { pending, result, destination }) = op {
+            let token = &before.tokens[pending.as_u32() as usize];
+            if token.pending_kind.is_none() || token.pending_type != *result {
+                self.error(R::B101, "exit.commit payload type must match its checked prepare/replacement");
+            }
+            let destination_ok = match (token.pending_kind, destination) {
+                (Some(ExitKind::Return), ExitDestination::Caller) => true,
+                (Some(ExitKind::Last | ExitKind::Next), ExitDestination::Loop(boundary)) => {
+                    token.pending_boundary == Some(*boundary)
+                }
+                (Some(ExitKind::Fallthrough), ExitDestination::Scope(scope)) => token.pending_boundary
+                    .and_then(|id| self.body.boundaries.get(id).ok()).is_some_and(|boundary| boundary.scope == *scope),
+                _ => false,
+            };
+            if !destination_ok {
+                self.error(R::B101, "exit.commit destination differs from its pending exit kind/boundary");
+            }
             if before.active_failure != 0 {
                 self.error(R::B101, "exit.commit cannot publish a reserve while failure/cancel is active");
             }
@@ -117,8 +161,15 @@ impl Engine<'_, '_> {
                 if value == input || Some(value) == reserve
                     || before.availability[value.as_u32() as usize] & AVAILABLE == 0 { continue; }
                 let held = &before.tokens[value.as_u32() as usize];
-                if held.reserve.contains(&scope) || held.pieces.iter().any(|piece| piece.owner == Some(scope)) {
+                if held.reserve.contains(&scope) || (held.scope == Some(scope) && !held.pin_deps.is_empty())
+                    || held.pieces.iter().any(|piece| piece.owner == Some(scope)) {
                     self.error(R::B101, "closing scope has an unreserved part in another linear carrier");
+                }
+            }
+            for slot in before.frames.values().flat_map(|layout| layout.values()) {
+                if slot.token.reserve.contains(&scope)
+                    || slot.token.pieces.iter().any(|piece| piece.owner == Some(scope)) {
+                    self.error(R::B101, "closing scope still has an unreserved owned part saved in a frame");
                 }
             }
             if before.scopes.get(&scope) != Some(&1) {
