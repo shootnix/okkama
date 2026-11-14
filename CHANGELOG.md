@@ -90,6 +90,13 @@ fake fields; role fakes and their ordinary typed fields remain available.
 
 ### Fixed
 
+- **Sparrow CLI loading (#480, #481).** Normal `sparrow` execution and
+  `okkama exec` decode and verify SPB once on the VM stack, rendering uncaught
+  traces before releasing the program. Test-profile execution also avoids
+  the launcher's extra decode. CLIF diagnostic counts are collected only
+  with compile profiling enabled, at the same pre-codegen sampling point.
+  Startup and allocation improvements await bounded Docker A/B measurements.
+
 - **Compiler CFG traversal (#469).** Dominator DFS keeps a fixed-size
   successor iterator in each frame instead of rebuilding temporary vectors
   on every edge. Unwind order, RPO and dominator intervals are unchanged.
