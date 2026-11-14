@@ -88,6 +88,32 @@ fake fields; role fakes and their ordinary typed fields remain available.
   Nothing in the pipeline uses it yet: the verifier (#564) and ownership
   elaboration (#565) build on it.
 
+- **OIR-2 verifier (#564).** `okkama-oir::verify` checks a module
+  independently at each of four boundaries: `verify_high`, `verify_own`,
+  `verify_coro` and `verify_low`. It covers:
+  - structure, types, SSA and dominance;
+  - edge contracts and authority;
+  - the high-profile contract H1–H9;
+  - ownership conservation and lexical lifetimes;
+  - provenance and call conventions;
+  - builders and successor must-use;
+  - dynamic protocols, async (Future inputs, caches, frames, unique-cache
+    proofs) and the lowered cleanup automaton;
+  - profile limits.
+
+  Each of 63 rule IDs has a canonical valid and invalid fixture. Rules
+  that stay structural until producers supply metadata are listed in
+  `docs/phases.md`. The verifier never repairs a module and never infers
+  ownership.
+
+- **OIR-2 cleanup specialization (#591).** A pass from `own` to `low`
+  expands scope closes into an explicit cleanup automaton: one plan in
+  serial order across static, journal and protocol entries, the reserve
+  merged whole on failure, typed failure and exit dispatch, and root
+  requirements at every boundary. A compiled direct plan is used only
+  with checked order evidence, and only when cleanup cannot fail or the
+  reserve is empty; otherwise the common runtime merge runs.
+
 - **Register-colouring diagnostics (#540).** `OKKAMA_PROFILE_REGISTERS=1`
   reports compiler phase times, busy-set cloning work, conflict-list capacity,
   edge moves and assigned registers. Bounded, opt-in large-function fixtures
