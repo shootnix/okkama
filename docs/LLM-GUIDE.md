@@ -141,8 +141,7 @@ JIT roots and async frame tracing, default enabled; load-time setting).
 Under `SPARROW_CORE_PROFILE_COMPILE`, `pointer-free analysis` lines separately
 report its load-time cost; `roots` lines under profiling or `SPARROW_CORE_DUMP`
 report traced/omitted registers and the sum of root words across stack maps.
-The same root counts appear under `--stats`. See
-[the #535 validation handoff](pointer-free-roots-535.md).
+The same root counts appear under `--stats`.
 `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
 once), `OKKAMA_ARRAYS=flat|shared|trie`, `OKKAMA_MAPS=btree`,
@@ -155,6 +154,11 @@ tries for `replaced` (off by default there), and `OKKAMA_MAPS=btree` turns
 off the persistent `okkama.rt.PMap`, #336), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
+
+For differential root checks, `SPARROW_CORE_POINTER_FREE=0` keeps every traced
+register rooted; `SPARROW_CORE_INT_RANGE=0` keeps #535's constant-only proofs
+while disabling #539's operation proofs. Both are read once per loaded program
+and apply to stack maps and suspended-frame layouts (#535, #539).
 
 `SPARROW_TRACE_DESTROY=FILE`
 append `<ObjectTypeName> <creation serial>\n` before each selected sync or async
