@@ -178,6 +178,34 @@ impl<'a, 't> BodyLowerer<'a, 't> {
     }
 
     pub fn terminate(&mut self, term: ir::TermKind) -> Result<()> {
+        // A local discard still needs an ordinary edge when evaluation later diverges.
+        // Keep that edge in the originating scope so cleanup is not moved outward.
+        let block = self.current.expect("open terminator source");
+        let discarded: Vec<_> = self.b.body().high_results.iter().filter(|record| {
+            record.block == block && record.demand == ir::ResultDemand::Discard
+        }).map(|record| record.value).collect();
+        let edges = match &term {
+            ir::TermKind::Br(_) | ir::TermKind::Ret { .. } => 1,
+            ir::TermKind::Cond { .. } => 2,
+            ir::TermKind::Switch { cases, .. } => cases.len() + 1,
+            _ => 0,
+        };
+        if !discarded.is_empty() && edges == 0 {
+            let next = self.new_block(self.scope(), &[])?;
+            self.terminate(ir::TermKind::Br(ir::Target { block: next, args: vec![] }))?;
+            self.switch(next)?;
+        }
+        for edge in 1..edges {
+            let edge = u16::try_from(edge).map_err(|_| {
+                LowerError::invalid(self.source.span, "too many result exit edges")
+            })?;
+            for &value in &discarded {
+                self.b.add_high_result(ir::HighResultExit {
+                    block, edge: ir::HighEdgeSelector::Normal(edge), value,
+                    demand: ir::ResultDemand::Discard, prepared: None,
+                })?;
+            }
+        }
         if matches!(term, ir::TermKind::Throw(_) | ir::TermKind::Raise(_)
             | ir::TermKind::Panic(_) | ir::TermKind::Trap { .. }) {
             self.sync_failure()?;
@@ -245,8 +273,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(self.b.declare_boundary(ir::Boundary { scope, kind })?)
     }
 
-    /// The single result-exit encoding point. D11 will add edge metadata here.
-    /// Before D11, H4 also requires demand on explicit carried edge arguments.
+    /// Record both the lexical intent and its explicit D11 edge/value/preparation link.
     fn prepare(&mut self, value: Option<ir::ValueId>, kind: ir::ExitKind, boundary: ir::BoundaryId) -> Result<()> {
         let selection = match value {
             Some(value) => ir::SelectionExpr::Value(value),
@@ -259,6 +286,14 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         self.b.emit(ir::Operation::Exit(ir::ExitOp::Prepare {
             exit: ir::PreparedExit { kind, value, packet: None, deps: None, selection, boundary },
         }), &[])?;
+        if let Some(value) = value {
+            let block = self.current.expect("open prepared exit");
+            let prepared = self.b.body().blocks.get(block)?.insts.last().copied();
+            self.b.add_high_result(ir::HighResultExit {
+                block, edge: ir::HighEdgeSelector::Normal(0), value,
+                demand: ir::ResultDemand::Want, prepared,
+            })?;
+        }
         Ok(())
     }
 
@@ -291,11 +326,16 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 Some(boundary) => boundary,
                 None => self.boundary(source, ir::BoundaryKind::Lexical)?,
             };
-            if args.is_empty() {
-                self.prepare(None, kind, boundary)?;
-            }
+            let mut prepared = std::collections::HashSet::new();
             for &value in &args {
-                self.prepare(Some(value), kind, boundary)?;
+                let ty = self.b.body().values.get(value)?.ty;
+                // Active catch failures are forwarded context, not semantic language results.
+                if !matches!(self.b.module().types.get(ty)?, ir::Type::Service(_)) && prepared.insert(value) {
+                    self.prepare(Some(value), kind, boundary)?;
+                }
+            }
+            if prepared.is_empty() {
+                self.prepare(None, kind, boundary)?;
             }
         }
         self.terminate(ir::TermKind::Br(ir::Target { block: target, args }))
@@ -326,6 +366,13 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                 self.b.emit(ir::Operation::Lexical(ir::LexicalOp::Temp { value, scope: self.scope() }), &[])?;
             }
             self.b.emit(ir::Operation::Lexical(ir::LexicalOp::Discard { value }), &[])?;
+            let block = self.current.expect("open discarded result");
+            if !self.b.body().high_results.iter().any(|record| record.block == block && record.value == value) {
+                self.b.add_high_result(ir::HighResultExit {
+                    block, edge: ir::HighEdgeSelector::Normal(0), value,
+                    demand: ir::ResultDemand::Discard, prepared: None,
+                })?;
+            }
         }
         Ok(())
     }

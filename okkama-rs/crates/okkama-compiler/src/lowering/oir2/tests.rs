@@ -17,8 +17,10 @@ fn with_analysis<T>(text: &str, test: impl FnOnce(&mut analysis::Analysis<'_>) -
 fn print_oir2(source: &str) -> Result<String, LowerError> {
     with_analysis(source, |analysis| {
         let module = lower_to_oir2(analysis)?;
+        verify_high(&module, source);
         let text = ir::text::print(&module).expect("printable high");
         let parsed = ir::text::parse(&text).expect("high round trip parses");
+        verify_high(&parsed, "printed lowering");
         assert!(ir::text::normalized_eq(&module, &parsed).expect("normalized comparison"));
         assert_eq!(ir::text::print(&parsed).unwrap(), text);
         Ok(text)
@@ -28,8 +30,9 @@ fn print_oir2(source: &str) -> Result<String, LowerError> {
 fn golden(source: &str, expected: &str) {
     let actual = print_oir2(source).unwrap_or_else(|error| panic!("{error}"));
     if std::env::var_os("OKKAMA_OIR2_UPDATE_GOLDENS").is_some() {
-        for name in ["allowlist", "declarations", "infinite"] {
-            let path = format!("{}/src/lowering/oir2/goldens/{name}.oir", env!("CARGO_MANIFEST_DIR"));
+        let directory = format!("{}/src/lowering/oir2/goldens", env!("CARGO_MANIFEST_DIR"));
+        for entry in std::fs::read_dir(directory).expect("golden directory") {
+            let path = entry.expect("golden entry").path();
             if expected == std::fs::read_to_string(&path).expect("existing golden") {
                 std::fs::write(path, &actual).expect("regenerated golden");
                 return;
@@ -37,6 +40,7 @@ fn golden(source: &str, expected: &str) {
         }
     }
     let expected = ir::text::parse(expected).expect("generated golden parses");
+    verify_high(&expected, "stored golden");
     let expected = ir::text::print(&expected).expect("generated golden prints");
     assert!(actual == expected, "expected:\n{expected}\nactual:\n{actual}");
 }
@@ -155,10 +159,11 @@ fn oir2_rebind_keeps_original_binding_across_loop_and_join() {
         });
         let module = lower_to_oir2(analysis).unwrap();
         let text = ir::text::print(&module).unwrap();
-        let expected = include_str!("goldens/rebind.oir");
-        let expected = ir::text::parse(expected).unwrap();
-        assert_eq!(text, ir::text::print(&expected).unwrap());
-        assert!(ir::text::normalized_eq(&module, &ir::text::parse(&text).unwrap()).unwrap());
+        verify_high(&module, "direct rebind lowering");
+        let parsed = ir::text::parse(&text).unwrap();
+        verify_high(&parsed, "printed rebind lowering");
+        assert!(ir::text::normalized_eq(&module, &parsed).unwrap());
+        compare_golden("rebind", &text, include_str!("goldens/rebind.oir"));
     });
 }
 
@@ -240,7 +245,7 @@ fn oir2_default_method_and_constructor_bodies_are_lowered() {
 }
 
 #[test]
-fn oir2_self_check_rejects_missing_or_conflicting_function_forms() {
+fn oir2_verifier_rejects_missing_or_conflicting_function_forms() {
     let module = ir::text::parse(include_str!("goldens/scalar.oir")).unwrap();
     let id = module.entry.unwrap();
     for attrs in [
@@ -252,7 +257,7 @@ fn oir2_self_check_rejects_missing_or_conflicting_function_forms() {
         let function = broken.functions.get_mut(id).unwrap();
         function.body = None;
         function.attrs = attrs;
-        assert!(super::structure::check(&broken).is_err());
+        assert!(check_verified(&broken).is_err());
     }
     for attr in [
         ir::FunctionAttr::Extern("ffi".into()),
@@ -260,14 +265,18 @@ fn oir2_self_check_rejects_missing_or_conflicting_function_forms() {
     ] {
         let mut external = module.clone();
         external.functions.get_mut(id).unwrap().attrs.push(attr);
-        assert!(super::structure::check(&external).is_err(), "body and ABI conflict");
+        assert!(check_verified(&external).is_err(), "body and ABI conflict");
         external.functions.get_mut(id).unwrap().body = None;
-        super::structure::check(&external).unwrap();
+        external.functions.get_mut(id).unwrap().attrs.retain(|attr| *attr != ir::FunctionAttr::Entry);
+        external.entry = None;
+        let report = ir::verify::verify_high(&external).unwrap_err();
+        assert!(report.diagnostics.iter().all(|diagnostic| diagnostic.rule != ir::verify::RuleId::S1));
+        assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == ir::verify::RuleId::T5));
     }
 }
 
 #[test]
-fn oir2_self_check_rejects_nonempty_unreachable_blocks() {
+fn oir2_verifier_rejects_nonempty_unreachable_blocks() {
     let module = ir::text::parse(include_str!("goldens/infinite.oir")).unwrap();
     let id = module.entry.unwrap();
     for mutation in 0..4 {
@@ -285,8 +294,8 @@ fn oir2_self_check_rejects_nonempty_unreachable_blocks() {
             2 => block.unwind = Some(ir::BlockUnwind { target: ir::Target { block: failure, args: vec![] } }),
             _ => block.term.kind = ir::TermKind::Ret { values: vec![] },
         }
-        let error = super::structure::check(&broken).expect_err("nonempty tombstone");
-        assert!(error.to_string().contains("empty tombstone"), "{error}");
+        let error = check_verified(&broken).expect_err("nonempty tombstone");
+        assert!(error.to_string().contains("empty unreachable tombstone"), "{error}");
     }
 }
 
@@ -320,10 +329,16 @@ fn oir2_diverging_continuations_with_locals_are_empty_tombstones() {
 
 fn s2_golden(name: &str, source: &str, expected: &str) {
     let actual = print_oir2(source).unwrap_or_else(|error| panic!("{name}: {error}"));
+    compare_golden(name, &actual, expected);
+}
+
+fn compare_golden(name: &str, actual: &str, expected: &str) {
     if std::env::var_os("OKKAMA_OIR2_UPDATE_GOLDENS").is_some() {
         let path = format!("{}/src/lowering/oir2/goldens/{name}.oir", env!("CARGO_MANIFEST_DIR"));
-        std::fs::write(path, actual).unwrap();
+        std::fs::write(path, actual).expect("regenerated golden");
     } else {
+        let parsed = ir::text::parse(expected).expect("stored golden parses");
+        verify_high(&parsed, name);
         assert_eq!(actual, expected, "{name}");
     }
 }
@@ -642,13 +657,11 @@ func @f(%c: bool, %x: int) -> void {{
 }}
 "#);
     let module = ir::text::parse(&source).unwrap();
-    let function = module.functions.iter().find(|(_, function)| function.symbol == "f").unwrap().1;
-    let body = function.body.as_ref().unwrap();
-    super::high::check(&module, body)
+    check_verified(&module)
 }
 
 #[test]
-fn oir2_self_check_defer_prefixes_at_merges_and_failure_points() {
+fn oir2_verifier_defer_prefixes_at_merges_and_failure_points() {
     for (body, expected) in [
         (r#"^entry in S:
     cond %c, ^left, ^right
@@ -722,7 +735,7 @@ fn oir2_self_check_defer_prefixes_at_merges_and_failure_points() {
 }
 
 #[test]
-fn oir2_self_check_defer_bindings_need_initial_dominance() {
+fn oir2_verifier_defer_bindings_need_initial_dominance() {
     let module = ir::text::parse(include_str!("goldens/defer-failure-prefix.oir")).unwrap();
     for mutation in 0..3 {
         let mut broken = module.clone();
@@ -741,8 +754,9 @@ fn oir2_self_check_defer_bindings_need_initial_dominance() {
                 data.insts.insert(bind, instruction);
             }
         }
-        let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("invalid initial binding");
-        assert!(error.to_string().contains("H7"), "{error}");
+        let error = check_verified(&broken).expect_err("invalid initial binding");
+        let expected = if mutation == 1 { "H7" } else { "S3" };
+        assert!(error.to_string().contains(expected), "{error}");
     }
 }
 
@@ -854,7 +868,7 @@ fn oir2_s3_source_goldens() {
             "s3-try-value" => include_str!("goldens/s3-try-value.oir"),
             _ => unreachable!("each S3 source has a reviewed high golden"),
         };
-        assert_eq!(actual, expected, "{name}");
+        compare_golden(name, &actual, expected);
     }
 }
 
@@ -942,8 +956,10 @@ fn oir2_s3_self_check_catch_payload_and_binding_dominance() {
                 body.blocks.get_mut(entry).unwrap().insts.push(bind);
             }
         }
-        let error = super::high::check(&broken, body_for_entry(&broken)).expect_err("invalid catch binding");
-        assert!(error.to_string().contains("catch") || error.to_string().contains("H7"), "{error}");
+        let error = super::high::check(&broken, body_for_entry(&broken))
+            .and_then(|()| check_verified(&broken)).expect_err("invalid catch binding");
+        let expected = if mutation == 0 { "SSA2" } else { "catch" };
+        assert!(error.to_string().contains(expected), "{error}");
     }
 }
 
@@ -1006,5 +1022,126 @@ fn oir2_s3_destroy_normal_locals_and_nested_resource_exits_roundtrip() {
     ] {
         let source = format!("{prelude}{declarations}main() is int {{ Owner(); 0; }}");
         print_oir2(&source).unwrap_or_else(|error| panic!("{source}\n{error}"));
+    }
+}
+
+fn verify_high(module: &ir::Module, context: &str) {
+    if let Err(report) = ir::verify::verify_high(module) {
+        panic!("{context}: {report:#?}");
+    }
+}
+
+#[test]
+fn oir2_all_stored_goldens_pass_verify_high() {
+    let directory = format!("{}/src/lowering/oir2/goldens", env!("CARGO_MANIFEST_DIR"));
+    let mut count = 0;
+    for entry in std::fs::read_dir(directory).expect("golden directory") {
+        let path = entry.expect("golden entry").path();
+        if path.extension().is_none_or(|extension| extension != "oir") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("read golden");
+        let module = ir::text::parse(&text).expect("stored golden parses");
+        verify_high(&module, path.to_str().expect("golden path"));
+        count += 1;
+    }
+    assert_eq!(count, 41, "every lowering golden must be verified");
+}
+
+fn check_verified(module: &ir::Module) -> Result<(), LowerError> {
+    ir::verify::verify_high(module).map(|_| ()).map_err(|report| {
+        LowerError::invalid(crate::source::Span::default(), format!("{report:?}"))
+    })
+}
+
+#[test]
+fn oir2_d11_call_envelopes_preserve_catches_and_empty_d8_maps() {
+    let source = concat!("module app; object O { O(); work() is void { } } ",
+        "main() is int { let o = O(); defer o.work(); ",
+        "try { o.work(); 1; } catch e is Error { 2; } }");
+    with_analysis(source, |analysis| {
+        let module = lower_to_oir2(analysis).unwrap();
+        verify_high(&module, source);
+        let mut calls = 0;
+        let mut registrations = 0;
+        let mut caught_call = false;
+        for (function_id, function) in module.functions.iter() {
+            let body = function.body.as_ref().unwrap();
+            for (block, data) in body.blocks.iter() {
+                for &instruction in &data.insts {
+                    match &body.insts.get(instruction).unwrap().op {
+                        ir::Operation::Call(ir::CallOp::Direct { call, .. }) => {
+                            calls += 1;
+                            assert!(call.summary.is_none());
+                            assert_eq!(call.cleanup, ir::CallCleanupMode::Ordinary);
+                            let effects = body.high_effects.iter().find(|record| {
+                                record.site == ir::HighOperationSite::Instruction(instruction)
+                            }).expect("summary(none) needs a site envelope");
+                            assert_eq!(effects.effects.failures, vec![
+                                ir::FailureKind::Thrown, ir::FailureKind::Program, ir::FailureKind::Panic,
+                                ir::FailureKind::Native, ir::FailureKind::Cancelled,
+                            ]);
+                            assert!(effects.effects.may_suspend);
+                            let unwind = data.unwind.as_ref().expect("unknown effects preserve unwind");
+                            caught_call |= matches!(body.blocks.get(unwind.target.block).unwrap().term.kind,
+                                ir::TermKind::Catch { .. });
+                            if function.symbol == "main" {
+                                let mut broken = module.clone();
+                                let function = broken.functions.get_mut(function_id).unwrap();
+                                let body = function.body.as_mut().unwrap();
+                                body.blocks.get_mut(block).unwrap().unwind = None;
+                                let report = ir::verify::verify_high(&broken).unwrap_err();
+                                // Removing the route may first orphan the failure dispatch (S3).
+                                assert!(report.diagnostics.iter().any(|diagnostic| {
+                                    matches!(diagnostic.rule, ir::verify::RuleId::H5 | ir::verify::RuleId::S3)
+                                }), "{report:?}");
+                            }
+                        }
+                        ir::Operation::Lexical(ir::LexicalOp::DeferRegister { action, .. }) => {
+                            registrations += 1;
+                            assert!(action.replacements.is_empty());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert_eq!(calls, 3);
+        assert_eq!(registrations, 1);
+        assert!(caught_call);
+    });
+}
+
+#[test]
+fn oir2_d11_local_discards_keep_their_scope_before_divergence() {
+    for body in [
+        "1; panic \"stop\";",
+        "1; if true { return 2; } else { return 3; }",
+        "1; 1; loop { next; }",
+        "try { 1; throw Stop.now; } catch e is Stop { 2; }",
+    ] {
+        let source = format!("module app; enum Stop is Error = (now); main() is int {{ {body} }}");
+        let text = print_oir2(&source).unwrap();
+        let module = ir::text::parse(&text).unwrap();
+        let body = body_for_entry(&module);
+        let mut discarded = 0;
+        for record in &body.high_results {
+            if record.demand != ir::ResultDemand::Discard {
+                continue;
+            }
+            discarded += 1;
+            assert!(record.prepared.is_none());
+            let block = body.blocks.get(record.block).unwrap();
+            let target = match (&block.term.kind, record.edge) {
+                (ir::TermKind::Br(target), ir::HighEdgeSelector::Normal(0)) => target,
+                (ir::TermKind::Cond { yes, .. }, ir::HighEdgeSelector::Normal(0)) => yes,
+                (ir::TermKind::Cond { no, .. }, ir::HighEdgeSelector::Normal(1)) => no,
+                _ => panic!("local discard must precede an explicit ordinary edge"),
+            };
+            let target_scope = body.blocks.get(target.block).unwrap().lexical_scope;
+            assert!(target_scope == block.lexical_scope
+                || module.scopes.get(target_scope).unwrap().parent == Some(block.lexical_scope));
+        }
+        assert!(discarded > 0);
     }
 }

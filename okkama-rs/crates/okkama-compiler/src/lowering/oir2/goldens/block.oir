@@ -4,6 +4,7 @@ requires core
 entry @main
 scope S0 action in @main
 scope S1 block in @main parent S0
+
 func @main() -> int [entry] {
     binding b0 "n": int in S0
     binding b1 "n": int in S1
@@ -17,13 +18,16 @@ func @main() -> int [entry] {
     raise %1
     ^b2(%2: int) in S0 unwind ^b1:
     want %2
-    exit.prepare return %2 at B0
+    [i3] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %2, demand want, prepare #3
     ret %2
     ^b3 in S1 unwind ^b1:
     %3: int = const 2
     bind %3, binding b1
     discard %3
     want %0
-    exit.prepare fallthrough %0 at B1
+    [i8] exit.prepare fallthrough %0 at B1
+    result.exit edge normal(0), value %3, demand discard, prepare none
+    result.exit edge normal(0), value %0, demand want, prepare #8
     br ^b2(%0)
 }

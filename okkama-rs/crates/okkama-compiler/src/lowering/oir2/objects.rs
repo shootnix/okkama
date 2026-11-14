@@ -206,9 +206,25 @@ impl BodyLowerer<'_, '_> {
         }).collect();
         let call = ir::CallSite {
             args, packet: None, deps: vec![], descriptors: vec![], type_args: vec![], summary: None,
+            cleanup: ir::CallCleanupMode::Ordinary,
         };
         self.sync_failure()?;
         let values = self.b.emit_schema(ir::Operation::Call(ir::CallOp::Direct { function, call }))?;
+        let block = self.current.expect("open call block");
+        let instruction = *self.b.body().blocks.get(block)?.insts.last().expect("emitted call");
+        self.b.add_high_effect(ir::HighEffectRecord {
+            site: ir::HighOperationSite::Instruction(instruction),
+            effects: ir::HighEffectEnvelope {
+                failures: [
+                    ir::FailureKind::Thrown,
+                    ir::FailureKind::Program,
+                    ir::FailureKind::Panic,
+                    ir::FailureKind::Native,
+                    ir::FailureKind::Cancelled,
+                ].into_iter().collect(),
+                may_suspend: true,
+            },
+        })?;
         Ok(values.first().copied())
     }
 

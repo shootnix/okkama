@@ -6,6 +6,7 @@ scope S0 action in @main
 scope S1 iteration in @main parent S0
 scope S2 branch in @main parent S1
 scope S3 branch in @main parent S1
+
 func @main() -> int [entry] {
     binding b0 "n": int in S0
     boundary B0 lexical in S0
@@ -20,7 +21,8 @@ func @main() -> int [entry] {
     ^b2(%1: int) in S0 unwind ^b1:
     bind %1, binding b0
     want %1
-    exit.prepare return %1 at B0
+    [i2] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %1, demand want, prepare #2
     ret %1
     ^b3 in S0 unwind ^b1:
     br ^b4
@@ -30,7 +32,8 @@ func @main() -> int [entry] {
     ^b5 in S1 unwind ^b1:
     %3: int = const 7
     want %3
-    exit.prepare last %3 at B1
+    [i6] exit.prepare last %3 at B1
+    result.exit edge normal(0), value %3, demand want, prepare #6
     br ^b2(%3)
     ^b6 in S2 unwind ^b1:
     exit.prepare next select s0 at B1

@@ -1,4 +1,4 @@
-//! Local producer checks; semantic verification remains the responsibility of #564.
+//! Producer normalization and checks in addition to independent High verification.
 use std::collections::HashSet;
 
 use super::{LowerError, Result};
@@ -58,35 +58,13 @@ pub(super) fn finish(module: &mut ir::Module) -> Result<()> {
     Ok(())
 }
 
-/// FunctionBuilder::finish rejects every draft block without an explicit
-/// terminator before this check. Finished OIR stores a mandatory Terminator.
+/// Semantic structure, function forms and SSA are checked by verify_high.
+/// Retain the producer's additional construction and catch restrictions.
 pub(super) fn check(module: &ir::Module) -> Result<()> {
     for (_, function) in module.functions.iter() {
-        let mut forms = usize::from(function.body.is_some());
-        for attr in &function.attrs {
-            match attr {
-                ir::FunctionAttr::Extern(name) | ir::FunctionAttr::Intrinsic { name, .. } => {
-                    if name.is_empty() {
-                        return Err(invalid(format!("function {} has an empty ABI name", function.symbol)));
-                    }
-                    forms += 1;
-                }
-                _ => {}
-            }
-        }
-        if forms != 1 {
-            return Err(invalid(format!("function {} must have exactly one body or ABI form", function.symbol)));
-        }
         if let Some(body) = &function.body {
             super::construction::check(module, body)?;
             super::high::check(module, body)?;
-            let live = reachable(module, body)?;
-            for (block, data) in body.blocks.iter() {
-                if !live.contains(&block) && (!data.params.is_empty() || !data.insts.is_empty()
-                    || data.unwind.is_some() || data.term.kind != ir::TermKind::Unreachable) {
-                    return Err(invalid(format!("unreachable block {block:?} must be an empty tombstone")));
-                }
-            }
         }
     }
     Ok(())

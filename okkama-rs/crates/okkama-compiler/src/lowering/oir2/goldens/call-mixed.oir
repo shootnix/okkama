@@ -14,7 +14,8 @@ func @app.O.new#0() -> app.O [ctor app.O] {
     ^b0 in S2 unwind ^b1:
     %0: app.O = obj.new app.O { }
     want %0
-    exit.prepare return %0 at B0
+    [i2] exit.prepare return %0 at B0
+    result.exit edge normal(0), value %0, demand want, prepare #2
     ret %0
     ^b1(%1: failure) in S2:
     raise %1
@@ -31,6 +32,8 @@ func @app.O.accept#0(%0: app.O, %1: app.O, %2: app.O) -> void [method app.O] {
     discard %1
     discard %2
     exit.prepare return select s0 at B0
+    result.exit edge normal(0), value %1, demand discard, prepare none
+    result.exit edge normal(0), value %2, demand discard, prepare none
     ret
     ^b1(%3: failure) in S0:
     raise %3
@@ -40,14 +43,19 @@ func @main() -> int [entry] {
     binding b0 "bound": app.O in S1
     boundary B0 lexical in S1
     ^b0 in S1 unwind ^b1:
-    %0: app.O = call @app.O.new#0()
+    [i0] %0: app.O = call @app.O.new#0()
     bind %0, binding b0
-    %1: app.O = call @app.O.new#0()
-    %2: app.O = call @app.O.new#0()
-    call @app.O.accept#0(%1, %0, %2)
+    [i2] %1: app.O = call @app.O.new#0()
+    [i3] %2: app.O = call @app.O.new#0()
+    [i4] call @app.O.accept#0(%1, %0, %2)
     %3: int = const 0
     want %3
-    exit.prepare return %3 at B0
+    [i7] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %3, demand want, prepare #7
+    high.effects at #0 failures [thrown, program, panic, native, cancelled], suspends true
+    high.effects at #2 failures [thrown, program, panic, native, cancelled], suspends true
+    high.effects at #3 failures [thrown, program, panic, native, cancelled], suspends true
+    high.effects at #4 failures [thrown, program, panic, native, cancelled], suspends true
     ret %3
     ^b1(%4: failure) in S1:
     raise %4

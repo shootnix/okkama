@@ -895,3 +895,32 @@ fn deferred_future_structural_types_and_obsolete_own_cache_result() {
     let report = verify_types(&wrong).unwrap_err();
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.rule == RuleId::T2));
 }
+
+#[test]
+fn plain_error_enums_wrap_only_the_builtin_error_role() {
+    let source = "oir 2 high
+module error_adapter
+requires core
+enum Stop is Error = (now)
+role Error [builtin] {
+    text() -> str
+}
+scope S action in @f
+func @f(%value: Stop) -> void {
+^entry in S:
+    %error: Error = role.wrap %value, ty Error
+    ret
+}
+";
+    let module = text::parse(source).unwrap();
+    verify_high(&module).unwrap();
+    for source in [
+        source.replace("Stop is Error", "Stop"),
+        source.replace("Error [builtin]", "Error"),
+        source.replace("role Error", "role Other").replace("%error: Error", "%error: Other")
+            .replace("ty Error", "ty Other"),
+    ] {
+        let module = text::parse(&source).unwrap();
+        rejected(&module, RuleId::T1);
+    }
+}

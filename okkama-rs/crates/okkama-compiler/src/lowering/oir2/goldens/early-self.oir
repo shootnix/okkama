@@ -25,7 +25,8 @@ func @app.O.new#0(%0: int) -> app.O [ctor app.O] {
     %4: bool = const false
     obj.init %3, %4, field field_ref(declaration=app.O, index=1)
     want %3
-    exit.prepare return %3 at B0
+    [i10] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %3, demand want, prepare #10
     ret %3
     ^b1(%5: failure) in S1:
     raise %5
@@ -35,12 +36,15 @@ func @main() -> int [entry] {
     boundary B0 lexical in S0
     ^b0 in S0 unwind ^b1:
     %0: int = const 5
-    %1: app.O = call @app.O.new#0(%0)
+    [i1] %1: app.O = call @app.O.new#0(%0)
     temp %1, S0
     discard %1
     %2: int = const 0
     want %2
-    exit.prepare return %2 at B0
+    [i6] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %1, demand discard, prepare none
+    result.exit edge normal(0), value %2, demand want, prepare #6
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
     ret %2
     ^b1(%3: failure) in S0:
     raise %3

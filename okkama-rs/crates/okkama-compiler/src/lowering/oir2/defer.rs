@@ -99,8 +99,10 @@ impl super::body::BodyLowerer<'_, '_> {
             })?);
         }
         let scope = self.scope();
+        // D8 maps labels to caller boundaries. This slice supports only Continue,
+        // so its helpers declare no replacement labels and the registration map is empty.
         self.b.emit(ir::Operation::Lexical(ir::LexicalOp::DeferRegister {
-            scope, action: ir::DeferAction { function, captures, bindings },
+            scope, action: ir::DeferAction { function, captures, bindings, replacements: vec![] },
         }), &[])?;
         self.registrations.entry(scope).or_default().push(function);
         // Before/after registration have distinct failure points and entry-visible environments.

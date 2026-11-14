@@ -20,7 +20,8 @@ func @app.Work.new#0() -> app.Work [ctor app.Work] {
     ^b0 in S6 unwind ^b1:
     %0: app.Work = obj.new app.Work { }
     want %0
-    exit.prepare return %0 at B0
+    [i2] exit.prepare return %0 at B0
+    result.exit edge normal(0), value %0, demand want, prepare #2
     ret %0
     ^b1(%1: failure) in S6:
     raise %1
@@ -86,7 +87,8 @@ func @main() -> int [entry] {
     raise %0
     ^b2(%1: int) in S3 unwind ^b1:
     want %1
-    exit.prepare return %1 at B0
+    [i1] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %1, demand want, prepare #1
     ret %1
     ^b3(%2: failure) in S3 unwind ^b1:
     catch %2 is app.Stop, ^b5(%2, $value), ^b6(%2)
@@ -104,6 +106,7 @@ func @main() -> int [entry] {
     ^b8(%10: failure) in S5 unwind ^b7(%10):
     %11: int = const 0
     want %11
-    exit.prepare fallthrough %11 at B1
+    [i7] exit.prepare fallthrough %11 at B1
+    result.exit edge normal(0), value %11, demand want, prepare #7
     br ^b2(%11)
 }

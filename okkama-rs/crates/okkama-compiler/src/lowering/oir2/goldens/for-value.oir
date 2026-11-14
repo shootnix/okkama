@@ -6,6 +6,7 @@ scope S0 action in @main
 scope S1 iteration in @main parent S0
 scope S2 branch in @main parent S1
 scope S3 branch in @main parent S1
+
 func @main() -> int [entry] {
     binding b0 "i": int in S1
     boundary B0 lexical in S0
@@ -22,7 +23,8 @@ func @main() -> int [entry] {
     raise %5
     ^b2(%6: int) in S0 unwind ^b1:
     want %6
-    exit.prepare return %6 at B0
+    [i6] exit.prepare return %6 at B0
+    result.exit edge normal(0), value %6, demand want, prepare #6
     ret %6
     ^b3(%7: int, %8: bool, %9: int) in S0 unwind ^b1:
     %10: bool = int.le %7, %1
@@ -45,17 +47,21 @@ func @main() -> int [entry] {
     ^b9(%17: int) in S1 unwind ^b1:
     %18: bool = const true
     want %18
-    exit.prepare fallthrough %18 at B1
+    [i15] exit.prepare fallthrough %18 at B1
     want %17
-    exit.prepare fallthrough %17 at B1
+    [i17] exit.prepare fallthrough %17 at B1
+    result.exit edge normal(0), value %18, demand want, prepare #15
+    result.exit edge normal(0), value %17, demand want, prepare #17
     br ^b8(%18, %17)
     ^b10(%19: int) in S2 unwind ^b1:
     %20: int = const 9
     want %20
-    exit.prepare last %20 at B1
+    [i20] exit.prepare last %20 at B1
+    result.exit edge normal(0), value %20, demand want, prepare #20
     br ^b2(%20)
     ^b11(%21: int) in S3 unwind ^b1:
     want %21
-    exit.prepare fallthrough %21 at B2
+    [i22] exit.prepare fallthrough %21 at B2
+    result.exit edge normal(0), value %21, demand want, prepare #22
     br ^b9(%21)
 }

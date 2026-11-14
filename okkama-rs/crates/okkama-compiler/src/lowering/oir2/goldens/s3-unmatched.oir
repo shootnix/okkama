@@ -20,7 +20,8 @@ func @main() -> int [entry] {
     raise %0
     ^b2(%1: int) in S0 unwind ^b1:
     want %1
-    exit.prepare return %1 at B0
+    [i1] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %1, demand want, prepare #1
     ret %1
     ^b3(%2: failure) in S0 unwind ^b1:
     catch %2 is app.Stop, ^b5(%2, $value), ^b6(%2)
@@ -38,6 +39,7 @@ func @main() -> int [entry] {
     ^b8(%10: failure) in S2 unwind ^b7(%10):
     %11: int = const 7
     want %11
-    exit.prepare fallthrough %11 at B1
+    [i7] exit.prepare fallthrough %11 at B1
+    result.exit edge normal(0), value %11, demand want, prepare #7
     br ^b2(%11)
 }

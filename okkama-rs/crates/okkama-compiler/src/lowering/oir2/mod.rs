@@ -2,8 +2,8 @@
 //!
 //! This module is compiled only for library tests. It never enters the OIR-1
 //! pipeline. Every declared source function must have a lowered body.
-//! Operations outside the synchronous slice produce source diagnostics. Result exits are centralized in `BodyLowerer`
-//! so D11 can replace the pre-D11 instruction-local encoding in one place.
+//! Operations outside the synchronous slice produce source diagnostics. D11 result exits
+//! are centralized in `BodyLowerer` and call envelopes are emitted at their instruction sites.
 
 mod body;
 mod construction;

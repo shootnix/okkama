@@ -16,7 +16,8 @@ func @app.O.default#0() -> int [default app.O.n] {
     ^b0 in S0 unwind ^b1:
     %0: int = const 3
     want %0
-    exit.prepare return %0 at B0
+    [i2] exit.prepare return %0 at B0
+    result.exit edge normal(0), value %0, demand want, prepare #2
     ret %0
     ^b1(%1: failure) in S0:
     raise %1
@@ -27,13 +28,15 @@ func @app.O.new#0(%0: int) -> app.O [ctor app.O] {
     boundary B0 lexical in S2
     ^b0 in S2 unwind ^b1:
     %1: int = undef ty int
-    %2: int = call @app.O.default#0()
+    [i1] %2: int = call @app.O.default#0()
     stage %2, action S2, field field_ref(declaration=app.O, index=0)
     stage %0, action S2, field field_ref(declaration=app.O, index=0)
     bind %0, binding b0
     %3: app.O = obj.new app.O { n: %0 }
     want %3
-    exit.prepare return %3 at B0
+    [i7] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %3, demand want, prepare #7
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
     ret %3
     ^b1(%4: failure) in S2:
     raise %4
@@ -42,16 +45,21 @@ func @app.O.new#0(%0: int) -> app.O [ctor app.O] {
 func @main() -> int [entry] {
     boundary B0 lexical in S1
     ^b0 in S1 unwind ^b1:
-    %0: app.O = call @app.O.new#0.given_()
+    [i0] %0: app.O = call @app.O.new#0.given_()
     temp %0, S1
     discard %0
     %1: int = const 9
-    %2: app.O = call @app.O.new#0(%1)
+    [i4] %2: app.O = call @app.O.new#0(%1)
     temp %2, S1
     discard %2
     %3: int = const 0
     want %3
-    exit.prepare return %3 at B0
+    [i9] exit.prepare return %3 at B0
+    result.exit edge normal(0), value %0, demand discard, prepare none
+    result.exit edge normal(0), value %2, demand discard, prepare none
+    result.exit edge normal(0), value %3, demand want, prepare #9
+    high.effects at #0 failures [thrown, program, panic, native, cancelled], suspends true
+    high.effects at #4 failures [thrown, program, panic, native, cancelled], suspends true
     ret %3
     ^b1(%4: failure) in S1:
     raise %4
@@ -62,12 +70,14 @@ func @app.O.new#0.given_() -> app.O [ctor app.O] {
     boundary B0 lexical in S3
     ^b0 in S3 unwind ^b1:
     %0: int = undef ty int
-    %1: int = call @app.O.default#0()
+    [i1] %1: int = call @app.O.default#0()
     stage %1, action S3, field field_ref(declaration=app.O, index=0)
     bind %1, binding b0
     %2: app.O = obj.new app.O { n: %1 }
     want %2
-    exit.prepare return %2 at B0
+    [i6] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %2, demand want, prepare #6
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
     ret %2
     ^b1(%3: failure) in S3:
     raise %3

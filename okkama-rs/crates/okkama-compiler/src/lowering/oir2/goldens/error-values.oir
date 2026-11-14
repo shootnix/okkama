@@ -13,7 +13,9 @@ func @main() -> int [entry] {
     discard %0
     %1: int = const 0
     want %1
-    exit.prepare return %1 at B0
+    [i4] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %0, demand discard, prepare none
+    result.exit edge normal(0), value %1, demand want, prepare #4
     ret %1
     ^b1(%2: failure) in S0:
     raise %2

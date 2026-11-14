@@ -3,6 +3,7 @@ module app
 requires core
 entry @main
 scope S0 action in @main
+
 func @main() -> int [entry] {
     binding b0 "s": str in S0
     binding b1 "b": bool in S0
@@ -19,7 +20,8 @@ func @main() -> int [entry] {
     bind %6, binding b1
     %7: int = str.len %4
     want %7
-    exit.prepare return %7 at B0
+    [i11] exit.prepare return %7 at B0
+    result.exit edge normal(0), value %7, demand want, prepare #11
     ret %7
     ^b1(%8: failure) in S0:
     raise %8

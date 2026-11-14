@@ -28,7 +28,8 @@ func @app.Res.new#0(%0: str) -> app.Res [ctor app.Res] {
     stage %0, action S3, field field_ref(declaration=app.Res, index=0)
     %2: app.Res = obj.new app.Res { name: %0 }
     want %2
-    exit.prepare return %2 at B0
+    [i5] exit.prepare return %2 at B0
+    result.exit edge normal(0), value %2, demand want, prepare #5
     ret %2
     ^b1(%3: failure) in S3:
     raise %3
@@ -41,6 +42,7 @@ func @app.Res.destroy(%0: app.Res) -> void [destroy app.Res] {
     %1: str = obj.get %0, name
     discard %1
     exit.prepare return select s0 at B0
+    result.exit edge normal(0), value %1, demand discard, prepare none
     ret
     ^b1(%2: failure) in S0:
     raise %2
@@ -51,7 +53,8 @@ func @app.Owner.new#0() -> app.Owner [ctor app.Owner] {
     ^b0 in S4 unwind ^b1:
     %0: app.Owner = obj.new app.Owner { }
     want %0
-    exit.prepare return %0 at B0
+    [i2] exit.prepare return %0 at B0
+    result.exit edge normal(0), value %0, demand want, prepare #2
     ret %0
     ^b1(%1: failure) in S4:
     raise %1
@@ -62,24 +65,31 @@ func @app.Owner.destroy(%0: app.Owner) -> void [destroy app.Owner] {
     boundary B0 lexical in S1
     ^b0 in S1 unwind ^b1:
     %1: str = const "local"
-    %2: app.Res = call @app.Res.new#0(%1)
+    [i1] %2: app.Res = call @app.Res.new#0(%1)
     bind %2, binding b0
     discard %0
     %3: app.Stop = enum.case app.Stop, case 0
-    throw %3
+    result.exit edge normal(0), value %0, demand discard, prepare none
+    high.effects at #1 failures [thrown, program, panic, native, cancelled], suspends true
+    br ^b2
     ^b1(%4: failure) in S1:
     raise %4
+    ^b2 in S1 unwind ^b1:
+    throw %3
 }
 
 func @main() -> int [entry] {
     boundary B0 lexical in S2
     ^b0 in S2 unwind ^b1:
-    %0: app.Owner = call @app.Owner.new#0()
+    [i0] %0: app.Owner = call @app.Owner.new#0()
     temp %0, S2
     discard %0
     %1: int = const 0
     want %1
-    exit.prepare return %1 at B0
+    [i5] exit.prepare return %1 at B0
+    result.exit edge normal(0), value %0, demand discard, prepare none
+    result.exit edge normal(0), value %1, demand want, prepare #5
+    high.effects at #0 failures [thrown, program, panic, native, cancelled], suspends true
     ret %1
     ^b1(%2: failure) in S2:
     raise %2
