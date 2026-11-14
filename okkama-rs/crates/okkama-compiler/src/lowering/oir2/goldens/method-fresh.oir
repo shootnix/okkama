@@ -1,0 +1,60 @@
+oir 2 high
+module app
+requires core
+entry @main
+
+object app.O {
+    field n: int = @app.O.default#0
+}
+scope S0 action in @app.O.default#0
+scope S1 action in @app.O.value#0
+scope S2 action in @main
+scope S3 action in @app.O.new#0
+
+func @app.O.default#0() -> int [default app.O.n] {
+    boundary B0 lexical in S0
+    ^b0 in S0 unwind ^b1:
+    %0: int = const 3
+    want %0
+    exit.prepare return %0 at B0
+    ret %0
+    ^b1(%1: failure) in S0:
+    raise %1
+}
+
+func @app.O.new#0() -> app.O [ctor app.O] {
+    boundary B0 lexical in S3
+    ^b0 in S3 unwind ^b1:
+    %0: int = undef ty int
+    %1: int = call @app.O.default#0()
+    stage %1, action S3, field field_ref(declaration=app.O, index=0)
+    %2: app.O = obj.new app.O { n: %1 }
+    want %2
+    exit.prepare return %2 at B0
+    ret %2
+    ^b1(%3: failure) in S3:
+    raise %3
+}
+
+func @app.O.value#0(%0: app.O) -> int [method app.O] {
+    boundary B0 lexical in S1
+    ^b0 in S1 unwind ^b1:
+    %1: int = obj.get %0, n
+    want %1
+    exit.prepare return %1 at B0
+    ret %1
+    ^b1(%2: failure) in S1:
+    raise %2
+}
+
+func @main() -> int [entry] {
+    boundary B0 lexical in S2
+    ^b0 in S2 unwind ^b1:
+    %0: app.O = call @app.O.new#0()
+    %1: int = call @app.O.value#0(%0)
+    want %1
+    exit.prepare return %1 at B0
+    ret %1
+    ^b1(%2: failure) in S2:
+    raise %2
+}

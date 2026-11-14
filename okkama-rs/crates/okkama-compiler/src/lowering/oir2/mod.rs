@@ -1,13 +1,16 @@
-//! Developer-only THIR -> OIR-2 high producer for #566 S1.
+//! Developer-only THIR -> OIR-2 high producer for #566 S1/S2.
 //!
 //! This module is compiled only for library tests. It never enters the OIR-1
 //! pipeline. Every declared source function must have a lowered body.
-//! Unsupported construction and cleanup operations belong to S2/#567 and
+//! Unsupported operations and cleanup bodies belong to later slices/#567 and
 //! produce source diagnostics. Result exits are centralized in `BodyLowerer`
 //! so D11 can replace the pre-D11 instruction-local encoding in one place.
 
 mod body;
+mod construction;
 mod declarations;
+mod objects;
+mod walk;
 mod scalar;
 mod structure;
 #[cfg(test)]
@@ -28,7 +31,7 @@ impl LowerError {
     fn unsupported(span: Span, construct: impl std::fmt::Display) -> Self {
         Self::Unsupported {
             span,
-            message: format!("unsupported in OIR-2 lowering (S1): {construct}"),
+            message: format!("unsupported in OIR-2 lowering: {construct}"),
         }
     }
 
@@ -68,7 +71,7 @@ type Result<T> = std::result::Result<T, LowerError>;
 /// No CLI routing, ownership elaboration or semantic verifier is invoked here.
 pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
     let mut declarations = declarations::Declarations::new(analysis)?;
-    // Check ordinary/default/cleanup bodies before unsupported construction.
+    // Check ordinary/default/cleanup bodies before constructor specializations.
     let mut bodies: Vec<_> = analysis.bodies.iter().collect();
     bodies.sort_by_key(|body| matches!(body.owner, thir::BodyOwner::Ctor { .. }));
     for body in bodies {
@@ -76,26 +79,52 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
             LowerError::unsupported(body.span, format!("body {:?}", body.owner))
         })?;
         let symbol = declarations.builder.module().functions.get(function)?.symbol.clone();
-        if matches!(body.owner, thir::BodyOwner::Ctor { .. }) {
-            return Err(LowerError::unsupported(body.span, format!("function {symbol}: constructor body (S2)")));
+        if matches!(body.owner, thir::BodyOwner::Destroy { .. }) {
+            return Err(LowerError::unsupported(body.span, format!("function {symbol}: destroy body (#567)")));
         }
-        let root = declarations.builder.declare_scope(ir::ScopeDecl {
-            function,
-            parent: None,
-            kind: ir::ScopeKind::Action,
-            loc: None,
-        })?;
-        let builder = declarations.builder.function_builder(function, root)?;
-        let lowered = body::BodyLowerer::lower(builder, body, root, &declarations.types).map_err(|error| {
-            match error {
-                LowerError::Unsupported { span, message } => LowerError::Unsupported {
-                    span,
-                    message: format!("{message} in function {symbol}"),
-                },
-                error => error,
-            }
-        })?;
-        declarations.builder.define_function(function, lowered)?;
+        let mut variants = vec![function];
+        if let thir::BodyOwner::Ctor { object, ctor } = body.owner {
+            variants = declarations.constructors.iter().filter_map(|((o, c, _), &id)| {
+                (*o == object && *c == ctor).then_some(id)
+            }).collect();
+            variants.sort();
+        }
+        for function in variants {
+            let symbol = declarations.builder.module().functions.get(function)?.symbol.clone();
+            let root = declarations.builder.declare_scope(ir::ScopeDecl {
+                function,
+                parent: None,
+                kind: ir::ScopeKind::Action,
+                loc: None,
+            })?;
+            let builder = declarations.builder.function_builder(function, root)?;
+            let listed = match body.owner {
+                thir::BodyOwner::Ctor { object, ctor } => {
+                    match &analysis.registry.objects[object.0].ctors[ctor].shape {
+                        crate::analysis::registry::CtorShape::Shorthand { fields, .. } => Some(fields.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            let context = body::BodyContext {
+                functions: &declarations.functions,
+                objects: &declarations.objects,
+                constructors: &declarations.constructors,
+                given: declarations.ctor_fields.get(&function).cloned().unwrap_or_default(),
+                listed,
+            };
+            let lowered = body::BodyLowerer::lower(builder, body, root, &declarations.types, context).map_err(|error| {
+                match error {
+                    LowerError::Unsupported { span, message } => LowerError::Unsupported {
+                        span,
+                        message: format!("{message} in function {symbol}"),
+                    },
+                    error => error,
+                }
+            })?;
+            declarations.builder.define_function(function, lowered)?;
+        }
     }
     let mut module = declarations.builder.finish()?;
     structure::finish(&mut module)?;

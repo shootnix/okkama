@@ -78,6 +78,7 @@ pub(super) fn check(module: &ir::Module) -> Result<()> {
             return Err(invalid(format!("function {} must have exactly one body or ABI form", function.symbol)));
         }
         if let Some(body) = &function.body {
+            super::construction::check(module, body)?;
             let live = reachable(module, body)?;
             for (block, data) in body.blocks.iter() {
                 if !live.contains(&block) && (!data.params.is_empty() || !data.insts.is_empty()

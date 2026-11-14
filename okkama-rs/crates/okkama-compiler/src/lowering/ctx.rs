@@ -1186,7 +1186,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 _ => {}
             }
         }
-        if self.escapes_self(decl) {
+        if thir::escapes_self(self.bodies, decl) {
             let instance = &mut self.objects[id.0];
             instance.pending = Some(instance.fields.len());
             instance.fields.push((PENDING_FIELD.to_string(), Type::Bool, None));
@@ -1226,15 +1226,6 @@ impl<'r, 'a> Ctx<'r, 'a> {
             .iter()
             .find(|(m, l, _)| *m == method && *l == local)
             .map(|(_, _, field)| *field)
-    }
-
-    /// Конструктор объявления отдаёт `self` значением (§11.4): сотрудник может
-    /// получить объект, создание которого ещё не завершено.
-    fn escapes_self(&self, decl: DeclObject) -> bool {
-        self.bodies.iter().any(|body| {
-            matches!(body.owner, BodyOwner::Ctor { object, .. } if object == decl)
-                && thir::first_expr(&body.block, &|expr| matches!(expr.kind, thir::ExprKind::SelfValue)).is_some()
-        })
     }
 
     /// `does R`: функция каждого слота роли (анализ проверил соответствие).

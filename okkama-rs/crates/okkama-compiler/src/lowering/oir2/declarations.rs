@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::{LowerError, Result};
 use crate::analysis::{Analysis, thir, ty};
 use crate::oir2 as ir;
+use crate::lowering::ctx::PENDING_FIELD;
 use crate::source::Span;
 use crate::syntax::ast;
 
@@ -10,7 +11,9 @@ pub(super) struct Declarations {
     pub builder: ir::ModuleBuilder,
     pub functions: HashMap<thir::BodyOwner, ir::FuncId>,
     pub types: HashMap<ty::Ty, ir::TypeId>,
-    objects: HashMap<ty::ObjectId, ir::DeclId>,
+    pub objects: HashMap<ty::ObjectId, ir::DeclId>,
+    pub constructors: HashMap<(ty::ObjectId, usize, Vec<usize>), ir::FuncId>,
+    pub ctor_fields: HashMap<ir::FuncId, Vec<usize>>,
 }
 
 impl Declarations {
@@ -27,6 +30,8 @@ impl Declarations {
             functions: HashMap::new(),
             types: HashMap::new(),
             objects: HashMap::new(),
+            constructors: HashMap::new(),
+            ctor_fields: HashMap::new(),
         };
         for (ty, lowered) in [
             (ty::Ty::Int, ir::Type::Int),
@@ -65,6 +70,8 @@ impl Declarations {
             this.objects.insert(ty::ObjectId(index), id);
             let lowered = this.builder.intern_type(ir::Type::Object { decl: id, args: vec![] })?;
             this.types.insert(ty::Ty::object(ty::ObjectId(index)), lowered);
+            let successor = this.builder.intern_type(ir::Type::Successor(lowered))?;
+            this.types.insert(ty::Ty::Successor(Box::new(ty::Ty::object(ty::ObjectId(index)))), successor);
         }
         for (index, enumeration) in reg.enums.iter().enumerate() {
             if enumeration.span.is_empty() {
@@ -104,11 +111,16 @@ impl Declarations {
                     let info = &reg.objects[object.0];
                     let decl = this.objects[&object];
                     let method_info = &info.methods[method];
-                    if method_info.successor || method_info.variadic {
-                        return Err(LowerError::unsupported(body.span, "successor or variadic action"));
+                    if method_info.variadic {
+                        return Err(LowerError::unsupported(body.span, "variadic action"));
                     }
                     params.push(this.ty(&ty::Ty::object(object), body.span)?);
-                    let mut attrs = vec![ir::FunctionAttr::Method(decl)];
+                    let attr = if method_info.successor {
+                        ir::FunctionAttr::Successor(decl)
+                    } else {
+                        ir::FunctionAttr::Method(decl)
+                    };
+                    let mut attrs = vec![attr];
                     if method_info.hidden {
                         attrs.push(ir::FunctionAttr::Hidden);
                     }
@@ -135,6 +147,15 @@ impl Declarations {
                 }
                 _ => return Err(LowerError::unsupported(body.span, "test, closure or capability body")),
             };
+            let shorthand = match body.owner {
+                thir::BodyOwner::Ctor { object, ctor } => {
+                    match &reg.objects[object.0].ctors[ctor].shape {
+                        crate::analysis::registry::CtorShape::Shorthand { fields, .. } => Some(fields.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
             for param in &body.params {
                 let local = &body.locals[param.0];
                 if local.variadic {
@@ -158,6 +179,11 @@ impl Declarations {
                 this.builder.raw_mut().entry = Some(function);
             }
             this.functions.insert(body.owner.clone(), function);
+            if let thir::BodyOwner::Ctor { object, ctor } = body.owner {
+                let given = shorthand.unwrap_or_default();
+                this.constructors.insert((object, ctor, given.clone()), function);
+                this.ctor_fields.insert(function, given);
+            }
         }
         for (&object, &decl) in &this.objects {
             let info = &reg.objects[object.0];
@@ -170,10 +196,43 @@ impl Declarations {
                     once: false,
                 });
             }
+            if thir::escapes_self(&analysis.bodies, object) {
+                fields.push(ir::Field {
+                    name: PENDING_FIELD.into(), ty: this.types[&ty::Ty::Bool], default: None, once: false,
+                });
+            }
             let destroy = this.functions.get(&thir::BodyOwner::Destroy { object }).copied();
             this.builder.raw_mut().declarations.get_mut(decl)?.kind = ir::DeclarationKind::Object {
                 fields, witnesses: vec![], destroy, builtin: false,
             };
+        }
+        // Shorthand omissions change the language signature, so each supplied-field
+        // set gets a finite direct-call specialization. Defaults still run in it.
+        let mut calls = Vec::new();
+        for body in &analysis.bodies {
+            super::walk::block(&body.block, &mut |expr| {
+                if let thir::ExprKind::Call {
+                    callee: thir::Callee::Ctor { object, ctor, given, .. }, ..
+                } = &expr.kind {
+                    calls.push((*object, *ctor, given.clone()));
+                }
+            });
+        }
+        for (object, ctor, given) in calls {
+            let key = (object, ctor, given.clone());
+            if this.constructors.contains_key(&key) {
+                continue;
+            }
+            let original = this.functions[&thir::BodyOwner::Ctor { object, ctor }];
+            let mut function = this.builder.module().functions.get(original)?.clone();
+            let suffix = given.iter().map(usize::to_string).collect::<Vec<_>>().join(".");
+            function.symbol = format!("{}.given_{suffix}", function.symbol);
+            function.signature.params = given.iter().map(|&field| {
+                this.ty(&reg.objects[object.0].fields[field].ty, reg.objects[object.0].fields[field].span)
+            }).collect::<Result<_>>()?;
+            let id = this.builder.declare_function(function)?;
+            this.constructors.insert(key, id);
+            this.ctor_fields.insert(id, given);
         }
         Ok(this)
     }

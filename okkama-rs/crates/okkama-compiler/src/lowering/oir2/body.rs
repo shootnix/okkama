@@ -1,19 +1,31 @@
 use std::collections::HashMap;
 
 use super::{LowerError, Result};
-use crate::analysis::{thir, ty::Ty};
+use crate::analysis::{thir, ty::{Ty, ObjectId}};
 use crate::oir2 as ir;
+
+pub(super) struct BodyContext<'t> {
+    pub functions: &'t HashMap<thir::BodyOwner, ir::FuncId>,
+    pub objects: &'t HashMap<ObjectId, ir::DeclId>,
+    pub constructors: &'t HashMap<(ObjectId, usize, Vec<usize>), ir::FuncId>,
+    pub given: Vec<usize>,
+    pub listed: Option<Vec<usize>>,
+}
 
 pub(super) struct BodyLowerer<'a, 't> {
     pub b: ir::FunctionBuilder<'a>,
     pub source: &'t thir::Body,
     pub types: &'t HashMap<Ty, ir::TypeId>,
     pub current: Option<ir::BlockId>,
-    // Every active local is forwarded at joins/backedges, in LocalId order.
+    pub context: BodyContext<'t>,
+    pub receiver: Option<ir::ValueId>,
+    pub early_self: Option<ir::ValueId>,
+    pub field_base: usize,
+    // Locals, then construction/staged field slots, are forwarded at joins/backedges.
     // A scope exit restores the outer set; shadowed locals have distinct IDs.
-    env: Vec<Option<ir::ValueId>>,
+    pub env: Vec<Option<ir::ValueId>>,
     bindings: Vec<Option<ir::BindingId>>,
-    root: ir::ScopeId,
+    pub root: ir::ScopeId,
     return_boundary: ir::BoundaryId,
     failure: ir::BlockId,
     loops: Vec<LoopFrame>,
@@ -40,6 +52,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         source: &'t thir::Body,
         root: ir::ScopeId,
         types: &'t HashMap<Ty, ir::TypeId>,
+        context: BodyContext<'t>,
     ) -> Result<ir::Body> {
         let entry = b.entry();
         let params = b.block_params(entry)?.to_vec();
@@ -50,20 +63,43 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         b.switch_to(entry)?;
         b.set_unwind(Some(ir::BlockUnwind { target: ir::Target { block: failure, args: vec![] } }))?;
         let return_boundary = b.declare_boundary(ir::Boundary { scope: root, kind: ir::BoundaryKind::Lexical })?;
-        let count = source.locals.len();
+        let field_base = source.locals.len();
+        let owner = match source.owner {
+            thir::BodyOwner::Ctor { object, .. } | thir::BodyOwner::Method { object, .. } => Some(object),
+            _ => None,
+        };
+        let fields = owner.map(|object| context.objects[&object]).map(|decl| {
+            match &b.module().declarations.get(decl).expect("declared owner").kind {
+                ir::DeclarationKind::Object { fields, .. } => {
+                    super::objects::pending_index(fields).unwrap_or(fields.len())
+                }
+                _ => unreachable!("object owner"),
+            }
+        }).unwrap_or(0);
+        let count = field_base + fields;
         let mut this = Self {
             b, source, types, current: Some(entry), env: vec![None; count], bindings: vec![None; count],
-            root, return_boundary, failure, loops: vec![],
+            root, return_boundary, failure, loops: vec![], context,
+            receiver: None, early_self: None, field_base,
         };
         let receiver = usize::from(matches!(source.owner,
             thir::BodyOwner::Method { .. } | thir::BodyOwner::Destroy { .. }));
-        for (local, value) in source.params.iter().zip(params.into_iter().skip(receiver)) {
-            this.bind(*local, value)?;
+        if receiver == 1 {
+            this.receiver = params.first().copied();
+        }
+        this.initialize_fields()?;
+        if matches!(source.owner, thir::BodyOwner::Ctor { .. }) {
+            this.initialize_constructor(&params)?;
+        } else {
+            for (local, value) in source.params.iter().zip(params.into_iter().skip(receiver)) {
+                this.bind(*local, value)?;
+            }
         }
         let want = !this.b.module().functions.get(this.function())?.signature.results.is_empty();
-        let out = this.block(&source.block, want)?;
+        let special = this.is_constructor() || this.is_successor();
+        let out = this.block(&source.block, want && !special)?;
         if this.current.is_some() {
-            this.return_value(out)?;
+            this.finish_action(out)?;
         }
         Ok(this.b.finish()?)
     }
@@ -81,12 +117,12 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         self.types.get(ty).copied().ok_or_else(|| LowerError::unsupported(span, format!("type {ty:?}")))
     }
 
-    fn new_block(&mut self, scope: ir::ScopeId, types: &[ir::TypeId]) -> Result<ir::BlockId> {
+    pub fn new_block(&mut self, scope: ir::ScopeId, types: &[ir::TypeId]) -> Result<ir::BlockId> {
         let specs: Vec<_> = types.iter().copied().map(ir::ParamSpec::new).collect();
         Ok(self.b.create_block(scope, &specs)?)
     }
 
-    fn switch(&mut self, block: ir::BlockId) -> Result<()> {
+    pub fn switch(&mut self, block: ir::BlockId) -> Result<()> {
         self.b.switch_to(block)?;
         if self.b.body().blocks.get(block)?.unwind.is_none() {
             self.b.set_unwind(Some(ir::BlockUnwind {
@@ -97,7 +133,7 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         Ok(())
     }
 
-    fn terminate(&mut self, term: ir::TermKind) -> Result<()> {
+    pub fn terminate(&mut self, term: ir::TermKind) -> Result<()> {
         self.b.terminate(term)?;
         self.current = None;
         Ok(())
@@ -216,13 +252,13 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         self.terminate(ir::TermKind::Br(ir::Target { block: target, args }))
     }
 
-    fn return_value(&mut self, value: Option<ir::ValueId>) -> Result<()> {
+    pub fn return_value(&mut self, value: Option<ir::ValueId>) -> Result<()> {
         self.separate_discarded(&value.into_iter().collect::<Vec<_>>())?;
         self.prepare(value, ir::ExitKind::Return, self.return_boundary)?;
         self.terminate(ir::TermKind::Ret { values: value.into_iter().collect() })
     }
 
-    fn bind(&mut self, local: thir::LocalId, value: ir::ValueId) -> Result<()> {
+    pub fn bind(&mut self, local: thir::LocalId, value: ir::ValueId) -> Result<()> {
         let info = &self.source.locals[local.0];
         let binding = self.b.declare_binding(ir::BindingDecl {
             name: info.name.clone(), scope: self.scope(), ty: self.ty(&info.ty, info.span)?, loc: None,
@@ -245,6 +281,12 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         for (index, stmt) in block.stmts.iter().enumerate() {
             if self.current.is_none() {
                 break;
+            }
+            // Allocate early self before the whole statement that first exposes it,
+            // including nested branches, so it dominates every alias and completion.
+            if self.is_constructor() && self.early_self.is_none()
+                && thir::stmt_contains(stmt, &|expr| matches!(expr.kind, thir::ExprKind::SelfValue)) {
+                self.construct_self()?;
             }
             let tail = want && index + 1 == block.stmts.len();
             if let thir::StmtKind::Expr(expr) = &stmt.kind {
@@ -280,13 +322,18 @@ impl<'a, 't> BodyLowerer<'a, 't> {
                     self.env[local.0] = Some(value);
                 }
             }
+            S::BindField { field, value } | S::StageField { field, value } => {
+                if let Some(value) = self.value(value)? {
+                    self.write_field(*field, value)?;
+                }
+            }
             S::Return(expr) => {
                 let value = match expr {
                     Some(expr) => self.value(expr)?,
                     None => None,
                 };
                 if self.current.is_some() {
-                    self.return_value(value)?;
+                    self.finish_action(value)?;
                 }
             }
             S::Next => self.loop_exit(None, true)?,
@@ -317,6 +364,32 @@ impl<'a, 't> BodyLowerer<'a, 't> {
         let result_ty = expr.ty.as_ref().filter(|ty| **ty != Ty::Never);
         match &expr.kind {
             E::Local(local) => Ok(self.env[local.0]),
+            E::SelfValue => self.self_value().map(Some),
+            E::Field(field) => self.read_field(*field).map(Some),
+            E::PendingField(field) => self.pending_field(*field).map(Some),
+            E::VariantNew { case, values } if values.is_empty() => {
+                let ty = self.ty(expr.ty.as_ref().expect("typed enum value"), expr.span)?;
+                let ir::Type::Enum(declaration) = *self.b.module().types.get(ty)? else {
+                    return Err(LowerError::unsupported(expr.span, "non-plain enum value"));
+                };
+                self.core(ir::CoreOp::EnumCase { declaration, case: *case as u32 }).map(Some)
+            }
+            E::EnumCase { ty, case } => {
+                let ty = self.ty(&Ty::Enum(*ty), expr.span)?;
+                let ir::Type::Enum(declaration) = *self.b.module().types.get(ty)? else {
+                    return Err(LowerError::invalid(expr.span, "enum case without enum type"));
+                };
+                self.core(ir::CoreOp::EnumCase { declaration, case: *case as u32 }).map(Some)
+            }
+            E::Coerce { coercion: thir::Coercion::Take, value } => {
+                let Some(value) = self.value(value)? else {
+                    return Ok(None);
+                };
+                self.take(value).map(Some)
+            }
+            E::Call { callee: thir::Callee::Method { .. } | thir::Callee::Ctor { .. }, .. } => {
+                self.direct_call(expr)
+            }
             E::If { condition, then_block, else_block } => {
                 self.if_expr(condition, then_block, else_block.as_ref(), result_ty, want)
             }
