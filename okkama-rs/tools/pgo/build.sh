@@ -3,7 +3,7 @@
 #
 # 1. Инструментированная сборка okkama и sparrow (`-Cprofile-generate`).
 # 2. Обучение: JSON-нагрузка tools/pgo/json.ok, программы tools/pgo/workloads/NN-*
-#    на Sparrow и IR и inline-тесты модулей std (компилятор, оба движка, std).
+#    на Sparrow и inline-тесты модулей std (компилятор, Sparrow, std).
 # 3. `llvm-profdata merge` и сборка всех бинарников с `-Cprofile-use`.
 #
 # Нужен llvm-profdata той же версии LLVM, что у rustc:
@@ -29,11 +29,9 @@ echo "==> instrumented build"
 echo "==> training"
 okkama="$work/instrumented/release/okkama"
 export OKKAMA_STDLIB_DIR="$root/std"
-for engine in sparrow ir; do
-    "$okkama" run --engine "$engine" "$rs/tools/pgo/json.ok" > /dev/null
-    for main in "$rs"/tools/pgo/workloads/[0-9][0-9]-*/main.ok; do
-        "$okkama" run --engine "$engine" "$main" > /dev/null
-    done
+"$okkama" run --engine sparrow "$rs/tools/pgo/json.ok" > /dev/null
+for main in "$rs"/tools/pgo/workloads/[0-9][0-9]-*/main.ok; do
+    "$okkama" run --engine sparrow "$main" > /dev/null
 done
 for module in json runtime/json strings/parse \
     url/form url/percent template/html template/compile toml/parse plist/parse csv csv/input \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Engine parity: IR interpreter and Sparrow against the JVM path.
+"""Engine parity: Sparrow against the JVM path.
 
 Every std file with tests runs in test mode (`okkama run -t`) and every
 example with `main` runs normally, once per engine. The JVM result is the
@@ -8,7 +8,7 @@ A JVM result that differs between two JVM runs is nondeterministic and is
 reported separately instead of as a divergence.
 
     cargo build -p okkama-cli -p okkama-native
-    tools/engines/parity.py [--engines sparrow,ir] [--set std,examples]
+    tools/engines/parity.py [--engines sparrow] [--set std,examples]
                             [-j 8] [--filter SUBSTRING] [--refresh]
 
 The JVM baseline is cached in target/parity/jvm.json by file content and the
@@ -65,7 +65,7 @@ def run(engine, path, tests, timeout):
         command.append("-t")
     command.append(str(path))
     try:
-        # Стек вызовов отказа печатают только IR и Sparrow: сравниваются
+        # Стек вызовов отказа печатает Sparrow: сравниваются
         # сами диагностики, без него.
         done = subprocess.run(
             command,
@@ -122,13 +122,15 @@ def first_difference(reference, result):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--engines", default="sparrow,ir")
+    parser.add_argument("--engines", default="sparrow")
     parser.add_argument("--set", default="std,examples")
     parser.add_argument("-j", type=int, default=8)
     parser.add_argument("--filter", default="")
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args()
+    if args.engines != "sparrow":
+        parser.error("Sparrow is the only Okkama engine (#584); this tool compares it with legacy JVM")
     if not BINARY.is_file():
         sys.exit(f"build the CLI first: {BINARY} is missing")
     # Без хостовой криптографии JVM-эталон std/crypto, std/digest и

@@ -1,6 +1,6 @@
 //! Engine-independent, immutable records carried on exceptional control-flow edges.
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     fmt,
     rc::Rc,
 };
@@ -18,50 +18,13 @@ pub enum Kind {
 }
 
 /// Место кадра на пути отказа: функция программы и номер инструкции в ней.
-/// Нумерация общая для IR и Sparrow: инструкции блоков по порядку, терминатор
+/// Нумерация сохраняется при генерации Sparrow: инструкции блоков по порядку, терминатор
 /// блока — после его инструкций (кодогенератор Sparrow сохраняет её 1:1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Site {
     pub function: u32,
     pub pc: u32,
 }
-
-/// Стек вызовов отказа: кадры, через которые он прошёл, от места
-/// возникновения к корню. Кадр записывается один раз — при первом приходе
-/// отказа в него; обработчик региона, перебрасывающий тот же отказ из того же
-/// кадра, повтора не даёт. Это диагностика, а не значение: в равенстве
-/// отказов не участвует.
-#[derive(Clone, Debug, Default)]
-pub struct Trace {
-    sites: RefCell<Vec<Site>>,
-    /// Кадр последней записи: (ключ кадра, функция).
-    last: Cell<Option<(usize, u32)>>,
-}
-
-impl Trace {
-    /// `frame` — ключ живого кадра (адрес его регистров): различает
-    /// рекурсивные вызовы одной функции.
-    pub fn record(&self, frame: usize, site: Site) {
-        let key = Some((frame, site.function));
-        if self.last.get() == key {
-            return;
-        }
-        self.last.set(key);
-        self.sites.borrow_mut().push(site);
-    }
-
-    pub fn sites(&self) -> Vec<Site> {
-        self.sites.borrow().clone()
-    }
-}
-
-impl PartialEq for Trace {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl Eq for Trace {}
 
 /// Отказ изменяем на месте, как `okkama.rt.Failure` JVM: вторичные отказы
 /// и причина дописываются в тот же объект, и это видят все его ссылки.
@@ -70,7 +33,6 @@ pub struct Failure {
     pub kind: Kind,
     pub secondary: RefCell<Vec<Rc<Failure>>>,
     pub cause: RefCell<Option<Rc<Failure>>>,
-    pub trace: Trace,
 }
 
 impl Failure {
@@ -79,7 +41,6 @@ impl Failure {
             kind,
             secondary: RefCell::new(Vec::new()),
             cause: RefCell::new(None),
-            trace: Trace::default(),
         })
     }
 
@@ -303,20 +264,6 @@ mod tests {
         assert_eq!(frame_name("Box<int>.get"), "Box<int>.get");
         assert_eq!(frame_name("lambda#0"), "lambda#0");
         assert_eq!(frame_name("main"), "main");
-    }
-
-    #[test]
-    fn trace_records_each_frame_once() {
-        let trace = Trace::default();
-        trace.record(1, Site { function: 2, pc: 5 });
-        // Обработчик региона того же кадра перебрасывает отказ: повтора нет.
-        trace.record(1, Site { function: 2, pc: 9 });
-        trace.record(2, Site { function: 2, pc: 3 });
-        trace.record(3, Site { function: 0, pc: 7 });
-        assert_eq!(
-            trace.sites(),
-            [Site { function: 2, pc: 5 }, Site { function: 2, pc: 3 }, Site { function: 0, pc: 7 }]
-        );
     }
 
     #[test]

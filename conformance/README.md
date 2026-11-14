@@ -3,8 +3,8 @@
 An implementation-independent, executable specification of Okkama. Every case is
 an ordinary Okkama program (`.ok`) with a JSON sidecar stating what must be
 observed. The same programs and the same expectations run unchanged against
-every engine of the Rust implementation (IR interpreter, Sparrow VM, JVM
-backend) or any future interpreter, compiler, VM or JIT — only the adapter
+every engine of the Rust implementation (Sparrow VM and the legacy JVM
+backend, retained until #585) or any future interpreter, compiler, VM or JIT — only the adapter
 configuration changes.
 
 * Suite version: see `VERSION` and `release.json` (currently **0.1.0, draft**:
@@ -36,7 +36,7 @@ python3 runner-tests/test_schema_sync.py
 ./ocs coverage --results reports/runs/<run>      # contract -> cases -> results
 ./ocs gate --results reports/runs/<run>          # release-gate verdict (+ --out claim.json)
 ./ocs gate --profile frontend --results ...      # milestone verdict, never a release claim
-./ocs diff --left reports/runs/<ir> --right reports/runs/<sparrow>
+./ocs diff --left reports/runs/<jvm> --right reports/runs/<sparrow>
 ./ocs mutate --adapter adapters/rust/adapter.json   # mutation controls must all be killed
 ```
 
@@ -45,9 +45,9 @@ response, stdout/stderr bytes, process status, source hashes), `summary.json`
 and `summary.md`. Non-passing cases keep their temporary directory for
 inspection (`--keep failed`).
 
-The Rust adapter defaults to Sparrow. Select IR or
-JVM explicitly as above; results for one engine do not establish support in
-another. The selected engine appears in each run's adapter configuration.
+The Rust adapter defaults to Sparrow. Select the legacy
+JVM backend explicitly as above; the removed IR engine is rejected (#584).
+Results for one engine do not establish support in another. The selected engine appears in each run's adapter configuration.
 
 ## Locating the implementation and the standard library
 

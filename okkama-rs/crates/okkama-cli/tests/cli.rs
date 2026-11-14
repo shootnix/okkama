@@ -76,7 +76,7 @@ fn example(name: &str) -> String {
 }
 
 #[test]
-fn native_stdio_preserves_bytes_and_shared_input_state_in_both_engines() {
+fn native_stdio_preserves_bytes_in_source_and_bytecode_runs() {
     let source = TempFile::new(
         "native-stdio.ok",
         br#"module app v1.0.0;
@@ -92,10 +92,10 @@ fn native_stdio_preserves_bytes_and_shared_input_state_in_both_engines() {
     let bytecode = TempFile::absent("native-stdio.spb");
     let input = b"one\r\nabtail\n";
     let expected = [input.as_slice(), &[0, 255]].concat();
-    let ir = run_stdin(&["run", "--engine", "ir", source.path()], input);
-    assert_eq!(ir.status.code(), Some(0), "{}", stderr(&ir));
-    assert_eq!(ir.stdout, expected);
-    assert_eq!(ir.stderr, b"E\n");
+    let source_run = run_stdin(&["run", "--engine", "sparrow", source.path()], input);
+    assert_eq!(source_run.status.code(), Some(0), "{}", stderr(&source_run));
+    assert_eq!(source_run.stdout, expected);
+    assert_eq!(source_run.stderr, b"E\n");
     let build = run_stdin(
         &[
             "build",
@@ -115,9 +115,9 @@ fn native_stdio_preserves_bytes_and_shared_input_state_in_both_engines() {
 }
 
 #[test]
-fn standard_stdout_uses_real_native_providers_in_the_ir_interpreter() {
-    let source = TempFile::new("stdlib-stdout-ir.ok", "module app v1.0.0; import \"io/stdout\" take Stdout, Stderr; main() is int { Stdout().writeln(\"Aé🙂\"); Stderr().write(\"error\"); 0; }".as_bytes());
-    let output = run_stdin(&["run", "--engine", "ir", source.path()], b"");
+fn standard_stdout_uses_real_native_providers_on_sparrow() {
+    let source = TempFile::new("stdlib-stdout.ok", "module app v1.0.0; import \"io/stdout\" take Stdout, Stderr; main() is int { Stdout().writeln(\"Aé🙂\"); Stderr().write(\"error\"); 0; }".as_bytes());
+    let output = run_stdin(&["run", "--engine", "sparrow", source.path()], b"");
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert_eq!(stdout(&output), "Aé🙂\n");
     assert_eq!(stderr(&output), "error");
@@ -136,7 +136,8 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
         ),
     )
     .unwrap();
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         for (body, outcome, code) in [
             ("6 * 7;", "completed", 42),
             ("256;", "failed", 1),
@@ -187,7 +188,7 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
 
 #[test]
 fn ocs_capabilities_follow_the_selected_engine() {
-    for engine in ["sparrow", "ir", "jvm"] {
+    for engine in ["sparrow", "jvm"] {
         let output = okkama()
             .arg("--ocs-capabilities")
             .env("OCS_RUST_ENGINE", engine)
@@ -245,9 +246,7 @@ fn sparrow_default_and_explicit_engine_overrides() {
             (None, None, true),
             (Some(""), None, true),
             (Some("typo"), None, true),
-            (Some("ir"), None, false),
             (Some("sparrow"), None, true),
-            (Some("sparrow"), Some("ir"), false),
             (Some("ir"), Some("sparrow"), true),
         ] {
             let mut command = okkama();
@@ -302,7 +301,8 @@ fn native_run_engines_execute_source_without_java() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
     assert!(stderr(&output).contains("cannot start java"));
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let output = okkama()
             .args(["run", "--engine", engine, source.path()])
             .env("PATH", "")
@@ -313,12 +313,12 @@ fn native_run_engines_execute_source_without_java() {
         assert!(output.stderr.is_empty());
     }
     let output = run_stdin(
-        &["run", "--engine", "ir", "-"],
+        &["run", "--engine", "sparrow", "-"],
         b"module app v1.0.0; main() is int { let xs = [[1, 2], [40]]; xs[0][1] + xs[1][0]; }",
     );
     assert_eq!(output.status.code(), Some(42), "{}", stderr(&output));
     let output = run_stdin(
-        &["run", "--engine", "ir", "-"],
+        &["run", "--engine", "sparrow", "-"],
         b"module app v1.0.0; main() is int { let xs = [1]; xs[2]; }",
     );
     assert_eq!(output.status.code(), Some(1));
@@ -343,7 +343,8 @@ fn skipped_and_filtered_tests_report_alike_on_every_engine() {
           test \"through catch\" { try { test.skip(\"uncaught\"); } catch e is Error { test.fail(\"caught\"); } }\n\
           test \"failed first\" { test.is(1, 2); test.skip(\"too late\"); }\n",
     );
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let output = run(&["run", "--engine", engine, "-t", source.path()]);
         assert_eq!(output.status.code(), Some(1), "{engine}: {}", stderr(&output));
         assert_eq!(
@@ -375,7 +376,7 @@ fn skipped_and_filtered_tests_report_alike_on_every_engine() {
 }
 
 /// The channel examples the channel guide shows (#341) print what their
-/// `.expected` files say on the IR engine and on Sparrow.
+/// `.expected` files say on Sparrow.
 #[test]
 fn channel_examples_print_their_expected_output() {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/channels");
@@ -386,7 +387,8 @@ fn channel_examples_print_their_expected_output() {
             continue;
         }
         let expected = std::fs::read_to_string(path.with_extension("expected")).unwrap();
-        for engine in ["sparrow", "ir"] {
+        {
+            let engine = "sparrow";
             let output = run(&["run", "--engine", engine, "--timeout", "30", path.to_str().unwrap()]);
             assert_eq!(output.status.code(), Some(0), "{} {engine}: {}", path.display(), stderr(&output));
             assert_eq!(stdout(&output), expected, "{} {engine}", path.display());
@@ -400,7 +402,8 @@ fn channel_examples_print_their_expected_output() {
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
     // Every engine reports the place and the call stack (the core since #10).
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);
@@ -502,7 +505,8 @@ fn native_run_does_not_ignore_arguments_or_fallback_to_java() {
     ] {
         assert_eq!(run(&args).status.code(), Some(2));
     }
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let output = run_stdin(
             &["run", "--engine", engine, "-"],
             b"module runtime/unlinked v1.0.0; native nothing() is int; main() is int { nothing(); }",
@@ -1477,14 +1481,9 @@ fn blade_project_rejects_undeclared_dependencies_and_file_versions() {
     assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
 }
 
-/// H-02: a function with 20 000 values that are live together (the register
-/// allocator falls back to one register per value, H-28) runs on the IR
-/// engine. Sparrow compiles every function and refuses one whose live
-/// registers would need more than its compile budget, with a message that
-/// says what to change. Until 0.5 the previous VM's JIT left such a function
-/// to its interpreter (#14).
+/// Sparrow refuses a function whose live registers exceed its compile budget.
 #[test]
-fn functions_with_huge_frames_run_on_ir_and_are_refused_by_sparrow() {
+fn functions_with_huge_frames_are_refused_by_sparrow() {
     let count = 20_000;
     let lets: String = (0..count).map(|i| format!("        let v{i} = seed + {i};\n")).collect();
     let values: Vec<String> = (0..count).map(|i| format!("v{i}")).collect();
@@ -1492,11 +1491,7 @@ fn functions_with_huge_frames_run_on_ir_and_are_refused_by_sparrow() {
         "module app v1.0.0;\nobject Wide {{\n    Wide();\n    sum(seed is int) is int {{\n{lets}        let values is @int = [{}];\n        values.reduce(0) -> total, value {{ total + value; }};\n    }}\n}}\nmain() is int {{ let wide = Wide(); (wide.sum(1) + wide.sum(2)) % 251; }}\n",
         values.join(", ")
     );
-    // Σ(seed + i) for seed 1 and 2 over i < 20 000, modulo 251.
-    let expected = (count * (count - 1) + 3 * count) % 251;
     let file = TempFile::new("wide-frame.ok", source.as_bytes());
-    let output = okkama().args(["run", "--engine", "ir"]).arg(&file.0).output().unwrap();
-    assert_eq!(output.status.code(), Some(expected), "{}", stderr(&output));
     let output = okkama().args(["run", "--engine", "sparrow"]).arg(&file.0).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(
@@ -1540,7 +1535,8 @@ fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
     // #306: a string payload is an Okkama literal, so a newline in it does
     // not split the report.
     let source = b"module app v1.0.0;\nenum Ferr is Error = (text(s is string));\nmain() is int { throw Ferr.text(\"line1\\nline2 \\\"q\\\"\"); }\n";
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let mut command = okkama();
         command.args(["run", "--engine", engine, "-"]).env("OKKAMA_TRACE", "off");
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -1555,7 +1551,7 @@ fn an_uncaught_error_text_keeps_its_payload_on_one_line() {
 /// A cancelled process worker (#359): its Future settles Cancelled once the
 /// child has stopped and been reaped, as on Tomato, and a worker cancelled
 /// before its process started never starts (it used to run to its end and
-/// print after the cancel on the IR engine).
+/// print after the cancel).
 #[test]
 fn a_cancelled_worker_stops_before_its_future_settles() {
     let source = "module app v1.0.0;\n\
@@ -1578,7 +1574,8 @@ fn a_cancelled_worker_stops_before_its_future_settles() {
             Stdout().writeln(\"end\");\n\
             0;\n}\n";
     let file = TempFile::new("cancelled-worker.ok", source.as_bytes());
-    for engine in ["sparrow", "ir"] {
+    {
+        let engine = "sparrow";
         let started = std::time::Instant::now();
         let output = okkama().args(["run", "--engine", engine]).arg(&file.0).output().unwrap();
         assert_eq!(output.status.code(), Some(0), "{engine}: {}", stderr(&output));

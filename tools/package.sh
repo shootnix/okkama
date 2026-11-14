@@ -167,7 +167,7 @@ Depends: libc6 (>= 2.17)
 Suggests: libsqlite3-0 (>= 3.41), openjdk-21-jdk-headless
 Homepage: https://github.com/shootnix/okkama
 Description: Okkama programming language
- Compiler and runner for Okkama (IR interpreter, Sparrow VM with JIT,
+ Compiler and runner for Okkama (Sparrow VM with JIT,
  JVM backend), the standard library, the language server, the formatter
  and the blade project tool.
 CONTROL
@@ -204,7 +204,7 @@ AutoReqProv: no
 %global _build_id_links none
 
 %description
-Compiler and runner for Okkama (IR interpreter, Sparrow VM with JIT,
+Compiler and runner for Okkama (Sparrow VM with JIT,
 JVM backend), the standard library, the language server, the formatter
 and the blade project tool.
 

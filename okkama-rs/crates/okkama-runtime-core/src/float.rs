@@ -383,7 +383,7 @@ mod tests {
 }
 
 // ----- elementary functions, min, max, clamp (#192) -----
-// The IR engine and Sparrow call these; okkama.rt.Floats does the same.
+// Sparrow and shared providers call these; okkama.rt.Floats does the same.
 
 /// `floor`, `ceil`, `round` (half away from zero), `trunc`, `exp`, `ln`,
 /// `log2`, `log10`, `sin`, `cos`, `tan`. A result that is not finite

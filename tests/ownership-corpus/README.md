@@ -368,7 +368,7 @@ Whole-corpus execution in Docker remains assigned to Claude / oracle runner
   cycle-collection regression, and three lowering tests (including all changed
   corpus sources with stdlib).
 - [x] Pass `cargo check` and `cargo clippy --all-targets -- -D warnings` for
-  `okkama-compiler`, `okkama-runtime-core`, `okkama-runtime` and `sparrow-core`,
+  `okkama-compiler`, shared native support in `okkama-runtime-core` and `sparrow-core`,
   always from `okkama-rs/` with `--offline -j 4`; pass `git diff --check`.
 
 The full corpus, Docker and benchmarks are not run under this task's machine

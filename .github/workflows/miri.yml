@@ -1,9 +1,8 @@
-# The IR runtime's heap and cycle collector under Miri (#43): drops,
-# reference counts and trial deletion without undefined behaviour.
+# The native bridge's shared values under Miri (#43): drops,
+# reference counts and value lifetimes without undefined behaviour.
 #
 # Miri interprets the code about a thousand times slower than it runs, so the
-# tests take smaller sizes there (`scaled` in heap.rs, the collector's
-# threshold in gc.rs). It runs when the runtime core changes, every night and
+# tests take smaller sizes there (`scaled` in heap.rs). It runs when the runtime core changes, every night and
 # by hand, not on every push.
 name: Miri
 
@@ -32,7 +31,7 @@ env:
 
 jobs:
   miri:
-    name: Miri (IR heap and cycle collector)
+    name: Miri (shared native values)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -41,4 +40,4 @@ jobs:
         run: rustup toolchain install nightly --profile minimal --component miri && cargo +nightly miri setup
       - name: Miri
         working-directory: okkama-rs
-        run: "cargo +nightly miri test --locked -p okkama-runtime-core --lib -- gc:: heap::"
+        run: "cargo +nightly miri test --locked -p okkama-runtime-core --lib -- heap::"

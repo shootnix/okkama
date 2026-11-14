@@ -24,8 +24,9 @@ sparrow out.spb
 ```
 
 `run` executes source on Sparrow (JIT) by default, including inline tests
-with `run -t`. `--engine ir` keeps the IR interpreter selectable until its
-planned removal in 0.6.0; `OKKAMA_ENGINE` overrides the default.
+with `run -t`. Sparrow is the only Okkama engine (#584); the IR interpreter
+and its REPL were removed. `OKKAMA_ENGINE=sparrow|jvm` selects Sparrow or
+the legacy JVM backend, retained until #585.
 `build` emits the selected
 bytecode; the `sparrow` binary runs `.spb` on the Sparrow runtime (its current
 version is called Tomato). `--backend` remains an alias
@@ -34,8 +35,8 @@ See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
 Every engine can bound a run, for untrusted programs or services: Sparrow
-(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
-engine (`okkama run --engine ir`) and the JVM (`okkama run --engine jvm`). Every budget is
+(`okkama exec`, `okkama run --engine sparrow`, `sparrow run`) and the legacy
+JVM backend (`okkama run --engine jvm`). Every budget is
 off by default and costs nothing then:
 
 ```sh
@@ -3516,14 +3517,13 @@ target = "sparrow"         # sparrow | jvm
 output = "target/app.spb"  # default target/<name>.spb or .jar
 
 [run]
-engine = "sparrow"         # sparrow | ir | jvm; default: the build target
+engine = "sparrow"         # sparrow | jvm; default: the build target
 args = []                  # `blade run -- a b` appends a and b
 env = {}                   # extra environment variables
 ```
 
 `blade run` builds first when a `.ok` file, `blade.toml` or `blade.lock` is
-newer than the output, then runs the `.spb` (`okkama exec`), the sources on
-the IR interpreter (`okkama run --engine ir`, no build) or the JAR
+newer than the output, then runs the `.spb` (`okkama exec`) or the JAR
 (`java -jar`); the program's exit status is Blade's. Both commands refuse a
 project whose dependencies are not installed. Blade uses the `okkama` next to
 it, else the one on `PATH` (`BLADE_OKKAMA` names another).
@@ -4887,14 +4887,13 @@ settled result or failure leaves it unchanged. A worker cancelled before its
 process started never starts. Structured groups and root shutdown await that
 same completion. The kill is immediate (SIGKILL), so the worker's Okkama
 defers and `destroy` blocks do not run. A worker leads its own process group on
-Tomato and the IR engine, and the whole group is killed, so processes the
+Sparrow, and the whole group is killed, so processes the
 worker started go with it; the JVM, which has no process groups, kills the
 worker and the descendants it has at that moment (#359).
 
 The worker is the same program run again by the same engine: Tomato runs its
-`.spb` (one compiled in memory is written to a temporary file first), the IR
-engine its source files, multi-file programs included, and the JVM its
-classes. It gets an explicit working directory; source filenames are made
+`.spb` (one compiled in memory is written to a temporary file first), and
+the JVM its classes. It gets an explicit working directory; source filenames are made
 absolute in the parent before the worker changes directory, so relative CLI
 source paths work too. An embedder that runs programs which `spawn` must pass
 Tomato the worker command, and a `spawn` without one fails with

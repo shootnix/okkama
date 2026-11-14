@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Встроенные тесты всех модулей std на движках IR и Sparrow.
+"""Встроенные тесты всех модулей std на Sparrow.
 
 usage: std-tests.py [--jobs N]
 
@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 OKKAMA = os.path.join(ROOT, "okkama-rs", "target", "release", "okkama")
 # A test declaration: async or not, at module scope or inside an object.
 TEST = re.compile(r'\s*(async\s+)?test "')
-ENGINES = ("sparrow", "ir")
+ENGINES = ("sparrow",)
 # Lines of a failing module's output kept for the report.
 TAIL = 60
 

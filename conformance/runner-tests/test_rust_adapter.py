@@ -31,10 +31,10 @@ class ProbeCacheTests(unittest.TestCase):
             with patch.dict(adapter.os.environ, {
                 "OCS_RUST_IMPLEMENTATION_ROOT": directory,
                 "OCS_RUST_TARGET_DIR": directory,
-                "OCS_RUST_ENGINE": "ir",
+                "OCS_RUST_ENGINE": "sparrow",
             }), patch.object(adapter, "source_fingerprint", return_value="same-source"), \
                     patch.object(adapter, "probe_uncached", return_value={"modes": ["run"]}) as build:
-                self.assertEqual(adapter.probe()["engine"], "ir")
+                self.assertEqual(adapter.probe()["engine"], "sparrow")
                 self.assertTrue(adapter.probe()["cached"])
                 self.assertEqual(build.call_count, 1)
                 adapter.os.environ["OCS_RUST_ENGINE"] = "jvm"

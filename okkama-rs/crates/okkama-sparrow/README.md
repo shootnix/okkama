@@ -312,13 +312,13 @@ payload dst не может совпадать с назначением found-�
 let program = okkama_compiler::codegen::sparrow::generate(&module)?;
 let bytes = okkama_sparrow::encode(&program)?;
 let loaded = okkama_sparrow::decode(&bytes)?;
-let result = okkama_runtime::sparrow::execute(&loaded)?;
+let result = sparrow_core::run(okkama_sparrow::encode(&loaded)?)?;
 ```
 
 ## Проверки
 
 ```sh
-cargo test --offline -p okkama-sparrow -p okkama-runtime
+cargo test --offline -p okkama-sparrow --lib
 cargo test --offline -p okkama-cli --test cli
 ```
 

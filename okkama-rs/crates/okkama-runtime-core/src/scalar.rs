@@ -1,4 +1,4 @@
-//! Exact scalar conversions shared by the IR interpreter and Sparrow.
+//! Exact scalar conversions shared by compiler constants, natives and Sparrow.
 use crate::{IntValue, Value, ValueError};
 
 /// Byte shifts discard outgoing bits; both right-shift spellings zero-fill.

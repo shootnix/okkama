@@ -17,6 +17,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Removed
 
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
 Removed hidden fake storage from the test profile, including its six operations,
 compiler checks and runtime support on IR, Sparrow and JVM (#583). Use `Cell`
 for mutable synchronous test values and `Atomic` for async code or object and
@@ -5397,6 +5405,14 @@ moved out.
 
 ### Removed
 
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
 - `sparrow-engine` and `sparrow-proto`, the intermediate runtimes of the core rebuild,
   and the `sparrow-next` binary (the core is `sparrow`).
 - **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors
@@ -5631,6 +5647,14 @@ the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
 
 ### Removed
 
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
+
 - `conformance/contracts/stdlib-inventory.json`: the snapshot of the std public surface had
   fallen far behind `std/` and nothing read it. `tools/inventory_std.py` now writes only
   the per-module coverage contracts in `contracts/stdlib.json`.
@@ -5737,6 +5761,14 @@ the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
   clear error instead of an internal compiler error.
 
 ### Removed
+
+Removed the IR engine and the `okkama-runtime` crate, its interpreter, host,
+ownership state, destroy tracing and tests, plus IR-only support in
+`okkama-runtime-core` (#584). Sparrow is the only Okkama engine; `--engine ir`
+and `OKKAMA_ENGINE=ir` now report an error, and the IR-dependent REPL is
+removed. Tools, CI and the gate use Sparrow, including passes-off and GC-stress
+coverage; the legacy JVM backend remains until #585. Shared native providers,
+values and scheduler support used by Sparrow remain available.
 
 - **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
   `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of

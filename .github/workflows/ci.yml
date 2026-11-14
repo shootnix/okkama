@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [sparrow, ir, jvm]
+        engine: [sparrow, jvm]
     # SQLite 3.41+ (std db/sqlite): в Ubuntu 22.04 только 3.37.
     runs-on: ubuntu-24.04
     steps:
@@ -134,10 +134,10 @@ jobs:
         working-directory: okkama-rs
         run: cargo check --workspace --all-targets --locked
 
-  # std inline tests on the IR engine and the Sparrow core, on x86_64 Linux:
+  # std inline tests on Sparrow, on x86_64 Linux:
   # the core's frame walk, stack maps and code memory there (#27).
   std:
-    name: std tests (ir, sparrow)
+    name: std tests (sparrow)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

@@ -10,11 +10,7 @@ publish.workspace = true
 [features]
 # Diagnostic only: inline SQLite blocks the event loop and cannot cancel active SQL.
 sqlite-inline-bench = []
-# Diagnostic counters only; no code in normal builds.
-region-walk-stats = []
 allocation-scopes = ["dep:okkama-allocation-counter"]
-# Deliberately breaks automatic destroy/ownership semantics; experiments only.
-no-regions-bench = []
 
 [dependencies]
 okkama-allocation-counter = { path = "../../tools/allocation-counter", optional = true }
@@ -28,8 +24,6 @@ num-traits = "0.2"
 # Криптография хоста (runtime/host_crypto) — тот же провайдер, что у JVM.
 okkama-native = { path = "../okkama-native" }
 
-# Стековые корутины задач планировщика (`sched`), как потоки задач JVM.
-corosensei = "0.3.4"
 # Вызовы ОС без обёртки std (access, файловые режимы, сокеты, процессы).
 libc = "0.2"
 # Распаковка gzip-таблиц рантайма (unicode.dat и др., общие с JVM).
@@ -56,7 +50,7 @@ rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
 aliasable = "0.1"
 fallible-iterator = "0.3"
 
-# unsafe разрешён только в `sched` (указатель Yielder текущей задачи).
+# unsafe требует локального разрешения и обоснования в native-провайдерах.
 [lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"

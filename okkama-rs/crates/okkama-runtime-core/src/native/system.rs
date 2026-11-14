@@ -283,7 +283,6 @@ fn rejected(error: Error) -> Rc<crate::failure::Failure> {
         Error::Trap(message) | Error::InvalidState(message) | Error::Unsupported(message) => {
             Failure::new(Kind::Program(message))
         }
-        Error::Exhausted(exhausted) => Failure::new(Kind::Program(exhausted.message().into())),
     }
 }
 

@@ -15,7 +15,7 @@ python3 tools/ownership/oracle.py MODE --toolchain /tc \
 
 `MODE` is one of:
 
-- `engines`: build SPB, run IR and Sparrow, compare stdout bytes, exit code
+- `engines`: build SPB, run Sparrow from source and SPB, compare stdout bytes, exit code
   and destroy-trace bytes. Test traces are compared as ordered blocks starting
   with `# test <name>`; both engines restart creation serials for each test.
   Empty tests retain their separator. No trace sorting or serial normalization.
@@ -32,7 +32,7 @@ python3 tools/ownership/oracle.py MODE --toolchain /tc \
   report, omitted zero-call helpers count as zero (Sparrow omits them); the
   unconditional heap counter proves the report exists. Shared imported functions count once per
   compiled program, as in the census totals; there is no symbol deduplication.
-- `tap`: run IR and Sparrow, compare their outputs/traces, and count TAP
+- `tap`: run Sparrow from source and SPB, compare their outputs/traces, and count TAP
   `ok`/`not ok` per corpus and engine. Check plan/count/order, list failing
   assertions with preceding `#` diagnostics and following diagnostics/YAML.
   SKIP/TODO counts remain visible; those assertions do not fail the run.

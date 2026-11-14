@@ -38,7 +38,6 @@ impl State {
                 if bytes.is_empty() {
                     return Ok(Value::Int(IntValue::from_i64(0)));
                 }
-                crate::budget::output(bytes.len()).map_err(Error::Exhausted)?;
                 // Standard output is buffered (#132): its bytes go out on a
                 // flush, and before anything goes to standard error, so the two
                 // keep their order.

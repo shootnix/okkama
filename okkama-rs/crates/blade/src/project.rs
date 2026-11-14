@@ -8,7 +8,7 @@
 //! output = "target/app.spb"  # default target/<name>.spb or .jar
 //!
 //! [run]
-//! engine = "sparrow"         # sparrow | ir | jvm; default: the build target
+//! engine = "sparrow"         # sparrow | jvm; default: the build target
 //! args = []                  # `blade run -- a b` appends
 //! env = {}
 //! ```
@@ -32,8 +32,6 @@ pub enum Target {
 pub enum Engine {
     /// The built `.spb` (`okkama exec`).
     Sparrow,
-    /// The sources on the IR interpreter (`okkama run --engine ir`); no build.
-    Ir,
     /// The built JAR (`java -jar`).
     Jvm,
 }
@@ -97,9 +95,9 @@ impl Project {
                 Target::Jvm => Engine::Jvm,
             },
             Some("sparrow") => Engine::Sparrow,
-            Some("ir") => Engine::Ir,
+            Some("ir") => return Err("the IR engine was removed (#584); Sparrow is the only Okkama engine; JVM remains a legacy backend until #585".into()),
             Some("jvm") => Engine::Jvm,
-            Some(other) => return Err(format!("[run] engine \"{other}\" is not sparrow, ir or jvm")),
+            Some(other) => return Err(format!("[run] engine \"{other}\" is not sparrow or jvm")),
         };
         match (engine, target) {
             (Engine::Sparrow, Target::Jvm) | (Engine::Jvm, Target::Sparrow) => {
@@ -255,11 +253,6 @@ pub fn run_command(project: &Project, extra: &[String]) -> Command {
             command.arg("exec").arg(project.output_path());
             command
         }
-        Engine::Ir => {
-            let mut command = Command::new(okkama());
-            command.args(["run", "--engine", "ir"]).args(&project.entry);
-            command
-        }
         Engine::Jvm => {
             let java = std::env::var_os("JAVA_HOME")
                 .map(|home| PathBuf::from(home).join("bin").join("java"))
@@ -274,13 +267,9 @@ pub fn run_command(project: &Project, extra: &[String]) -> Command {
     command
 }
 
-/// Build when needed (not for `ir`), run, and return the program's exit status.
+/// Build when needed, run, and return the program's exit status.
 pub fn run(project: &Project, extra: &[String]) -> Result<i32, String> {
-    if project.engine == Engine::Ir {
-        check_installed(project)?;
-    } else {
-        build(project, false)?;
-    }
+    build(project, false)?;
     let mut command = run_command(project, extra);
     let status = command
         .status()
@@ -303,8 +292,8 @@ mod tests {
 
         let project = Project::parse(root, "[build]\ntarget = \"jvm\"\n").unwrap();
         assert_eq!((project.output.as_str(), project.engine), ("target/app.jar", Engine::Jvm));
-        let project = Project::parse(root, "[build]\ntarget = \"jvm\"\n[run]\nengine = \"ir\"\n").unwrap();
-        assert_eq!(project.engine, Engine::Ir);
+        let project = Project::parse(root, "[build]\ntarget = \"jvm\"\n[run]\nengine = \"ir\"\n");
+        assert!(project.unwrap_err().contains("Sparrow is the only"));
     }
 
     #[test]
