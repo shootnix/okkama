@@ -16,7 +16,10 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
         if selected.is_some_and(|id| id != function) { continue; }
         state.at(L::Function(function), data.loc);
         if let Some(id) = data.summary {
-            if let Ok(summary) = module.summaries.get(id) { signature(module, &data.signature, summary, None, state); }
+            if let Ok(summary) = module.summaries.get(id) {
+                let observation = high_external_observation(module, data, summary, state);
+                signature(module, &data.signature, summary, None, observation, state);
+            }
         } else if module.profile != Profile::High {
             state.error(R::B51, "elaborated function requires its declared summary");
         }
@@ -52,11 +55,25 @@ pub(super) fn check(module: &Module, selected: Option<FuncId>, state: &mut State
         }
     }
 }
+// H2 keeps external High signatures unelaborated too. Only a registered
+// boundary may declare an observation before the rewrite chooses its ABI.
+fn high_external_observation(module: &Module, function: &Function, summary: &Summary, state: &State<'_>) -> bool {
+    module.profile == Profile::High && function.body.is_none() && function.attrs.iter().any(|attr| {
+        let trusted = match attr {
+            FunctionAttr::Extern(name) => state.context.external_contracts.native_summary(name),
+            FunctionAttr::Intrinsic { name, .. } => state.context.external_contracts.intrinsic_summary(name),
+            _ => None,
+        };
+        trusted == Some(summary)
+    })
+}
+
 fn signature(
     module: &Module,
     signature: &Signature,
     summary: &Summary,
     type_args: Option<(GenericOwner, &[TypeId])>,
+    high_observation: bool,
     state: &mut State<'_>,
 ) {
     if !state.array(signature.params.len(), 16) || !state.array(signature.results.len(), 16)
@@ -73,7 +90,12 @@ fn signature(
         }) || summary.contract.results.len() != results.len() {
         state.error(R::B51, "summary arity or result types differ from the signature");
     }
-    if matches!(signature.ownership_abi, OwnershipAbi::Observation)
+    // High deliberately has an unelaborated ABI (H2), including registered
+    // observation intrinsics. Its final summary already knows the entry kind;
+    // the synchronous rewrite will materialize Observation in the signature.
+    let unelaborated_high = high_observation && module.profile == Profile::High
+        && signature.ownership_abi == OwnershipAbi::Unelaborated;
+    if !unelaborated_high && matches!(signature.ownership_abi, OwnershipAbi::Observation)
         != (summary.entry_kind == EntryKind::ObservationAdmissionStaysCaller) {
         state.error(R::B51, "summary entry kind differs from the signature ownership ABI");
     }
@@ -171,7 +193,8 @@ fn operation(module: &Module, body: &Body, op: &Operation, state: &mut State<'_>
             && (target.summary.is_some() || module.profile != Profile::High) {
             state.error(R::B51, "call summary differs from the callee declaration");
         }
-        signature(module, &target.signature, summary, None, state);
+        let observation = high_external_observation(module, target, summary, state);
+        signature(module, &target.signature, summary, None, observation, state);
     }
 }
 
@@ -221,7 +244,7 @@ fn dispatch(module: &Module, body: &Body, op: &Operation, summary: &Summary, sta
             if !state.array(method.signature.params.len() + 1, 16) { return; }
             let mut sig = method.signature.clone();
             sig.params.insert(0, value.ty);
-            signature(module, &sig, summary, Some((GenericOwner::Declaration(*role), args)), state);
+            signature(module, &sig, summary, Some((GenericOwner::Declaration(*role), args)), false, state);
         }
         CallOp::Cap { cap, field, .. } => {
             let Ok(value) = body.values.get(cap.value) else { return; };
@@ -230,7 +253,9 @@ fn dispatch(module: &Module, body: &Body, op: &Operation, summary: &Summary, sta
             let DeclarationKind::Cap { fields, .. } = &declaration.kind else { return; };
             let Some(field) = fields.get(field.index as usize) else { return; };
             let Ok(target) = module.functions.get(field.function) else { return; };
-            signature(module, &target.signature, summary, Some((GenericOwner::Declaration(*decl), args)), state);
+            let observation = high_external_observation(module, target, summary, state);
+            signature(module, &target.signature, summary, Some((GenericOwner::Declaration(*decl), args)),
+                observation, state);
         }
         CallOp::Closure { callee, .. } => {
             let Ok(value) = body.values.get(callee.value) else { return; };
@@ -246,7 +271,7 @@ fn dispatch(module: &Module, body: &Body, op: &Operation, summary: &Summary, sta
                     OwnershipAbi::Unelaborated
                 },
             };
-            self::signature(module, &signature, summary, None, state);
+            self::signature(module, &signature, summary, None, false, state);
         }
         _ => {}
     }

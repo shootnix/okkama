@@ -25,6 +25,12 @@ impl BodyLowerer<'_, '_> {
         Ok(self.b.emit_schema(operation)?[0])
     }
 
+    pub(super) fn collection(&mut self, op: ir::CollectionOp) -> Result<ir::ValueId> {
+        // Only std support arrays of plain strings/bytes are interned by declarations.
+        self.sync_failure()?;
+        Ok(self.b.emit_schema(ir::Operation::Collection(op))?[0])
+    }
+
     pub(super) fn constant(&mut self, value: ir::Literal) -> Result<ir::ValueId> {
         Ok(self.b.emit_schema(ir::Operation::Const(value))?[0])
     }
@@ -69,6 +75,9 @@ impl BodyLowerer<'_, '_> {
             E::Call { callee: thir::Callee::Builtin { receiver, op }, args } => {
                 let value = value!(self, receiver);
                 match (op, args.as_slice()) {
+                    (thir::Builtin::ArraySize, []) => {
+                        self.collection(ir::CollectionOp::ArrayLen { array: value })?
+                    }
                     (thir::Builtin::StrLength, []) => self.core(ir::CoreOp::StrLen { value })?,
                     (thir::Builtin::Convert(target), []) => {
                         let to = match target {

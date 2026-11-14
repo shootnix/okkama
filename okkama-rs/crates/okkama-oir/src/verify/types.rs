@@ -535,9 +535,9 @@ fn implements(
             }
             Ok(false)
         }
-        Type::Enum(declaration) => {
+        Type::Enum(declaration) | Type::Variant(declaration) => {
             let is_error = matches!(module.declarations.get(*declaration)?.kind,
-                DeclarationKind::Enum { is_error: true, .. });
+                DeclarationKind::Enum { is_error: true, .. } | DeclarationKind::Variant { is_error: true, .. });
             let builtin_error = match module.types.get(bound)? {
                 Type::Role { decl, args } if args.is_empty() => {
                     let role = module.declarations.get(*decl)?;

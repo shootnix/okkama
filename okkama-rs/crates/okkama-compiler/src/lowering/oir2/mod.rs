@@ -1,11 +1,14 @@
 //! Developer-only THIR -> OIR-2 high producer for #566 and #567 S1–S3.
 //!
 //! This module is compiled only for library tests. It never enters the OIR-1
-//! pipeline. Every declared source function must have a lowered body.
+//! pipeline. Every reachable imported ordinary action has a lowered source body;
+//! application declarations are checked in full. Only registered boundaries are external.
 //! Operations outside the synchronous slice produce source diagnostics. D11 result exits
 //! are centralized in `BodyLowerer` and call envelopes are emitted at their instruction sites.
 
 mod body;
+mod std_slice;
+mod native_summaries;
 mod construction;
 mod declarations;
 mod defer;
@@ -81,6 +84,8 @@ type Result<T> = std::result::Result<T, LowerError>;
 /// Independent developer entry: analysis supplies resolved THIR and declarations.
 /// No CLI routing, ownership elaboration or semantic verifier is invoked here.
 pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
+    let prepared = std_slice::prepare(analysis)?;
+    let analysis = &prepared;
     let mut declarations = declarations::Declarations::new(analysis)?;
     // Check ordinary/default/cleanup bodies before constructor specializations.
     let mut bodies: Vec<_> = analysis.bodies.iter().collect();
@@ -98,6 +103,11 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
         }
         for function in variants {
             let symbol = declarations.builder.module().functions.get(function)?.symbol.clone();
+            if declarations.builder.module().functions.get(function)?.attrs.iter().any(|attr| {
+                matches!(attr, ir::FunctionAttr::Intrinsic { .. } | ir::FunctionAttr::Extern(_))
+            }) {
+                continue;
+            }
             let root = declarations.builder.declare_scope(ir::ScopeDecl {
                 function,
                 parent: None,
@@ -116,6 +126,8 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
             };
             let context = body::BodyContext {
                 functions: &declarations.functions,
+                natives: &declarations.natives,
+                error_text: declarations.error_text,
                 objects: &declarations.objects,
                 constructors: &declarations.constructors,
                 given: declarations.ctor_fields.get(&function).cloned().unwrap_or_default(),
@@ -137,6 +149,8 @@ pub(crate) fn lower_to_oir2(analysis: &Analysis<'_>) -> Result<ir::Module> {
         let builder = declarations.builder.function_builder(function, root)?;
         let context = body::BodyContext {
             functions: &declarations.functions,
+            natives: &declarations.natives,
+            error_text: declarations.error_text,
             objects: &declarations.objects,
             constructors: &declarations.constructors,
             given: vec![], listed: None, defers: &declarations.defers,

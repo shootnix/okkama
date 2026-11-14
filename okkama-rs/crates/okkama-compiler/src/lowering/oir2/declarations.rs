@@ -9,6 +9,8 @@ use crate::syntax::ast;
 
 pub(super) struct Declarations {
     pub builder: ir::ModuleBuilder,
+    pub natives: HashMap<usize, ir::FuncId>,
+    pub error_text: Option<ir::FuncId>,
     pub functions: HashMap<thir::BodyOwner, ir::FuncId>,
     pub types: HashMap<ty::Ty, ir::TypeId>,
     pub objects: HashMap<ty::ObjectId, ir::DeclId>,
@@ -28,6 +30,8 @@ impl Declarations {
         });
         let mut this = Self {
             builder,
+            natives: HashMap::new(),
+            error_text: None,
             functions: HashMap::new(),
             types: HashMap::new(),
             objects: HashMap::new(),
@@ -48,11 +52,15 @@ impl Declarations {
                 return Err(LowerError::unsupported(decl.span, "role declaration"));
             }
         }
-        if let Some(native) = reg.natives.first() {
-            return Err(LowerError::unsupported(native.decl.span, "native action declaration"));
-        }
         if let Some(handle) = reg.handles.first() {
             return Err(LowerError::unsupported(handle.span, "native object declaration"));
+        }
+        let byte = this.builder.intern_type(ir::Type::Byte)?;
+        this.types.insert(ty::Ty::Byte, byte);
+        for (source, lowered) in [(ty::Ty::Byte, byte), (ty::Ty::Str, this.types[&ty::Ty::Str])] {
+            let array = this.builder.intern_type(ir::Type::Array(lowered))?;
+            this.types.insert(ty::Ty::array(source.clone()), array);
+            this.types.insert(ty::Ty::Varargs(Box::new(source)), array);
         }
         for (index, object) in reg.objects.iter().enumerate() {
             let Some(decl) = object.decl else {
@@ -62,10 +70,11 @@ impl Declarations {
                 return Err(LowerError::unsupported(decl.span, "generic object, capability or role witness"));
             }
             let id = this.builder.declare(ir::Declaration {
-                name: format!("{}.{}", reg.modules[object.module].name, object.name),
+                name: format!("{}.{}", reg.modules[object.module].name.replace('/', "."), object.name),
                 type_params: vec![],
                 kind: ir::DeclarationKind::Object {
-                    fields: vec![], witnesses: vec![], destroy: None, builtin: false,
+                    fields: vec![], witnesses: vec![], destroy: None,
+                    builtin: reg.modules[object.module].name == "async/atomic" && object.name.starts_with("Atomic_"),
                 },
                 loc: None,
             })?;
@@ -79,18 +88,41 @@ impl Declarations {
             if enumeration.span.is_empty() {
                 continue;
             }
-            if enumeration.payloads.iter().any(|payload| !payload.is_empty()) || !enumeration.params.is_empty() {
-                return Err(LowerError::unsupported(enumeration.span, "payload or generic enum"));
+            if !enumeration.params.is_empty() {
+                return Err(LowerError::unsupported(enumeration.span, "generic enum"));
+            }
+            let payload = enumeration.payloads.iter().any(|payload| !payload.is_empty());
+            let mut cases = vec![];
+            if payload {
+                if !enumeration.error || enumeration.payloads.iter().flatten().any(|(_, ty)| {
+                    !matches!(ty, ty::Ty::Int | ty::Ty::Str | ty::Ty::Bool)
+                }) {
+                    return Err(LowerError::unsupported(enumeration.span, "non-plain Error payload"));
+                }
+                for (name, fields) in enumeration.cases.iter().zip(&enumeration.payloads) {
+                    let fields = fields.iter().map(|(name, ty)| Ok(ir::Field {
+                        name: name.clone(), ty: this.ty(ty, enumeration.span)?, default: None, once: false,
+                    })).collect::<Result<_>>()?;
+                    let layout = this.builder.declare(ir::Declaration {
+                        name: format!("{}.{}.{}", reg.modules[enumeration.module].name.replace('/', "."),
+                            enumeration.name, name),
+                        type_params: vec![], loc: None,
+                        kind: ir::DeclarationKind::Object { fields, witnesses: vec![], destroy: None, builtin: false },
+                    })?;
+                    cases.push(ir::VariantCase { name: name.clone(), layout });
+                }
             }
             let id = this.builder.declare(ir::Declaration {
-                name: format!("{}.{}", reg.modules[enumeration.module].name, enumeration.name),
+                name: format!("{}.{}", reg.modules[enumeration.module].name.replace('/', "."), enumeration.name),
                 type_params: vec![],
-                kind: ir::DeclarationKind::Enum {
-                    cases: enumeration.cases.clone(), is_error: enumeration.error,
+                kind: if payload {
+                    ir::DeclarationKind::Variant { cases, is_error: true }
+                } else {
+                    ir::DeclarationKind::Enum { cases: enumeration.cases.clone(), is_error: enumeration.error }
                 },
                 loc: None,
             })?;
-            let lowered = this.builder.intern_type(ir::Type::Enum(id))?;
+            let lowered = this.builder.intern_type(if payload { ir::Type::Variant(id) } else { ir::Type::Enum(id) })?;
             this.types.insert(ty::Ty::Enum(ty::EnumId(index)), lowered);
             this.types.insert(ty::Ty::Variant(ty::EnumId(index), vec![]), lowered);
         }
@@ -115,6 +147,18 @@ impl Declarations {
             })?;
             let lowered = this.builder.intern_type(ir::Type::Role { decl: declaration, args: vec![] })?;
             this.types.insert(error, lowered);
+            let mut calls_text = false;
+            for body in &analysis.bodies {
+                super::walk::block(&body.block, &mut |expr| {
+                    calls_text |= matches!(expr.kind, thir::ExprKind::Call {
+                        callee: thir::Callee::Role { role, slot: 0, .. }, ..
+                    } if role == reg.system.error);
+                });
+            }
+            if calls_text {
+                this.error_text = Some(this.external("okkama.Error.text", false, vec![lowered],
+                    vec![this.types[&ty::Ty::Str]], vec![], source.program.module.span)?);
+            }
         }
         // Declare all symbols before bodies: forward references and stable field/default links.
         for body in &analysis.bodies {
@@ -135,7 +179,7 @@ impl Declarations {
                     let info = &reg.objects[object.0];
                     let decl = this.objects[&object];
                     let method_info = &info.methods[method];
-                    if method_info.variadic {
+                    if method_info.variadic && info.module >= reg.root_start {
                         return Err(LowerError::unsupported(body.span, "variadic action"));
                     }
                     params.push(this.ty(&ty::Ty::object(object), body.span)?);
@@ -182,23 +226,41 @@ impl Declarations {
             };
             for param in &body.params {
                 let local = &body.locals[param.0];
-                if local.variadic {
+                if local.variadic && body.module >= reg.root_start {
                     return Err(LowerError::unsupported(local.span, "variadic parameter"));
                 }
                 params.push(this.ty(&local.ty, local.span)?);
             }
             let results = result.as_ref().map(|ty| this.ty(ty, body.span)).transpose()?.into_iter().collect();
-            let function = this.builder.declare_function(ir::Function {
-                symbol,
-                signature: ir::Signature { params, results, ownership_abi: ir::OwnershipAbi::Unelaborated },
-                attrs,
-                type_params: vec![],
-                summary: None,
-                async_creation_summary: None,
-                async_body_summary: None,
-                body: None,
-                loc: None,
-            })?;
+            let atomic = match body.owner {
+                thir::BodyOwner::Ctor { object, .. } | thir::BodyOwner::Method { object, .. }
+                    if reg.modules[reg.objects[object.0].module].name == "async/atomic" => {
+                    let info = &reg.objects[object.0];
+                    let suffix = info.name.split_once('_').expect("closed Atomic").1;
+                    let op = match body.owner {
+                        thir::BodyOwner::Ctor { .. } => "new_value",
+                        thir::BodyOwner::Method { method, .. } => info.methods[method].name.as_str(),
+                        _ => unreachable!(),
+                    };
+                    Some(format!("okkama.atomic.Atomic.{op}${suffix}"))
+                }
+                _ => None,
+            };
+            let function = if let Some(name) = atomic {
+                this.external(&name, false, params, results, attrs, body.span)?
+            } else {
+                this.builder.declare_function(ir::Function {
+                    symbol,
+                    signature: ir::Signature { params, results, ownership_abi: ir::OwnershipAbi::Unelaborated },
+                    attrs,
+                    type_params: vec![],
+                    summary: None,
+                    async_creation_summary: None,
+                    async_body_summary: None,
+                    body: None,
+                    loc: None,
+                })?
+            };
             if body.owner == thir::BodyOwner::Entry {
                 this.builder.raw_mut().entry = Some(function);
             }
@@ -231,7 +293,8 @@ impl Declarations {
             }
             let destroy = this.functions.get(&thir::BodyOwner::Destroy { object }).copied();
             this.builder.raw_mut().declarations.get_mut(decl)?.kind = ir::DeclarationKind::Object {
-                fields, witnesses: vec![], destroy, builtin: false,
+                fields, witnesses: vec![], destroy,
+                builtin: reg.modules[info.module].name == "async/atomic" && info.name.starts_with("Atomic_"),
             };
         }
         // Shorthand omissions change the language signature, so each supplied-field
@@ -262,10 +325,51 @@ impl Declarations {
             this.constructors.insert(key, id);
             this.ctor_fields.insert(id, given);
         }
+        let mut native_calls = vec![];
         for body in &analysis.bodies {
+            super::walk::block(&body.block, &mut |expr| {
+                if let thir::ExprKind::Call { callee: thir::Callee::Native(index), .. } = expr.kind {
+                    native_calls.push(index);
+                }
+            });
             this.declare_defers(body)?;
         }
+        native_calls.sort();
+        native_calls.dedup();
+        for index in native_calls {
+            let native = &reg.natives[index];
+            let module = &reg.modules[native.module];
+            let name = format!("{}@{}::{}/{}", module.name, module.program.module.major(),
+                native.name, native.params.len());
+            if native.is_async || native.variadic {
+                return Err(LowerError::unsupported(native.decl.span, "async or variadic native"));
+            }
+            let params = native.params.iter().map(|(_, ty)| this.ty(ty, native.decl.span)).collect::<Result<_>>()?;
+            let results = native.result.iter().map(|ty| this.ty(ty, native.decl.span)).collect::<Result<_>>()?;
+            let function = this.external(&name, true, params, results, vec![], native.decl.span)?;
+            this.natives.insert(index, function);
+        }
         Ok(this)
+    }
+
+    fn external(&mut self, name: &str, native: bool, params: Vec<ir::TypeId>, results: Vec<ir::TypeId>,
+        mut attrs: Vec<ir::FunctionAttr>, span: Span) -> Result<ir::FuncId> {
+        let signature = ir::Signature { params, results, ownership_abi: ir::OwnershipAbi::Unelaborated };
+        let summary = super::native_summaries::contract(self.builder.module(), name, native, &signature)
+            .map_err(|error| LowerError::unsupported(span, error.message))?;
+        let summary = Some(self.builder.add_summary(summary)?);
+        let objects = if native { vec![] } else {
+            super::native_summaries::intrinsic_objects(self.builder.module(), name, &signature)
+                .map_err(|error| LowerError::unsupported(span, error.message))?
+        };
+        attrs.push(if native { ir::FunctionAttr::Extern(name.into()) } else {
+            ir::FunctionAttr::Intrinsic { name: name.into(), objects, helpers: vec![] }
+        });
+        Ok(self.builder.declare_function(ir::Function {
+            symbol: name.replace('/', ".").replace('@', ".v").replace('$', "#"), signature, attrs, summary,
+            type_params: vec![], body: None, loc: None,
+            async_creation_summary: None, async_body_summary: None,
+        })?)
     }
 
     fn ty(&self, ty: &ty::Ty, span: Span) -> Result<ir::TypeId> {

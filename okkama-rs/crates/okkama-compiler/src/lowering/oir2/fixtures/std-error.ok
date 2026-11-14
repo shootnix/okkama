@@ -1,0 +1,12 @@
+module app;
+import "io/stdout" take Stdout;
+enum Stop is Error = (now);
+main() is int {
+    try {
+        throw Stop.now;
+    }
+    catch e is Error {
+        Stdout().writeln(e.text());
+    }
+    0;
+}
