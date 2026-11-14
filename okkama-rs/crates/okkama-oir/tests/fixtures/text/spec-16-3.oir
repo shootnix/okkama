@@ -1,0 +1,22 @@
+oir 2 own
+module order
+requires core
+native object Res
+object Holder {
+    field res: Res
+}
+scope S action in @main
+summary M0 call-boundary contract call_contract(results=[Res], publication=atomic)
+func @Res.new(%name: str; %in: own) -> (Res, own) summary(M0);
+func @main() -> void {
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    (%a: Res, %pa: own) = call @Res.new("a"; own.empty)
+    %q1: scope<S> = own.admit %q0, %pa
+    (%b: Res, %pb: own) = call @Res.new("b"; own.empty)
+    %q2: scope<S> = own.admit %q1, %pb
+    (%h: Holder, %ph: own) = obj.new Holder { res: %a; own.empty }
+    %q3: scope<S> = own.admit %q2, %ph
+    scope.end %q3                         // a=1, b=2, h=3 → h b a
+    ret
+}

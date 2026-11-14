@@ -3,7 +3,9 @@ use crate::Module;
 
 /// Half-open byte offsets into the OIR input, never an Okkama DebugLoc.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Span { pub start: usize, pub end: usize }
+pub struct Span {
+    pub start: usize, pub end: usize
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticKind {
@@ -11,7 +13,9 @@ pub enum DiagnosticKind {
     Lexical, Syntax, DuplicateName, UnknownName, Limit, Literal, Structure, OutcomeSlot,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Diagnostic { pub kind: DiagnosticKind, pub span: Span, pub message: String }
+pub struct Diagnostic {
+    pub kind: DiagnosticKind, pub span: Span, pub message: String
+}
 impl Diagnostic {
     pub(crate) fn new(kind: DiagnosticKind, span: Span, message: impl Into<String>) -> Self {
         Self { kind, span, message: message.into() }
@@ -25,10 +29,18 @@ impl fmt::Display for Diagnostic {
 impl std::error::Error for Diagnostic {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PrintError { pub message: String }
-impl PrintError { pub(crate) fn new(message: impl Into<String>) -> Self { Self { message: message.into() } } }
+pub struct PrintError {
+    pub message: String
+}
+impl PrintError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into() }
+    }
+}
 impl fmt::Display for PrintError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.message) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
 }
 impl std::error::Error for PrintError {}
 

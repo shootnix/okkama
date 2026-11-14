@@ -1,0 +1,23 @@
+oir 2 own
+module resource v1.0.0
+requires core
+native object File
+native object FileText
+scope S action in @main
+summary M0 call-boundary contract call_contract(results=[File], failures=[thrown], publication=atomic)
+summary M1 call-boundary contract call_contract(results=[FileText], publication=atomic)
+summary M2 call-boundary contract call_contract(results=[int], publication=atomic)
+func @File.new#0(%p: str; %in: own) -> (File, own) summary(M0);
+func @File.text(%f: File; %in: own) -> (FileText, own) summary(M1);
+func @FileText.size(%t: FileText; %in: own) -> int summary(M2);
+func @main(%p: str) -> int {
+^entry in S:
+    %q0: scope<S> = scope.begin S
+    (%f: File, %pf: own) = call @File.new#0(%p; own.empty)
+    %q1: scope<S> = own.admit %q0, %pf
+    (%t: FileText, %pt: own) = call @File.text(%f; own.empty)
+    %q2: scope<S> = own.admit %q1, %pt
+    %n: int = call @FileText.size(%t; own.empty)
+    scope.end %q2
+    ret %n
+}
