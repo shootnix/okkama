@@ -88,11 +88,18 @@ expectations (`B`, `D`, `ACB`, `ED`) are unchanged.
 
 #581 resolves cached-outcome ownership: a Future owns its outcome and ordinary
 `await` borrows it. The regression follow-up implements OIR-2 draft 3 §10 on
-Sparrow: an immediately awaited fresh async invocation emits `await.take`;
-bound Futures (including bound-once), collection items, captured/stored Futures
-and synchronous calls returning possibly aliased Futures stay borrowed. Taken
-results are tracked once in the awaiting scope; external borrows keep their
-owners. The Book is not edited by this implementation.
+Sparrow: directly awaited async calls and proven fresh plain factories use
+`await.take`. Fresh Future outcomes returned by async actions can also be taken.
+A whole-body use check rejects aliases, publication into storage/collections/
+closures/groups, repeated observations and CFG cycles that reuse a frame. An
+exclusive local binding can be extracted only at its original cleanup boundary;
+it gains no fresh call admission. Unknown projections and joins stay borrowed.
+Temporary take results are tracked once in the awaiting scope; external borrows
+keep their owners. Scope `keep` preserves the reachable part of dying local
+cache packages on escape, without consuming shared Futures. A returned nested
+Future keeps its private cache. Rehomed resources are adopted by the next scope
+track, so forwarding one through a call cannot shorten its cleanup boundary.
+The Book is not edited by this implementation.
 
 | Restored checks | Expectations | Verification |
 | --- | --- | --- |
@@ -114,17 +121,14 @@ in-process, including the real in-memory SQLite path and a socket-free model
 of WebApplication's listener returned inside a server. It covers temporary,
 bound-once, repeated, collection/group and collector awaits, borrowed inputs,
 suspension, async/throwing cleanup, fresh call admission and nested escapes.
-Verification on the regression branch: 27 tests in that file pass normally
-and with `SPARROW_CORE_GC_STRESS=1`, including execution of both modified corpus
-files (12 TAP checks). The two existing `all_futures` in-process assembly tests
-also pass in both modes. All 17 `okkama-compiler --test lowering_ownership`
-tests pass, including corpus lowering, SPB binary/text round-trips and compile-only
-inspection of both HTTP/HTTPS listener takes in the real signals fixture.
-`cargo check --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`
-pass; all Cargo commands use `--offline -j 4`. No format command, CLI/server,
-Docker run or commit was made. The whole-corpus oracle and network/signal gate
-are left to the external runner;
-IR is not expected to match the new temporary-take checkpoint on this branch.
+The follow-up covers the real prepared SQLite pool (including rollback and lease
+reuse), socket-free server/listener models, shared-cache escape, nested Future
+escape, and fresh argument admission. It also runs the two failing socket-free
+std modules `http/static` and `web/around` in-process (six inline tests).
+
+The network/signal cases and full conformance gate require the external runner.
+The gc-stress HARNESS_ERROR is `L11.sqlite.throughput-lifetime`, distinct from
+`L11.sqlite.prepared-pool-query`; the supplied excerpt has no crash/timeout detail.
 
 ## Handwritten programs
 
@@ -327,9 +331,10 @@ verify the new ownership decision.
 
 7. **Channels and Atomic have different contracts.** Channel fresh messages
    are retained through delivery. The receiving Future owns its fresh outcome;
-   returning only an awaited alias does not extend that Future's lifetime.
-   `channel-transfer` now expects R at helper exit; a receive Future owned by
-   the receiving scope releases R at that scope's end. Unread U appears when
+   an immediate unique take transfers the received package through the helper.
+   `channel-transfer` expects an empty log while the returned resource is live,
+   then R at the consumer scope's exit. Shared cache views escaping a local
+   owner pass through the explicit scope `keep` boundary. Unread U appears when
    all channel capabilities finish. A cancelled rendezvous send expects ML: message input cleanup
    before the sender's local. In contrast, the Book's “Shared infrastructure
    snapshots with Atomic” section explicitly says stored resources remain
@@ -398,3 +403,30 @@ Whole-corpus execution in Docker remains assigned to Claude / oracle runner
 
 The full corpus, Docker and benchmarks are not run under this task's machine
 restrictions. The Book remains unchanged; the final report proposes exact wording.
+
+
+## #581c remaining gate regressions
+
+- [x] Prove fresh Future results through plain factories and async outcome
+  factories; preserve the binding boundary for exclusive local extraction.
+- [x] Reject stored/captured/collected aliases, repeated observations and
+  cyclic reuse; verify these decisions in `lowering_ownership` (20/20).
+- [x] Preserve escaping views at `region.leave/settle keep`, including nested
+  caches and already tracked child frames. Preserve external owners and deny
+  fresh call admission to rehomed shared-cache resources.
+- [x] Pass the focused `sparrow-core --test future_outcomes` file (36/36),
+  including the prepared SQLite pool, rollback/reuse, six socket-free std
+  inline tests, the channel return and server/listener models.
+- [x] Pass the pool case with `OKKAMA_IR_PASSES=none` and
+  `SPARROW_CORE_GC_STRESS=1`; pass shared/nested cache escape under GC-stress.
+- [x] Correct both obsolete help expectations, delete the removed REPL test,
+  update the CLI channel/bound-result expectations, and pass
+  `okkama-cli --test cli help_and_version` (1/1).
+- [x] Pass workspace check and workspace clippy with all targets and denied
+  warnings; pass `git diff --check`. All Cargo commands run from `okkama-rs/`
+  with `--offline -j 4`.
+
+Full conformance, network inline tests and real signals tests were not executed
+under the requested restrictions. The next external gate must validate those
+paths and separately diagnose the `sqlite.throughput-lifetime` harness error if
+it recurs. No formatter, Docker, standalone program/server run or commit was used.

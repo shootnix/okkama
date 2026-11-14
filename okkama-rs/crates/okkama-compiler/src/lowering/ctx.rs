@@ -234,6 +234,8 @@ pub(super) struct Ctx<'r, 'a> {
     /// Типы значений, принятых областями каждой задачи, чьи области
     /// закрываются `region.settle` (#328); решение — после всех тел.
     pub settle_types: Vec<Option<Vec<Type>>>,
+    /// Awaiting scope and whether the source is a lexical binding (#581).
+    pub await_regions: Vec<HashMap<ir::ValueId, (ir::ValueId, bool)>>,
     /// Some value that may reach an object with an `async destroy` is boxed
     /// as `any`, captured by a function value or owns a capability somewhere
     /// in the program (#328): then values of those types may too.
@@ -308,6 +310,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             async_objects: Vec::new(),
             async_roles: Vec::new(),
             settle_types: Vec::new(),
+            await_regions: Vec::new(),
             dynamic_async: false,
             once_checks: Vec::new(),
         }

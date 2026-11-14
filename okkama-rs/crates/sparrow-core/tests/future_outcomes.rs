@@ -25,6 +25,20 @@ fn compile(body: &str) -> okkama_sparrow::Program {
         import "async/collect" take AllFutures, FutureCompletions;
         import "async/scope" take FutureGroup;
         import "db/sqlite" take SqliteMemory;
+        import "db/pool" take DbPreparedPool, PoolOptions;
+        import "db/acquisition" take DbAcquiring, DbAcquisition;
+        import "time/clock" take SystemClock;
+        import "time/duration" take Duration;
+        import "db/prepared" take Prepared;
+        import "db/query" take Query;
+        import "db/transaction" take TransactionOptions;
+        object MemoryAcquiring does DbAcquiring {{
+            MemoryAcquiring();
+            async acquisition() is DbAcquisition {{
+                let db = await SqliteMemory().connection();
+                DbAcquisition(connection: db, preparation: db, transactions: db);
+            }}
+        }}
         object Res {{
             has name is string;
             has log is Atomic<string>;
@@ -58,12 +72,20 @@ fn compile(body: &str) -> okkama_sparrow::Program {
                 let listener = await self.make("A", log);
                 Holder(resource: listener);
             }}
+            async serve(server is Holder) is void {{ server.label(); }}
+            async listen(log is Atomic<string>) is void {{ await self.serve(await self.server(log)); }}
+            future(log is Atomic<string>) is Future<Res> {{ self.make("A", log); }}
             async make(name is string, log is Atomic<string>) is Res {{ Res(name: name, log: log); }}
             async borrow(value is Res) is Res {{ value; }}
             async waiting(name is string, log is Atomic<string>, gate is Event) is Res {{
                 await gate.wait(); Res(name: name, log: log);
             }}
             async nested(log is Atomic<string>) is Future<Res> {{ self.make("N", log); }}
+            async shared(log is Atomic<string>) is Res {{
+                let future = self.make("A", log);
+                let aliases = [future, future];
+                await aliases.item(0); await aliases.item(1);
+            }}
             async asynchronous(name is string, log is Atomic<string>) is AsyncRes {{ AsyncRes(name: name, log: log); }}
             async bad(name is string, log is Atomic<string>) is Bad {{ Bad(name: name, log: log); }}
             async failed() is Res {{ throw Stop.now; }}
@@ -92,20 +114,11 @@ fn run(program: &okkama_sparrow::Program) -> Result<i64, sparrow_core::Error> {
 }
 
 fn check(body: &str) {
-    assert_eq!(run(&compile(body)).unwrap(), 0);
-}
-
-/// Reproduce the original #581 behavior without another binary or engine.
-fn check_regression(body: &str, expected_failure: &str) {
-    let mut program = compile(body);
-    assert_eq!(run(&program).unwrap(), 0);
-    for instruction in program.functions.iter_mut().flat_map(|function| &mut function.code) {
-        if let okkama_sparrow::Instruction::AwaitTake { dst, future } = *instruction {
-            *instruction = okkama_sparrow::Instruction::Await { dst, future };
-        }
+    let program = compile(body);
+    match sparrow_core::run_reported(okkama_sparrow::encode(&program).unwrap(), Vec::new(), Vec::new()).unwrap() {
+        Ok(value) => assert_eq!(value, 0),
+        Err((error, uncaught)) => panic!("{error}; {uncaught:?}"),
     }
-    let error = run(&program).expect_err("borrow-only baseline must expose the early close");
-    assert!(error.0.contains(expected_failure), "{error}");
 }
 
 #[test]
@@ -131,13 +144,56 @@ fn future_outcome_discarded_temporary_and_same_scope_track() {
 }
 
 #[test]
-fn future_outcome_escape_requires_future_not_borrowed_value() {
+fn future_outcome_unique_bound_result_escapes_binding_scope() {
     check(r#"
-        let borrowed = if true {
-            let future = Work().make("A", log);
-            await future;
-        } else { Res(name: "wrong", log: log); };
-        // Do not dereference the expired borrow.
+        {
+            let value = if true {
+                let future = Work().make("A", log);
+                await future;
+            } else { Res(name: "wrong", log: log); };
+            confirm value.label() == "A";
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_shared_local_cache_rehomes_only_at_escape() {
+    check(r#"
+        {
+            let value = if true {
+                let future = Work().make("A", log);
+                let aliases = [future, future];
+                { (await aliases.item(0)).label(); }
+                confirm log.value() == "";
+                await aliases.item(1);
+            } else { Res(name: "wrong", log: log); };
+            confirm value.label() == "A";
+        }
+        confirm log.value() == "A";
+        log.replace("");
+        {
+            let inner = if true {
+                let outer = Work().nested(log);
+                let aliases = [outer, outer];
+                await aliases.item(0);
+            } else { Work().make("wrong", log); };
+            { (await inner).label(); }
+            { (await inner).label(); }
+            confirm log.value() == "";
+        }
+        confirm log.value() == "N";
+    "#);
+}
+
+#[test]
+fn future_outcome_rehomed_shared_cache_has_no_fresh_call_admission() {
+    check(r#"
+        {
+            Work().observe(await Work().shared(log));
+            confirm log.value() == "";
+        }
         confirm log.value() == "A";
     "#);
 }
@@ -374,6 +430,31 @@ fn future_outcome_bound_once_stays_at_original_boundary() {
 }
 
 #[test]
+fn future_outcome_spawned_binding_keeps_original_boundary() {
+    check(r#"
+        {
+            let future = spawn Work().make("A", log);
+            { Work().observe(await future); }
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_binding_moved_out_of_closed_block_uses_live_home() {
+    check(r#"
+        {
+            let future = if true { let inner = Work().make("A", log); inner; }
+                else { panic "unreachable"; };
+            { Work().observe(await future); }
+            confirm log.value() == "";
+        }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
 fn future_outcome_temporary_take_borrowed_input_keeps_owner() {
     check(r#"
         {
@@ -425,7 +506,7 @@ fn future_outcome_temporary_async_destroy_and_failure_cleanup() {
 
 #[test]
 fn future_outcome_sqlite_temporary_connection_survives_helper() {
-    check_regression(r#"
+    check(r#"
         let db = await SqliteMemory().connection();
         defer await db.settled();
         defer db.close();
@@ -433,7 +514,7 @@ fn future_outcome_sqlite_temporary_connection_survives_helper() {
         await db.execution("INSERT INTO t VALUES (42)");
         let row = await db.query("SELECT n FROM t").one();
         confirm row.int("n") == 42;
-    "#, "DbClosed");
+    "#);
 }
 
 #[test]
@@ -456,14 +537,84 @@ fn future_outcome_group_and_collection_aliases_borrow() {
 
 #[test]
 fn future_outcome_web_server_listener_model() {
-    check_regression(r#"
+    check(r#"
         {
             let server = await Work().server(log);
             confirm server.label() == "A";
             confirm log.value() == "";
         }
         confirm log.value() == "A";
-    "#, "confirm failed");
+    "#);
+}
+
+#[test]
+fn future_outcome_server_as_awaited_argument() {
+    check("await Work().listen(log); confirm log.value() == \"A\";");
+}
+
+#[test]
+fn future_outcome_plain_helper_returns_unique_future() {
+    check(r#"
+        { let value = if true { await Work().future(log); } else { await Work().make("wrong", log); };
+          confirm value.label() == "A"; }
+        confirm log.value() == "A";
+    "#);
+}
+
+#[test]
+fn future_outcome_async_helper_returns_unique_future() {
+    check(r#"
+        {
+            let value = if true { await (await Work().nested(log)); }
+                else { await Work().make("wrong", log); };
+            confirm value.label() == "N";
+        }
+        confirm log.value() == "N";
+    "#);
+}
+
+#[test]
+fn future_outcome_prepared_pool_lease_survives_factory() {
+    check(r#"
+        let pool = DbPreparedPool(origin: MemoryAcquiring(),
+            options: PoolOptions(minimum: 0, maximum: 1, idle_timeout: Duration(seconds: 30),
+                lifetime: Duration(seconds: 60), acquisition_timeout: Duration(seconds: 5)),
+            clock: SystemClock());
+        defer await pool.settled(); defer pool.close();
+        let lease = await pool.connection();
+        await lease.execution("CREATE TABLE t(n INTEGER)");
+        await lease.execution("INSERT INTO t VALUES (42)");
+        confirm (await lease.query("SELECT n FROM t").one()).int("n") == 42;
+        let lookup = await Prepared(origin: lease, text: "SELECT n FROM t").statement();
+        confirm (await Query(lookup, []).one()).int("n") == 42;
+        confirm (await Query(lookup, []).one()).int("n") == 42;
+        lookup.close();
+        let transaction = await lease.transaction(TransactionOptions());
+        await transaction.execution("INSERT INTO t VALUES (99)");
+        lease.close(); await pool.settled();
+        let reused = await pool.connection();
+        confirm (await reused.query("SELECT count(*) AS n FROM t").one()).int("n") == 1;
+        reused.close(); await pool.settled();
+    "#);
+}
+
+/// These two failing gate modules use files and in-memory HTTP messages only:
+/// no sockets, servers, subprocesses or conformance harness are started.
+#[test]
+fn future_outcome_std_static_and_compression_in_process() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std");
+    for name in ["http/static", "web/around"] {
+        let path = root.join(format!("{name}.ok"));
+        let source = SourceFile::new(path.to_string_lossy(), std::fs::read_to_string(&path).unwrap()).unwrap();
+        let parsed = syntax::parse(&source, &syntax::ParseOptions::default()).unwrap();
+        let program = syntax::prune::desugar_test_items(parsed);
+        let (module, _) = lowering::lower_linked_tests(
+            &[lowering::RootFile { program: &program, source: &source }], &mut Stdlib(root.clone()),
+        ).unwrap();
+        ir::verify(&module).unwrap();
+        let bytes = okkama_sparrow::encode(&okkama_compiler::codegen::sparrow::generate(&module).unwrap()).unwrap();
+        assert!(sparrow_core::run_tests(bytes, Box::new(std::io::stdout())).unwrap(), "{name}");
+    }
 }
 
 #[test]

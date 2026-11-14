@@ -8,14 +8,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
-- **Unique temporary await takes on Sparrow (#581 regression).** Lowering emits
-  `await.take` for directly awaited fresh async invocations. The cache relinquishes
-  only its own outcome package, and the awaiting scope tracks it exactly once
-  (#579); borrowed inputs keep their owners. Bound, repeated and collected Futures
-  retain borrow semantics. This keeps SQLite connections and returned network
-  listeners alive after their producer exits. Future-owned async outcomes now
-  select asynchronous region cleanup. The retiring IR engine keeps borrow-only
-  execution. The corpus restores `channel-transfer` check 1 to an empty log.
+- **Unique await and escaping cache results on Sparrow (#581).** In addition to
+  direct async calls, `await.take` now accepts proven fresh results of plain
+  Future factories, fresh Future outcomes returned by async actions, and exclusive
+  local bindings. The proof rejects publication, aliases, repeated observations
+  and loop reuse; bound extraction preserves the original cleanup boundary and
+  never gains fresh argument admission. Scope `keep` also carries escaping views
+  out of dying local caches, including nested Futures, while external borrows
+  retain their owners. Rehomed cache resources keep scope ownership instead of
+  becoming fresh call arguments. This fixes pooled SQLite leases and early
+  body/connection cleanup in the HTTP/web stack.
+
+- **CLI tests follow the removed IR engine (#584).** Help expectations use the
+  Sparrow/JVM engine list and current JIT wording; the obsolete REPL test is gone.
 
 - **Future-owned cached outcomes (#581).** On IR and Sparrow, ordinary await borrows
   a Future's result. Repeated awaits and duplicate collector inputs keep one

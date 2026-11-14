@@ -24,6 +24,9 @@ enum Owner {
 struct Identity {
     serial: u64,
     owner: Owner,
+    /// Escaping a shared cache preserves a scope owner, never fresh call
+    /// admission. The next track installs that owner before a callee can adopt.
+    cache_rehomed: bool,
 }
 
 /// Explicit ownership of destroy-bearing objects; disabled without `destroy`.
@@ -207,7 +210,7 @@ impl Runtime {
         let resources = &mut self.resources;
         if resources.enabled && resources.flags[descriptor] {
             resources.serial += 1;
-            resources.identities.insert(object, Identity { serial: resources.serial, owner: Owner::Free });
+            resources.identities.insert(object, Identity { serial: resources.serial, owner: Owner::Free, cache_rehomed: false });
             self.heap.watch(object);
         }
     }
@@ -216,7 +219,7 @@ impl Runtime {
     pub(crate) fn future_created(&mut self, frame: Word) {
         if self.resources.enabled {
             self.resources.serial += 1;
-            self.resources.identities.insert(frame, Identity { serial: self.resources.serial, owner: Owner::Free });
+            self.resources.identities.insert(frame, Identity { serial: self.resources.serial, owner: Owner::Free, cache_rehomed: false });
             self.heap.watch(frame);
         }
     }
@@ -565,7 +568,7 @@ impl Runtime {
         // The common add, a cursor or a constructor's result, is one free
         // identity whose fields reach no other: no walk.
         if let Some(object) = self.lone_free(value) {
-            if own {
+            if own || self.resources.identities[&object].cache_rehomed {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             } else if self.region_contains(region, object) {
                 return;
@@ -577,7 +580,7 @@ impl Runtime {
         // must still take ownership of tracked objects.
         let known = if own { None } else { Some(region) };
         for object in self.resource_graph_into(&[value], None, known) {
-            if own {
+            if own || self.resources.identities[&object].cache_rehomed {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             }
             self.region_push(region, object);
@@ -705,11 +708,12 @@ impl Runtime {
             self.region_clear(region);
             return Closed::Done(primary);
         }
-        let kept: HashSet<Word> =
+        let mut kept: HashSet<Word> =
             if keep.is_empty() { HashSet::default() } else { self.resource_graph(keep, Some(region)).into_iter().collect() };
         // Open the private regions of dying Futures before sorting the whole
-        // cleanup batch. A kept Future keeps its outcome; keeping only a borrowed
-        // result cannot transfer ownership away from its Future.
+        // cleanup batch. A kept Future keeps its outcome. If an outcome view
+        // escapes this boundary, `keep` must also preserve the part of a dying
+        // local cache it reaches. Caches owned outside this region stay borrowed.
         let mut index = 0;
         while index < self.region_len(region) {
             let object = self.region_get(region, index);
@@ -724,16 +728,32 @@ impl Runtime {
             identity.owner = Owner::Dead;
             let owned = crate::tasks::get(object, crate::tasks::OWNED);
             if owned != UNBOUND {
+                let mut exposes_frames = false;
                 for index in 0..self.region_len(owned) {
                     let child = self.region_get(owned, index);
                     let identity = self.resources.identities.get_mut(&child).expect("identity");
                     if identity.owner == Owner::Region(owned) {
                         identity.owner = Owner::Region(region);
+                        identity.cache_rehomed = true;
                         self.region_push(region, child);
+                        exposes_frames |= heap::kind(self.heap.header_of(child)) == heap::FRAME;
                     }
                 }
                 self.region_clear(owned);
+                // A returned inner Future may have just become visible. Keep
+                // its cache intact before considering it for the dying batch.
+                if exposes_frames {
+                    if !keep.is_empty() {
+                        kept.extend(self.resource_graph(keep, Some(region)));
+                    }
+                    // A child can already have an earlier tracked entry. Its
+                    // previous visit skipped the then-private cache owner.
+                    index = 0;
+                }
             }
+        }
+        if !keep.is_empty() {
+            kept.extend(self.resource_graph(keep, Some(region)));
         }
         let mut entries: Vec<Word> = (0..self.region_len(region)).map(|i| self.region_get(region, i)).collect();
         entries.sort_unstable_by_key(|object| self.serial_of(*object));

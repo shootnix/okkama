@@ -1,4 +1,4 @@
-//! #581: await borrows a Future's outcome on both engines, entirely in-process.
+//! #581: shared outcomes borrow and unique temporary outcomes transfer on Sparrow.
 #[path = "sparrow_support/mod.rs"]
 mod support;
 use okkama_compiler::{SourceFile, ir, lowering, syntax};
@@ -95,13 +95,16 @@ fn future_outcome_discarded_temporary_and_same_scope_track() {
 }
 
 #[test]
-fn future_outcome_escape_requires_future_not_borrowed_value() {
+fn future_outcome_unique_bound_result_escapes_binding_scope() {
     check(r#"
-        let borrowed = if true {
-            let future = Work().make("A", log);
-            await future;
-        } else { Res(name: "wrong", log: log); };
-        // Do not dereference the expired borrow.
+        {
+            let value = if true {
+                let future = Work().make("A", log);
+                await future;
+            } else { Res(name: "wrong", log: log); };
+            confirm value.label() == "A";
+            confirm log.value() == "";
+        }
         confirm log.value() == "A";
     "#);
 }
@@ -271,12 +274,12 @@ fn future_outcome_temporary_collector_owns_inputs() {
 }
 
 #[test]
-fn future_outcome_returned_channel_borrow_does_not_escape_owner() {
+fn future_outcome_returned_channel_take_escapes_helper() {
     check(r#"
         {
             let channel is Channel<Res> = Channel(capacity: 1);
             await channel.sending().send(Res(name: "R", log: log));
-            { let borrowed = await Work().receive(channel); confirm log.value() == "R"; }
+            { let value = await Work().receive(channel); confirm value.label() == "R"; }
             confirm log.value() == "R";
             channel.sending().close();
         }

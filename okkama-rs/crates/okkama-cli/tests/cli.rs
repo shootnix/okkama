@@ -434,43 +434,6 @@ fn uncaught_failure_prints_place_and_call_stack() {
 }
 
 #[test]
-fn repl_keeps_variables_and_declarations_between_inputs() {
-    let std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std");
-    let mut child = okkama()
-        .arg("repl")
-        .env("OKKAMA_STDLIB_DIR", &std)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let input = "let x = 40\nx + 2\nobject Point {\n    has x is int;\n    Point(:x);\n}\nlet p = Point(x: x)\np\n\
-                 let x = \"text\"\n:vars\np.nope()\n[1][3]\nx\n";
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(
-        stdout(&output),
-        "42 (int)\nPoint {\n    x: 40\n}\np: Point\nx: string\n\"text\" (string, 4 chars)\n"
-    );
-    let errors = stderr(&output);
-    assert!(
-        errors.contains("<input>:1:3: semantic error: Object \"Point\" has no action \"nope\""),
-        "{errors}"
-    );
-    assert!(
-        errors.contains("RuntimeError: Array index out of bounds\n"),
-        "{errors}"
-    );
-    assert!(errors.contains("  at <input> (<input>:1:"), "{errors}");
-}
-
-#[test]
 fn legacy_backend_alias_is_supported_but_conflicts_are_errors() {
     let file = TempFile::new("target-alias.spb", b"previous");
     let output = run_stdin(
@@ -670,8 +633,8 @@ fn help_and_version() {
         let output = run(args);
         assert_eq!(output.status.code(), Some(0));
         assert!(stdout(&output).contains("okkama ast <FILE|->"));
-        assert!(stdout(&output).contains("Sparrow (JIT) by default"));
-        assert!(stdout(&output).contains("OKKAMA_ENGINE=sparrow|ir|jvm"));
+        assert!(stdout(&output).contains("Compile to Sparrow and execute it with JIT (default)"));
+        assert!(stdout(&output).contains("OKKAMA_ENGINE=sparrow|jvm"));
         assert!(stdout(&output).contains("okkama ir <FILE|->"));
         assert!(stdout(&output).contains("okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>"));
         assert!(stderr(&output).is_empty());

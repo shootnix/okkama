@@ -485,7 +485,7 @@ fn future_ownership_corpus_lowers_with_stdlib() {
 fn future_outcome_await_tracking_preserves_future_owner() {
     let module = module(&format!(
         "{RES} object Work {{ Work(); async make() is Res {{ Res(n: 1); }} }} \
-         async main() is int {{ let f = Work().make(); {{ await f; }} await Work().make(); 0; }}"
+         async main() is int {{ let f = Work().make(); {{ await f; }} await f; await Work().make(); 0; }}"
     ));
     let main = function(&module, "main");
     let instructions: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
@@ -500,7 +500,7 @@ fn future_outcome_await_tracking_preserves_future_owner() {
 }
 
 #[test]
-fn only_fresh_async_invocations_take_the_cache() {
+fn fresh_invocations_take_but_aliases_borrow() {
     let module = module(&format!(
         "{RES} object Work {{ Work(); async make() is Res {{ Res(n: 1); }} \
          alias(f is Future<Res>) is Future<Res> {{ f; }} }} \
@@ -524,7 +524,68 @@ fn borrowed_async_outcome_cleanup_settles_the_future_owner() {
     let module = module("module app v1.0.0; \
         object Res { Res(); async destroy {} } \
         object Work { Work(); async make() is Res { Res(); } } \
-        async main() is int { let f = Work().make(); { await f; } 0; }");
+        async main() is int { let f = Work().make(); { await f; } await f; 0; }");
     assert!(settles(&module, "main"), "{module}");
-    assert_eq!(count(function(&module, "main"), |kind| matches!(kind, InstKind::Await(_))), 1);
+    assert_eq!(count(function(&module, "main"), |kind| matches!(kind, InstKind::Await(_))), 2);
+}
+
+#[test]
+fn plain_future_factories_and_unique_bindings_take_at_their_boundary() {
+    let module = module(&format!("{RES}
+        object Work {{ Work(); async make() is Res {{ Res(n: 1); }}
+            future() is Future<Res> {{ self.make(); }}
+            relay() is Future<Res> {{ self.future(); }}
+            alias(f is Future<Res>) is Future<Res> {{ f; }} }}
+        async main() is int {{ let w = Work(); await w.relay();
+            let f = w.future(); {{ await f; }}
+            let shared = w.make(); await w.alias(shared); await shared;
+            let repeated = w.make(); for 0..2 -> i {{ await repeated; }}
+            0; }}"));
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::AwaitTake(_))), 2, "{module}");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::Await(_))), 3, "{module}");
+    let instructions: Vec<_> = main.blocks.iter().flat_map(|block| &block.insts).collect();
+    let (future, result) = instructions.iter().filter_map(|inst| match inst.kind {
+        InstKind::AwaitTake(future) => Some((future, inst.result.unwrap())), _ => None,
+    }).nth(1).unwrap();
+    let home = instructions.iter().find_map(|inst| match inst.kind {
+        InstKind::RegionAdopt { region, value } if value == future => Some(region), _ => None,
+    }).unwrap();
+    assert!(instructions.iter().any(|inst| matches!(inst.kind,
+        InstKind::RegionAdopt { region, value } if region == home && value == result)), "{module}");
+    assert!(!instructions.iter().any(|inst| matches!(inst.kind,
+        InstKind::RegionTrack { value, .. } if value == result)), "{module}");
+}
+
+#[test]
+fn async_factory_outcomes_require_their_own_freshness_proof() {
+    let module = module(&format!("{RES}
+        object Work {{ Work(); async make() is Res {{ Res(n: 1); }}
+            async fresh() is Future<Res> {{ self.make(); }}
+            async alias(f is Future<Res>) is Future<Res> {{ f; }}
+            wrapper(f is Future<Res>) is Future<Future<Res>> {{ self.alias(f); }} }}
+        async main() is int {{ let w = Work(); let f = w.make();
+            await (await w.fresh()); await (await w.alias(f));
+            await (await w.wrapper(f)); await f; 0; }}"));
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::AwaitTake(_))), 4, "{module}");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::Await(_))), 3, "{module}");
+}
+
+#[test]
+fn field_and_closure_publication_prevent_unique_take() {
+    let module = module(&format!("{RES}
+        object Work {{ Work(); async make() is Res {{ Res(n: 1); }} }}
+        object Saved {{ has future is Future<Res>; Saved(:future);
+            pending() is Future<Res> {{ future; }} }}
+        async main() is int {{
+            let stored = Work().make(); let saved = Saved(future: stored);
+            await stored; await saved.pending();
+            let captured = Work().make();
+            let closure = () is Future<Res> {{ captured; }};
+            await captured; await closure(); 0;
+        }}"));
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::AwaitTake(_))), 0, "{module}");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::Await(_))), 4, "{module}");
 }
