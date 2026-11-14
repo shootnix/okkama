@@ -1,0 +1,58 @@
+; #542: allocations in a callee while heap-only values remain live in its
+; caller, and a failing callee with an unwind edge back into the caller.
+sparrow 15
+module "ready-roots" "1.0.0"
+type t0 int
+type t1 str
+type t2 object obj0
+type t3 object obj1
+type t4 failure
+object obj0 "Input" { field "text" t1 }
+object obj1 "Result" {
+ field "number" t0
+ field "text" t1
+}
+function f0 "allocate" {
+ registers [t1, t1]
+ params [r0]
+ result t1
+ 0: str.concat r1, r0, r0
+ 1: ret r1
+}
+function f1 "roots" {
+ registers [t0, t1, t2, t1, t1, t1, t0, t3]
+ params [r0, r1, r2]
+ result t3
+ 0: call r3, f0, [r1]
+ 1: obj.get r4, r2, 0
+ 2: str.concat r5, r3, r4
+ 3: str.concat r5, r5, r1
+ 4: int.add r6, r0, r0
+ 5: obj.new r7, obj1, [r6, r5]
+ 6: ret r7
+}
+function f2 "fail" {
+ registers [t1, t1]
+ params []
+ result t1
+ 0: const r0, str "callee failure"
+ 1: str.concat r1, r0, r0
+ 2: panic r1
+}
+function f3 "unwind" {
+ registers [t1, t1, t4, t1]
+ params [r0]
+ result t1
+ handler 0 1 @2 r2
+ 0: call r1, f2, []
+ 1: ret r1
+ 2: str.concat r3, r0, r0
+ 3: ret r3
+}
+function f4 "trace" {
+ registers [t1]
+ params []
+ result t1
+ 0: call r0, f2, []
+ 1: ret r0
+}

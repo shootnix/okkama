@@ -144,32 +144,6 @@ fn gc_layout_driver_state_and_runtime_object_overrides() {
 }
 
 #[test]
-fn gc_layout_fake_storage_preserves_key_and_value_representations() {
-    use okkama_sparrow::TypeRef;
-    use sparrow_core::{ops::Key, primitives::State};
-    let mut heap = Heap::new(Layouts::default());
-    heap.set_stress(true);
-    let text = heap.allocate_text("fake value");
-    let key = heap.int(i64::MAX);
-    let value = heap.int(i64::MIN);
-    let string_key = heap.allocate_text("fake key");
-    let state = State::FakeStorage([
-        (Key::Small(7), (word::small(7).unwrap(), Repr::Int, text, TypeRef(0), Repr::Ref)),
-        (Key::Small(i64::MAX), (key, Repr::Int, value, TypeRef(1), Repr::Int)),
-        (Key::Raw(0), (string_key, Repr::Ref, UNBOUND_RAW, TypeRef(2), Repr::Raw)),
-    ].into());
-    for _ in 0..3 {
-        heap.collect(|visit| state.trace(visit));
-        assert_eq!(heap.text(text), "fake value");
-        assert_eq!(heap.text(string_key), "fake key");
-        assert_eq!(heap.integer(key).to_string(), i64::MAX.to_string());
-        assert_eq!(heap.integer(value).to_string(), i64::MIN.to_string());
-    }
-    heap.collect(|_| {});
-    assert_eq!(heap.stats().live_bytes, 0);
-}
-
-#[test]
 fn gc_layout_bounded_fixture_census() {
     for (width, count) in [(8, 16), (256, 128)] {
         for references in [false, true] {

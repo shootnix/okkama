@@ -127,7 +127,10 @@ diagnostics, separate from JIT machine-register allocation or runtime timing;
 keep it out of timed samples.
 Other runtime diagnostics:
 `SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
-(§9), `SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
+(§9), `SPARROW_CORE_OLD_DISPATCH=symbol,…|*` (keep reference lazy dispatch
+for selected callers instead of embedding ready static ordinary entries;
+[ABI/lifetime proof and #542 measurement checklist](../okkama-rs/crates/sparrow-core/docs/ready-callees.md)),
+`SPARROW_CORE_PROFILE_COMPILE=1` (a line per compiled function on
 stderr — instructions, registers, suspensions, CLIF blocks and instructions,
 safepoints, code and frame bytes, microseconds per compile stage — and
 Cranelift's passes summed at exit, #345), `SPARROW_CORE_VERIFY=1` (Cranelift's

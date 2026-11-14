@@ -247,7 +247,7 @@ impl Runtime {
             return;
         }
         let roots = if success {
-            let repr = self.heap.layouts.frames[self.function_of(frame)][1];
+            let repr = self.heap.layouts().frames[self.function_of(frame)][1];
             repr.pointer(value).into_iter().collect()
         } else {
             self.failure_payloads(value)
